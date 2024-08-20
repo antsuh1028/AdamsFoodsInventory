@@ -1,23 +1,18 @@
 import React, { useState } from 'react';
-import { Input, Stack, Flex, Center, Text, InputGroup, InputLeftElement, InputRightElement, Button } from '@chakra-ui/react';
+import { Input, Stack, Flex, Center, Text, InputGroup, InputLeftElement, InputRightElement, Button, Link as ChakraLink } from '@chakra-ui/react';
 import { EmailIcon, UnlockIcon, CheckIcon } from '@chakra-ui/icons';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import axios from "axios";
 
-const Login = () => {
+const Signup = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const navigate = useNavigate()
-
 
   const handleSubmit = (e) => {
     e.preventDefault(); // Prevents the default form submission behavior
-    axios.post('http://localhost:3001/login', { email, password })
+    axios.post('http://localhost:3001/signup', { email, password })
       .then(result => {
         console.log(result)
-        if(result.data === "Success"){
-          navigate("/")
-        }
       })
       .catch(err => console.log(err));
   };
@@ -27,9 +22,9 @@ const Login = () => {
       <Center>
         <Stack spacing={10} align="center">
           <Text fontSize="4xl" fontWeight="bold" color="teal" fontFamily="sans-serif">Adam's Foods Inventory System</Text>
-          <Text fontSize="4xl" fontWeight="bold" color="teal" fontFamily="sans-serif">Login</Text>
+          <Text fontSize="4xl" fontWeight="bold" color="teal" fontFamily="sans-serif">Signup</Text>
           <form onSubmit={handleSubmit}> {/* Form element to handle submission */}
-            <Stack spacing={3}>
+            <Stack spacing={3} align="center">
               <InputGroup>
                 <InputLeftElement pointerEvents='none'>
                   <EmailIcon color='gray.300' />
@@ -47,12 +42,13 @@ const Login = () => {
                 </InputRightElement>
               </InputGroup>
 
-              <Flex width="100%" justifyContent="space-between" mt={5}>
-                <Button colorScheme="teal" size="lg" width="48%" type="submit">Login</Button>
-                <Button colorScheme="teal" size="lg" width="48%" as={Link} to="/signup">
-                  Sign Up
-                </Button>
-              </Flex>
+              <Button colorScheme="teal" size="lg" width="100%" type="submit" mt={5}>
+                Sign Up
+              </Button>
+
+              <ChakraLink as={Link} to="/login" fontSize="lg" color="teal" textDecoration="underline" mt={5}>
+                Already have an account?
+              </ChakraLink>
             </Stack>
           </form>
         </Stack>
@@ -61,4 +57,4 @@ const Login = () => {
   );
 }
 
-export default Login;
+export default Signup;
