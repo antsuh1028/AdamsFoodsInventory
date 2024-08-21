@@ -1,82 +1,102 @@
-
-import {Textarea, Box, Input, VStack, Stack, Flex, Center, Text, InputGroup, InputLeftElement, InputRightElement, Button } from '@chakra-ui/react';
+import { Select, Textarea, Box, VStack, Flex, Button, FormControl, FormLabel } from '@chakra-ui/react';
 import React, { useState } from 'react';
-import {FormControl, FormLabel,} from '@chakra-ui/react'
+import axios from 'axios'; // Ensure axios is imported for HTTP requests
 import Navbar from './Navbar';
 
-
 const Homescreen = () => {
+  const [inputs, setInputs] = useState(Array(13).fill(''));
+  const [showTextarea, setShowTextarea] = useState(false);
+  const [textareaContent, setTextareaContent] = useState('');
 
+  const handleInputChange = (index, value) => {
+    const newInputs = [...inputs];
+    newInputs[index] = value;
+    setInputs(newInputs);
+  };
 
-    const [input1, setInput1] = useState('');
-    const [input2, setInput2] = useState('');
-    const [input3, setInput3] = useState('');
-    const [input4, setInput4] = useState('');
-    const [input5, setInput5] = useState('');
+  const handleFind = () => {
 
-    const [showTextarea, setShowTextarea] = useState(false);
-    const [textareaContent, setTextareaContent] = useState('');
+    axios.post('http://localhost:3001/inventoryFind', { inputs }) // Assuming you have an endpoint for submission
+      .then(result => {
+        console.log(result);
+        if(result.data === "Success"){
+          setTextareaContent(inputs.map((input, index) => `Input ${index + 1}: ${input}`).join('\n'));
+          setShowTextarea(true);
+        }
+      })
+      .catch(err => console.log(err));
 
+    
+  };
 
-    const handleFind = () => {
-      console.log('Find:', { input1, input2, input3, input4, input5 });
+  const handleUpdateSubmit = (e) => {  
+    e.preventDefault(); // Prevents the default form submission behavior
+    axios.post('http://localhost:3001/updateSubmit', { inputs }) // Assuming you have an endpoint for submission
+      .then(result => {
+        console.log(result);
+        if(result.data === "Success"){
+          //handle by message
+        }
+      })
+      .catch(err => console.log(err));
+  };
 
-      setTextareaContent(`Input 1: ${input1}\nInput 2: ${input2}\nInput 3: ${input3}\nInput 4: ${input4}\nInput 5: ${input5}`);
-      setShowTextarea(true);
-    };
+  const handleDelete = () => {
+    console.log('Delete:', inputs);
+  };
 
-    const handleUpdateSubmit = () => {  
-      console.log('Find:', { input1, input2, input3, input4, input5 });
-    };
-
-    const handleDelete = () => {
-      console.log('Find:', { input1, input2, input3, input4, input5 });
-    };
-
-    return (
-      <>
+  return (
+    <>
       <Navbar />
-      <Flex width="100vw" height="100vh" alignItems="center" justifyContent="space-between" bg="lightblue" pt="60px" >
-        <Flex bg="lightblue" width="80%" height="90%"  margin="10px" border='1px' direction='column' justifyContent='center' alignItems='center'>
-          <FormControl >
-            <VStack spacing={2} alignItems="center">
-              <Box width="90%">
-                <FormLabel marginTop='5px' marginBottom='5px'>Input</FormLabel>
-                <Input bg='white' width="100%" type="input" id='input1' onChange={(e) => setInput1(e.target.value)}/>
-              </Box>
-              <Box width="90%">
-                <FormLabel marginTop='1px'>Input</FormLabel>
-                <Input bg='white' width="100%" type="input"  id='input2' onChange={(e) => setInput2(e.target.value)}/>
-              </Box>
-              <Box width="90%">
-                <FormLabel>Input</FormLabel>
-                <Input bg='white' width="100%" type="input" id='input3' onChange={(e) => setInput3(e.target.value)}/>
-              </Box>
-              <Box width="90%">
-                <FormLabel>Input</FormLabel>
-                <Input bg='white' width="100%" type="input" id='input4' onChange={(e) => setInput4(e.target.value)}/>
-              </Box>
-              <Box width="90%">
-                <FormLabel>Input</FormLabel>
-                <Input bg='white' width="100%" type="input" id='input5' onChange={(e) => setInput5(e.target.value)}/>
-              </Box>
-            </VStack>
-          </FormControl>
+      <Flex width="100vw" height="100vh" alignItems="center" justifyContent="space-between" bg="lightblue" pt="60px">
+        <Flex 
+          bg="lightblue" 
+          width="80%" 
+          height="90%" 
+          margin="10px" 
+          border="1px" 
+          direction="column" 
+          justifyContent="flex-start" 
+          alignItems="center"
+          overflowY="auto"
+        >
+          <form onSubmit={handleUpdateSubmit}>
+            <FormControl>
+              <VStack spacing={2} alignItems="center">
+                {Array.from({ length: 13 }, (_, index) => (
+                  <Box width="90%" key={index}>
+                    <FormLabel marginTop="5px" marginBottom="5px">{`Input ${index + 1}`}</FormLabel>
+                    <Select
+                      bg="white"
+                      width="100%"
+                      placeholder={`Select option for Input ${index + 1}`}
+                      onChange={(e) => handleInputChange(index, e.target.value)}
+                    >
+                      <option value="Option 1">Option 1</option>
+                      <option value="Option 2">Option 2</option>
+                      <option value="Option 3">Option 3</option>
+                    </Select>
+                  </Box>
+                ))}
+              </VStack>
+            </FormControl>
 
-          <Flex alignItems="center" >
-            <Button bg="white" margin="20px" onClick={handleFind}>Find</Button>
-            <Button bg="white" margin="20px" onClick={handleUpdateSubmit}>Update/Submit</Button>
-            <Button bg="white" margin="20px" onClick={handleDelete}>Delete</Button>
-          </Flex>
-
+            <Flex alignItems="center" mt="20px">
+              <Button bg="white" margin="20px" onClick={handleFind}>Find</Button>
+              <Button bg="white" margin="20px" type="submit">Update/Submit</Button>
+              <Button bg="white" margin="20px" onClick={handleDelete}>Delete</Button>
+            </Flex>
+          </form>
         </Flex>
 
         <Flex bg="lightblue" width="50%" height="85%" margin="10px" border="1px" justifyContent="center" alignItems="center">
-          {showTextarea && (<Textarea bg="white" width="90%" height="80%" value={textareaContent} readOnly/>)}
+          {showTextarea && (
+            <Textarea bg="white" width="90%" height="80%" value={textareaContent} readOnly />
+          )}
         </Flex>
       </Flex>
     </>
-    );
-  }
-  
-  export default Homescreen;
+  );
+};
+
+export default Homescreen;
