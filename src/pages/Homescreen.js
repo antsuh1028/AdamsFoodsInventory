@@ -37,18 +37,17 @@ const Homescreen = () => {
         console.log("result:", result.data);
 
         if (result.data.length === 0) {
-          // Set error message if no items are found
           setErrorMessage('No items found. Please try different criteria.');
-          setItems([]); // Clear any previous items
+          setItems([]);
         } else {
-          setItems(result.data); // Set items from the response
-          setErrorMessage(''); // Clear any error message
+          setItems(result.data);
+          setErrorMessage(''); 
         }
 
       })
       .catch(err => {
         console.log(err);
-        setErrorMessage('No Item Found'); // Set error message for request failure
+        setErrorMessage('No Item Found');
       });
   };
     //Used for Display Area
@@ -57,17 +56,28 @@ const Homescreen = () => {
       setShowDetails(true); 
     };
 
-  const handleUpdateSubmit = (e) => {  
+  const handleUpdate = (e) => {  
     e.preventDefault(); // Prevents the default form submission behavior
-    axios.post('http://localhost:3001/updateSubmit', { inputs }) // Assuming you have an endpoint for submission
-      .then(result => {
-        console.log(result);
-        
-        if(result.data === "Success"){
-          //handle by message
-        }
-      })
-      .catch(err => console.log(err));
+    axios.post('http://localhost:3001/update', { inputs }) // Assuming you have an endpoint for submission
+    .then(result => {
+      console.log("result:", result.data);
+
+      if (result.data.length === 0) {
+        setErrorMessage('No items found. Please try different criteria.');
+        setItems([]);
+      } else {
+        setItems([result.data]);
+        setShowDetails(false)
+        setErrorMessage('')
+      }
+
+    })
+    .catch(err => {
+      console.log(err);
+      setErrorMessage('No Item Found');
+      setItems([]);
+        setShowDetails(false)
+    });
   };
 
   const handleDelete = () => {
@@ -92,83 +102,101 @@ const Homescreen = () => {
 
   }
 
+  const handleClear = () => {
+    setLocation("");
+    setLot("");
+    setVendor("");
+    setBrand("");
+    setSpecies("");
+    setDescription("");
+    setGrade("");
+    setQuantity("");
+    setWeight("");
+    setPackdate("");
+    setTemp("");
+    setEst("");
+  }
+
   
   return (
     <>
       <Navbar />
       <Flex width="100vw" height="100vh" alignItems="center" justifyContent="space-between" bg="lightblue" pt="60px">
         <Flex bg="lightblue" width="80%" height="90%" margin="10px" border="1px" direction="column" justifyContent="flex-start" alignItems="center" overflowY="auto">
-          <form onSubmit={handleUpdateSubmit}>
+          <form onSubmit={handleUpdate}>
             <FormControl>
               <VStack spacing={2} alignItems="center">
               
                 <HStack spacing={2} width="100%">
                   <VStack spacing={1} width="75%">
-                    <FormLabel marginTop="5px" textAlign='left' marginBottom="5px">Location</FormLabel>
-                    <Input type='text' bg="white" width="100%" placeholder='Enter Location' onChange={(e) => setLocation(e.target.value)} />
+                    <FormLabel  marginTop="5px" textAlign='left' marginBottom="5px">Location</FormLabel>
+                    <Input value={location} type='text' bg="white" width="100%" placeholder='Enter Location' onChange={(e) => setLocation(e.target.value)} />
                   </VStack>
                   <VStack spacing={1} width="25%">
                     <FormLabel marginTop="5px" marginBottom="5px">Lot</FormLabel>
-                    <Input type='text' bg="white" width="100%" placeholder='Enter Lot' onChange={(e) => setLot(e.target.value)} />
+                    <Input value={lot} type='text' bg="white" width="100%" placeholder='Enter Lot' onChange={(e) => setLot(e.target.value)} />
                   </VStack>
                 </HStack>
 
                 <HStack spacing={2} width="100%">
                   <VStack spacing={1} width="33%">
                     <FormLabel marginTop="5px" marginBottom="5px">Vendor</FormLabel>
-                    <Input type='text' bg="white" width="100%" placeholder='Enter Vendor' onChange={(e) => setVendor(e.target.value)} />
+                    <Input value={vendor} type='text' bg="white" width="100%" placeholder='Enter Vendor' onChange={(e) => setVendor(e.target.value)} />
                   </VStack>
                   <VStack spacing={1} width="33%">
                     <FormLabel marginTop="5px" marginBottom="5px">Brand</FormLabel>
-                    <Input type='text' bg="white" width="100%" placeholder='Enter Brand' onChange={(e) => setBrand(e.target.value)} />
+                    <Input value={brand} type='text' bg="white" width="100%" placeholder='Enter Brand' onChange={(e) => setBrand(e.target.value)} />
                   </VStack>
                   <VStack spacing={1} width="33%">
                     <FormLabel marginTop="5px" marginBottom="5px">Species</FormLabel>
-                    <Input type='text' bg="white" width="100%" placeholder='Enter Species' onChange={(e) => setSpecies(e.target.value)} />
+                    <Input value={species} type='text' bg="white" width="100%" placeholder='Enter Species' onChange={(e) => setSpecies(e.target.value)} />
                   </VStack>
                   
                 </HStack>
 
                 <FormLabel marginTop="5px" marginBottom="5px">Description</FormLabel>
-                <Input type='text' bg="white" width="100%" size="lg"  placeholder='Enter Description' onChange={(e) => setDescription(e.target.value)} />
+                <Input value={description} type='text' bg="white" width="100%" size="lg"  placeholder='Enter Description' onChange={(e) => setDescription(e.target.value)} />
 
                 <HStack spacing={4} width="100%">
                   <VStack spacing={1} width="32%">
                     <FormLabel marginTop="5px" marginBottom="5px">Grade</FormLabel>
-                    <Input type='text' bg="white" width="100%" placeholder='Enter Grade' onChange={(e) => setGrade(e.target.value)} />
+                    <Input value={grade} type='text' bg="white" width="100%" placeholder='Enter Grade' onChange={(e) => setGrade(e.target.value)} />
                   </VStack>
                   <VStack spacing={1} width="32%">
                     <FormLabel marginTop="5px" marginBottom="5px">Quantity</FormLabel>
-                    <Input type='number' bg="white" width="100%" placeholder='Enter Quantity' onChange={(e) => setQuantity(e.target.value)} />
+                    <Input  value={quantity} type='number' bg="white" width="100%" placeholder='Enter Quantity' onChange={(e) => setQuantity(e.target.value)} />
                   </VStack>
                   <VStack spacing={1} width="32%">
                     <FormLabel marginTop="5px" marginBottom="5px">Weight</FormLabel>
-                    <Input type='number' bg="white" width="100%" placeholder='Enter Weight' onChange={(e) => setWeight(e.target.value)} />
+                    <Input  value={weight} type='number' bg="white" width="100%" placeholder='Enter Weight' onChange={(e) => setWeight(e.target.value)} />
                   </VStack>
               </HStack>
 
               <HStack spacing={4} width="100%">
                 <VStack spacing={1} width="32%">
                   <FormLabel marginTop="5px" marginBottom="5px">Pack Date</FormLabel>
-                  <Input type='date' bg="white" width="100%" onChange={(e) => setPackdate(e.target.value)} />
+                  <Input value={packdate} type='date' bg="white" width="100%" onChange={(e) => setPackdate(e.target.value)} />
                 </VStack>
                 <VStack spacing={1} width="32%">
                   <FormLabel marginTop="5px" marginBottom="5px">Temperature</FormLabel>
-                  <Input type='number' bg="white" width="100%" placeholder='Enter Temperature' onChange={(e) => setTemp(e.target.value)} />
+                  <Input value={temp} type='number' bg="white" width="100%" placeholder='Enter Temperature' onChange={(e) => setTemp(e.target.value)} />
                 </VStack>
                 <VStack spacing={1} width="32%">
                   <FormLabel marginTop="5px" marginBottom="5px">EST#</FormLabel>
-                  <Input type='text' bg="white" width="100%" placeholder='Enter Est' onChange={(e) => setEst(e.target.value)} />
+                  <Input value={est} type='text' bg="white" width="100%" placeholder='Enter Est' onChange={(e) => setEst(e.target.value)} />
                </VStack>
               </HStack>
               </VStack>
             </FormControl>
 
             <Flex alignItems="center" mt="20px" width='100%'>
-              <Button bg="white" margin="20px" >Add</Button>
-              <Button bg="white" margin="20px" onClick={handleFind}>Find</Button>
-              <Button bg="white" margin="20px" type="submit">Update</Button>
-              <Button bg="white" margin="20px" onClick={handleDelete}>Delete</Button>
+              <HStack spacing="4">
+                <Button bg="green.200" margin="20px" >Add</Button>
+                <Button bg="white" margin="20px" onClick={handleFind}>Find</Button>
+                <Button bg="white" margin="20px" onClick={handleUpdate} type="submit">Update</Button>
+                <Button bg="white" margin="20px" onClick={handleDelete}>Delete</Button>
+                <Button bg="red.200" margin="20px" onClick={handleClear}>Clear</Button>
+              </HStack>
             </Flex>
           </form>
         </Flex>
