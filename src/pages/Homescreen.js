@@ -78,29 +78,38 @@ const Homescreen = () => {
   };
 
   //inventoryUpdate
-  const handleUpdate = (e) => {  
-    e.preventDefault(); // Prevents the default form submission behavior
-    axios.post('http://localhost:3001/inventoryUpdate', { inputs }) // Assuming you have an endpoint for submission
-    .then(result => {
-      console.log("result:", result.data);
+  const handleUpdate = async (e) => {  
+    e.preventDefault(); 
+    
+    const userConfirmed = window.confirm("Are you sure you want to update this item?");
 
-      if (result.data.length === 0) {
-        setErrorMessage('No items found. Please try different criteria.');
-        setItems([]);
-      } else {
-        setItems([result.data]);
-        setShowDetails(false)
-        setErrorMessage('')
-        handleClear()
-      }
+    if (userConfirmed){
+      axios.post('http://localhost:3001/inventoryUpdate', { inputs })
+        .then(result => {
+          console.log("result:", result.data);
 
-    })
-    .catch(err => {
-      console.log(err);
-      setErrorMessage('No Item Found');
-      setItems([]);
-        setShowDetails(false)
-    });
+          if (result.data.length === 0) {
+            setErrorMessage('No items found. Please try different criteria.');
+            setItems([]);
+          } else {
+            setItems([result.data]);
+            setShowDetails(false)
+            setErrorMessage('')
+            handleClear()
+          }
+
+        })
+        .catch(err => {
+          console.log(err);
+          setErrorMessage(err.response.data.error);
+          setItems([]);
+            setShowDetails(false)
+        });
+    }
+    else{
+      console.log("User canceled the update.");
+    }
+    
   };
 
   const handleRemove = () => {
@@ -119,7 +128,7 @@ const Homescreen = () => {
         })
         .catch(err => {
           console.error('Error:', err.response ? err.response.data : err.message);
-          setErrorMessage('An error occurred while deleting the item.');
+          setErrorMessage(err.response.data.error);
         })
     }
     else{
@@ -183,7 +192,7 @@ const Homescreen = () => {
                 <HStack spacing={2} width="100%">
                   <VStack spacing={1} width="75%">
                     <FormLabel  marginTop="5px" textAlign='left' marginBottom="5px">Location</FormLabel>
-                    <Input value={location} type='text' bg="white" width="100%" placeholder='Enter Location' onChange={(e) => setLocation(e.target.value)} />
+                    <Input required value={location} type='text' bg="white" width="100%" placeholder='Enter Location' onChange={(e) => setLocation(e.target.value)} />
                   </VStack>
                   <VStack spacing={1} width="25%">
                     <FormLabel marginTop="5px" marginBottom="5px">Lot</FormLabel>
@@ -231,7 +240,7 @@ const Homescreen = () => {
                   <Input value={packdate} type='date' bg="white" width="100%" onChange={(e) => setPackdate(e.target.value)} />
                 </VStack>
                 <VStack spacing={1} width="32%">
-                  <FormLabel marginTop="5px" marginBottom="5px">Temperature</FormLabel>
+                  <FormLabel marginTop="5px" marginBottom="5px">Temperature (°F)</FormLabel>
                   <Input value={temp} type='number' bg="white" width="100%" placeholder='Enter Temperature' onChange={(e) => setTemp(e.target.value)} />
                 </VStack>
                 <VStack spacing={1} width="32%">
@@ -258,7 +267,7 @@ const Homescreen = () => {
         {/* Area for Object Displaying*/}
         <Flex bg="lightblue" width="50%" height="85%" margin="10px" border="1px" direction="column" justifyContent="flex-start" alignItems="center" overflowY="auto">
           
-          {errorMessage && <Text color="red.500" mb={4}>{errorMessage}</Text>} {/* Display error message if any */}
+          {errorMessage && <Text color="red.500" mb={4}>{errorMessage}</Text>} 
 
           <List spacing={3} width="90%">
             {items.map((item, index) => (
