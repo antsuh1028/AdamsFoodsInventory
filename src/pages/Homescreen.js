@@ -1,4 +1,4 @@
-import {    HStack, Text, Textarea, Input, VStack, Flex, Button, FormControl, FormLabel, Box, List, ListItem 
+import {    HStack, Text, Input, VStack, Flex, Button, FormControl, FormLabel, Box, List, ListItem 
 } from '@chakra-ui/react';
 import React, { useState } from 'react';
 import axios from 'axios'; 
@@ -31,34 +31,56 @@ const Homescreen = () => {
 
   const inputs = {location,lot,vendor,brand,species,description,grade,quantity,weight,packdate,temp,est}
 
-    const handleFind = () => {
-      axios.post('http://localhost:3001/inventoryFind', { inputs })
-      .then(result => {
-        console.log("result:", result.data);
+  const handleAdd = () => {
+    console.log('Inputs:', inputs); // Check the inputs being sent
+    axios.post('http://localhost:3001/inventoryAdd', { inputs })
+        .then(result => {
+            console.log("Result:", result.data);
+            handleClear();
+            setErrorMessage(''); 
+            setShowDetails(false);
+            handleFind();
+          
+        })
+        .catch(err => {
+          // Log detailed error for debugging
+          console.error('Error:', err.response ? err.response.data : err.message);
+          setErrorMessage(err.response.data.error);
 
-        if (result.data.length === 0) {
-          setErrorMessage('No items found. Please try different criteria.');
+          // Clear items and hide details on error
           setItems([]);
-        } else {
-          setItems(result.data);
-          setErrorMessage(''); 
-        }
-
-      })
-      .catch(err => {
-        console.log(err);
-        setErrorMessage('No Item Found');
+          setShowDetails(false);
       });
-  };
-    //Used for Display Area
-    const handleItemClick = (item) => {
-      setSelectedItem(item); 
-      setShowDetails(true); 
-    };
+  }
 
+
+
+  const handleFind = () => {
+    axios.post('http://localhost:3001/inventoryFind', { inputs })
+    .then(result => {
+      console.log("result:", result.data);
+
+      if (result.data.length === 0) {
+        setErrorMessage('No items found. Please try different criteria.');
+        setItems([]);
+        setShowDetails(false);
+      } else {
+        setItems(result.data);
+        setErrorMessage(''); 
+        setShowDetails(false);
+      }
+
+    })
+    .catch(err => {
+      console.log(err);
+      setErrorMessage('No Item Found');
+    });
+  };
+
+  //inventoryUpdate
   const handleUpdate = (e) => {  
     e.preventDefault(); // Prevents the default form submission behavior
-    axios.post('http://localhost:3001/update', { inputs }) // Assuming you have an endpoint for submission
+    axios.post('http://localhost:3001/inventoryUpdate', { inputs }) // Assuming you have an endpoint for submission
     .then(result => {
       console.log("result:", result.data);
 
@@ -69,6 +91,7 @@ const Homescreen = () => {
         setItems([result.data]);
         setShowDetails(false)
         setErrorMessage('')
+        handleClear()
       }
 
     })
@@ -80,10 +103,48 @@ const Homescreen = () => {
     });
   };
 
-  const handleDelete = () => {
+  const handleRemove = () => {
     console.log('Delete:', inputs);
+
+    const userConfirmed = window.confirm("Are you sure you want to delete this item?");
+
+    if (userConfirmed){
+      axios.post('http://localhost:3001/inventoryRemove', { inputs })
+        .then(result =>{
+          console.log("Result:", result.data);
+          setErrorMessage(''); 
+          setShowDetails(false);
+          setItems([]);
+          handleClear();
+        })
+        .catch(err => {
+          console.error('Error:', err.response ? err.response.data : err.message);
+          setErrorMessage('An error occurred while deleting the item.');
+        })
+    }
+    else{
+      console.log("User canceled the deletion.");
+    }
+
   };
 
+  //clears the form
+  const handleClear = () => {
+    setLocation("");
+    setLot("");
+    setVendor("");
+    setBrand("");
+    setSpecies("");
+    setDescription("");
+    setGrade("");
+    setQuantity("");
+    setWeight("");
+    setPackdate("");
+    setTemp("");
+    setEst("");
+  }
+
+  //sets the inputs
   const handleSet = (item) => {
     console.log('Setting...');
     console.log(item)
@@ -102,29 +163,21 @@ const Homescreen = () => {
 
   }
 
-  const handleClear = () => {
-    setLocation("");
-    setLot("");
-    setVendor("");
-    setBrand("");
-    setSpecies("");
-    setDescription("");
-    setGrade("");
-    setQuantity("");
-    setWeight("");
-    setPackdate("");
-    setTemp("");
-    setEst("");
-  }
+  
 
+  //Used for Display Area
+  const handleItemClick = (item) => {
+    setSelectedItem(item); 
+    setShowDetails(true); 
+  };
   
   return (
     <>
       <Navbar />
       <Flex width="100vw" height="100vh" alignItems="center" justifyContent="space-between" bg="lightblue" pt="60px">
         <Flex bg="lightblue" width="80%" height="90%" margin="10px" border="1px" direction="column" justifyContent="flex-start" alignItems="center" overflowY="auto">
-          <form onSubmit={handleUpdate}>
-            <FormControl>
+          
+            <FormControl width=''>
               <VStack spacing={2} alignItems="center">
               
                 <HStack spacing={2} width="100%">
@@ -189,16 +242,16 @@ const Homescreen = () => {
               </VStack>
             </FormControl>
 
-            <Flex alignItems="center" mt="20px" width='100%'>
-              <HStack spacing="4">
-                <Button bg="green.200" margin="20px" >Add</Button>
+            <Flex alignItems="center" justifyContent="center" mt="20px" width='100%'>
+              <HStack spacing="5">
+                <Button bg="green.200" margin="20px" onClick={handleAdd}>Add</Button>
                 <Button bg="white" margin="20px" onClick={handleFind}>Find</Button>
                 <Button bg="white" margin="20px" onClick={handleUpdate} type="submit">Update</Button>
-                <Button bg="white" margin="20px" onClick={handleDelete}>Delete</Button>
+                <Button bg="white" margin="20px" onClick={handleRemove}>Remove</Button>
                 <Button bg="red.200" margin="20px" onClick={handleClear}>Clear</Button>
               </HStack>
             </Flex>
-          </form>
+          
         </Flex>
 
 
