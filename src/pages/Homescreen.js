@@ -1,6 +1,6 @@
-import {    HStack, Text, Input, VStack, Flex, Button, FormControl, FormLabel, Box, List, ListItem 
+import { Select, HStack, Text, Input, VStack, Flex, Button, FormControl, FormLabel, Box, List, ListItem, 
 } from '@chakra-ui/react';
-import React, { useState } from 'react';
+import React, { useState} from 'react';
 import axios from 'axios'; 
 import Navbar from './Navbar';
 
@@ -26,16 +26,18 @@ const Homescreen = () => {
   const [items, setItems] = useState([]); 
   const [showDetails, setShowDetails] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [errorMessage, setErrorMessage] = useState(''); // State to hold error message
+  const [errorMessage, setErrorMessage] = useState('');
 
 
   const inputs = {location,lot,vendor,brand,species,description,grade,quantity,weight,packdate,temp,est}
 
+  
+
   const handleAdd = () => {
-    console.log('Inputs:', inputs); // Check the inputs being sent
+    console.log('Inputs:', inputs); 
     axios.post('http://localhost:3001/inventoryAdd', { inputs })
         .then(result => {
-            console.log("Result:", result.data);
+            // console.log("Result:", result.data);
             handleClear();
             setErrorMessage(''); 
             setShowDetails(false);
@@ -43,11 +45,9 @@ const Homescreen = () => {
           
         })
         .catch(err => {
-          // Log detailed error for debugging
           console.error('Error:', err.response ? err.response.data : err.message);
           setErrorMessage(err.response.data.error);
 
-          // Clear items and hide details on error
           setItems([]);
           setShowDetails(false);
       });
@@ -58,14 +58,17 @@ const Homescreen = () => {
   const handleFind = () => {
     axios.post('http://localhost:3001/inventoryFind', { inputs })
     .then(result => {
-      console.log("result:", result.data);
+      // console.log("result:", result.data);
 
       if (result.data.length === 0) {
         setErrorMessage('No items found. Please try different criteria.');
         setItems([]);
         setShowDetails(false);
       } else {
-        setItems(result.data);
+        const sortedItems = result.data.sort((a, b) => a.location.localeCompare(b.location));
+        setItems(sortedItems);
+        setErrorMessage(''); 
+        setShowDetails(false);
         setErrorMessage(''); 
         setShowDetails(false);
       }
@@ -73,6 +76,8 @@ const Homescreen = () => {
     })
     .catch(err => {
       console.log(err);
+      setItems([]);
+      setShowDetails(false);
       setErrorMessage('No Item Found');
     });
   };
@@ -86,7 +91,7 @@ const Homescreen = () => {
     if (userConfirmed){
       axios.post('http://localhost:3001/inventoryUpdate', { inputs })
         .then(result => {
-          console.log("result:", result.data);
+          // console.log("result:", result.data);
 
           if (result.data.length === 0) {
             setErrorMessage('No items found. Please try different criteria.');
@@ -103,7 +108,7 @@ const Homescreen = () => {
           console.log(err);
           setErrorMessage(err.response.data.error);
           setItems([]);
-            setShowDetails(false)
+          setShowDetails(false)
         });
     }
     else{
@@ -128,6 +133,8 @@ const Homescreen = () => {
         })
         .catch(err => {
           console.error('Error:', err.response ? err.response.data : err.message);
+          setItems([]);
+          setShowDetails(false);
           setErrorMessage(err.response.data.error);
         })
     }
@@ -172,18 +179,19 @@ const Homescreen = () => {
 
   }
 
-  
 
   //Used for Display Area
   const handleItemClick = (item) => {
     setSelectedItem(item); 
     setShowDetails(true); 
   };
-  
+
+ 
   return (
     <>
       <Navbar />
       <Flex width="100vw" height="100vh" alignItems="center" justifyContent="space-between" bg="lightblue" pt="60px">
+        
         <Flex bg="lightblue" width="80%" height="90%" margin="10px" border="1px" direction="column" justifyContent="flex-start" alignItems="center" overflowY="auto">
           
             <FormControl width=''>
@@ -211,7 +219,12 @@ const Homescreen = () => {
                   </VStack>
                   <VStack spacing={1} width="33%">
                     <FormLabel marginTop="5px" marginBottom="5px">Species</FormLabel>
-                    <Input value={species} type='text' bg="white" width="100%" placeholder='Enter Species' onChange={(e) => setSpecies(e.target.value)} />
+                    <Select value={species} bg="white" width="100%" placeholder='Select Species' onChange={(e) => setSpecies(e.target.value)} >
+                      <option value='Beef'>Beef</option>
+                      <option value='Prok'>Pork</option>
+                      <option value='Chicken'>Chicken</option>
+                      <option value='Lamb'>Lamb</option>
+                    </Select>
                   </VStack>
                   
                 </HStack>
@@ -222,7 +235,14 @@ const Homescreen = () => {
                 <HStack spacing={4} width="100%">
                   <VStack spacing={1} width="32%">
                     <FormLabel marginTop="5px" marginBottom="5px">Grade</FormLabel>
-                    <Input value={grade} type='text' bg="white" width="100%" placeholder='Enter Grade' onChange={(e) => setGrade(e.target.value)} />
+                    <Select value={grade} bg="white" width="100%" placeholder='Select Grade' onChange={(e) => setGrade(e.target.value)} >
+                      <option value='Wagyu'>Wagyu</option>
+                      <option value='Prime'>Prime</option>
+                      <option value='Choice'>Choice</option>
+                      <option value='No Roll/Ongrade'>No Roll/Ongrade</option>
+                      <option value='Select'>Select</option>
+                      <option value='Other'>Other</option>
+                    </Select>
                   </VStack>
                   <VStack spacing={1} width="32%">
                     <FormLabel marginTop="5px" marginBottom="5px">Quantity</FormLabel>
@@ -265,7 +285,8 @@ const Homescreen = () => {
 
 
         {/* Area for Object Displaying*/}
-        <Flex bg="lightblue" width="50%" height="85%" margin="10px" border="1px" direction="column" justifyContent="flex-start" alignItems="center" overflowY="auto">
+        <VStack bg="lightblue" width="50%" height="90%" margin="10px"  direction="column" justifyContent="flex-start" alignItems="center" >
+        <Flex bg="lightblue" width="100%" height="100%" margin="10px" border="1px" direction="column" justifyContent="flex-start" alignItems="center" overflowY="auto">
           
           {errorMessage && <Text color="red.500" mb={4}>{errorMessage}</Text>} 
 
@@ -302,10 +323,13 @@ const Homescreen = () => {
             </Box>
           )}
         </Flex>
-
+        </VStack>
       </Flex>
+      
     </>
+    
   );
 };
+
 
 export default Homescreen;
