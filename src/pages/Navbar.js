@@ -28,7 +28,7 @@ import {
   TabPanel,
 } from "@chakra-ui/react";
 import { HamburgerIcon } from "@chakra-ui/icons";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import readXlsxFile from "read-excel-file";
 import axios from "axios";
@@ -274,6 +274,15 @@ const ShowDrawer = ({
   onMapOpen,
   onDrawerClose,
 }) => {
+  const navigate = useNavigate();
+  const handleLogout = () => {
+    // Clear the authentication token from localStorage or sessionStorage
+    localStorage.removeItem("token"); // Assuming you stored the JWT token in localStorage
+    navigate("/"); 
+    // Redirect the user to the login page
+    window.location.href = "/"; // Alternatively, use history.push('/') if using React Router's history object
+  };
+
   return (
     <Drawer placement="left" onClose={onClose} isOpen={isOpen}>
       <DrawerOverlay />
@@ -305,7 +314,11 @@ const ShowDrawer = ({
           </Button>
         </Stack>
         <DrawerFooter justifyContent="center">
-          <Button bg="red.400" as={Link} to="/" _hover={{ bg: "red.500" }}>
+          <Button
+            bg="red.400"
+            _hover={{ bg: "red.500" }}
+            onClick={handleLogout} // Call the logout function here
+          >
             Log Out
           </Button>
         </DrawerFooter>
@@ -313,6 +326,7 @@ const ShowDrawer = ({
     </Drawer>
   );
 };
+
 
 const Navbar = () => {
   const {

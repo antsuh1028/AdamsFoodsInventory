@@ -12,6 +12,8 @@ import {
   InputRightElement,
   Button,
   VStack,
+  Alert,
+  AlertIcon,
 } from "@chakra-ui/react";
 import { EmailIcon, UnlockIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
@@ -20,22 +22,33 @@ import axios from "axios";
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [error, setError] = useState(""); // To display error messages
   const navigate = useNavigate();
 
-  const [show, setShow] = useState(false);
   const handleClick = () => setShow(!show);
 
   const handleSubmit = (e) => {
-    e.preventDefault(); // Prevents the default form submission behavior
+    e.preventDefault();
+    setError(""); // Reset error state before making request
+
     axios
       .post("http://localhost:3001/login", { email, password })
       .then((result) => {
-        console.log(result);
-        if (result.data === "Success") {
+        if (result.data.message === "Success") {
+          // Save the JWT token in localStorage
+          localStorage.setItem("token", result.data.token);
+          
+          // Navigate to loading screen or the homepage
           navigate("/loading...");
+        } else {
+          setError(result.data.message); // Set the error message returned by the server
         }
       })
-      .catch((err) => console.log(err));
+      .catch((err) => {
+        console.error(err);
+        setError("An error occurred. Please try again."); // Set general error message
+      });
   };
 
   return (
@@ -82,14 +95,21 @@ const Login = () => {
             <VStack bg="white" borderRadius="md" width="60vh" height="50vh">
               <Text
                 fontSize="4xl"
-                font
-                color="black"
                 fontWeight="500"
                 fontFamily="sans-serif"
                 marginTop="10px"
               >
                 Login
               </Text>
+
+              {/* Show error alert if there's an error */}
+              {error && (
+                <Alert status="error">
+                  <AlertIcon />
+                  {error}
+                </Alert>
+              )}
+
               <form onSubmit={handleSubmit}>
                 <Stack spacing={3}>
                   <InputGroup>
@@ -100,15 +120,13 @@ const Login = () => {
                       type="email"
                       placeholder="Enter Email"
                       onChange={(e) => setEmail(e.target.value)}
+                      value={email}
+                      required
                     />
                   </InputGroup>
 
                   <InputGroup>
-                    <InputLeftElement
-                      pointerEvents="none"
-                      color="gray.300"
-                      fontSize="1.2em"
-                    >
+                    <InputLeftElement pointerEvents="none" color="gray.300">
                       <UnlockIcon />
                     </InputLeftElement>
                     <Input
@@ -116,6 +134,8 @@ const Login = () => {
                       pr="4.5rem"
                       placeholder="Enter Password"
                       onChange={(e) => setPassword(e.target.value)}
+                      value={password}
+                      required
                     />
                     <InputRightElement>
                       <Button
