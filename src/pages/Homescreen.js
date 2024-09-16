@@ -11,6 +11,12 @@ import {
   Box,
   List,
   ListItem,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  useToast
 } from "@chakra-ui/react";
 import React, { useState } from "react";
 import axios from "axios";
@@ -35,7 +41,7 @@ const Homescreen = () => {
   const [items, setItems] = useState([]);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [currentItem, setCurrentItem] = useState(null);
 
   const inputs = {
     location,
@@ -52,20 +58,52 @@ const Homescreen = () => {
     est,
   };
 
+  const updateInputs = {
+    location,
+    lot,
+    vendor,
+    brand,
+    species,
+    description,
+    grade,
+    quantity,
+    weight,
+    packdate,
+    temp,
+    est,
+    currentItem,
+  };
+
+  const toast = useToast();
+
   //Function that Adds to the Freezer Database
   const handleAdd = () => {
     console.log("Inputs:", inputs);
     axios
       .post("http://localhost:3001/inventoryAdd", { inputs })
       .then((result) => {
+        toast({
+          title: "Adding Item Error",
+          position:"top",
+          description: "Item Successfully Added.",
+          status: "success",
+          duration: 2000,
+          isClosable: true,
+        });
         handleClear();
-        setErrorMessage("");
         setShowDetails(false);
         handleFind();
       })
       .catch((err) => {
-        console.error("Error:", err.response ? err.response.data : err.message);
-        setErrorMessage(err.response.data.error);
+        const message = err.response.data.error
+        toast({
+          title: "Adding Item Error",
+          position:"top",
+          description: message,
+          status: "error",  
+          duration: 2000,
+          isClosable: true,
+        });
 
         setItems([]);
         setShowDetails(false);
@@ -74,29 +112,29 @@ const Homescreen = () => {
 
   //Function that Finds a Product based on the Input Fields
   const handleFind = () => {
+
     axios
       .post("http://localhost:3001/inventoryFind", { inputs })
       .then((result) => {
-        if (result.data.length === 0) {
-          setErrorMessage("No items found. Please try different criteria.");
-          setItems([]);
-          setShowDetails(false);
-        } else {
-          const sortedItems = result.data.sort((a, b) =>
-            a.location.localeCompare(b.location)
-          );
-          setItems(sortedItems);
-          setErrorMessage("");
-          setShowDetails(false);
-          setErrorMessage("");
-          setShowDetails(false);
-        }
+        const sortedItems = result.data.sort((a, b) =>
+          a.location.localeCompare(b.location)
+        );
+        setItems(sortedItems);
+        setShowDetails(false);
+        setShowDetails(false);
       })
       .catch((err) => {
-        console.log(err);
+        const message = err.response.data.error
+        toast({
+          title: "Finding Item Error",
+          position:"top",
+          description: message,
+          status: "error",
+          duration: 2000,
+          isClosable: true,
+        });
         setItems([]);
         setShowDetails(false);
-        setErrorMessage("No Item Found");
       });
   };
 
@@ -110,21 +148,31 @@ const Homescreen = () => {
 
     if (userConfirmed) {
       axios
-        .post("http://localhost:3001/inventoryUpdate", { inputs })
+        .post("http://localhost:3001/inventoryUpdate", { updateInputs })
         .then((result) => {
-          if (result.data.length === 0) {
-            setErrorMessage("No items found. Please try different criteria.");
-            setItems([]);
-          } else {
-            setItems([result.data]);
-            setShowDetails(false);
-            setErrorMessage("");
-            handleClear();
-          }
+          toast({
+            title: "Update Item Success",
+            position:"top",
+            description: "Successfully Updated Item",
+            status: "success",
+            duration: 2000,
+            isClosable: true,
+          });
+          setItems([result.data]);
+          setShowDetails(false);
+          setCurrentItem(null)
+          handleClear();
         })
         .catch((err) => {
-          console.log(err);
-          setErrorMessage(err.response.data.error);
+          const message = err.response.data.error
+          toast({
+            title: "Update Item Error",
+            position:"top",
+            description: message,
+            status: "error",
+            duration: 2000,
+            isClosable: true,
+          });
           setItems([]);
           setShowDetails(false);
         });
@@ -138,28 +186,65 @@ const Homescreen = () => {
     const userConfirmed = window.confirm(
       "Are you sure you want to delete this item?"
     );
-
-    if (userConfirmed) {
-      axios
-        .post("http://localhost:3001/inventoryRemove", { inputs })
-        .then((result) => {
-          console.log("Result:", result.data);
-          setErrorMessage("");
+    console.log(currentItem)
+    if (!currentItem){
+      toast({
+        title: "Remove Item Error",
+        position:"top",
+        description: "Set Item you would like to Remove.",
+        status: "error",
+        duration: 2000,
+        isClosable: true,
+      });
+    }else{
+      if (userConfirmed) {
+        if (location == currentItem.location){
+          
+          axios
+            .post("http://localhost:3001/inventoryRemove", { currentItem })
+            .then((result) => {
+              toast({
+                title: "Remove Item Success",
+                position:"top",
+                description: "Successfully Removed Item",
+                status: "success",
+                duration: 2000,
+                isClosable: true,
+              });
+              setShowDetails(false);
+              setItems([]);
+              setCurrentItem(null)
+              handleClear();
+            })
+            .catch((err) => {
+              const message = err.response.data.error
+              toast({
+                title: "Remove Item Error",
+                position:"top",
+                description: message,
+                status: "error",
+                duration: 2000,
+                isClosable: true,
+              });
+              setItems([]);
+              setShowDetails(false);
+            });
+        }else{
+          toast({
+            title: "Remove Item Error",
+            position:"top",
+            description: "Set Item you would like to Remove.",
+            status: "error",
+            duration: 2000,
+            isClosable: true,
+          });
           setShowDetails(false);
           setItems([]);
-          handleClear();
-        })
-        .catch((err) => {
-          console.error(
-            "Error:",
-            err.response ? err.response.data : err.message
-          );
-          setItems([]);
-          setShowDetails(false);
-          setErrorMessage(err.response.data.error);
-        });
-    } else {
-      console.log("User canceled the deletion.");
+        };
+  
+      } else {
+        console.log("User canceled the deletion.");
+      }
     }
   };
 
@@ -177,6 +262,8 @@ const Homescreen = () => {
     setPackdate("");
     setTemp("");
     setEst("");
+
+    setCurrentItem(null)
   };
 
   //Function that Sets the detailed information into Inputs on the Form
@@ -193,6 +280,8 @@ const Homescreen = () => {
     setPackdate(item.packdate || "");
     setTemp(item.temp || "");
     setEst(item.est || "");
+
+    setCurrentItem(item);
   };
 
   //Used for Display Area
@@ -200,6 +289,40 @@ const Homescreen = () => {
     setSelectedItem(item);
     setShowDetails(true);
   };
+
+  const handleTabClick = () => {
+    setShowDetails(false);
+  };
+
+  const DetailsPanel = ({ item, onClose, onSet }) => (
+    showDetails && item && (
+      <Box
+        p={4}
+        bg="white"
+        borderWidth="1px"
+        borderRadius="md"
+        mt={4}
+        width="90%"
+      >
+        <Text fontWeight="bold">Location: {item.location}</Text>
+        <Text>Lot: {item.lot}</Text>
+        <Text>Vendor: {item.vendor}</Text>
+        <Text>Brand: {item.brand}</Text>
+        <Text>Species: {item.species}</Text>
+        <Text>Description: {item.description}</Text>
+        <Text>Grade: {item.grade}</Text>
+        <Text>Quantity: {item.quantity}</Text>
+        <Text>Weight: {item.weight}</Text>
+        <Text>Pack Date: {item.packdate}</Text>
+        <Text>Temperature: {item.temp}</Text>
+        <Text>EST#: {item.est}</Text>
+        <Flex width="100%" justifyContent="center" mt={4}>
+          <Button marginRight="10px" onClick={() => onSet(item)}>Set</Button>
+          <Button onClick={onClose}>Close</Button>
+        </Flex>
+      </Box>
+    )
+  );
 
   return (
     <>
@@ -451,71 +574,145 @@ const Homescreen = () => {
           justifyContent="flex-start"
           alignItems="center"
         >
-          <Flex
-            bg="lightblue"
-            width="100%"
-            height="100%"
-            margin="10px"
-            border="1px"
-            direction="column"
-            justifyContent="flex-start"
-            alignItems="center"
-            overflowY="auto"
-          >
-            {errorMessage && (
-              <Text color="red.500" mb={4}>
-                {errorMessage}
-              </Text>
-            )}
+          <Tabs variant="enclosed" width="100%" height="100%">
+            <TabList>
+              <Tab bg="lightblue" border="1px" onClick={handleTabClick}>
+                Level 1
+              </Tab>
+              <Tab bg="lightblue" border="1px" onClick={handleTabClick}>
+                Level 2
+              </Tab>
+              <Tab bg="lightblue" border="1px" onClick={handleTabClick}>
+                Level 3
+              </Tab>
+            </TabList>
 
-            <List spacing={3} width="90%">
-              {items.map((item, index) => (
-                <ListItem key={index} onClick={() => handleItemClick(item)}>
-                  <Box
-                    p={3}
-                    shadow="md"
-                    borderWidth="1px"
-                    borderRadius="md"
-                    bg="white"
-                    cursor="pointer"
-                    _hover={{ bg: "gray.100" }}
-                  >
-                    {`Item ${index + 1}: ${item.location} - ${
-                      item.description
-                    }`}
-                  </Box>
-                </ListItem>
-              ))}
-            </List>
-
-            {showDetails && selectedItem && (
-              <Box
-                p={4}
-                bg="white"
-                borderWidth="1px"
-                borderRadius="md"
-                mt={4}
-                width="90%"
-              >
-                <Text fontWeight="bold">Location: {selectedItem.location}</Text>
-                <Text>Lot: {selectedItem.lot}</Text>
-                <Text>Vendor: {selectedItem.vendor}</Text>
-                <Text>Brand: {selectedItem.brand}</Text>
-                <Text>Species: {selectedItem.species}</Text>
-                <Text>Description: {selectedItem.description}</Text>
-                <Text>Grade: {selectedItem.grade}</Text>
-                <Text>Quantity: {selectedItem.quantity}</Text>
-                <Text>Weight: {selectedItem.weight}</Text>
-                <Text>Pack Date: {selectedItem.packdate}</Text>
-                <Text>Temperature: {selectedItem.temp}</Text>
-                <Text>EST#: {selectedItem.est}</Text>
-
-                <Flex width="100%" justifyContent="center" mt={4}>
-                  <Button onClick={() => handleSet(selectedItem)}>Set</Button>
+            <TabPanels border="1px" height="90%">
+              {/* Level 1 Panel */}
+              <TabPanel height="100%">
+                <Flex
+                  bg="lightblue"
+                  width="100%"
+                  height="100%"
+                  direction="column"
+                  justifyContent="flex-start"
+                  alignItems="center"
+                  overflowY="auto"
+                >
+                  <List spacing={3} width="90%">
+                    {items
+                      .filter((item) => item.location[1] === "1")
+                      .map((item, index) => (
+                        <ListItem
+                          key={index}
+                          onClick={() => handleItemClick(item)}
+                        >
+                          <Box
+                            p={3}
+                            shadow="md"
+                            marginTop="10px"
+                            borderWidth="1px"
+                            borderRadius="md"
+                            bg="gray.100"
+                            cursor="pointer"
+                            _hover={{ bg: "gray.200" }}
+                          >
+                            {`Level 1: ${item.location} - ${item.description}`}
+                          </Box>
+                        </ListItem>
+                      ))}
+                  </List>
+                  <DetailsPanel
+                    item={selectedItem}
+                    onSet={handleSet}
+                  />
                 </Flex>
-              </Box>
-            )}
-          </Flex>
+              </TabPanel>
+
+              {/* Level 2 Panel */}
+              <TabPanel height="100%">
+                <Flex
+                  bg="lightblue"
+                  width="100%"
+                  height="100%"
+                  direction="column"
+                  justifyContent="flex-start"
+                  alignItems="center"
+                  overflowY="auto"
+                >
+                  <List spacing={3} width="90%">
+                    {items
+                      .filter((item) => item.location[1] === "2")
+                      .map((item, index) => (
+                        <ListItem
+                          key={index}
+                          onClick={() => handleItemClick(item)}
+                        >
+                          <Box
+                            p={3}
+                            shadow="md"
+                            borderWidth="1px"
+                            borderRadius="md"
+                            bg="gray.100"
+                            cursor="pointer"
+                            _hover={{ bg: "gray.200" }}
+                          >
+                            {`Level 2: ${item.location} - ${item.description}`}
+                          </Box>
+                        </ListItem>
+                      ))}
+                  </List>
+                  <DetailsPanel
+                    item={selectedItem}
+                    onSet={handleSet}
+                  />
+                </Flex>
+              </TabPanel>
+
+              {/* Level 3 Panel */}
+              <TabPanel height="100%">
+                <Flex
+                  bg="lightblue"
+                  width="100%"
+                  height="100%"
+                  direction="column"
+                  justifyContent="flex-start"
+                  alignItems="center"
+                  overflowY="auto"
+                >
+                  <List spacing={3} width="90%">
+                    {items
+                      .filter(
+                        (item) =>
+                          item.location[1] !== "1" && item.location[1] !== "2"
+                      )
+                      .map((item, index) => (
+                        <ListItem
+                          key={index}
+                          onClick={() => handleItemClick(item)}
+                        >
+                          <Box
+                            p={3}
+                            shadow="md"
+                            borderWidth="1px"
+                            borderRadius="md"
+                            bg="gray.100"
+                            cursor="pointer"
+                            _hover={{ bg: "gray.200" }}
+                          >
+                            {`Level 3: ${item.location} - ${item.description}`}
+                          </Box>
+                        </ListItem>
+                      ))}
+                  </List>
+                  <DetailsPanel
+                    item={selectedItem}
+                    onSet={handleSet}
+                  />
+                </Flex>
+              </TabPanel>
+            </TabPanels>
+          </Tabs>
         </VStack>
       </Flex>
     </>

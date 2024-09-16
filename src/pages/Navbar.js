@@ -26,6 +26,7 @@ import {
   TabPanels,
   Tab,
   TabPanel,
+  useToast,
 } from "@chakra-ui/react";
 import { HamburgerIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
@@ -35,6 +36,7 @@ import axios from "axios";
 
 function UploadFile({ isOpen, onClose }) {
   const [selectedFile, setSelectedFile] = useState(null);
+  const toast = useToast();
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -53,7 +55,7 @@ function UploadFile({ isOpen, onClose }) {
     }
   };
 
-  //Function that Reads Excel File and then uses Add function to input it inpt the Freezer Database
+  //Function that Reads Excel File and then uses Add function to Input it into the Freezer Database
   const handleUpload = () => {
     if (selectedFile) {
       readXlsxFile(selectedFile).then((rows) => {
@@ -90,56 +92,97 @@ function UploadFile({ isOpen, onClose }) {
               finalRows.splice(i, 1);
             }
           }
+
           console.log("Cleaned rows:", finalRows);
 
-          //Connect to backend and Add to the Inventory
-          finalRows.forEach((row) => {
-            const [
-              location,
-              lot,
-              vendor,
-              brand,
-              species,
-              description,
-              grade,
-              quantity,
-              weight,
-              packdate,
-              temp,
-              est,
-            ] = row;
+          const validationPromises = finalRows.map((row) =>
+            axios.post("http://localhost:3001/verifyLocation", {
+              location: row[0],
+            })
+          );
+          console.log("done");
+          console.log(validationPromises);
 
-            const data = {
-              inputs: {
-                location: location ? location.toUpperCase() : "",
-                lot,
-                vendor,
-                brand,
-                species,
-                description,
-                grade,
-                quantity,
-                weight,
-                packdate,
-                temp,
-                est,
-              },
-            };
+          // Wait for all validation requests to complete
+          Promise.all(validationPromises)
+            .then((responses) => {
+              console.log("All locations validated successfully");
 
-            axios
-              .post("http://localhost:3001/inventoryAdd", data)
-              .then((response) => {
-                console.log("Item added successfully:", response.data);
-                onClose();
-              })
-              .catch((error) => {
-                console.error("Error adding item:", error);
-                alert(
-                  "An error occurred while adding an item to the inventory."
-                );
+              finalRows.forEach((row) => {
+                const [
+                  location,
+                  lot,
+                  vendor,
+                  brand,
+                  species,
+                  description,
+                  grade,
+                  quantity,
+                  weight,
+                  packdate,
+                  temp,
+                  est,
+                ] = row;
+
+                const data = {
+                  inputs: {
+                    location: location.toUpperCase(),
+                    lot,
+                    vendor,
+                    brand,
+                    species,
+                    description,
+                    grade,
+                    quantity,
+                    weight,
+                    packdate,
+                    temp,
+                    est,
+                  },
+                };
+
+                // Add to inventory
+                axios
+                  .post("http://localhost:3001/inventoryAdd", data)
+                  .then((response) => {
+                    console.log("Item added successfully:", response.data);
+                  })
+                  .catch((error) => {
+                    console.error("Error adding item to inventory:", error);
+                    toast({
+                      title: "Upload File Error",
+                      position: "top",
+                      description:
+                        "Error adding item to inventory. Please try again.",
+                      status: "error",
+                      duration: 2000,
+                      isClosable: true,
+                    });
+                  });
               });
-          });
-          setSelectedFile(null);
+
+              onClose();
+              toast({
+                title: "Upload File Success",
+                position: "top",
+                description: "File Successfully Uploaded",
+                status: "success",
+                duration: 3000,
+                isClosable: true,
+              });
+              setSelectedFile(null);
+            })
+            .catch((err) => {
+              toast({
+                title: "Upload File Error",
+                position: "top",
+                description: "Error Uploading File",
+                status: "error",
+                duration: 3000,
+                isClosable: true,
+              });
+              onClose();
+            });
         } else {
           alert(
             "Please Upload Appropriate File (Daily Incoming Product Record)"
@@ -278,7 +321,7 @@ const ShowDrawer = ({
   const handleLogout = () => {
     // Clear the authentication token from localStorage or sessionStorage
     localStorage.removeItem("token"); // Assuming you stored the JWT token in localStorage
-    navigate("/"); 
+    navigate("/");
     // Redirect the user to the login page
     window.location.href = "/"; // Alternatively, use history.push('/') if using React Router's history object
   };
@@ -326,7 +369,6 @@ const ShowDrawer = ({
     </Drawer>
   );
 };
-
 
 const Navbar = () => {
   const {
