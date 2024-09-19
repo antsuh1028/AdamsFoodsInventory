@@ -4,6 +4,7 @@ import {
   Box,
   Flex,
   Stack,
+  Text,
   HStack,
   useDisclosure,
   Drawer,
@@ -203,6 +204,7 @@ function UploadFile({ isOpen, onClose }) {
         <ModalBody>
           <FormControl>
             <Box width="90%" padding="4">
+            <Text textAlign="center" fontSize="small">- File must be a "Incoming Product Record Form" -</Text>
               <Input
                 type="file"
                 marginTop="20px"
@@ -227,33 +229,15 @@ function UploadFile({ isOpen, onClose }) {
 }
 
 function ShowMap({ isOpen, onClose }) {
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose}>
+    <Modal isOpen={isOpen} onClose={onClose} size="full">
       <ModalOverlay />
-      <ModalContent>
+      <ModalContent height="100%">
         <ModalHeader>Freezer Map</ModalHeader>
         <ModalCloseButton />
-        <ModalBody>
-          <Tabs>
-            <TabList>
-              <Tab>Level 1</Tab>
-              <Tab>Level 2</Tab>
-              <Tab>Level 3</Tab>
-            </TabList>
-
-            <TabPanels>
-              <TabPanel>
-                <p>one!</p>
-              </TabPanel>
-              <TabPanel>
-                <p>two!</p>
-              </TabPanel>
-              <TabPanel>
-                <p>three!</p>
-              </TabPanel>
-            </TabPanels>
-          </Tabs>
-        </ModalBody>
+        <ModalBody >
+        <iframe title="AF Inventory" width="100%" height="100%" frameborder="0" scrolling="no" src="https://onedrive.live.com/embed?resid=720A4D0EF04E3A43%21242069&authkey=%21AJbqeV0TlnVo1m8&em=2&wdAllowInteractivity=False&ActiveCell='Level%201'!A1&wdInConfigurator=True&wdInConfigurator=True"></iframe>        </ModalBody>
         <ModalFooter>
           <Button variant="ghost" onClick={onClose}>
             Close
@@ -266,7 +250,7 @@ function ShowMap({ isOpen, onClose }) {
 
 function OpenHelp({ isOpen, onClose }) {
   return (
-    <Modal isOpen={isOpen} onClose={onClose}>
+    <Modal isOpen={isOpen} onClose={onClose} size="xl">
       <ModalOverlay />
       <ModalContent>
         <ModalHeader>Help</ModalHeader>
@@ -283,19 +267,22 @@ function OpenHelp({ isOpen, onClose }) {
 
             <TabPanels>
               <TabPanel>
-                <p>one!</p>
+                <Image h="100%" w="100%" src="AF_ADD.gif" alt="InventoryAdd" />
               </TabPanel>
               <TabPanel>
-                <p>two!</p>
+              <Image h="100%" w="100%" src="AF_FIND.gif" alt="InventoryFind" />
               </TabPanel>
               <TabPanel>
-                <p>three!</p>
+                <Image h="100%" w="100%" src="AF_UPDATE.gif" alt="InventoryUpdate" />
+                <Text textAlign="center" fontSize="small">- Set Item before Updating -</Text>
               </TabPanel>
               <TabPanel>
-                <p>four!</p>
+              <Image h="100%" w="100%" src="AF_REMOVE.gif" alt="InventoryRemove" />
+              <Text textAlign="center" fontSize="small">- Set Item before Removing -</Text>
               </TabPanel>
               <TabPanel>
-                <p>five!</p>
+              <Image h="100%" w="100%" src="AF_UPLOAD.gif" alt="UploadFile" />
+              <Text textAlign="center" fontSize="small">- File must be a "Incoming Product Record Form" -</Text>
               </TabPanel>
             </TabPanels>
           </Tabs>

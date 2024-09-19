@@ -2,7 +2,7 @@ import {
   Select,
   HStack,
   Text,
-  Input,
+  InputGroup, Input, InputRightElement, Badge,
   VStack,
   Flex,
   Button,
@@ -21,6 +21,13 @@ import {
 import React, { useState } from "react";
 import axios from "axios";
 import Navbar from "./Navbar";
+
+import addItem from '../utils/addItem';
+import findItem from "../utils/findItem";
+import removeItem from "../utils/removeItem";
+import updateItem from "../utils/updateItem";
+
+
 
 const Homescreen = () => {
   //State for the inputs
@@ -42,6 +49,8 @@ const Homescreen = () => {
   const [showDetails, setShowDetails] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [currentItem, setCurrentItem] = useState(null);
+  const [badgeState, setBadgeState] = useState(null);
+
 
   const inputs = {
     location,
@@ -79,173 +88,30 @@ const Homescreen = () => {
   //Function that Adds to the Freezer Database
   const handleAdd = () => {
     console.log("Inputs:", inputs);
-    axios
-      .post("http://localhost:3001/inventoryAdd", { inputs })
-      .then((result) => {
-        toast({
-          title: "Adding Item Error",
-          position:"top",
-          description: "Item Successfully Added.",
-          status: "success",
-          duration: 2000,
-          isClosable: true,
-        });
-        handleClear();
-        setShowDetails(false);
-        handleFind();
-      })
-      .catch((err) => {
-        const message = err.response.data.error
-        toast({
-          title: "Adding Item Error",
-          position:"top",
-          description: message,
-          status: "error",  
-          duration: 2000,
-          isClosable: true,
-        });
-
-        setItems([]);
-        setShowDetails(false);
-      });
+    addItem(inputs, setShowDetails, setItems, toast);
+    handleClear();
+  
   };
 
   //Function that Finds a Product based on the Input Fields
   const handleFind = () => {
+    findItem(inputs, setItems, setShowDetails, toast);
 
-    axios
-      .post("http://localhost:3001/inventoryFind", { inputs })
-      .then((result) => {
-        const sortedItems = result.data.sort((a, b) =>
-          a.location.localeCompare(b.location)
-        );
-        setItems(sortedItems);
-        setShowDetails(false);
-        setShowDetails(false);
-      })
-      .catch((err) => {
-        const message = err.response.data.error
-        toast({
-          title: "Finding Item Error",
-          position:"top",
-          description: message,
-          status: "error",
-          duration: 2000,
-          isClosable: true,
-        });
-        setItems([]);
-        setShowDetails(false);
-      });
   };
 
   //Function that Updates a Location in the Freezer Database
   const handleUpdate = async (e) => {
     e.preventDefault();
+    updateItem(updateInputs, setItems, setShowDetails, setCurrentItem, toast);
+    handleClear();
 
-    const userConfirmed = window.confirm(
-      "Are you sure you want to update this item?"
-    );
-
-    if (userConfirmed) {
-      axios
-        .post("http://localhost:3001/inventoryUpdate", { updateInputs })
-        .then((result) => {
-          toast({
-            title: "Update Item Success",
-            position:"top",
-            description: "Successfully Updated Item",
-            status: "success",
-            duration: 2000,
-            isClosable: true,
-          });
-          setItems([result.data]);
-          setShowDetails(false);
-          setCurrentItem(null)
-          handleClear();
-        })
-        .catch((err) => {
-          const message = err.response.data.error
-          toast({
-            title: "Update Item Error",
-            position:"top",
-            description: message,
-            status: "error",
-            duration: 2000,
-            isClosable: true,
-          });
-          setItems([]);
-          setShowDetails(false);
-        });
-    } else {
-      console.log("User canceled the update.");
-    }
   };
 
   //Function that Removes the Product from a Location
   const handleRemove = () => {
-    const userConfirmed = window.confirm(
-      "Are you sure you want to delete this item?"
-    );
-    console.log(currentItem)
-    if (!currentItem){
-      toast({
-        title: "Remove Item Error",
-        position:"top",
-        description: "Set Item you would like to Remove.",
-        status: "error",
-        duration: 2000,
-        isClosable: true,
-      });
-    }else{
-      if (userConfirmed) {
-        if (location == currentItem.location){
-          
-          axios
-            .post("http://localhost:3001/inventoryRemove", { currentItem })
-            .then((result) => {
-              toast({
-                title: "Remove Item Success",
-                position:"top",
-                description: "Successfully Removed Item",
-                status: "success",
-                duration: 2000,
-                isClosable: true,
-              });
-              setShowDetails(false);
-              setItems([]);
-              setCurrentItem(null)
-              handleClear();
-            })
-            .catch((err) => {
-              const message = err.response.data.error
-              toast({
-                title: "Remove Item Error",
-                position:"top",
-                description: message,
-                status: "error",
-                duration: 2000,
-                isClosable: true,
-              });
-              setItems([]);
-              setShowDetails(false);
-            });
-        }else{
-          toast({
-            title: "Remove Item Error",
-            position:"top",
-            description: "Set Item you would like to Remove.",
-            status: "error",
-            duration: 2000,
-            isClosable: true,
-          });
-          setShowDetails(false);
-          setItems([]);
-        };
-  
-      } else {
-        console.log("User canceled the deletion.");
-      }
-    }
+    removeItem(currentItem, location, setItems, setShowDetails, setCurrentItem, toast);
+    handleClear();
+    
   };
 
   //Function that Clears All Inputs on the Form
@@ -318,11 +184,30 @@ const Homescreen = () => {
         <Text>EST#: {item.est}</Text>
         <Flex width="100%" justifyContent="center" mt={4}>
           <Button marginRight="10px" onClick={() => onSet(item)}>Set</Button>
-          <Button onClick={onClose}>Close</Button>
+          <Button onClick={() => setShowDetails(false)}>Close</Button>
         </Flex>
       </Box>
     )
   );
+
+  const handleLocationChange = (e) => {
+    const newLocation = e.target.value;
+    setLocation(newLocation);
+    if (newLocation) {
+      axios
+        .post("http://localhost:3001/verifyLocation", { location: newLocation })
+        .then((response) => {
+          if (response.status === 200) {
+            setBadgeState("success");
+          }
+        })
+        .catch((error) => {
+          setBadgeState("error");
+        });
+    } else {
+      setBadgeState(null); 
+    }
+  };
 
   return (
     <>
@@ -351,22 +236,42 @@ const Homescreen = () => {
             <VStack spacing={2} alignItems="center">
               <HStack spacing={2} width="100%">
                 <VStack spacing={1} width="75%">
-                  <FormLabel
+
+                <FormLabel
                     marginTop="5px"
                     textAlign="left"
                     marginBottom="5px"
                   >
                     Location
-                  </FormLabel>
+                </FormLabel>
+
+                <InputGroup size="md">
                   <Input
-                    required
-                    value={location}
-                    type="text"
-                    bg="white"
-                    width="100%"
-                    placeholder="Enter Location"
-                    onChange={(e) => setLocation(e.target.value)}
+                      required
+                      value={location}
+                      type="text"
+                      bg="white"
+                      width="100%"
+                      placeholder="Enter Location"
+                      onChange={(e) => handleLocationChange(e)}
                   />
+                  <InputRightElement width="auto" marginRight='5px'>
+                    {badgeState === "success" && (
+                      <Badge colorScheme="green" p="2">
+                        Valid
+                      </Badge>
+                    )}
+                    {badgeState === "error" && (
+                      <Badge colorScheme="red" p="2">
+                        Invalid
+                      </Badge>
+                    )}
+                    {!badgeState && (
+                      <Badge colorScheme="gray" p="2"/>
+                    )}
+                  </InputRightElement>
+                </InputGroup>
+
                 </VStack>
                 <VStack spacing={1} width="25%">
                   <FormLabel marginTop="5px" marginBottom="5px">
@@ -613,7 +518,7 @@ const Homescreen = () => {
                             marginTop="10px"
                             borderWidth="1px"
                             borderRadius="md"
-                            bg="gray.100"
+                            bg="white"
                             cursor="pointer"
                             _hover={{ bg: "gray.200" }}
                           >
@@ -653,7 +558,7 @@ const Homescreen = () => {
                             shadow="md"
                             borderWidth="1px"
                             borderRadius="md"
-                            bg="gray.100"
+                            bg="white"
                             cursor="pointer"
                             _hover={{ bg: "gray.200" }}
                           >
@@ -696,7 +601,7 @@ const Homescreen = () => {
                             shadow="md"
                             borderWidth="1px"
                             borderRadius="md"
-                            bg="gray.100"
+                            bg="white"
                             cursor="pointer"
                             _hover={{ bg: "gray.200" }}
                           >
