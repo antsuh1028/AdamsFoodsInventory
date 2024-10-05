@@ -8,7 +8,7 @@ function updateItem(updateInputs, setItems, setShowDetails, setCurrentItem, toas
 
   if (userConfirmed) {
     axios
-      .post("http://localhost:3001/inventoryUpdate", { updateInputs })
+      .post("https://server.afdcstorage.com/inventoryUpdate", { updateInputs })
       .then((result) => {
         toast({
           title: "Update Item Success",

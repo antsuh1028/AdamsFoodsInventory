@@ -6,7 +6,7 @@ function addItem(inputs, setShowDetails, setItems, toast) {
 
   
   axios
-    .post("http://localhost:3001/inventoryAdd", { inputs })
+    .post("https://server.afdcstorage.com/inventoryAdd", { inputs })
     .then((result) => {
       toast({
         title: "Item Added Successfully",

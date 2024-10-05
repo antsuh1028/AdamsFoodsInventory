@@ -11,7 +11,7 @@ function removeItem(currentItem, location, setItems, setShowDetails, setCurrentI
     if (currentItem) {
       if (location === currentItem.location) {
         axios
-          .post("http://localhost:3001/inventoryRemove", { currentItem })
+          .post("https://server.afdcstorage.com/inventoryRemove", { currentItem })
           .then((result) => {
             toast({
               title: "Remove Item Success",

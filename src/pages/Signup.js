@@ -10,7 +10,7 @@ const Signup = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault(); // Prevents the default form submission behavior
-    axios.post('http://localhost:3001/signup', { email, password })
+    axios.post('https://server.afdcstorage.com/signup', { email, password })
       .then(result => {
         console.log(result)
       })

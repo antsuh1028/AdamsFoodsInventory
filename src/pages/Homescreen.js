@@ -16,7 +16,8 @@ import {
   TabPanels,
   Tab,
   TabPanel,
-  useToast
+  useToast,
+  Spinner
 } from "@chakra-ui/react";
 import React, { useState } from "react";
 import axios from "axios";
@@ -50,9 +51,11 @@ const Homescreen = () => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [currentItem, setCurrentItem] = useState(null);
   const [badgeState, setBadgeState] = useState(null);
+  const [loading, setLoading] = useState(null);
 
 
-  const inputs = {
+
+  let inputs = {
     location,
     lot,
     vendor,
@@ -86,11 +89,16 @@ const Homescreen = () => {
   const toast = useToast();
 
   //Function that Adds to the Freezer Database
-  const handleAdd = () => {
-    console.log("Inputs:", inputs);
-    addItem(inputs, setShowDetails, setItems, toast);
-    handleClear();
-  
+  const handleAdd = async () => {
+    setLoading(true);
+    try {
+      await addItem(inputs, setShowDetails, setItems, toast);
+      handleClear();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   //Function that Finds a Product based on the Input Fields
@@ -184,7 +192,8 @@ const Homescreen = () => {
         <Text>EST#: {item.est}</Text>
         <Flex width="100%" justifyContent="center" mt={4}>
           <Button marginRight="10px" onClick={() => onSet(item)}>Set</Button>
-          <Button onClick={() => setShowDetails(false)}>Close</Button>
+          <Button >Print</Button>
+          <Button marginLeft="10px" onClick={() => setShowDetails(false)}>Close</Button>
         </Flex>
       </Box>
     )
@@ -193,21 +202,49 @@ const Homescreen = () => {
   const handleLocationChange = (e) => {
     const newLocation = e.target.value;
     setLocation(newLocation);
+
+    inputs = {
+      location:newLocation,
+      lot:"",
+      vendor:"",
+      brand:"",
+      species:"",
+      description:"",
+      grade:"",
+      quantity:"",
+      weight:"",
+      packdate:"",
+      temp:"",
+      est:"",
+    };
     if (newLocation) {
       axios
-        .post("http://localhost:3001/verifyLocation", { location: newLocation })
-        .then((response) => {
-          if (response.status === 200) {
-            setBadgeState("success");
-          }
-        })
-        .catch((error) => {
-          setBadgeState("error");
-        });
+      .post("https://server.afdcstorage.com/verifyLocation", {location:newLocation})
+      .then((result) => {
+        if (result.data === "OK"){
+          axios
+          .post("https://server.afdcstorage.com/inventoryFind", {inputs})
+          .then((response) => {
+            if (response.data === "INVALID"){
+              setBadgeState("out");
+            }else{
+              setBadgeState("in");
+            }
+          })
+          .catch((err) => {
+            setBadgeState("error");
+          });
+        }else{
+          setBadgeState("error")
+        }
+      })
     } else {
       setBadgeState(null); 
     }
   };
+
+  
+
 
   return (
     <>
@@ -256,18 +293,20 @@ const Homescreen = () => {
                       onChange={(e) => handleLocationChange(e)}
                   />
                   <InputRightElement width="auto" marginRight='5px'>
-                    {badgeState === "success" && (
+                    {badgeState === "in" && (
+                      <Badge colorScheme="gray" p="2">
+                        Occupied
+                      </Badge>
+                    )}
+                    {badgeState === "out" && (
                       <Badge colorScheme="green" p="2">
-                        Valid
+                        Empty
                       </Badge>
                     )}
                     {badgeState === "error" && (
                       <Badge colorScheme="red" p="2">
                         Invalid
                       </Badge>
-                    )}
-                    {!badgeState && (
-                      <Badge colorScheme="gray" p="2"/>
                     )}
                   </InputRightElement>
                 </InputGroup>
@@ -445,9 +484,14 @@ const Homescreen = () => {
             width="100%"
           >
             <HStack spacing="5">
-              <Button bg="green.200" margin="20px" onClick={handleAdd}>
-                Add
-              </Button>
+            <Button
+              bg="green.200"
+              margin="20px"
+              onClick={handleAdd}
+              isDisabled={loading}
+            >
+              {loading ? <Spinner /> : 'Add'}
+            </Button>
               <Button bg="white" margin="20px" onClick={handleFind}>
                 Find
               </Button>

@@ -97,7 +97,7 @@ function UploadFile({ isOpen, onClose }) {
           console.log("Cleaned rows:", finalRows);
 
           const validationPromises = finalRows.map((row) =>
-            axios.post("http://localhost:3001/verifyLocation", {
+            axios.post("https://server.afdcstorage.com/verifyLocation", {
               location: row[0],
             })
           );
@@ -144,7 +144,7 @@ function UploadFile({ isOpen, onClose }) {
 
                 // Add to inventory
                 axios
-                  .post("http://localhost:3001/inventoryAdd", data)
+                  .post("https://server.afdcstorage.com/inventoryAdd", data)
                   .then((response) => {
                     console.log("Item added successfully:", response.data);
                   })

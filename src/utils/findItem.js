@@ -3,13 +3,28 @@ import axios from "axios";
 function findItem(inputs, setItems, setShowDetails, toast) {
   
     axios
-      .post("http://localhost:3001/inventoryFind", { inputs })
+      .post("https://server.afdcstorage.com/inventoryFind", { inputs })
       .then((result) => {
-        const sortedItems = result.data.sort((a, b) =>
-          a.location.localeCompare(b.location)
-        );
-        setItems(sortedItems);
-        setShowDetails(false); 
+        if (result.data === "INVALID"){
+          const message = "An error occurred while finding the item.";
+          toast({
+            title: "Finding Item Error",
+            position: "top",
+            description: message,
+            status: "error",
+            duration: 2000,
+            isClosable: true,
+          });
+    
+          setItems([]); 
+          setShowDetails(false); 
+        }else{
+          const sortedItems = result.data.sort((a, b) =>
+            a.location.localeCompare(b.location)
+          );
+          setItems(sortedItems);
+          setShowDetails(false); 
+        }
       })
       .catch((err) => {
         const message = err.response?.data?.error || "An error occurred while finding the item.";
@@ -21,9 +36,6 @@ function findItem(inputs, setItems, setShowDetails, toast) {
           duration: 2000,
           isClosable: true,
         });
-  
-        setItems([]); 
-        setShowDetails(false); 
       });
   }
   

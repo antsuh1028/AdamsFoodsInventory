@@ -33,7 +33,7 @@ const Login = () => {
     setError(""); // Reset error state before making request
 
     axios
-      .post("http://localhost:3001/login", { email, password })
+      .post("https://server.afdcstorage.com/login", { email, password })
       .then((result) => {
         if (result.data.message === "Success") {
           // Save the JWT token in localStorage
