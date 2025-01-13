@@ -6,7 +6,7 @@ function findItem(inputs, setItems, setShowDetails, toast) {
       .post("https://server.afdcstorage.com/inventoryFind", { inputs })
       .then((result) => {
         if (result.data === "INVALID"){
-          const message = "An error occurred while finding the item.";
+          const message = "Could Not Find Item.";
           toast({
             title: "Finding Item Error",
             position: "top",

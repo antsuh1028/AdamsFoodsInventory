@@ -23,11 +23,12 @@ import React, { useState } from "react";
 import axios from "axios";
 import Navbar from "./Navbar";
 
-import addItem from '../utils/addItem';
-import findItem from "../utils/findItem";
-import removeItem from "../utils/removeItem";
-import updateItem from "../utils/updateItem";
+import addItem from '../utils/homescreen/addItem';
+import findItem from "../utils/homescreen/findItem";
+import removeItem from "../utils/homescreen/removeItem";
+import updateItem from "../utils/homescreen/updateItem";
 
+import { FormContext } from '../utils/homescreen/formContext';
 
 
 const Homescreen = () => {
@@ -52,6 +53,22 @@ const Homescreen = () => {
   const [currentItem, setCurrentItem] = useState(null);
   const [badgeState, setBadgeState] = useState(null);
   const [loading, setLoading] = useState(null);
+
+  const formSetters = {
+    setLocation,
+    setLot,
+    setVendor,
+    setBrand,
+    setSpecies,
+    setDescription,
+    setGrade,
+    setQuantity,
+    setWeight,
+    setPackdate,
+    setTemp,
+    setEst,
+    setCurrentItem
+  };
 
 
 
@@ -192,7 +209,7 @@ const Homescreen = () => {
         <Text>EST#: {item.est}</Text>
         <Flex width="100%" justifyContent="center" mt={4}>
           <Button marginRight="10px" onClick={() => onSet(item)}>Set</Button>
-          <Button >Print</Button>
+          <Button onClick>Print</Button>
           <Button marginLeft="10px" onClick={() => setShowDetails(false)}>Close</Button>
         </Flex>
       </Box>
@@ -243,10 +260,8 @@ const Homescreen = () => {
     }
   };
 
-  
-
-
   return (
+    <FormContext.Provider value={formSetters}>
     <>
       <Navbar />
 
@@ -366,7 +381,7 @@ const Homescreen = () => {
                     onChange={(e) => setSpecies(e.target.value)}
                   >
                     <option value="Beef">Beef</option>
-                    <option value="Prok">Pork</option>
+                    <option value="Pork">Pork</option>
                     <option value="Chicken">Chicken</option>
                     <option value="Lamb">Lamb</option>
                   </Select>
@@ -665,6 +680,8 @@ const Homescreen = () => {
         </VStack>
       </Flex>
     </>
+
+    </FormContext.Provider>
   );
 };
 
