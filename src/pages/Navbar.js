@@ -12,7 +12,6 @@ import {
   DrawerHeader,
   DrawerFooter,
   Image,
-  
 } from "@chakra-ui/react";
 
 import { HamburgerIcon } from "@chakra-ui/icons";
@@ -56,9 +55,9 @@ const ShowDrawer = ({
           >
             Show Map
           </Button>
-          <Button 
-            bg="white" 
-            justifyContent="flex-start" 
+          <Button
+            bg="white"
+            justifyContent="flex-start"
             onClick={() => {
               onHistoryOpen();
               onDrawerClose();
@@ -161,10 +160,13 @@ const Navbar = () => {
         onDrawerClose={onDrawerClose}
       />
       <UploadFile isOpen={isUploadOpen} onClose={onUploadClose} />
-      <ShowMap isOpen={isMapOpen} onClose={onMapClose} />
+      <ShowMap
+        isOpen={isMapOpen}
+        onClose={onMapClose}
+        occupiedCells={["A101", "A202"]}
+      />
       <ShowHistory isOpen={isHistoryOpen} onClose={onHistoryClose} />
       <OpenHelp isOpen={isHelpOpen} onClose={onHelpClose} />
-      
     </>
   );
 };
