@@ -1,13 +1,19 @@
 import axios from "axios";
-import findItem from "./findItem"
-
+import findItem from "./findItem";
 
 function addItem(inputs, setShowDetails, setItems, toast) {
-
-  
   axios
-    .post("https://server.afdcstorage.com/inventoryAdd", { inputs })
+    // .post("https://server.afdcstorage.com/inventoryAdd", { inputs })
+
+    .post("http://localhost:3001/inventoryAdd", { inputs })
     .then((result) => {
+      return axios.post("http://localhost:3001/addHistory", {
+        ...inputs,
+        change: "ADD",
+        time: new Date().toLocaleString(),
+      });
+    })
+    .then(() => {
       toast({
         title: "Item Added Successfully",
         position: "top",
@@ -16,12 +22,11 @@ function addItem(inputs, setShowDetails, setItems, toast) {
         duration: 2000,
         isClosable: true,
       });
-
       setShowDetails(false);
-      findItem(inputs, setItems, setShowDetails); 
+      findItem(inputs, setItems, setShowDetails);
     })
     .catch((err) => {
-      const message = err.response?.data?.error || "An error occurred"; // Check if error response exists
+      const message = err.response?.data?.error || "An error occurred";
       toast({
         title: "Adding Item Error",
         position: "top",
@@ -30,12 +35,9 @@ function addItem(inputs, setShowDetails, setItems, toast) {
         duration: 2000,
         isClosable: true,
       });
-
-      setItems([]); // Clear items on error
-      setShowDetails(false); // Close details section on error
+      setItems([]);
+      setShowDetails(false);
     });
 }
 
 export default addItem;
-
-

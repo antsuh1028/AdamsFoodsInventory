@@ -4,6 +4,7 @@ function findItem(inputs, setItems, setShowDetails, toast) {
   
     axios
       .post("https://server.afdcstorage.com/inventoryFind", { inputs })
+
       .then((result) => {
         if (result.data === "INVALID"){
           if (toast) {

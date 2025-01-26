@@ -216,7 +216,7 @@ const Homescreen = () => {
           <Button marginRight="10px" onClick={() => onSet(item)}>
             Set
           </Button>
-          <Button onClick>Print</Button>
+          <Button>Print</Button>
           <Button marginLeft="10px" onClick={() => setShowDetails(false)}>
             Close
           </Button>

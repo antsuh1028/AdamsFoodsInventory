@@ -33,15 +33,11 @@ import {
 
 import findItem from "../homescreen/findItem";
 import getLocations from "./getLocations";
-import { FormContext } from '../homescreen/formContext.js';
+import { FormContext } from "../homescreen/formContext.js";
 
-
-
-const InfoPopover = ({ info, position, onClose, onModalClose  }) => {
+const InfoPopover = ({ info, position, onClose, onModalClose }) => {
   const formSetters = useContext(FormContext);
-  if (!info.length){ return null};
-
-  
+  if (!info.length) return null;
 
   const handleSet = (item) => {
     formSetters.setLocation(item.location || "");
@@ -57,10 +53,8 @@ const InfoPopover = ({ info, position, onClose, onModalClose  }) => {
     formSetters.setTemp(item.temp || "");
     formSetters.setEst(item.est || "");
     formSetters.setCurrentItem(item);
-    onClose(); 
-    onModalClose(); // Close the entire modal
-
-    
+    onClose();
+    onModalClose();
   };
 
   return (
@@ -75,9 +69,18 @@ const InfoPopover = ({ info, position, onClose, onModalClose  }) => {
       borderRadius="md"
       p={4}
       zIndex={1400}
-      overflowY="auto"
+      maxHeight="80vh"
+      width="20vw"
+      maxWidth="500px"
     >
-      <Box fontWeight="bold" mb={2} position="sticky" top={0} bg="white" zIndex={10}>
+      <Box
+        fontWeight="bold"
+        mb={2}
+        position="sticky"
+        top={0}
+        bg="white"
+        zIndex={10}
+      >
         Product Info
         <Button
           size="sm"
@@ -89,24 +92,46 @@ const InfoPopover = ({ info, position, onClose, onModalClose  }) => {
           ✕
         </Button>
       </Box>
-      {info.map((item, index) => (
-        <>
+      <Box overflowY="auto" maxHeight="calc(85vh - 110px)">
+        {info.map((item, index) => (
           <Box key={index}>
-            <HStack ><Box mb={2} >Location:  </Box><Box mb={2}> Quantity: <strong>{item.quantity}</strong></Box></HStack>
-            
-            <Box mb={2}>Lot #: <strong>{item.lot}</strong></Box>            
-            <HStack><Box mb={2}>Brand: <strong>{item.brand}</strong></Box>
-            <Box mb={2} mr={2}>Grade: <strong>{item.grade}</strong></Box></HStack>
-            <Box mb={2}>Description: <strong>{item.description}</strong></Box>
-            
-            
+            <HStack>
+              <Box mb={2}>
+                Location: <strong>{item.location}</strong>
+              </Box>
+              <Box mb={2}>
+                Quantity: <strong>{item.quantity}</strong>
+              </Box>
+            </HStack>
+            <Box mb={2}>
+              Lot #: <strong>{item.lot}</strong>
+            </Box>
+            <HStack>
+              <Box mb={2}>
+                Brand: <strong>{item.brand}</strong>
+              </Box>
+              <Box mb={2} mr={2}>
+                Grade: <strong>{item.grade}</strong>
+              </Box>
+            </HStack>
+            <Box mb={2}>
+              Description: <strong>{item.description}</strong>
+            </Box>
+            {index < info.length - 1 && (
+              <Box borderBottom="1px" borderColor="gray.200" my={2} />
+            )}
           </Box>
-          {index < info.length - 1 && (
-            <Box borderBottom="1px" borderColor="gray.200" my={2} />
-          )}
-        </>
-      ))}
-      <Box display="flex" gap={2} mt={4} h="10%" w="20vw" maxW="500px">
+        ))}
+      </Box>
+      <Box
+        display="flex"
+        gap={2}
+        mt={4}
+        position="sticky"
+        bottom={0}
+        bg="white"
+        pt={2}
+      >
         <Button size="sm" colorScheme="blue" onClick={() => handleSet(info[0])}>
           Set
         </Button>
@@ -188,7 +213,7 @@ const generateMap = (level, occupiedCells, onSeatClick) => {
         [LEVEL {level}]
       </Text>
 
-      <Box w="100%" >
+      <Box w="100%">
         <Flex justify="space-between" mb={8}>
           <Grid templateColumns="repeat(4, 1fr)" gap={2} w="31%">
             {Object.entries(mappedTopRow).map(([id, seats]) => (
@@ -227,7 +252,7 @@ const generateMap = (level, occupiedCells, onSeatClick) => {
           </Grid>
         </Flex>
 
-        <Flex gap={2} w="100%" flexWrap="wrap" justifyContent="center" >
+        <Flex gap={2} w="100%" flexWrap="wrap" justifyContent="center">
           {Object.entries(mappedBottomRow).map(([id, seats]) => (
             <Box key={id} flex={1} flexGrow={1} minWidth={0}>
               <SeatBlock

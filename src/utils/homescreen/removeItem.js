@@ -1,68 +1,69 @@
 import axios from "axios";
+import findItem from "./findItem";
 
-function removeItem(currentItem, location, setItems, setShowDetails, setCurrentItem, toast) {
+function removeItem(
+  currentItem,
+  location,
+  setItems,
+  setShowDetails,
+  setCurrentItem,
+  toast
+) {
+  if (!window.confirm("Are you sure you want to delete this item?")) {
+    return;
+  }
 
+  if (!currentItem || location !== currentItem.location) {
+    toast({
+      title: "Remove Item Error",
+      position: "top",
+      description: "Set Item you would like to Remove.",
+      status: "error",
+      duration: 2000,
+      isClosable: true,
+    });
+    setShowDetails(false);
+    setItems([]);
+    return;
+  }
 
-  const userConfirmed = window.confirm(
-    "Are you sure you want to delete this item?"
-  );
+  axios
+    // .post("https://server.afdcstorage.com/inventoryRemove", { currentItem })
 
-  if (userConfirmed) {
-    if (currentItem) {
-      if (location === currentItem.location) {
-        axios
-          .post("https://server.afdcstorage.com/inventoryRemove", { currentItem })
-          .then((result) => {
-            toast({
-              title: "Remove Item Success",
-              position: "top",
-              description: "Successfully Removed Item",
-              status: "success",
-              duration: 2000,
-              isClosable: true,
-            });
-            setShowDetails(false);
-            setItems([]);
-            setCurrentItem(null);
-          })
-          .catch((err) => {
-            const message = err.response?.data?.error || "Error while removing the item.";
-            toast({
-              title: "Remove Item Error",
-              position: "top",
-              description: message,
-              status: "error",
-              duration: 2000,
-              isClosable: true,
-            });
-            setItems([]);
-            setShowDetails(false);
-          });
-      } else {
-        toast({
-          title: "Remove Item Error",
-          position: "top",
-          description: "Set Item you would like to Remove.",
-          status: "error",
-          duration: 2000,
-          isClosable: true,
-        });
-        setShowDetails(false);
-        setItems([]);
-      }
-    } else {
+    .post("http://localhost:3001/inventoryRemove", { currentItem })
+    .then(() => {
+      return axios.post("http://localhost:3001/addHistory", {
+        ...currentItem,
+        change: "REMOVE",
+        time: new Date().toLocaleString(),
+      });
+    })
+    .then(() => {
+      toast({
+        title: "Remove Item Success",
+        position: "top",
+        description: "Successfully Removed Item",
+        status: "success",
+        duration: 2000,
+        isClosable: true,
+      });
+      setShowDetails(false);
+      setItems([]);
+      setCurrentItem(null);
+    })
+    .catch((err) => {
       toast({
         title: "Remove Item Error",
         position: "top",
-        description: "Set Item you would like to Remove.",
+        description:
+          err.response?.data?.error || "Error while removing the item.",
         status: "error",
         duration: 2000,
         isClosable: true,
       });
-    }
-  } else {
-    console.log("User canceled the deletion.");
-  }
+      setItems([]);
+      setShowDetails(false);
+    });
 }
 
 export default removeItem;
