@@ -34,7 +34,7 @@ function UploadFile({ isOpen, onClose }) {
           "application/vnd.ms-excel",
         ];
         if (validTypes.includes(file.type)) {
-          console.log("Valid Excel file:", file);
+          // console.log("Valid Excel file:", file);
           setSelectedFile(file);
         } else {
           alert("Please select a valid Excel file.");
@@ -80,20 +80,20 @@ function UploadFile({ isOpen, onClose }) {
               }
             }
   
-            console.log("Cleaned rows:", finalRows);
+            // console.log("Cleaned rows:", finalRows);
   
             const validationPromises = finalRows.map((row) =>
               axios.post("https://server.afdcstorage.com/verifyLocation", {
                 location: row[0],
               })
             );
-            console.log("done");
-            console.log(validationPromises);
+            // console.log("done");
+            // console.log(validationPromises);
   
             // Wait for all validation requests to complete
             Promise.all(validationPromises)
               .then((responses) => {
-                console.log("All locations validated successfully");
+                // console.log("All locations validated successfully");
   
                 finalRows.forEach((row) => {
                   const [
@@ -132,7 +132,7 @@ function UploadFile({ isOpen, onClose }) {
                   axios
                     .post("https://server.afdcstorage.com/inventoryAdd", data)
                     .then((response) => {
-                      console.log("Item added successfully:", response.data);
+                      // console.log("Item added successfully:", response.data);
                     })
                     .catch((error) => {
                       console.error("Error adding item to inventory:", error);

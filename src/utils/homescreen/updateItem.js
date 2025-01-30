@@ -17,7 +17,9 @@ function updateItem(
     .post("http://localhost:3001/inventoryUpdate", { updateInputs })
     .then((result) => {
       setItems([result.data]);
+      // return axios.post("http://localhost:3001/addHistory", {
       return axios.post("http://localhost:3001/addHistory", {
+
         ...updateInputs,
         change: "UPDATE",
         time: new Date().toLocaleString(),

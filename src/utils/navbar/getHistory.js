@@ -21,6 +21,14 @@
 
 function getHistory(){
 
+    histories = [];
+
+    //API CALL
+
+
+    hsitories.append({});
+
+    return histories
 }
 
 export default getHistory;

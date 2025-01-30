@@ -1,5 +1,4 @@
 import axios from "axios";
-import findItem from "./findItem";
 
 function removeItem(
   currentItem,
@@ -28,11 +27,13 @@ function removeItem(
   }
 
   axios
-    // .post("https://server.afdcstorage.com/inventoryRemove", { currentItem })
+    .post("https://server.afdcstorage.com/inventoryRemove", { currentItem })
 
-    .post("http://localhost:3001/inventoryRemove", { currentItem })
+    // .post("http://localhost:3001/inventoryRemove", { currentItem })
     .then(() => {
-      return axios.post("http://localhost:3001/addHistory", {
+      // return axios.post("http://localhost:3001/addHistory", {
+        return axios.post("https://server.afdcstorage.com/addHistory", {
+
         ...currentItem,
         change: "REMOVE",
         time: new Date().toLocaleString(),

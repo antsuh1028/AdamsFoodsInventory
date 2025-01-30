@@ -37,7 +37,8 @@ import { FormContext } from "../homescreen/formContext.js";
 
 const InfoPopover = ({ info, position, onClose, onModalClose }) => {
   const formSetters = useContext(FormContext);
-  if (!info.length) return null;
+
+  if (!info || !info.length) return null;
 
   const handleSet = (item) => {
     formSetters.setLocation(item.location || "");
@@ -45,7 +46,7 @@ const InfoPopover = ({ info, position, onClose, onModalClose }) => {
     formSetters.setVendor(item.vendor || "");
     formSetters.setBrand(item.brand || "");
     formSetters.setSpecies(item.species || "");
-    formSetters.setDescription(item.description || "");
+    formSetters.setDescription(item.description === "Empty Location" ? "" : item.description || "");
     formSetters.setGrade(item.grade || "");
     formSetters.setQuantity(item.quantity || "");
     formSetters.setWeight(item.weight || "");
@@ -72,6 +73,8 @@ const InfoPopover = ({ info, position, onClose, onModalClose }) => {
       maxHeight="80vh"
       width="20vw"
       maxWidth="500px"
+      overflowY="auto" 
+
     >
       <Box
         fontWeight="bold"
@@ -87,42 +90,56 @@ const InfoPopover = ({ info, position, onClose, onModalClose }) => {
           position="absolute"
           right={2}
           top={2}
-          onClick={onClose}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
         >
           ✕
         </Button>
       </Box>
       <Box overflowY="auto" maxHeight="calc(85vh - 110px)">
-        {info.map((item, index) => (
-          <Box key={index}>
-            <HStack>
-              <Box mb={2}>
-                Location: <strong>{item.location}</strong>
-              </Box>
-              <Box mb={2}>
-                Quantity: <strong>{item.quantity}</strong>
-              </Box>
-            </HStack>
-            <Box mb={2}>
-              Lot #: <strong>{item.lot}</strong>
-            </Box>
-            <HStack>
-              <Box mb={2}>
-                Brand: <strong>{item.brand}</strong>
-              </Box>
-              <Box mb={2} mr={2}>
-                Grade: <strong>{item.grade}</strong>
-              </Box>
-            </HStack>
-            <Box mb={2}>
-              Description: <strong>{item.description}</strong>
-            </Box>
-            {index < info.length - 1 && (
-              <Box borderBottom="1px" borderColor="gray.200" my={2} />
-            )}
+  {info[0]?.description === "Empty Location" ? (
+    <Box mb={2}>
+      <HStack>
+        <Box mb={2}>
+          Location: <strong>{info[0].location}</strong>
+        </Box>
+      </HStack>
+      <Box mb={2}>Empty Location</Box>
+    </Box>
+  ) : (
+    info.map((item, index) => (
+      <Box key={`item-${index}`}>  {/* Added key here */}
+        <HStack key={`location-qty-${index}`}>  {/* Added key here */}
+          <Box mb={2}>
+            Location: <strong>{item.location}</strong>
           </Box>
-        ))}
+          <Box mb={2}>
+            Quantity: <strong>{item.quantity}</strong>
+          </Box>
+        </HStack>
+        <Box mb={2}>
+          Lot #: <strong>{item.lot}</strong>
+        </Box>
+        <HStack key={`brand-grade-${index}`}>  {/* Added key here */}
+          <Box mb={2}>
+            Brand: <strong>{item.brand}</strong>
+          </Box>
+          <Box mb={2} mr={2}>
+            Grade: <strong>{item.grade}</strong>
+          </Box>
+        </HStack>
+        <Box mb={2}>
+          Description: <strong>{item.description}</strong>
+        </Box>
+        {index < info.length - 1 && (
+          <Box borderBottom="1px" borderColor="gray.200" my={2} />
+        )}
       </Box>
+    ))
+  )}
+</Box>
       <Box
         display="flex"
         gap={2}
@@ -276,10 +293,29 @@ function ShowMap({ isOpen, onClose, occupiedCells }) {
   const [occCells, setOccCells] = useState([]);
 
   const handleSeatClick = (e, id, seat) => {
-    setPopoverInfo([]);
-
     setPopoverPosition({ x: e.clientX, y: e.clientY });
-    findItem({ location: `${id}${seat}` }, setPopoverInfo, null, null);
+
+    findItem(
+      { location: `${id}${seat}` },
+      (result) => {
+        if (!result || result.length === 0) {
+          setPopoverInfo([
+            {
+              location: `${id}${seat}`,
+              description: "Empty Location",
+              quantity: "",
+              lot: "",
+              brand: "",
+              grade: "",
+            },
+          ]);
+        } else {
+          setPopoverInfo(result);
+        }
+      },
+      null,
+      null
+    );
   };
 
   const handleClosePopover = () => {
@@ -287,6 +323,8 @@ function ShowMap({ isOpen, onClose, occupiedCells }) {
   };
 
   const handleModalClose = () => {
+    setPopoverInfo([]);
+    setPopoverPosition({ x: 0, y: 0 });
     handleClosePopover();
     onClose();
   };
