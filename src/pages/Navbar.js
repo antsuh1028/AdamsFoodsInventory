@@ -17,10 +17,10 @@ import {
 import { HamburgerIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 
-import ShowHistory from "../utils/navbar/showHistory.js";
-import UploadFile from "../utils/navbar/uploadFile.js";
-import ShowMap from "../utils/navbar/showMap.js";
-import OpenHelp from "../utils/navbar/openHelp.js";
+import ShowHistory from "../components/navbar/historyTable.js";
+import UploadFile from "../components/navbar/uploadFile.js";
+import ShowMap from "../components/navbar/locationMap.js";
+import OpenHelp from "../components/navbar/openHelp.js";
 
 const ShowDrawer = ({
   isOpen,
@@ -32,11 +32,8 @@ const ShowDrawer = ({
 }) => {
   const navigate = useNavigate();
   const handleLogout = () => {
-    // Clear the authentication token from localStorage or sessionStorage
-    localStorage.removeItem("token"); // Assuming you stored the JWT token in localStorage
+    localStorage.removeItem("token");
     navigate("/");
-    // Redirect the user to the login page
-    window.location.href = "/"; // Alternatively, use history.push('/') if using React Router's history object
   };
 
   return (
@@ -79,8 +76,9 @@ const ShowDrawer = ({
         <DrawerFooter justifyContent="center">
           <Button
             bg="red.400"
-            _hover={{ bg: "red.500" }}
-            onClick={handleLogout} // Call the logout function here
+            _hover={{ bg: "red.500", color:"white"}}
+            color="black"
+            onClick={handleLogout}
           >
             Log Out
           </Button>
@@ -121,31 +119,60 @@ const Navbar = () => {
     <>
       <Box
         bg="white"
-        px={4}
+        px={{ base: 2, sm: 4 }}
         w="100%"
-        h="10vh"
+        h={{ base: "8vh", sm: "9vh", md: "10vh" }}
         position="fixed"
         top={0}
         zIndex={1}
+        boxShadow="sm"
       >
-        <Flex h={16} alignItems="center" justifyContent="space-between">
-          <HStack spacing={8} alignItems="center">
+        <Flex h="100%" alignItems="center" justifyContent="space-between">
+          <HStack spacing={{ base: 4, sm: 6, md: 8 }} alignItems="center">
             <Box>
-              <Button onClick={onDrawerOpen} bg="white" color="black" p={2}>
-                <HamburgerIcon w={6} h={6} />
+              <Button 
+                onClick={onDrawerOpen} 
+                bg="white" 
+                color="black" 
+                p={{ base: 1, sm: 1.5, md: 2 }}
+                size={{ base: "sm", md: "md" }}
+                _hover={{ transform: 'scale(1.02)' }}
+              >
+                <HamburgerIcon 
+                  w={{ base: 4, sm: 5, md: 6 }} 
+                  h={{ base: 4, sm: 5, md: 6 }} 
+                />
               </Button>
             </Box>
-            <HStack
-              as="nav"
-              spacing={4}
-              display={{ base: "none", md: "flex" }}
+            <Box
+              display="flex"
               justifyContent="center"
+              alignItems="center"
+              h="100%"
             >
-              <Image h="50px" src="AdamsWings.png" alt="Adams Wings" />
-            </HStack>
+              <Image 
+                h={{ base: "25px", sm: "35px", md: "45px", lg: "50px" }}
+                maxW={{ base: "120px", sm: "150px", md: "180px", lg: "200px" }}
+                w="auto"
+                objectFit="contain"
+                src="AdamsWings.png" 
+                alt="Adams Wings" 
+                transition="all 0.2s ease-in-out"
+                _hover={{ transform: 'scale(1.02)' }}
+              />
+            </Box>
           </HStack>
           <Flex alignItems="center">
-            <Button onClick={onHelpOpen} bg="white" color="black" p={2}>
+            <Button 
+              onClick={onHelpOpen} 
+              bg="white" 
+              color="black" 
+              size={{ base: "sm", md: "md" }}
+              px={{ base: 2, sm: 3, md: 4 }}
+              fontSize={{ base: "sm", sm: "md", md: "lg" }}
+              transition="all 0.2s ease-in-out"
+              _hover={{ transform: 'scale(1.05)', bg: 'gray.50' }}
+            >
               Help
             </Button>
           </Flex>
@@ -163,7 +190,6 @@ const Navbar = () => {
       <ShowMap
         isOpen={isMapOpen}
         onClose={onMapClose}
-        occupiedCells={["A101", "A202"]}
       />
       <ShowHistory isOpen={isHistoryOpen} onClose={onHistoryClose} />
       <OpenHelp isOpen={isHelpOpen} onClose={onHelpClose} />

@@ -107,7 +107,7 @@ function UploadFile({ isOpen, onClose }) {
                     quantity,
                     weight,
                     packdate,
-                    temp,
+                    date_recvd,
                     est,
                   ] = row;
   
@@ -123,7 +123,7 @@ function UploadFile({ isOpen, onClose }) {
                       quantity,
                       weight,
                       packdate,
-                      temp,
+                      date_recvd,
                       est,
                     },
                   };

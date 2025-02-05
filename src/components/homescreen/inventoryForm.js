@@ -1,13 +1,15 @@
-import React from 'react';
-import { FormControl, VStack, HStack, FormLabel, Input } from '@chakra-ui/react';
-import { FormField, SPECIES_OPTIONS, GRADE_OPTIONS } from './formField';
-import LocationInput from './locationInput';
+import React from "react";
+import {
+  FormControl,
+  VStack,
+  HStack,
+  FormLabel,
+  Input,
+} from "@chakra-ui/react";
+import { FormField, SPECIES_OPTIONS, GRADE_OPTIONS } from "./formFields";
+import LocationInput from "./locationInput";
 
-const InventoryForm = ({
-  formData,
-  onInputChange,
-  badgeState
-}) => {
+const InventoryForm = ({ formData, onInputChange, badgeState }) => {
   const {
     location,
     lot,
@@ -19,8 +21,8 @@ const InventoryForm = ({
     quantity,
     weight,
     packdate,
-    temp,
-    est
+    date_recvd,
+    est,
   } = formData;
 
   return (
@@ -30,14 +32,14 @@ const InventoryForm = ({
         <HStack spacing={2} width="100%">
           <LocationInput
             value={location}
-            onChange={(value) => onInputChange('location', value)}
+            onChange={(value) => onInputChange("location", value)}
             badgeState={badgeState}
           />
           <FormField
             label="Lot"
             value={lot}
             placeholder="Enter Lot"
-            onChange={(e) => onInputChange('lot', e.target.value.toUpperCase())}
+            onChange={(e) => onInputChange("lot", e.target.value.toUpperCase())}
             width="25%"
           />
         </HStack>
@@ -48,14 +50,18 @@ const InventoryForm = ({
             label="Vendor"
             value={vendor}
             placeholder="Enter Vendor"
-            onChange={(e) => onInputChange('vendor', e.target.value.toUpperCase())}
+            onChange={(e) =>
+              onInputChange("vendor", e.target.value.toUpperCase())
+            }
             width="33%"
           />
           <FormField
             label="Brand"
             value={brand}
             placeholder="Enter Brand"
-            onChange={(e) => onInputChange('brand', e.target.value.toUpperCase())}
+            onChange={(e) =>
+              onInputChange("brand", e.target.value.toUpperCase())
+            }
             width="33%"
           />
           <FormField
@@ -64,13 +70,15 @@ const InventoryForm = ({
             type="select"
             placeholder="Select Species"
             options={SPECIES_OPTIONS}
-            onChange={(e) => onInputChange('species', e.target.value)}
+            onChange={(e) => onInputChange("species", e.target.value)}
             width="33%"
           />
         </HStack>
 
         {/* Description Field */}
-        <FormLabel marginTop="5px" marginBottom="5px">Description</FormLabel>
+        <FormLabel marginTop="5px" marginBottom="5px">
+          Description
+        </FormLabel>
         <Input
           value={description}
           type="text"
@@ -78,7 +86,7 @@ const InventoryForm = ({
           width="100%"
           size="lg"
           placeholder="Enter Description"
-          onChange={(e) => onInputChange('description', e.target.value)}
+          onChange={(e) => onInputChange("description", e.target.value)}
         />
 
         {/* Grade, Quantity, Weight Row */}
@@ -89,7 +97,7 @@ const InventoryForm = ({
             type="select"
             placeholder="Select Grade"
             options={GRADE_OPTIONS}
-            onChange={(e) => onInputChange('grade', e.target.value)}
+            onChange={(e) => onInputChange("grade", e.target.value)}
             width="32%"
           />
           <FormField
@@ -97,7 +105,7 @@ const InventoryForm = ({
             value={quantity}
             type="number"
             placeholder="Enter Quantity"
-            onChange={(e) => onInputChange('quantity', e.target.value)}
+            onChange={(e) => onInputChange("quantity", e.target.value)}
             width="32%"
           />
           <FormField
@@ -105,33 +113,32 @@ const InventoryForm = ({
             value={weight}
             type="number"
             placeholder="Enter Weight"
-            onChange={(e) => onInputChange('weight', e.target.value)}
+            onChange={(e) => onInputChange("weight", e.target.value)}
             width="32%"
           />
         </HStack>
 
-        {/* Pack Date, Temperature, EST Row */}
+        {/* Pack Date, Received Date, EST Row */}
         <HStack spacing={4} width="100%">
           <FormField
             label="Pack Date"
             value={packdate}
             type="date"
-            onChange={(e) => onInputChange('packdate', e.target.value)}
+            onChange={(e) => onInputChange("packdate", e.target.value)}
             width="32%"
           />
           <FormField
-            label="Temperature (°F)"
-            value={temp}
-            type="number"
-            placeholder="Enter Temperature"
-            onChange={(e) => onInputChange('temp', e.target.value)}
+            label="Received Date"
+            value={date_recvd}
+            type="date"
+            onChange={(e) => onInputChange("date_recvd", e.target.value)}
             width="32%"
           />
           <FormField
             label="EST#"
             value={est}
             placeholder="Enter Est"
-            onChange={(e) => onInputChange('est', e.target.value.toUpperCase())}
+            onChange={(e) => onInputChange("est", e.target.value)}
             width="32%"
           />
         </HStack>

@@ -1,12 +1,11 @@
-// src/components/homescreen/FormField.js
-import React from 'react';
-import { FormLabel, Input, Select, VStack } from '@chakra-ui/react';
+import React from "react";
+import { FormLabel, Input, Select, VStack } from "@chakra-ui/react";
 
 export const SPECIES_OPTIONS = [
   { value: "Beef", label: "Beef" },
   { value: "Pork", label: "Pork" },
   { value: "Chicken", label: "Chicken" },
-  { value: "Lamb", label: "Lamb" }
+  { value: "Lamb", label: "Lamb" },
 ];
 
 export const GRADE_OPTIONS = [
@@ -16,18 +15,18 @@ export const GRADE_OPTIONS = [
   { value: "No Roll/Ongrade", label: "No Roll/Ongrade" },
   { value: "Select", label: "Select" },
   { value: "N/A", label: "N/A" },
-  { value: "Other", label: "Other" }
+  { value: "Other", label: "Other" },
 ];
 
-export const FormField = ({ 
-  label, 
-  value, 
-  type = "text", 
-  placeholder, 
-  onChange, 
+export const FormField = ({
+  label,
+  value,
+  type = "text",
+  placeholder,
+  onChange,
   width = "100%",
   options,
-  bg = "white"
+  bg = "white",
 }) => {
   return (
     <VStack spacing={1} width={width}>
@@ -42,7 +41,7 @@ export const FormField = ({
           placeholder={placeholder}
           onChange={onChange}
         >
-          {options?.map(option => (
+          {options?.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>

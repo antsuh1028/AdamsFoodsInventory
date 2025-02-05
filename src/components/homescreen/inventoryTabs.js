@@ -1,5 +1,5 @@
-import React from 'react';
-import PropTypes from 'prop-types';
+import React from "react";
+import PropTypes from "prop-types";
 import {
   Tabs,
   TabList,
@@ -10,12 +10,19 @@ import {
   List,
   ListItem,
   Box,
-} from '@chakra-ui/react';
+} from "@chakra-ui/react";
 
-const InventoryLevelPanel = ({ items, handleItemClick, level, DetailsPanel, selectedItem, handleSet }) => {
+const InventoryLevelPanel = ({
+  items,
+  handleItemClick,
+  level,
+  DetailsPanel,
+  selectedItem,
+  handleSet,
+}) => {
   const getFilterCondition = (item) => {
     if (level === 3) {
-      return item.location[1] !== '1' && item.location[1] !== '2';
+      return item.location[1] !== "1" && item.location[1] !== "2";
     }
     return item.location[1] === String(level);
   };
@@ -32,27 +39,29 @@ const InventoryLevelPanel = ({ items, handleItemClick, level, DetailsPanel, sele
         overflowY="auto"
       >
         <List spacing={3} width="90%">
-          {items
-            .filter(getFilterCondition)
-            .map((item, index) => (
-              <ListItem
-                key={`${item.location}-${index}`}
-                onClick={() => handleItemClick(item)}
+          {items.filter(getFilterCondition).map((item, index) => (
+            <ListItem
+              key={`${item.location}-${index}`}
+              onClick={() => handleItemClick(item)}
+            >
+              <Box
+                p={3}
+                shadow="md"
+                marginTop="10px"
+                borderWidth="1px"
+                borderRadius="md"
+                bg="white"
+                cursor="pointer"
+                _hover={{ bg: "gray.200" }}
               >
-                <Box
-                  p={3}
-                  shadow="md"
-                  marginTop="10px"
-                  borderWidth="1px"
-                  borderRadius="md"
-                  bg="white"
-                  cursor="pointer"
-                  _hover={{ bg: "gray.200" }}
-                >
-                  {`Level ${level}: ${item.location} - ${item.description} ${level === 3 ? `: ${item.quantity} bx(s)` : `- ${item.quantity}`}`}
-                </Box>
-              </ListItem>
-            ))}
+                {`Level ${level}: ${item.location} - ${item.description} ${
+                  level === 3
+                    ? `: ${item.quantity} bx(s)`
+                    : `- ${item.quantity} bx(s)`
+                }`}
+              </Box>
+            </ListItem>
+          ))}
         </List>
         <DetailsPanel item={selectedItem} onSet={handleSet} />
       </Flex>
@@ -60,22 +69,23 @@ const InventoryLevelPanel = ({ items, handleItemClick, level, DetailsPanel, sele
   );
 };
 
-const InventoryTabs = ({ 
-  items, 
-  handleItemClick, 
-  handleTabClick, 
-  DetailsPanel, 
-  selectedItem, 
-  handleSet 
+const InventoryTabs = ({
+  items,
+  handleItemClick,
+  handleTabClick,
+  DetailsPanel,
+  selectedItem,
+  handleSet,
 }) => {
   return (
     <Tabs variant="enclosed" width="100%" height="100%">
       <TabList>
         {[1, 2, 3].map((level) => (
-          <Tab 
+          <Tab
             key={`level-${level}`}
-            bg="lightblue" 
-            border="1px" 
+            bg="lightblue"
+            border="1px"
+            _hover={{bg: "blue.100"}}
             onClick={handleTabClick}
           >
             Level {level}
@@ -105,7 +115,8 @@ InventoryTabs.propTypes = {
     PropTypes.shape({
       location: PropTypes.string.isRequired,
       description: PropTypes.string.isRequired,
-      quantity: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+      quantity: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
+        .isRequired,
     })
   ).isRequired,
   handleItemClick: PropTypes.func.isRequired,

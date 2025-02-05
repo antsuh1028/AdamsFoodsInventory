@@ -1,8 +1,8 @@
-// src/components/homescreen/DetailsPanel.js
-import React from 'react';
-import { Box, Text, Flex, Button } from '@chakra-ui/react';
+import React from "react";
+import { Box, Text, Flex, Button } from "@chakra-ui/react";
 
 const DetailsPanel = ({ item, showDetails, onClose, onSet }) => {
+  // console.log(item);
   if (!showDetails || !item) return null;
 
   return (
@@ -24,9 +24,9 @@ const DetailsPanel = ({ item, showDetails, onClose, onSet }) => {
       <Text>Quantity: {item.quantity}</Text>
       <Text>Weight: {item.weight} lb</Text>
       <Text>Pack Date: {item.packdate}</Text>
-      <Text>Temperature: {item.temp}</Text>
+      <Text>Date Recieved: {item.date_recvd}</Text>
       <Text>EST#: {item.est}</Text>
-      
+
       <Flex width="100%" justifyContent="center" mt={4}>
         <Button marginRight="10px" onClick={() => onSet(item)}>
           Set

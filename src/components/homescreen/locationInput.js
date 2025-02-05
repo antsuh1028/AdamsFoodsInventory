@@ -1,27 +1,22 @@
-// src/components/homescreen/LocationInput.js
-import React from 'react';
-import { 
-  InputGroup, 
-  Input, 
-  InputRightElement, 
-  Badge, 
+import React from "react";
+import {
+  InputGroup,
+  Input,
+  InputRightElement,
+  Badge,
   VStack,
-  FormLabel 
-} from '@chakra-ui/react';
+  FormLabel,
+} from "@chakra-ui/react";
 
-const LocationInput = ({ 
-  value, 
-  onChange, 
-  badgeState 
-}) => {
+const LocationInput = ({ value, onChange, badgeState }) => {
   const getBadgeProps = (state) => {
-    switch(state) {
-      case 'in':
-        return { colorScheme: 'gray', children: 'Occupied' };
-      case 'out':
-        return { colorScheme: 'green', children: 'Empty' };
-      case 'error':
-        return { colorScheme: 'red', children: 'Invalid' };
+    switch (state) {
+      case "in":
+        return { colorScheme: "gray", children: "Occupied" };
+      case "out":
+        return { colorScheme: "green", children: "Empty" };
+      case "error":
+        return { colorScheme: "red", children: "Invalid" };
       default:
         return null;
     }
@@ -43,9 +38,7 @@ const LocationInput = ({
           onChange={(e) => onChange(e.target.value.toUpperCase())}
         />
         <InputRightElement width="auto" marginRight="5px">
-          {badgeState && (
-            <Badge {...getBadgeProps(badgeState)} p="2" />
-          )}
+          {badgeState && <Badge {...getBadgeProps(badgeState)} p="2" />}
         </InputRightElement>
       </InputGroup>
     </VStack>

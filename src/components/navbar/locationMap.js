@@ -1,4 +1,4 @@
-import { React, useContext, useState, useEffect } from "react";
+import { React, useState, useEffect } from "react";
 import {
   Modal,
   ModalOverlay,
@@ -15,148 +15,14 @@ import {
   TabPanels,
   Tab,
   TabPanel,
-  Button,
-  HStack,
 } from "@chakra-ui/react";
 
-import {
-  topRow1,
-  topRow2,
-  topRow3,
-  rightRow1,
-  rightRow2,
-  rightRow3,
-  bottomRow1,
-  bottomRow2,
-  bottomRow3,
-} from "./exportRows";
+import { locationRows } from "../../utils/navbar/exportRows.js";
 
-import findItem from "../homescreen/findItem";
-import getLocations from "./getLocations";
-import { FormContext } from "../homescreen/formContext.js";
+import findItem from "../../utils/homescreen/findItem.js";
+import getLocations from "../../utils/navbar/getLocations.js";
 
-const InfoPopover = ({ info, position, onClose, onModalClose }) => {
-  const formSetters = useContext(FormContext);
-
-  if (!info || !info.length) return null;
-
-  const handleSet = (item) => {
-    formSetters.setLocation(item.location || "");
-    formSetters.setLot(item.lot || "");
-    formSetters.setVendor(item.vendor || "");
-    formSetters.setBrand(item.brand || "");
-    formSetters.setSpecies(item.species || "");
-    formSetters.setDescription(item.description === "Empty Location" ? "" : item.description || "");
-    formSetters.setGrade(item.grade || "");
-    formSetters.setQuantity(item.quantity || "");
-    formSetters.setWeight(item.weight || "");
-    formSetters.setPackdate(item.packdate || "");
-    formSetters.setTemp(item.temp || "");
-    formSetters.setEst(item.est || "");
-    formSetters.setCurrentItem(item);
-    onClose();
-    onModalClose();
-  };
-
-  return (
-    <Box
-      position="fixed"
-      left={position.x}
-      top={position.y}
-      bg="white"
-      boxShadow="lg"
-      border="1px"
-      borderColor="gray.200"
-      borderRadius="md"
-      p={4}
-      zIndex={1400}
-      maxHeight="80vh"
-      width="20vw"
-      maxWidth="500px"
-      overflowY="auto" 
-
-    >
-      <Box
-        fontWeight="bold"
-        mb={2}
-        position="sticky"
-        top={0}
-        bg="white"
-        zIndex={10}
-      >
-        Product Info
-        <Button
-          size="sm"
-          position="absolute"
-          right={2}
-          top={2}
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-        >
-          ✕
-        </Button>
-      </Box>
-      <Box overflowY="auto" maxHeight="calc(85vh - 110px)">
-  {info[0]?.description === "Empty Location" ? (
-    <Box mb={2}>
-      <HStack>
-        <Box mb={2}>
-          Location: <strong>{info[0].location}</strong>
-        </Box>
-      </HStack>
-      <Box mb={2}>Empty Location</Box>
-    </Box>
-  ) : (
-    info.map((item, index) => (
-      <Box key={`item-${index}`}>  {/* Added key here */}
-        <HStack key={`location-qty-${index}`}>  {/* Added key here */}
-          <Box mb={2}>
-            Location: <strong>{item.location}</strong>
-          </Box>
-          <Box mb={2}>
-            Quantity: <strong>{item.quantity}</strong>
-          </Box>
-        </HStack>
-        <Box mb={2}>
-          Lot #: <strong>{item.lot}</strong>
-        </Box>
-        <HStack key={`brand-grade-${index}`}>  {/* Added key here */}
-          <Box mb={2}>
-            Brand: <strong>{item.brand}</strong>
-          </Box>
-          <Box mb={2} mr={2}>
-            Grade: <strong>{item.grade}</strong>
-          </Box>
-        </HStack>
-        <Box mb={2}>
-          Description: <strong>{item.description}</strong>
-        </Box>
-        {index < info.length - 1 && (
-          <Box borderBottom="1px" borderColor="gray.200" my={2} />
-        )}
-      </Box>
-    ))
-  )}
-</Box>
-      <Box
-        display="flex"
-        gap={2}
-        mt={4}
-        position="sticky"
-        bottom={0}
-        bg="white"
-        pt={2}
-      >
-        <Button size="sm" colorScheme="blue" onClick={() => handleSet(info[0])}>
-          Set
-        </Button>
-        <Button size="sm">Print</Button>
-      </Box>
-    </Box>
-  );
-};
+import InfoPopover from "./infoPopover.js";
 
 const SeatBlock = ({ id, seats, occupiedCells, onSeatClick }) => {
   const hasSixSeats = seats.length >= 6;
@@ -214,11 +80,24 @@ const generateMap = (level, occupiedCells, onSeatClick) => {
     }, {});
   };
 
-  const topRowData = level === 1 ? topRow1 : level === 2 ? topRow2 : topRow3;
+  const topRowData =
+    level === 1
+      ? locationRows.topRow1
+      : level === 2
+      ? locationRows.topRow2
+      : locationRows.topRow3;
   const rightRowData =
-    level === 1 ? rightRow1 : level === 2 ? rightRow2 : rightRow3;
+    level === 1
+      ? locationRows.rightRow1
+      : level === 2
+      ? locationRows.rightRow2
+      : locationRows.rightRow3;
   const bottomRowData =
-    level === 1 ? bottomRow1 : level === 2 ? bottomRow2 : bottomRow3;
+    level === 1
+      ? locationRows.bottomRow1
+      : level === 2
+      ? locationRows.bottomRow2
+      : locationRows.bottomRow3;
 
   const mappedTopRow = generateRowData(topRowData, level);
   const mappedRightRow = generateRowData(rightRowData, level);
@@ -287,7 +166,7 @@ const generateMap = (level, occupiedCells, onSeatClick) => {
   );
 };
 
-function ShowMap({ isOpen, onClose, occupiedCells }) {
+function ShowMap({ isOpen, onClose }) {
   const [popoverInfo, setPopoverInfo] = useState([]);
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
   const [occCells, setOccCells] = useState([]);
@@ -359,11 +238,12 @@ function ShowMap({ isOpen, onClose, occupiedCells }) {
             onClose={handleClosePopover}
             onModalClose={handleModalClose}
           />
+
           <Tabs isFitted>
             <TabList mb={4}>
-              <Tab>Level 1</Tab>
-              <Tab>Level 2</Tab>
-              <Tab>Level 3</Tab>
+              <Tab onClick={handleClosePopover}>Level 1</Tab>
+              <Tab onClick={handleClosePopover}>Level 2</Tab>
+              <Tab onClick={handleClosePopover}>Level 3</Tab>
             </TabList>
             <TabPanels>
               <TabPanel>{generateMap(1, occCells, handleSeatClick)}</TabPanel>
