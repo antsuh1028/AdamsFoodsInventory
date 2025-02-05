@@ -20,6 +20,8 @@ import {
 import { useContext } from 'react';
 import { FormContext } from '../../utils/homescreen/formContext.js';
 import { useState } from "react";
+import printDetails from "../../utils/printDetails"; 
+
 
 function ShowHistory({isOpen, onClose}) {
     const [selectedProduct, setSelectedProduct] = useState(null);
@@ -63,6 +65,7 @@ function ShowHistory({isOpen, onClose}) {
   
     const handleRowClick = (item, event) => {
       setSelectedProduct(item);
+      console.log(item)
       setPopoverPosition({
         x: event.clientX,
         y: event.clientY
@@ -187,7 +190,10 @@ function ShowHistory({isOpen, onClose}) {
                   <Box mb={2}>Description: {selectedProduct.description}</Box>
                   <Box display="flex" gap={2} mt={4} h="10%" w="20vw" maxW="500px">
                     <Button size="sm" colorScheme="blue" onClick={() => handleSet(selectedProduct)}>Set</Button>
-                    <Button size="sm">Print</Button>
+                    <Button size="sm" onClick={() => {
+                      console.log(selectedProduct);
+                      printDetails(selectedProduct);}}> Print
+                    </Button>
                   </Box>
                 </>
               </Box>

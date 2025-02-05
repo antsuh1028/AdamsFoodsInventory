@@ -1,6 +1,7 @@
 import { React, useContext, useState } from 'react';
 import { Box, Button, HStack } from '@chakra-ui/react';
 import { FormContext } from '../../utils/homescreen/formContext';
+import printDetails from "../../utils/printDetails"; 
 // import UploadTally from './uploadTally';
 
 const PopoverHeader = ({ onClose }) => (
@@ -101,7 +102,10 @@ const PopoverFooter = ({ onSet, info }) => {
       <Button size="sm" colorScheme="blue" onClick={() => onSet(info[0])}>
         Set
       </Button>
-      <Button size="sm">Print</Button>
+      <Button size="sm" onClick={() => {
+        console.log(info);
+        printDetails(info[0]);}}> Print
+      </Button>
       <Button size="sm">Details</Button>
       {/* <Button size="sm" onClick={() => setIsOpen(true)}>Upload</Button> */}
         
@@ -110,7 +114,7 @@ const PopoverFooter = ({ onSet, info }) => {
     </Box>
   )};
 
-const InfoPopover = ({ info, position, onClose, onModalClose }) => {
+  const InfoPopover = ({ info, position, onClose, onModalClose, selectedItem, setSelectedItem }) => {
   const { setFormData, setCurrentItem } = useContext(FormContext);
 
   if (!info || !info.length) return null;
