@@ -74,7 +74,7 @@ const Homescreen = () => {
   const handleAdd = useCallback(async () => {
     setLoading(true);
     try {
-      console.log(formData);
+      // console.log(formData);
       await addItem(formData, setShowDetails, setItems, toast);
       handleClear();
     } catch (error) {

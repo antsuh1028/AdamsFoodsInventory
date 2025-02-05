@@ -4,7 +4,6 @@ import printDetails from "../../utils/printDetails";
 
 
 const DetailsPanel = ({ item, showDetails, onClose, onSet }) => {
-  console.log(item);
   if (!showDetails || !item) return null;
 
   return (
@@ -34,6 +33,7 @@ const DetailsPanel = ({ item, showDetails, onClose, onSet }) => {
           Set
         </Button>
         <Button onClick={() => {
+          // console.log(item)
             printDetails(item);}}> Print
         </Button>
         <Button marginLeft="10px" onClick={onClose}>

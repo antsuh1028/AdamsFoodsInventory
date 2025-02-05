@@ -65,7 +65,7 @@ function ShowHistory({isOpen, onClose}) {
   
     const handleRowClick = (item, event) => {
       setSelectedProduct(item);
-      console.log(item)
+      // console.log(item)
       setPopoverPosition({
         x: event.clientX,
         y: event.clientY
@@ -191,7 +191,7 @@ function ShowHistory({isOpen, onClose}) {
                   <Box display="flex" gap={2} mt={4} h="10%" w="20vw" maxW="500px">
                     <Button size="sm" colorScheme="blue" onClick={() => handleSet(selectedProduct)}>Set</Button>
                     <Button size="sm" onClick={() => {
-                      console.log(selectedProduct);
+                      // console.log(selectedProduct);
                       printDetails(selectedProduct);}}> Print
                     </Button>
                   </Box>

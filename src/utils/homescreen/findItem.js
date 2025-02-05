@@ -1,9 +1,12 @@
 import axios from "axios";
 
 function findItem(inputs, setItems, setShowDetails, toast) {
+  // console.log("Here",inputs);
   
     axios
       .post("https://server.afdcstorage.com/inventoryFind", { inputs })
+      // .post("http://localhost:3001/inventoryFind", { inputs })
+
 
       .then((result) => {
         if (result.data === "INVALID"){

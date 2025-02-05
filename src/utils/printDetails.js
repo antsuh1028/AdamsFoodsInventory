@@ -10,7 +10,7 @@ const printDetails = (item) => {
         <style>
           @page {
             size: A4;
-            margin: 10mm;
+            margin: 5mm;
           }
           html, body {
             width: 210mm;
@@ -24,32 +24,32 @@ const printDetails = (item) => {
             justify-content: center;
           }
           .label-container {
-            width: 190mm;
-            height: 277mm;
+            width: 200mm;
+            height: 287mm;
             border: 2px solid black;
-            padding: 10mm;
+            padding: 8mm;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
           }
           .large-number {
-            font-size: 80px; /* Adjusted */
+            font-size: 120px;
             font-weight: bold;
             margin-bottom: 20px;
           }
           .table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 28px; /* Adjusted */
+            font-size: 36px;
           }
           .table-content {
-            font-size: 45px; /* Dynamically adjustable */
+            font-size: 60px;
             font-weight: bold;
           }
           .table td, .table th {
             border: 2px solid black;
-            padding: 10px; /* Adjusted */
+            padding: 12px;
             text-align: left;
           }
           .table th {
@@ -57,14 +57,13 @@ const printDetails = (item) => {
             background-color: #f8f8f8;
           }
           .footer {
-            font-size: 22px; /* Adjusted */
+            font-size: 30px;
             font-weight: bold;
             margin-top: 20px;
           }
-          /* Ensure content scales properly for printing */
           @media print {
             body {
-              transform: scale(0.95); /* Shrink content slightly */
+              transform: scale(0.98);
             }
           }
         </style>
@@ -94,13 +93,13 @@ const printDetails = (item) => {
             let largeNumber = document.getElementById("largeNumber");
 
             let maxHeight = container.clientHeight;
-            let contentHeight = detailsTable.clientHeight + largeNumber.clientHeight + 100; // Adjust spacing buffer
+            let contentHeight = detailsTable.clientHeight + largeNumber.clientHeight + 100;
 
             if (contentHeight > maxHeight) {
               let scaleFactor = maxHeight / contentHeight;
-              let newFontSize = Math.max(22, 45 * scaleFactor); // Adjust table font size dynamically
+              let newFontSize = Math.max(26, 52 * scaleFactor);
               document.querySelectorAll(".table-content").forEach(el => el.style.fontSize = newFontSize + "px");
-              largeNumber.style.fontSize = Math.max(60, 80 * scaleFactor) + "px"; // Adjust number size
+              largeNumber.style.fontSize = Math.max(80, 100 * scaleFactor) + "px";
             }
           }
 

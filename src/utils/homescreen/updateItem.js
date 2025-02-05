@@ -12,13 +12,13 @@ function updateItem(
   }
 
   axios
-    // .post("https://server.afdcstorage.com/inventoryUpdate", { updateInputs })
+    .post("https://server.afdcstorage.com/inventoryUpdate", { updateInputs })
 
-    .post("http://localhost:3001/inventoryUpdate", { updateInputs })
+    // .post("http://localhost:3001/inventoryUpdate", { updateInputs })
     .then((result) => {
       setItems([result.data]);
       // return axios.post("http://localhost:3001/addHistory", {
-      return axios.post("http://localhost:3001/addHistory", {
+      return axios.post("https://server.afdcstorage.com/addHistory", {
 
         ...updateInputs,
         change: "UPDATE",
