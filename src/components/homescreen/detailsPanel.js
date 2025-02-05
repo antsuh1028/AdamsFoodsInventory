@@ -1,6 +1,9 @@
 // src/components/homescreen/DetailsPanel.js
 import React from 'react';
 import { Box, Text, Flex, Button } from '@chakra-ui/react';
+import printDetails from "../../utils/printDetails";
+
+
 
 const DetailsPanel = ({ item, showDetails, onClose, onSet }) => {
   if (!showDetails || !item) return null;
@@ -31,7 +34,7 @@ const DetailsPanel = ({ item, showDetails, onClose, onSet }) => {
         <Button marginRight="10px" onClick={() => onSet(item)}>
           Set
         </Button>
-        <Button>Print</Button>
+        <Button onClick={() => printDetails(item)}>Print</Button>
         <Button marginLeft="10px" onClick={onClose}>
           Close
         </Button>

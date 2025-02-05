@@ -19,6 +19,7 @@ import {
   HStack,
 } from "@chakra-ui/react";
 
+
 import {
   topRow1,
   topRow2,
@@ -34,8 +35,10 @@ import {
 import findItem from "../homescreen/findItem";
 import getLocations from "./getLocations";
 import { FormContext } from "../homescreen/formContext.js";
+import printDetails from "../printDetails"; 
 
-const InfoPopover = ({ info, position, onClose, onModalClose }) => {
+
+const InfoPopover = ({ info, position, onClose, onModalClose, selectedItem, setSelectedItem }) => {
   const formSetters = useContext(FormContext);
 
   if (!info || !info.length) return null;
@@ -84,7 +87,7 @@ const InfoPopover = ({ info, position, onClose, onModalClose }) => {
         bg="white"
         zIndex={10}
       >
-        Product Info
+         Info
         <Button
           size="sm"
           position="absolute"
@@ -113,7 +116,7 @@ const InfoPopover = ({ info, position, onClose, onModalClose }) => {
       <Box key={`item-${index}`}>  {/* Added key here */}
         <HStack key={`location-qty-${index}`}>  {/* Added key here */}
           <Box mb={2}>
-            Location: <strong>{item.location}</strong>
+            LocatProduction: <strong>{item.location}</strong>
           </Box>
           <Box mb={2}>
             Quantity: <strong>{item.quantity}</strong>
@@ -152,7 +155,9 @@ const InfoPopover = ({ info, position, onClose, onModalClose }) => {
         <Button size="sm" colorScheme="blue" onClick={() => handleSet(info[0])}>
           Set
         </Button>
-        <Button size="sm">Print</Button>
+        <Button size="sm" onClick={() => {
+            printDetails(selectedItem);}}> Print
+        </Button>
       </Box>
     </Box>
   );
@@ -291,6 +296,7 @@ function ShowMap({ isOpen, onClose, occupiedCells }) {
   const [popoverInfo, setPopoverInfo] = useState([]);
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
   const [occCells, setOccCells] = useState([]);
+  const [selectedItem, setSelectedItem] = useState(null); 
 
   const handleSeatClick = (e, id, seat) => {
     setPopoverPosition({ x: e.clientX, y: e.clientY });
@@ -311,6 +317,7 @@ function ShowMap({ isOpen, onClose, occupiedCells }) {
           ]);
         } else {
           setPopoverInfo(result);
+          setSelectedItem(result[0]); 
         }
       },
       null,
@@ -358,6 +365,8 @@ function ShowMap({ isOpen, onClose, occupiedCells }) {
             position={popoverPosition}
             onClose={handleClosePopover}
             onModalClose={handleModalClose}
+            selectedItem={selectedItem} 
+            setSelectedItem={setSelectedItem} 
           />
           <Tabs isFitted>
             <TabList mb={4}>
