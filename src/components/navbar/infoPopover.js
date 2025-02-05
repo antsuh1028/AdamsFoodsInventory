@@ -103,8 +103,8 @@ const PopoverFooter = ({ onSet, info }) => {
         Set
       </Button>
       <Button size="sm" onClick={() => {
-        console.log(selectedProduct);
-        printDetails(selectedProduct);}}> Print
+        console.log(info);
+        printDetails(info[0]);}}> Print
       </Button>
       <Button size="sm">Details</Button>
       {/* <Button size="sm" onClick={() => setIsOpen(true)}>Upload</Button> */}

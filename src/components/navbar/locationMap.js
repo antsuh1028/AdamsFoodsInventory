@@ -170,6 +170,7 @@ function ShowMap({ isOpen, onClose }) {
   const [popoverInfo, setPopoverInfo] = useState([]);
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
   const [occCells, setOccCells] = useState([]);
+  const [selectedItem, setSelectedItem] = useState(null); 
 
   const handleSeatClick = (e, id, seat) => {
     setPopoverPosition({ x: e.clientX, y: e.clientY });
@@ -190,6 +191,7 @@ function ShowMap({ isOpen, onClose }) {
           ]);
         } else {
           setPopoverInfo(result);
+          setSelectedItem(result[0]);
         }
       },
       null,
@@ -237,7 +239,8 @@ function ShowMap({ isOpen, onClose }) {
             position={popoverPosition}
             onClose={handleClosePopover}
             onModalClose={handleModalClose}
-            
+            selectedItem={selectedItem} 
+            setSelectedItem={setSelectedItem} 
           />
 
           <Tabs isFitted>
