@@ -237,6 +237,7 @@ function ShowMap({ isOpen, onClose }) {
             position={popoverPosition}
             onClose={handleClosePopover}
             onModalClose={handleModalClose}
+            
           />
 
           <Tabs isFitted>

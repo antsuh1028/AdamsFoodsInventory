@@ -114,7 +114,7 @@ const PopoverFooter = ({ onSet, info }) => {
     </Box>
   )};
 
-const InfoPopover = ({ info, position, onClose, onModalClose }) => {
+  const InfoPopover = ({ info, position, onClose, onModalClose, selectedItem, setSelectedItem }) => {
   const { setFormData, setCurrentItem } = useContext(FormContext);
 
   if (!info || !info.length) return null;
