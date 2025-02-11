@@ -10,7 +10,7 @@ const printDetails = (item) => {
         <style>
           @page {
             size: A4;
-            margin: 5mm;
+            margin: 2mm;
           }
           html, body {
             width: 210mm;
@@ -24,91 +24,113 @@ const printDetails = (item) => {
             justify-content: center;
           }
           .label-container {
-            width: 200mm;
-            height: 287mm;
+            width: 205mm;
+            max-height: 290mm;
             border: 2px solid black;
-            padding: 8mm;
+            padding: 3mm;
             box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
+            margin: auto;
           }
-          .large-number {
-            font-size: 120px;
-            font-weight: bold;
-            margin-bottom: 20px;
+          .inner-container {
+            border: 1px solid black;
+            padding: 2mm;
           }
           .table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 36px;
+            table-layout: fixed;
           }
           .table-content {
-            font-size: 60px;
             font-weight: bold;
+            line-height: 1;
+            padding: 5px 10px;
+            word-break: break-word;
+          }
+          .description-content {
+            font-weight: bold;
+            line-height: 1.1;
+            word-break: break-word;
           }
           .table td, .table th {
-            border: 2px solid black;
-            padding: 12px;
+            border: 1px solid black;
+            padding: 5px 10px;
             text-align: left;
           }
           .table th {
             font-weight: bold;
-            background-color: #f8f8f8;
-          }
-          .footer {
-            font-size: 30px;
-            font-weight: bold;
-            margin-top: 20px;
+            width: 22%;
+            white-space: nowrap;
+            overflow: hidden;
           }
           @media print {
             body {
-              transform: scale(0.98);
+              transform: scale(0.99);
+            }
+            .table {
+              page-break-inside: avoid;
             }
           }
         </style>
       </head>
       <body>
         <div class="label-container">
-          <div class="large-number" id="largeNumber">0001</div>
-          <table class="table" id="detailsTable">
-            <tr><th>LOT#</th><td class="table-content">${item.lot || ""}</td></tr>
-            <tr><th>Vendor</th><td class="table-content">${item.vendor || ""}</td></tr>
-            <tr><th>Date Rcvd</th><td class="table-content">${item.date_recvd || ""}</td></tr>
-            <tr><th>BRAND</th><td class="table-content">${item.brand || ""}</td></tr>
-            <tr><th>QTY (CASE)</th><td class="table-content">${item.quantity || ""}</td></tr>
-            <tr>
-              <th>Description</th>
-              <td class="table-content">${item.description || ""} <br> PD: ${item.packdate || ""}</td>
-            </tr>
-          </table>
-          <div class="footer">
-            **RCVD TOTAL ${item.receivedTotal || ""} PALLETS OF ${item.palletCase || ""} CASE/PALLET
+          <div class="inner-container">
+            <table class="table" id="detailsTable">
+              <tr><th>LOT#</th><td class="table-content">${item.lot || ""}</td></tr>
+              <tr><th>Vendor</th><td class="table-content">${item.vendor || ""}</td></tr>
+              <tr><th>Date Rcvd</th><td class="table-content">${item.date_recvd || ""}</td></tr>
+              <tr><th>BRAND</th><td class="table-content">${item.brand || ""}</td></tr>
+              <tr><th>QTY (CS)</th><td class="table-content">${item.quantity || ""}</td></tr>
+              <tr>
+                <th>Description</th>
+                <td class="description-content">${item.description || ""} ${item.packdate ? `<br>PD: ${item.packdate}` : ''}</td>
+              </tr>
+            </table>
           </div>
         </div>
         <script>
-          function adjustFontSize() {
-            let container = document.querySelector(".label-container");
-            let detailsTable = document.getElementById("detailsTable");
-            let largeNumber = document.getElementById("largeNumber");
-
-            let maxHeight = container.clientHeight;
-            let contentHeight = detailsTable.clientHeight + largeNumber.clientHeight + 100;
-
-            if (contentHeight > maxHeight) {
-              let scaleFactor = maxHeight / contentHeight;
-              let newFontSize = Math.max(26, 52 * scaleFactor);
-              document.querySelectorAll(".table-content").forEach(el => el.style.fontSize = newFontSize + "px");
-              largeNumber.style.fontSize = Math.max(80, 100 * scaleFactor) + "px";
+          function dynamicFontSize() {
+            const container = document.querySelector(".label-container");
+            const table = document.getElementById("detailsTable");
+            const headers = document.querySelectorAll(".table th");
+            const contents = document.querySelectorAll(".table-content");
+            const descriptions = document.querySelectorAll(".description-content");
+            
+            let headerSize = 32;
+            let contentSize = 80;
+            let descriptionSize = 70;
+            
+            function checkFit() {
+              // Set sizes
+              headers.forEach(header => header.style.fontSize = headerSize + 'px');
+              contents.forEach(content => content.style.fontSize = contentSize + 'px');
+              descriptions.forEach(desc => desc.style.fontSize = descriptionSize + 'px');
+              
+              // Check if content fits
+              return table.offsetHeight <= container.offsetHeight * 0.95;
+            }
+            
+            // Binary search for optimal font size
+            while (!checkFit() && contentSize > 40) {
+              contentSize -= 5;
+              descriptionSize = contentSize * 0.875;
+              headerSize = contentSize * 0.4;
             }
           }
 
           window.onload = function() {
-            adjustFontSize();
+            // Initial render
+            dynamicFontSize();
+            
+            // Wait a bit and check again
             setTimeout(() => {
-              window.print();
-              window.close();
-            }, 300);
+              dynamicFontSize();
+              // Wait for final render before printing
+              setTimeout(() => {
+                window.print();
+                window.close();
+              }, 200);
+            }, 100);
           }
         </script>
       </body>

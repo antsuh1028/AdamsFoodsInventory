@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import {
   Tabs,
@@ -6,6 +6,7 @@ import {
   TabPanels,
   Tab,
   TabPanel,
+  Text,
   Flex,
   List,
   ListItem,
@@ -20,6 +21,50 @@ const InventoryLevelPanel = ({
   selectedItem,
   handleSet,
 }) => {
+  const scrollContainerRef = useRef(null);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (!scrollContainerRef.current) return;
+      
+      const scrollAmount = 150;
+      
+      switch (event.key) {
+        case 'ArrowUp':
+          event.preventDefault();
+          scrollContainerRef.current.scrollBy({
+            top: -scrollAmount,
+            behavior: 'smooth'
+          });
+          break;
+        case 'ArrowDown':
+          event.preventDefault();
+          scrollContainerRef.current.scrollBy({
+            top: scrollAmount,
+            behavior: 'smooth'
+          });
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleItemClickAndScroll = (item) => {
+    handleItemClick(item);
+    if (scrollContainerRef.current) {
+      setTimeout(() => {
+        scrollContainerRef.current.scrollTo({
+          top: scrollContainerRef.current.scrollHeight,
+          behavior: 'smooth'
+        });
+      }, 50);
+    }
+  };
+
   const getFilterCondition = (item) => {
     if (level === 3) {
       return item.location[1] !== "1" && item.location[1] !== "2";
@@ -27,9 +72,21 @@ const InventoryLevelPanel = ({
     return item.location[1] === String(level);
   };
 
+  const groupedItems = items
+    .filter(getFilterCondition)
+    .reduce((groups, item) => {
+      const prefix = item.location[0];
+      if (!groups[prefix]) {
+        groups[prefix] = [];
+      }
+      groups[prefix].push(item);
+      return groups;
+    }, {});
+
   return (
     <TabPanel height="100%">
       <Flex
+        ref={scrollContainerRef}
         bg="lightblue"
         width="100%"
         height="100%"
@@ -38,32 +95,57 @@ const InventoryLevelPanel = ({
         alignItems="center"
         overflowY="auto"
       >
-        <List spacing={3} width="90%">
-          {items.filter(getFilterCondition).map((item, index) => (
-            <ListItem
-              key={`${item.location}-${index}`}
-              onClick={() => handleItemClick(item)}
-            >
-              <Box
-                p={3}
-                shadow="md"
-                marginTop="10px"
-                borderWidth="1px"
-                borderRadius="md"
-                bg="white"
-                cursor="pointer"
-                _hover={{ bg: "gray.200" }}
-              >
-                {`Level ${level}: ${item.location} - ${item.description} ${
-                  level === 3
-                    ? `: ${item.quantity} bx(s)`
-                    : `- ${item.quantity} bx(s)`
-                }`}
-              </Box>
-            </ListItem>
-          ))}
+        <List spacing={3} width="90%" borderBottom="1px" >
+          {Object.entries(groupedItems)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([prefix, groupItems]) => (
+              <ListItem key={prefix} >
+                <Box 
+                  borderTop="1px" 
+                  borderBottom="1px" 
+                  display="flex" 
+                  justifyContent="flex-start" 
+                  alignItems="center"
+                  pl={4}
+                  height="5vh"
+                > 
+                
+                  <Text fontSize="xl" fontWeight="bold" mt={4} mb={2}>
+                    {prefix}{level}:
+                  </Text>
+                </Box>
+                <List spacing={2}>
+                  {groupItems.map((item, index) => (
+                    <ListItem
+                      key={`${item.location}-${index}`}
+                      onClick={() => handleItemClickAndScroll(item)}
+                    >
+                      <Box
+                        p={3}
+                        shadow="md"
+                        marginTop="10px"
+                        borderWidth="1px"
+                        borderRadius="md"
+                        bg="white"
+                        cursor="pointer"
+                        _hover={{ bg: "gray.200" }}
+                      >
+                        <Text as="span" fontWeight="bold">{`${item.location}`}</Text>
+                        {` - ${item.description} ${
+                          level === 3
+                            ? `: ${item.quantity} bx(s)`
+                            : `- ${item.quantity} bx(s)`
+                        }`}
+                      </Box>
+                    </ListItem>
+                  ))}
+                </List>
+              </ListItem>
+            ))}
+            <Box></Box>
         </List>
         <DetailsPanel item={selectedItem} onSet={handleSet} />
+
       </Flex>
     </TabPanel>
   );
@@ -87,6 +169,10 @@ const InventoryTabs = ({
             border="1px"
             _hover={{bg: "blue.100"}}
             onClick={handleTabClick}
+            _selected={{
+              bg: "blue.100",
+              border: "1px solid gray"
+            }}
           >
             Level {level}
           </Tab>
