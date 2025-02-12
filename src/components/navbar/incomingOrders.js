@@ -28,26 +28,26 @@ import S3Uploader from "../../utils/navbar/S3Uploader";
 import S3FileList from "./s3Files";
 
 
-function UploadFile({ isOpen, onClose }) {
+function IncomingOrders({ isOpen, onClose }) {
     const [selectedFile, setSelectedFile] = useState(null);
     const toast = useToast();
   
-    const handleFileChange = (event) => {
-      const file = event.target.files[0];
+    // const handleFileChange = (event) => {
+    //   const file = event.target.files[0];
   
-      if (file) {
-        const validTypes = [
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "application/vnd.ms-excel",
-        ];
-        if (validTypes.includes(file.type)) {
-          // console.log("Valid Excel file:", file);
-          setSelectedFile(file);
-        } else {
-          alert("Please select a valid Excel file.");
-        }
-      }
-    };
+    //   if (file) {
+    //     const validTypes = [
+    //       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    //       "application/vnd.ms-excel",
+    //     ];
+    //     if (validTypes.includes(file.type)) {
+    //       // console.log("Valid Excel file:", file);
+    //       setSelectedFile(file);
+    //     } else {
+    //       alert("Please select a valid Excel file.");
+    //     }
+    //   }
+    // };
   
     //Function that Reads Excel File and then uses Add function to Input it into the Freezer Database
     const handleUpload = () => {
@@ -192,34 +192,24 @@ function UploadFile({ isOpen, onClose }) {
       <Modal isOpen={isOpen} onClose={onClose}>
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Upload File</ModalHeader>
+          <ModalHeader>Daily Incoming Product Records</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
-            
-            <FormControl>
-              <Box width="90%" padding="4">
-              <Text textAlign="center" fontSize="small">- File must be a "Incoming Product Record Form" -</Text>
-                <Input
-                  type="file"
-                  marginTop="20px"
-                  h=""
-                  accept=".xlsx, .xls"
-                  onChange={handleFileChange}
-                />
-              </Box>
-            </FormControl>
+            <Tabs>
+              <TabList>
+              <Tab>Files</Tab>
+              <Tab>Upload</Tab>
+              </TabList>
+
+              <TabPanels>
+                <TabPanel><S3FileList/></TabPanel>
+                <TabPanel><S3Uploader/></TabPanel>
+              </TabPanels>
+            </Tabs>
           </ModalBody>
-          <ModalFooter>
-            <Button colorScheme="blue" mr={3} onClick={handleUpload}>
-              Upload
-            </Button>
-            <Button variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-          </ModalFooter>
         </ModalContent>
       </Modal>
     );
   }
 
-export default UploadFile;
+export default IncomingOrders;

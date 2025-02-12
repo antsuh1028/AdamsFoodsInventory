@@ -21,6 +21,7 @@ import ShowHistory from "../components/navbar/historyTable.js";
 import UploadFile from "../components/navbar/uploadFile.js";
 import ShowMap from "../components/navbar/locationMap.js";
 import OpenHelp from "../components/navbar/openHelp.js";
+import IncomingOrders from "../components/navbar/incomingOrders.js";
 
 const ShowDrawer = ({
   isOpen,
@@ -29,6 +30,8 @@ const ShowDrawer = ({
   onMapOpen,
   onHistoryOpen,
   onDrawerClose,
+  onIPROpen  
+
 }) => {
   const navigate = useNavigate();
   const handleLogout = () => {
@@ -72,6 +75,17 @@ const ShowDrawer = ({
           >
             Upload File
           </Button>
+          <Button
+            bg="white"
+            justifyContent="flex-start"
+            onClick={() => {
+              onIPROpen();
+              onDrawerClose();
+            }}
+          >
+            Incoming Product Records
+          </Button>
+          
         </Stack>
         <DrawerFooter justifyContent="center">
           <Button
@@ -98,6 +112,11 @@ const Navbar = () => {
     isOpen: isUploadOpen,
     onOpen: onUploadOpen,
     onClose: onUploadClose,
+  } = useDisclosure();
+  const {
+    isOpen: isIPROpen,
+    onOpen: onIPROpen,
+    onClose: onIPRClose,
   } = useDisclosure();
   const {
     isOpen: isMapOpen,
@@ -184,9 +203,12 @@ const Navbar = () => {
         onUploadOpen={onUploadOpen}
         onMapOpen={onMapOpen}
         onHistoryOpen={onHistoryOpen}
+        onIPROpen={onIPROpen}
         onDrawerClose={onDrawerClose}
       />
       <UploadFile isOpen={isUploadOpen} onClose={onUploadClose} />
+      <IncomingOrders isOpen={isIPROpen} onClose={onIPRClose} />
+
       <ShowMap
         isOpen={isMapOpen}
         onClose={onMapClose}
