@@ -38,7 +38,7 @@ const Login = () => {
         if (result.data.message === "Success") {
           // Save the JWT token in localStorage
           localStorage.setItem("token", result.data.token);
-          
+
           // Navigate to loading screen or the homepage
           navigate("/loading...");
         } else {

@@ -1,9 +1,8 @@
-import { React, useContext, useState, useEffect } from 'react';
-import { Box, Button, HStack } from '@chakra-ui/react';
-import { FormContext } from '../../utils/homescreen/formContext';
-import printDetails from "../../utils/printDetails"; 
+import { React, useContext, useState, useEffect } from "react";
+import { Box, Button, HStack } from "@chakra-ui/react";
+import { FormContext } from "../../utils/homescreen/formContext";
+import printDetails from "../../utils/printDetails";
 // import UploadTally from './uploadTally';
-
 
 const PopoverHeader = ({ onClose }) => (
   <Box
@@ -42,7 +41,13 @@ const EmptyLocationInfo = ({ location }) => (
 );
 
 const LocationDetails = ({ item, isLastItem, setSelectedPrint }) => (
-  <Box key={`item-${item.location}`}  _hover={{ color: 'gray.500' }} onClick={()=>{setSelectedPrint(item)}}>
+  <Box
+    key={`item-${item.location}`}
+    _hover={{ color: "gray.500" }}
+    onClick={() => {
+      setSelectedPrint(item);
+    }}
+  >
     <HStack>
       <Box mb={2}>
         Location: <strong>{item.location}</strong>
@@ -65,9 +70,7 @@ const LocationDetails = ({ item, isLastItem, setSelectedPrint }) => (
     <Box mb={2}>
       Description: <strong>{item.description}</strong>
     </Box>
-    {!isLastItem && (
-      <Box borderBottom="1px" borderColor="gray.200" my={2} />
-    )}
+    {!isLastItem && <Box borderBottom="1px" borderColor="gray.200" my={2} />}
   </Box>
 );
 
@@ -102,18 +105,31 @@ const PopoverFooter = ({ onSet, info, selectedPrint }) => {
       <Button size="sm" colorScheme="blue" onClick={() => onSet(info[0])}>
         Set
       </Button>
-      <Button size="sm" onClick={() => {
-        printDetails(selectedPrint || info[0])}}> Print
+      <Button
+        size="sm"
+        onClick={() => {
+          printDetails(selectedPrint || info[0]);
+        }}
+      >
+        {" "}
+        Print
       </Button>
       <Button size="sm">Details</Button>
       {/* <Button size="sm" onClick={() => setIsOpen(true)}>Upload</Button> */}
-        
+
       {/* <UploadTally isOpen={isOpen} onClose={() => setIsOpen(false)} /> */}
-
     </Box>
-  )};
+  );
+};
 
-const InfoPopover = ({ info, position, onClose, onModalClose, selectedItem, setSelectedItem }) => {
+const InfoPopover = ({
+  info,
+  position,
+  onClose,
+  onModalClose,
+  selectedItem,
+  setSelectedItem,
+}) => {
   const { setFormData, setCurrentItem } = useContext(FormContext);
   const [selectedPrint, setSelectedPrint] = useState(null);
   // console.log(info)
@@ -131,8 +147,9 @@ const InfoPopover = ({ info, position, onClose, onModalClose, selectedItem, setS
       vendor: item.vendor || "",
       brand: item.brand || "",
       species: item.species || "",
-      description: item.description === "Empty Location" ? "" : item.description || "",
-      grade: item.grade || "",  
+      description:
+        item.description === "Empty Location" ? "" : item.description || "",
+      grade: item.grade || "",
       quantity: item.quantity || "",
       weight: item.weight || "",
       packdate: item.packdate || "",
@@ -165,11 +182,14 @@ const InfoPopover = ({ info, position, onClose, onModalClose, selectedItem, setS
       transform={`translate(${
         position.x > window.innerWidth / 2 ? "-100%" : "0"
       }, ${position.y > window.innerHeight / 2 ? "-100%" : "0"})`}
-      
     >
       <PopoverHeader onClose={onClose} />
-      <PopoverContent info={info} setSelectedPrint={setSelectedPrint}/>
-      <PopoverFooter onSet={handleSet} info={info} selectedPrint={selectedPrint} />
+      <PopoverContent info={info} setSelectedPrint={setSelectedPrint} />
+      <PopoverFooter
+        onSet={handleSet}
+        info={info}
+        selectedPrint={selectedPrint}
+      />
     </Box>
   );
 };

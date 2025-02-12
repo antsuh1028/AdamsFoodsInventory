@@ -26,22 +26,22 @@ const InventoryLevelPanel = ({
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (!scrollContainerRef.current) return;
-      
+
       const scrollAmount = 150;
-      
+
       switch (event.key) {
-        case 'ArrowUp':
+        case "ArrowUp":
           event.preventDefault();
           scrollContainerRef.current.scrollBy({
             top: -scrollAmount,
-            behavior: 'smooth'
+            behavior: "smooth",
           });
           break;
-        case 'ArrowDown':
+        case "ArrowDown":
           event.preventDefault();
           scrollContainerRef.current.scrollBy({
             top: scrollAmount,
-            behavior: 'smooth'
+            behavior: "smooth",
           });
           break;
         default:
@@ -49,8 +49,8 @@ const InventoryLevelPanel = ({
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   const handleItemClickAndScroll = (item) => {
@@ -59,7 +59,7 @@ const InventoryLevelPanel = ({
       setTimeout(() => {
         scrollContainerRef.current.scrollTo({
           top: scrollContainerRef.current.scrollHeight,
-          behavior: 'smooth'
+          behavior: "smooth",
         });
       }, 50);
     }
@@ -95,23 +95,23 @@ const InventoryLevelPanel = ({
         alignItems="center"
         overflowY="auto"
       >
-        <List spacing={3} width="90%" borderBottom="1px" >
+        <List spacing={3} width="90%" borderBottom="1px">
           {Object.entries(groupedItems)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([prefix, groupItems]) => (
-              <ListItem key={prefix} >
-                <Box 
-                  borderTop="1px" 
-                  borderBottom="1px" 
-                  display="flex" 
-                  justifyContent="flex-start" 
+              <ListItem key={prefix}>
+                <Box
+                  borderTop="1px"
+                  borderBottom="1px"
+                  display="flex"
+                  justifyContent="flex-start"
                   alignItems="center"
                   pl={4}
                   height="5vh"
-                > 
-                
+                >
                   <Text fontSize="xl" fontWeight="bold" mt={4} mb={2}>
-                    {prefix}{level}:
+                    {prefix}
+                    {level}:
                   </Text>
                 </Box>
                 <List spacing={2}>
@@ -130,7 +130,10 @@ const InventoryLevelPanel = ({
                         cursor="pointer"
                         _hover={{ bg: "gray.200" }}
                       >
-                        <Text as="span" fontWeight="bold">{`${item.location}`}</Text>
+                        <Text
+                          as="span"
+                          fontWeight="bold"
+                        >{`${item.location}`}</Text>
                         {` - ${item.description} ${
                           level === 3
                             ? `: ${item.quantity} bx(s)`
@@ -142,10 +145,9 @@ const InventoryLevelPanel = ({
                 </List>
               </ListItem>
             ))}
-            <Box></Box>
+          <Box></Box>
         </List>
         <DetailsPanel item={selectedItem} onSet={handleSet} />
-
       </Flex>
     </TabPanel>
   );
@@ -167,11 +169,11 @@ const InventoryTabs = ({
             key={`level-${level}`}
             bg="lightblue"
             border="1px"
-            _hover={{bg: "blue.100"}}
+            _hover={{ bg: "blue.100" }}
             onClick={handleTabClick}
             _selected={{
               bg: "blue.100",
-              border: "1px solid gray"
+              border: "1px solid gray",
             }}
           >
             Level {level}

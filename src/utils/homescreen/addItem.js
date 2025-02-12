@@ -2,22 +2,19 @@ import axios from "axios";
 import findItem from "./findItem";
 
 function addItem(inputs, setShowDetails, setItems, toast) {
-  // console.log("In AddItem: ",inputs)
+  const API_BASE_URL = "https://server.afdcstorage.com";
+  const TEST_BASE_URL = "http://localhost:3001";
 
   const modifiedInputs = {
     ...inputs,
-    description: inputs.description.toUpperCase()
+    description: inputs.description.toUpperCase(),
   };
-  // console.log("modified: ",modifiedInputs)
 
   axios
-    .post("https://server.afdcstorage.com/inventoryAdd", { inputs: modifiedInputs })
+    .post(`${API_BASE_URL}/inventoryAdd`, { inputs: modifiedInputs })
 
-    // .post("http://localhost:3001/inventoryAdd", { inputs })
     .then((result) => {
-      // return axios.post("http://localhost:3001/addHistory", {
-      return axios.post("https://server.afdcstorage.com/addHistory", {
-
+      return axios.post(`${API_BASE_URL}/addHistory`, {
         ...modifiedInputs,
         change: "ADD",
         time: new Date().toLocaleString(),

@@ -30,8 +30,7 @@ const ShowDrawer = ({
   onMapOpen,
   onHistoryOpen,
   onDrawerClose,
-  onIPROpen  
-
+  onIPROpen,
 }) => {
   const navigate = useNavigate();
   const handleLogout = () => {
@@ -85,12 +84,11 @@ const ShowDrawer = ({
           >
             Incoming Product Records
           </Button>
-          
         </Stack>
         <DrawerFooter justifyContent="center">
           <Button
             bg="red.400"
-            _hover={{ bg: "red.500", color:"white"}}
+            _hover={{ bg: "red.500", color: "white" }}
             color="black"
             onClick={handleLogout}
           >
@@ -149,17 +147,17 @@ const Navbar = () => {
         <Flex h="100%" alignItems="center" justifyContent="space-between">
           <HStack spacing={{ base: 4, sm: 6, md: 8 }} alignItems="center">
             <Box>
-              <Button 
-                onClick={onDrawerOpen} 
-                bg="white" 
-                color="black" 
+              <Button
+                onClick={onDrawerOpen}
+                bg="white"
+                color="black"
                 p={{ base: 1, sm: 1.5, md: 2 }}
                 size={{ base: "sm", md: "md" }}
-                _hover={{ transform: 'scale(1.02)' }}
+                _hover={{ transform: "scale(1.02)" }}
               >
-                <HamburgerIcon 
-                  w={{ base: 4, sm: 5, md: 6 }} 
-                  h={{ base: 4, sm: 5, md: 6 }} 
+                <HamburgerIcon
+                  w={{ base: 4, sm: 5, md: 6 }}
+                  h={{ base: 4, sm: 5, md: 6 }}
                 />
               </Button>
             </Box>
@@ -169,28 +167,28 @@ const Navbar = () => {
               alignItems="center"
               h="100%"
             >
-              <Image 
+              <Image
                 h={{ base: "25px", sm: "35px", md: "45px", lg: "50px" }}
                 maxW={{ base: "120px", sm: "150px", md: "180px", lg: "200px" }}
                 w="auto"
                 objectFit="contain"
-                src="AdamsWings.png" 
-                alt="Adams Wings" 
+                src="AdamsWings.png"
+                alt="Adams Wings"
                 transition="all 0.2s ease-in-out"
-                _hover={{ transform: 'scale(1.02)' }}
+                _hover={{ transform: "scale(1.02)" }}
               />
             </Box>
           </HStack>
           <Flex alignItems="center">
-            <Button 
-              onClick={onHelpOpen} 
-              bg="white" 
-              color="black" 
+            <Button
+              onClick={onHelpOpen}
+              bg="white"
+              color="black"
               size={{ base: "sm", md: "md" }}
               px={{ base: 2, sm: 3, md: 4 }}
               fontSize={{ base: "sm", sm: "md", md: "lg" }}
               transition="all 0.2s ease-in-out"
-              _hover={{ transform: 'scale(1.05)', bg: 'gray.50' }}
+              _hover={{ transform: "scale(1.05)", bg: "gray.50" }}
             >
               Help
             </Button>
@@ -209,10 +207,7 @@ const Navbar = () => {
       <UploadFile isOpen={isUploadOpen} onClose={onUploadClose} />
       <IncomingOrders isOpen={isIPROpen} onClose={onIPRClose} />
 
-      <ShowMap
-        isOpen={isMapOpen}
-        onClose={onMapClose}
-      />
+      <ShowMap isOpen={isMapOpen} onClose={onMapClose} />
       <ShowHistory isOpen={isHistoryOpen} onClose={onHistoryClose} />
       <OpenHelp isOpen={isHelpOpen} onClose={onHelpClose} />
     </>

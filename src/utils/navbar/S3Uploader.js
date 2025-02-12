@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   Box,
   Button,
@@ -7,9 +7,8 @@ import {
   VStack,
   useToast,
   Input,
-  Icon
-} from '@chakra-ui/react';
-// import { FiUpload, FiFile } from 'react-icons/fi';
+  Icon,
+} from "@chakra-ui/react";
 
 const S3Uploader = ({ onUploadSuccess }) => {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -19,13 +18,13 @@ const S3Uploader = ({ onUploadSuccess }) => {
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
-    if (file && file.type === 'application/pdf') {
+    if (file && file.type === "application/pdf") {
       setSelectedFile(file);
     } else {
       toast({
-        title: 'Invalid file type',
-        description: 'Please select a valid PDF file',
-        status: 'error',
+        title: "Invalid file type",
+        description: "Please select a valid PDF file",
+        status: "error",
         duration: 3000,
         isClosable: true,
       });
@@ -36,9 +35,9 @@ const S3Uploader = ({ onUploadSuccess }) => {
   const uploadToS3 = async () => {
     if (!selectedFile) {
       toast({
-        title: 'No file selected',
-        description: 'Please select a file first',
-        status: 'warning',
+        title: "No file selected",
+        description: "Please select a file first",
+        status: "warning",
         duration: 3000,
         isClosable: true,
       });
@@ -50,35 +49,35 @@ const S3Uploader = ({ onUploadSuccess }) => {
 
     try {
       const formData = new FormData();
-      formData.append('file', selectedFile);
+      formData.append("file", selectedFile);
 
-      const response = await fetch('http://localhost:3001/upload-pdf', {
-        method: 'POST',
+      const response = await fetch("http://localhost:3001/upload-pdf", {
+        method: "POST",
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error('Upload failed');
+        throw new Error("Upload failed");
       }
 
       const data = await response.json();
       toast({
-        title: 'Success',
-        description: 'File uploaded successfully',
-        status: 'success',
+        title: "Success",
+        description: "File uploaded successfully",
+        status: "success",
         duration: 3000,
         isClosable: true,
       });
-      
+
       setSelectedFile(null);
       if (onUploadSuccess) {
         onUploadSuccess(data);
       }
     } catch (err) {
       toast({
-        title: 'Upload failed',
+        title: "Upload failed",
         description: err.message,
-        status: 'error',
+        status: "error",
         duration: 3000,
         isClosable: true,
       });
@@ -98,7 +97,7 @@ const S3Uploader = ({ onUploadSuccess }) => {
           borderRadius="lg"
           textAlign="center"
           cursor="pointer"
-          onClick={() => document.getElementById('file-upload').click()}
+          onClick={() => document.getElementById("file-upload").click()}
         >
           <Input
             id="file-upload"
@@ -115,7 +114,7 @@ const S3Uploader = ({ onUploadSuccess }) => {
             color={selectedFile ? "blue.500" : "gray.400"}
           />
           <Text mt={2} fontSize="sm" color="gray.500">
-            {selectedFile ? selectedFile.name : 'Click to select PDF'}
+            {selectedFile ? selectedFile.name : "Click to select PDF"}
           </Text>
         </Box>
 

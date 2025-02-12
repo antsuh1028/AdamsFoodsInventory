@@ -7,19 +7,18 @@ function updateItem(
   setCurrentItem,
   toast
 ) {
+  const API_BASE_URL = "https://server.afdcstorage.com";
+  const TEST_BASE_URL = "http://localhost:3001";
   if (!window.confirm("Are you sure you want to update this item?")) {
     return;
   }
 
   axios
-    .post("https://server.afdcstorage.com/inventoryUpdate", { updateInputs })
+    .post(`${API_BASE_URL}/inventoryUpdate`, { updateInputs })
 
-    // .post("http://localhost:3001/inventoryUpdate", { updateInputs })
     .then((result) => {
       setItems([result.data]);
-      // return axios.post("http://localhost:3001/addHistory", {
-      return axios.post("https://server.afdcstorage.com/addHistory", {
-
+      return axios.post(`${API_BASE_URL}/addHistory`, {
         ...updateInputs,
         change: "UPDATE",
         time: new Date().toLocaleString(),

@@ -76,14 +76,26 @@ const printDetails = (item) => {
         <div class="label-container">
           <div class="inner-container">
             <table class="table" id="detailsTable">
-              <tr><th>LOT#</th><td class="table-content">${item.lot || ""}</td></tr>
-              <tr><th>Vendor</th><td class="table-content">${item.vendor || ""}</td></tr>
-              <tr><th>Date Rcvd</th><td class="table-content">${item.date_recvd || ""}</td></tr>
-              <tr><th>BRAND</th><td class="table-content">${item.brand || ""}</td></tr>
-              <tr><th>QTY (CS)</th><td class="table-content">${item.quantity || ""}</td></tr>
+              <tr><th>LOT#</th><td class="table-content">${
+                item.lot || ""
+              }</td></tr>
+              <tr><th>Vendor</th><td class="table-content">${
+                item.vendor || ""
+              }</td></tr>
+              <tr><th>Date Rcvd</th><td class="table-content">${
+                item.date_recvd || ""
+              }</td></tr>
+              <tr><th>BRAND</th><td class="table-content">${
+                item.brand || ""
+              }</td></tr>
+              <tr><th>QTY (CS)</th><td class="table-content">${
+                item.quantity || ""
+              }</td></tr>
               <tr>
                 <th>Description</th>
-                <td class="description-content">${item.description || ""} ${item.packdate ? `<br>PD: ${item.packdate}` : ''}</td>
+                <td class="description-content">${item.description || ""} ${
+    item.packdate ? `<br>PD: ${item.packdate}` : ""
+  }</td>
               </tr>
             </table>
           </div>

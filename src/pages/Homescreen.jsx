@@ -207,12 +207,7 @@ const Homescreen = () => {
               badgeState={badgeState}
             />
 
-            <Flex
-              width="100%"
-              direction="column"
-              alignItems="center"
-              mt="5%"
-            >
+            <Flex width="100%" direction="column" alignItems="center" mt="5%">
               <ActionButtons
                 onAdd={handleAdd}
                 onFind={handleFind}
