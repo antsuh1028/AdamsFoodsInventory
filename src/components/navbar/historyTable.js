@@ -12,52 +12,31 @@ import {
 import { Table, Thead, Tbody, Tr, Th, Td } from "@chakra-ui/react";
 import { useContext } from "react";
 import { FormContext } from "../../utils/homescreen/formContext.js";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import printDetails from "../../utils/printDetails";
+import getHistory from "../../utils/navbar/getHistory.js";
 
 function ShowHistory({ isOpen, onClose }) {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
+  const [historyData, setHistoryData] = useState([]); // Add state for history data
 
-  const historyData = [
-    {
-      time: "2024-01-13 10:00",
-      change: "ADD",
-      location: "A1",
-      lot: "123",
-      vendor: "Vendor1",
-      brand: "Brand1",
-      species: "Chicken",
-      description: "Description here",
-      grade: "A",
-      quantity: "100",
-      weight: "500",
-      packdate: "2024-01-10",
-      date_recvd: "2024-01-09",
-      est: "12345",
-    },
-    {
-      time: "2024-01-13 10:00",
-      change: "UPDATE",
-      location: "A2",
-      lot: "123",
-      vendor: "Vendor1",
-      brand: "Brand1",
-      species: "Chicken",
-      description: "Description here",
-      grade: "Other",
-      quantity: "100",
-      weight: "500",
-      packdate: "2024-01-10",
-      date_recvd: "2024-01-09",
-      est: "12345",
-    },
-    // Additional history data items follow the same pattern...
-  ];
+  useEffect(() => {
+    console.log("Fetching history...");
+    getHistory()
+      .then(data => {
+        setHistoryData(data || []);
+      })
+      .catch(error => {
+        console.error('Failed to fetch history:', error);
+        setHistoryData([]);
+      });
+  }, []);
+
+  console.log(historyData)
 
   const handleRowClick = (item, event) => {
     setSelectedProduct(item);
-    // console.log(item)
     setPopoverPosition({
       x: event.clientX,
       y: event.clientY,
@@ -128,31 +107,31 @@ function ShowHistory({ isOpen, onClose }) {
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {historyData.map((item, index) => (
-                    <Tr
-                      key={index}
-                      onClick={(e) => handleRowClick(item, e)}
-                      cursor="pointer"
-                      _hover={{ bg: "gray.50" }}
-                      border="1px"
-                      borderColor="gray.200"
-                    >
-                      <Td>{item.time}</Td>
-                      <Td>{item.change}</Td>
-                      <Td>{item.location}</Td>
-                      <Td>{item.lot}</Td>
-                      <Td>{item.vendor}</Td>
-                      <Td>{item.brand}</Td>
-                      <Td>{item.species}</Td>
-                      <Td>{item.description}</Td>
-                      <Td>{item.grade}</Td>
-                      <Td>{item.quantity}</Td>
-                      <Td>{item.weight}</Td>
-                      <Td>{item.packdate}</Td>
-                      <Td>{item.date_recvd}</Td>
-                      <Td>{item.est}</Td>
-                    </Tr>
-                  ))}
+                {historyData.map((item, index) => (
+  <Tr
+    key={index}
+    onClick={(e) => handleRowClick(item, e)}
+    cursor="pointer"
+    _hover={{ bg: "gray.50" }}
+    border="1px"
+    borderColor="gray.200"
+  >
+    <Td>{item.time}</Td>
+    <Td fontWeight="bold">{item.change}</Td>
+    <Td>{item.location}</Td>
+    <Td>{item.lot}</Td>
+    <Td>{item.vendor}</Td>
+    <Td>{item.brand}</Td>
+    <Td>{item.species}</Td>
+    <Td width="500px">{item.description}</Td>
+    <Td>{item.grade}</Td>
+    <Td>{item.quantity}</Td>
+    <Td>{item.weight}</Td>
+    <Td>{item.packdate}</Td>
+    <Td>{item.date_recvd}</Td>
+    <Td>{item.est}</Td>
+  </Tr>
+))}
                 </Tbody>
               </Table>
             </Box>

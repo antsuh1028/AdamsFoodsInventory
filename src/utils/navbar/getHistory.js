@@ -1,34 +1,21 @@
-//TODO:: Get the history from the history database on the backend and then return it wrappped neatly so that we can display later
-
-// Should look like this:
-// {
-//     time: "2024-01-13 10:00",
-//     change:"ADD",
-//     location: "A1",
-//     lot: "123",
-//     vendor: "Vendor1",
-//     brand: "Brand1",
-//     species: "Chicken",
-//     description: "Description here",
-//     grade: "A",
-//     quantity: "100",
-//     weight: "500",
-//     packdate: "2024-01-10",
-//     temp: "-18",
-//     est: "12345"
-//   }
+import axios from "axios";
 
 
-function getHistory(){
+function getHistory() {
+    const API_BASE_URL = "https://server.afdcstorage.com";
+    const TEST_BASE_URL = "http://localhost:3001";
 
-    histories = [];
-
-    //API CALL
-
-
-    hsitories.append({});
-
-    return histories
+    return axios
+        .get(`${TEST_BASE_URL}/getHistory`)
+        .then((result) => {
+            console.log("API Response:", result.data);
+            return result.data;   
+        })
+        .catch((err) => {
+            const message = err.response?.data?.error || "An error occurred";
+            console.error(message);
+            throw err;
+        });
 }
 
 export default getHistory;
