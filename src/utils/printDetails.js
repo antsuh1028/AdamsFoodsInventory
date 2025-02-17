@@ -121,6 +121,20 @@ const printDetails = (item) => {
                 white-space: nowrap;
                 overflow: hidden;
               }
+              .bottom-row th, .bottom-row td {
+    font-size: 90%;
+    font-weight: bold;
+    padding: 5px !important;
+    border-top: 2px solid black;
+  }
+  .bottom-row td {
+    text-transform: uppercase;
+  }
+  .bottom-info {
+    display: flex;
+    justify-content: flex-start;  /* Changed from space-between */
+    gap: 30px;  /* Added specific gap between items */
+  }
               @media print {
                 body {
                   transform: scale(0.99);
@@ -152,6 +166,14 @@ const printDetails = (item) => {
                   <tr class="species-row">
                     <th>Species</th>
                     <td class="table-content">${item.species || ""}</td>
+                  </tr>
+                  <tr class="bottom-row">
+                    <th>Species / Grade</th>
+                    <td class="table-content">
+                      <div class="bottom-info">
+                        <span>${item.species || ""}/${item.grade || ""}</span>
+                      </div>
+                    </td>
                   </tr>
                 </table>
               </div>
