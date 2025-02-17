@@ -3,12 +3,13 @@ import findItem from "../utils/homescreen/findItem.js";
 const printDetails = (item) => {
   if (!item) return;
 
-  console.log("Fetching item details for location:", item.location);
+  // console.log("Fetching item details for location:", item.location);
+  // console.log(item)
 
   findItem(
     { location: item.location },
     (result) => {
-      console.log("Items found:", result); 
+      console.log("Items found:", result);
 
       if (!result || result.length === 0) {
         console.log("No items found for this location.");
@@ -17,21 +18,28 @@ const printDetails = (item) => {
 
       const packdates = result
         .map((i) => new Date(i.packdate))
-        .filter((date) => !isNaN(date)); 
+        .filter((date) => !isNaN(date));
 
       const weights = result
         .map((i) => parseFloat(i.weight))
-        .filter((w) => !isNaN(w)); 
+        .filter((w) => !isNaN(w));
 
       const quantities = result
         .map((i) => parseInt(i.quantity))
-        .filter((q) => !isNaN(q)); 
+        .filter((q) => !isNaN(q));
 
       let packdateRange = "";
       if (packdates.length > 0) {
-        const earliest = new Date(Math.min(...packdates)).toISOString().split("T")[0];
-        const latest = new Date(Math.max(...packdates)).toISOString().split("T")[0];
-        packdateRange = earliest === latest ? `PD: ${earliest}` : `PD: ${earliest} - ${latest}`;
+        const earliest = new Date(Math.min(...packdates))
+          .toISOString()
+          .split("T")[0];
+        const latest = new Date(Math.max(...packdates))
+          .toISOString()
+          .split("T")[0];
+        packdateRange =
+          earliest === latest
+            ? `PD: ${earliest}`
+            : `PD: ${earliest} - ${latest}`;
       }
 
       const totalWeight = weights.reduce((sum, w) => sum + w, 0).toFixed(2);
@@ -83,6 +91,20 @@ const printDetails = (item) => {
                 padding: 5px 10px;
                 word-break: break-word;
               }
+              .location-row th, .location-row td {
+                font-size: 120%;  
+                font-weight: bold;
+                padding: 10px !important;
+              }
+              .species-row td {
+                  font-size: 90%;
+                  font-weight: bold;
+                  padding: 5px !important;
+                  border-top: 2px solid black;
+                  text-transform: uppercase; 
+              }
+
+
               .description-content {
                 font-weight: bold;
                 line-height: 1.1;
@@ -113,25 +135,23 @@ const printDetails = (item) => {
             <div class="label-container">
               <div class="inner-container">
                 <table class="table" id="detailsTable">
-                  <tr><th>LOT#</th><td class="table-content">${
-                    item.lot || ""
-                  }</td></tr>
-                  <tr><th>Vendor</th><td class="table-content">${
-                    item.vendor || ""
-                  }</td></tr>
-                  <tr><th>Date Rcvd</th><td class="table-content">${
-                    item.date_recvd || ""
-                  }</td></tr>
-                  <tr><th>BRAND</th><td class="table-content">${
-                    item.brand || ""
-                  }</td></tr>
+                  <tr class="location-row">
+                    <th>Location</th>
+                    <td class="table-content">${item.location || ""}</td>
+                  </tr>
+                  <tr><th>LOT#</th><td class="table-content">${item.lot || ""}</td></tr>
+                  <tr><th>Vendor</th><td class="table-content">${item.vendor || ""}</td></tr>
+                  <tr><th>Date Rcvd</th><td class="table-content">${item.date_recvd || ""}</td></tr>
+                  <tr><th>BRAND</th><td class="table-content">${item.brand || ""}</td></tr>
                   <tr><th>QTY (CS)</th><td class="table-content">${totalQuantity}</td></tr>
                   <tr><th>Total Weight</th><td class="table-content">${totalWeight} lbs</td></tr>
                   <tr>
                     <th>Description</th>
-                    <td class="description-content">${item.description || ""} ${
-        packdateRange ? `<br>${packdateRange}` : ""
-      }</td>
+                    <td class="description-content">${item.description || ""} ${packdateRange ? `<br>${packdateRange}` : ""}</td>
+                  </tr>
+                  <tr class="species-row">
+                    <th>Species</th>
+                    <td class="table-content">${item.species || ""}</td>
                   </tr>
                 </table>
               </div>
