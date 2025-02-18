@@ -17,18 +17,71 @@
 //     temp: "-18",
 //     est: "12345"
 //   }
+// getHistory.js
+import axios from "axios";
 
+function getHistory(setHistory, toast) {
+    axios
+        .get("https://server.afdcstorage.com/getHistory") //https://server.afdcstorage.com/getHistory
+        .then((result) => {
+            console.log("=== getHistory: Response received ===");
+            console.log("Result data:", result.data);
 
-function getHistory(){
+            if (result.data && Array.isArray(result.data)) {
 
-    histories = [];
+                // Map the history data to a consistent format
+                const formattedHistory = result.data.map((history) => ({
+                    time: history.time || "N/A",
+                    change: history.change || "UNKNOWN",
+                    location: history.location || "N/A",
+                    lot: history.lot || "N/A",
+                    vendor: history.vendor || "N/A",
+                    brand: history.brand || "N/A",
+                    species: history.species || "N/A",
+                    description: history.description || "N/A",
+                    grade: history.grade || "N/A",
+                    quantity: history.quantity || "N/A",
+                    weight: history.weight || "N/A",
+                    packdate: history.packdate || "N/A",
+                    temp: history.temp || "N/A",
+                    est: history.est || "N/A",
+                }));
 
-    //API CALL
+                console.log("Formatted history:", formattedHistory);
+                setHistory(formattedHistory);
+            } else {
+                console.log("Result is not an array or result.data is empty.");
+                // Handle case where no history data is found
+                if (toast) {
+                    toast({
+                        title: "Fetching History Error",
+                        position: "top",
+                        description: "No history records found.",
+                        status: "error",
+                        duration: 2000,
+                        isClosable: true,
+                    });
+                }
+                setHistory([]); 
+            }
+        })
+        .catch((err) => {
+            console.log("=== getHistory: Error occurred ===");
+            console.error("Error details:", err);
 
-
-    hsitories.append({});
-
-    return histories
+            const message = err.response?.data?.error || "An error occurred while fetching history.";
+            if (toast) {
+                toast({
+                    title: "Fetching History Error",
+                    position: "top",
+                    description: message,
+                    status: "error",
+                    duration: 2000,
+                    isClosable: true,
+                });
+            }
+            setHistory([]); 
+        });
 }
 
 export default getHistory;
