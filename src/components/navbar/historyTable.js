@@ -22,7 +22,6 @@ function ShowHistory({ isOpen, onClose }) {
   const [historyData, setHistoryData] = useState([]); // Add state for history data
 
   useEffect(() => {
-    console.log("Fetching history...");
     getHistory()
       .then(data => {
         setHistoryData(data || []);
@@ -33,7 +32,6 @@ function ShowHistory({ isOpen, onClose }) {
       });
   }, []);
 
-  console.log(historyData)
 
   const handleRowClick = (item, event) => {
     setSelectedProduct(item);
@@ -52,19 +50,7 @@ function ShowHistory({ isOpen, onClose }) {
   const formSetters = useContext(FormContext);
 
   const handleSet = (item) => {
-    formSetters.setLocation(item.location || "");
-    formSetters.setLot(item.lot || "");
-    formSetters.setVendor(item.vendor || "");
-    formSetters.setBrand(item.brand || "");
-    formSetters.setSpecies(item.species || "");
-    formSetters.setDescription(item.description || "");
-    formSetters.setGrade(item.grade || "");
-    formSetters.setQuantity(item.quantity || "");
-    formSetters.setWeight(item.weight || "");
-    formSetters.setPackdate(item.packdate || "");
-    formSetters.setDateRecvd(item.date_recvd || "");
-    formSetters.setEst(item.est || "");
-    formSetters.setCurrentItem(item);
+    formSetters.setFormData(item)
     onClose();
   };
 
@@ -108,30 +94,30 @@ function ShowHistory({ isOpen, onClose }) {
                 </Thead>
                 <Tbody>
                 {historyData.map((item, index) => (
-  <Tr
-    key={index}
-    onClick={(e) => handleRowClick(item, e)}
-    cursor="pointer"
-    _hover={{ bg: "gray.50" }}
-    border="1px"
-    borderColor="gray.200"
-  >
-    <Td>{item.time}</Td>
-    <Td fontWeight="bold">{item.change}</Td>
-    <Td>{item.location}</Td>
-    <Td>{item.lot}</Td>
-    <Td>{item.vendor}</Td>
-    <Td>{item.brand}</Td>
-    <Td>{item.species}</Td>
-    <Td width="500px">{item.description}</Td>
-    <Td>{item.grade}</Td>
-    <Td>{item.quantity}</Td>
-    <Td>{item.weight}</Td>
-    <Td>{item.packdate}</Td>
-    <Td>{item.date_recvd}</Td>
-    <Td>{item.est}</Td>
-  </Tr>
-))}
+                  <Tr
+                    key={index}
+                    onClick={(e) => handleRowClick(item, e)}
+                    cursor="pointer"
+                    _hover={{ bg: "gray.50" }}
+                    border="1px"
+                    borderColor="gray.200"
+                  >
+                    <Td>{item.time}</Td>
+                    <Td fontWeight="bold">{item.change}</Td>
+                    <Td>{item.location}</Td>
+                    <Td>{item.lot}</Td>
+                    <Td>{item.vendor}</Td>
+                    <Td>{item.brand}</Td>
+                    <Td>{item.species}</Td>
+                    <Td width="500px">{item.description}</Td>
+                    <Td>{item.grade}</Td>
+                    <Td>{item.quantity}</Td>
+                    <Td>{item.weight}</Td>
+                    <Td>{item.packdate}</Td>
+                    <Td>{item.date_recvd}</Td>
+                    <Td>{item.est}</Td>
+                  </Tr>
+                ))}
                 </Tbody>
               </Table>
             </Box>
