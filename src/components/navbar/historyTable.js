@@ -1,4 +1,4 @@
-import React from "react";
+import { useState, useEffect } from "react";
 import {
   Box,
   Button,
@@ -8,180 +8,210 @@ import {
   ModalHeader,
   ModalBody,
   ModalCloseButton,
+  Text,
+  Flex,
+  Badge,
+  Divider,
+  Collapse,
+  Grid,
+  Spinner,
+  HStack,
 } from "@chakra-ui/react";
-import { Table, Thead, Tbody, Tr, Th, Td } from "@chakra-ui/react";
 import { useContext } from "react";
 import { FormContext } from "../../utils/homescreen/formContext.js";
-import { useState, useEffect } from "react";
 import printDetails from "../../utils/printDetails";
 import getHistory from "../../utils/navbar/getHistory.js";
 
+const CHANGE_COLORS = {
+  ADD: "green",
+  UPDATE: "blue",
+  REMOVE: "orange",
+};
+
+const Field = ({ label, value }) => {
+  if (!value) return null;
+  return (
+    <Box>
+      <Text fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="wide" fontWeight="medium">
+        {label}
+      </Text>
+      <Text fontSize="sm" color="gray.700" fontWeight="medium">
+        {value}
+      </Text>
+    </Box>
+  );
+};
+
+const HistoryRow = ({ item, onSet }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <Box
+      border="1px"
+      borderColor={expanded ? "blue.200" : "gray.100"}
+      borderRadius="lg"
+      bg={expanded ? "blue.50" : "white"}
+      overflow="hidden"
+      transition="all 0.15s"
+    >
+      {/* Summary row */}
+      <Flex
+        px={4}
+        py={3}
+        align="center"
+        gap={3}
+        cursor="pointer"
+        onClick={() => setExpanded((v) => !v)}
+        _hover={{ bg: expanded ? "blue.100" : "gray.50" }}
+      >
+        <Badge
+          colorScheme={CHANGE_COLORS[item.change] || "gray"}
+          fontSize="xs"
+          px={2}
+          py={0.5}
+          borderRadius="md"
+          minW="60px"
+          textAlign="center"
+          flexShrink={0}
+        >
+          {item.change}
+        </Badge>
+
+        <Box flex={1} minW={0}>
+          <HStack spacing={2}>
+            <Text fontSize="sm" fontWeight="semibold" color="gray.800" noOfLines={1}>
+              {item.location}
+            </Text>
+            {item.lot && (
+              <Text fontSize="xs" color="gray.400">
+                · Lot {item.lot}
+              </Text>
+            )}
+          </HStack>
+          <Text fontSize="xs" color="gray.500" noOfLines={1}>
+            {item.description}
+          </Text>
+        </Box>
+
+        <HStack spacing={3} flexShrink={0}>
+          {item.quantity && (
+            <Text fontSize="xs" color="gray.500">
+              {item.quantity} bx
+            </Text>
+          )}
+          <Text fontSize="xs" color="gray.400" textAlign="right">
+            {item.time}
+          </Text>
+          <Text fontSize="xs" color="gray.300">
+            {expanded ? "▲" : "▼"}
+          </Text>
+        </HStack>
+      </Flex>
+
+      {/* Expanded details */}
+      <Collapse in={expanded} animateOpacity>
+        <Divider borderColor="blue.100" />
+        <Box px={4} py={3} bg="white">
+          <Grid templateColumns="repeat(4, 1fr)" gap={4} mb={4}>
+            <Field label="Location" value={item.location} />
+            <Field label="Lot" value={item.lot} />
+            <Field label="Brand" value={item.brand} />
+            <Field label="Grade" value={item.grade} />
+            <Field label="Quantity" value={item.quantity ? `${item.quantity} bx` : null} />
+            <Field label="Weight" value={item.weight ? `${item.weight} lb` : null} />
+            <Field label="Species" value={item.species} />
+            <Field label="Vendor" value={item.vendor} />
+            <Field label="Pack Date" value={item.packdate} />
+            <Field label="Date Received" value={item.date_recvd} />
+            <Field label="EST #" value={item.est} />
+          </Grid>
+          {item.description && (
+            <Box mb={4}>
+              <Text fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="wide" fontWeight="medium">
+                Description
+              </Text>
+              <Text fontSize="sm" color="gray.700" fontWeight="medium">
+                {item.description}
+              </Text>
+            </Box>
+          )}
+          <Flex gap={2} justify="flex-end">
+            <Button size="xs" variant="outline" onClick={() => printDetails(item)}>
+              Print
+            </Button>
+            <Button size="xs" colorScheme="blue" onClick={() => onSet(item)}>
+              Set
+            </Button>
+          </Flex>
+        </Box>
+      </Collapse>
+    </Box>
+  );
+};
+
 function ShowHistory({ isOpen, onClose }) {
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
-  const [historyData, setHistoryData] = useState([]); // Add state for history data
+  const [historyData, setHistoryData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const { setFormData } = useContext(FormContext);
 
   useEffect(() => {
+    if (!isOpen) return;
+    setLoading(true);
     getHistory()
-      .then(data => {
-        setHistoryData(data || []);
-      })
-      .catch(error => {
-        console.error('Failed to fetch history:', error);
-        setHistoryData([]);
-      });
-  }, []);
-
-
-  const handleRowClick = (item, event) => {
-    setSelectedProduct(item);
-    setPopoverPosition({
-      x: event.clientX,
-      y: event.clientY,
-    });
-  };
-
-  const StyledTh = ({ children }) => (
-    <Th border="1px" borderColor="gray.200">
-      {children}
-    </Th>
-  );
-
-  const formSetters = useContext(FormContext);
+      .then((data) => setHistoryData(data || []))
+      .catch(() => setHistoryData([]))
+      .finally(() => setLoading(false));
+  }, [isOpen]);
 
   const handleSet = (item) => {
-    formSetters.setFormData(item)
-    onClose();
-  };
-
-  const handleClose = () => {
-    setSelectedProduct(null);
+    setFormData({
+      location: item.location || "",
+      lot: item.lot || "",
+      vendor: item.vendor || "",
+      brand: item.brand || "",
+      species: item.species || "",
+      description: item.description || "",
+      grade: item.grade || "",
+      quantity: item.quantity || "",
+      weight: item.weight || "",
+      packdate: item.packdate || "",
+      date_recvd: item.date_recvd || "",
+      est: item.est || "",
+    });
     onClose();
   };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl">
-      <ModalOverlay />
-      <ModalContent maxW="90vw" height="90vh">
-        <ModalHeader>History Log</ModalHeader>
-        <ModalCloseButton onClick={handleClose} />
-        <ModalBody>
-          <Box overflowX="auto">
-            <Box maxH="75vh" overflowY="auto">
-              <Table
-                variant="sim"
-                size="md"
-                border="1px"
-                borderColor="gray.200"
-              >
-                <Thead>
-                  <Tr>
-                    <StyledTh>Time</StyledTh>
-                    <StyledTh>Change Made</StyledTh>
-                    <StyledTh>Location</StyledTh>
-                    <StyledTh>Lot</StyledTh>
-                    <StyledTh>Vendor</StyledTh>
-                    <StyledTh>Brand</StyledTh>
-                    <StyledTh>Species</StyledTh>
-                    <StyledTh>Desc.</StyledTh>
-                    <StyledTh>Grade</StyledTh>
-                    <StyledTh>Quant.</StyledTh>
-                    <StyledTh>Weight</StyledTh>
-                    <StyledTh>Pack Date</StyledTh>
-                    <StyledTh>Recv'd Date</StyledTh>
-                    <StyledTh>EST</StyledTh>
-                  </Tr>
-                </Thead>
-                <Tbody>
-                {historyData.map((item, index) => (
-                  <Tr
-                    key={index}
-                    onClick={(e) => handleRowClick(item, e)}
-                    cursor="pointer"
-                    _hover={{ bg: "gray.50" }}
-                    border="1px"
-                    borderColor="gray.200"
-                  >
-                    <Td>{item.time}</Td>
-                    <Td fontWeight="bold">{item.change}</Td>
-                    <Td>{item.location}</Td>
-                    <Td>{item.lot}</Td>
-                    <Td>{item.vendor}</Td>
-                    <Td>{item.brand}</Td>
-                    <Td>{item.species}</Td>
-                    <Td width="500px">{item.description}</Td>
-                    <Td>{item.grade}</Td>
-                    <Td>{item.quantity}</Td>
-                    <Td>{item.weight}</Td>
-                    <Td>{item.packdate}</Td>
-                    <Td>{item.date_recvd}</Td>
-                    <Td>{item.est}</Td>
-                  </Tr>
-                ))}
-                </Tbody>
-              </Table>
-            </Box>
-          </Box>
+      <ModalOverlay bg="blackAlpha.600" />
+      <ModalContent maxW="780px" maxH="90vh" borderRadius="xl" overflow="hidden">
+        <ModalHeader borderBottom="1px" borderColor="gray.100" py={3}>
+          <Flex align="center" gap={3}>
+            <Text fontSize="lg" fontWeight="semibold">History Log</Text>
+            {!loading && historyData.length > 0 && (
+              <Badge colorScheme="gray" fontSize="xs">
+                {historyData.length} entries
+              </Badge>
+            )}
+          </Flex>
+        </ModalHeader>
+        <ModalCloseButton top={3} />
 
-          {selectedProduct && (
-            <Box
-              position="fixed"
-              left={popoverPosition.x}
-              top={popoverPosition.y}
-              bg="white"
-              boxShadow="lg"
-              border="1px"
-              borderColor="gray.200"
-              borderRadius="md"
-              p={4}
-              zIndex={1400}
-            >
-              <Box fontWeight="bold" mb={2}>
-                Product Info
-                <Button
-                  size="sm"
-                  position="absolute"
-                  right={2}
-                  top={2}
-                  onClick={() => {
-                    setSelectedProduct(null);
-                  }}
-                >
-                  ✕
-                </Button>
-              </Box>
-              <>
-                <Box mb={2}>Location: {selectedProduct.location}</Box>
-                <Box mb={2}>Lot: {selectedProduct.lot}</Box>
-                <Box mb={2}>Description: {selectedProduct.description}</Box>
-                <Box
-                  display="flex"
-                  gap={2}
-                  mt={4}
-                  h="10%"
-                  w="20vw"
-                  maxW="500px"
-                >
-                  <Button
-                    size="sm"
-                    colorScheme="blue"
-                    onClick={() => handleSet(selectedProduct)}
-                  >
-                    Set
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      // console.log(selectedProduct);
-                      printDetails(selectedProduct);
-                    }}
-                  >
-                    {" "}
-                    Print
-                  </Button>
-                </Box>
-              </>
-            </Box>
+        <ModalBody overflowY="auto" p={4}>
+          {loading ? (
+            <Flex justify="center" align="center" py={12}>
+              <Spinner color="blue.400" />
+            </Flex>
+          ) : historyData.length === 0 ? (
+            <Flex justify="center" align="center" py={12}>
+              <Text color="gray.400" fontSize="sm">No history yet.</Text>
+            </Flex>
+          ) : (
+            <Flex direction="column" gap={2}>
+              {historyData.map((item, index) => (
+                <HistoryRow key={index} item={item} onSet={handleSet} />
+              ))}
+            </Flex>
           )}
         </ModalBody>
       </ModalContent>

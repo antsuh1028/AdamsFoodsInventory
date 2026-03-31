@@ -52,7 +52,7 @@ const ShowDrawer = ({
               onDrawerClose();
             }}
           >
-            Show Map
+            Freezer Map
           </Button>
           <Button
             bg="white"

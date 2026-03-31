@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Flex, VStack, useToast } from "@chakra-ui/react";
-import axios from "axios";
+import { useState, useEffect, useCallback } from "react";
+import { Flex, Box, useToast } from "@chakra-ui/react";
 import Navbar from "./Navbar";
+import axiosInstance from "../utils/axiosInstance";
 
 import { FormContext } from "../utils/homescreen/formContext";
 
@@ -38,7 +38,6 @@ const Homescreen = () => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [currentItem, setCurrentItem] = useState(null);
   const [badgeState, setBadgeState] = useState(null);
-  const [loading, setLoading] = useState(false);
 
   const toast = useToast();
 
@@ -71,17 +70,8 @@ const Homescreen = () => {
     findItem(formData, setItems, setShowDetails, toast);
   }, [formData, toast]);
 
-  const handleAdd = useCallback(async () => {
-    setLoading(true);
-    try {
-      // console.log(formData);
-      await addItem(formData, setShowDetails, setItems, toast);
-      handleClear();
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
+  const handleAdd = useCallback(() => {
+    addItem(formData, setShowDetails, setItems, toast, handleClear);
   }, [formData, toast, handleClear]);
 
   const handleUpdate = useCallback(
@@ -135,42 +125,45 @@ const Homescreen = () => {
   }, []);
 
   useEffect(() => {
-    const checkLocation = async () => {
-      if (!formData.location) {
-        setBadgeState(null);
-        return;
-      }
+    if (!formData.location) {
+      setBadgeState(null);
+      return;
+    }
 
+    const controller = new AbortController();
+
+    const timer = setTimeout(async () => {
       try {
-        const verifyResult = await axios.post(
-          "https://server.afdcstorage.com/verifyLocation",
-          {
-            location: formData.location,
-          }
+        const verifyResult = await axiosInstance.post(
+          "/verifyLocation",
+          { location: formData.location },
+          { signal: controller.signal }
         );
 
         if (verifyResult.data === "OK") {
-          const locationInputs = { ...formData };
-
-          const inventoryResult = await axios.post(
-            "https://server.afdcstorage.com/inventoryFind",
-            {
-              inputs: locationInputs,
-            }
+          const inventoryResult = await axiosInstance.post(
+            "/inventoryFind",
+            { inputs: { ...formData } },
+            { signal: controller.signal }
           );
-
           setBadgeState(inventoryResult.data === "INVALID" ? "out" : "in");
         } else {
           setBadgeState("error");
         }
       } catch (err) {
-        setBadgeState("error");
-        console.error(err);
+        if (err.name !== "CanceledError") {
+          setBadgeState("error");
+          console.error(err);
+        }
       }
-    };
+    }, 400);
 
-    checkLocation();
-  }, [formData]);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.location]);
 
   return (
     <FormContext.Provider
@@ -187,19 +180,23 @@ const Homescreen = () => {
           height="100vh"
           alignItems="center"
           justifyContent="space-between"
-          bg="lightblue"
+          bg="gray.50"
           pt="60px"
+          gap={3}
+          px={3}
+          pb={3}
         >
           <Flex
-            bg="lightblue"
-            width="80%"
+            bg="white"
+            width="60%"
             height="90%"
-            margin="10px"
-            border="1px"
+            borderRadius="lg"
+            boxShadow="md"
             direction="column"
             justifyContent="flex-start"
             alignItems="center"
             overflowY="auto"
+            p={4}
           >
             <InventoryForm
               formData={formData}
@@ -214,36 +211,34 @@ const Homescreen = () => {
                 onUpdate={handleUpdate}
                 onRemove={handleRemove}
                 onClear={handleClear}
-                loading={loading}
               />
             </Flex>
           </Flex>
 
-          <VStack
-            bg="lightblue"
-            width="50%"
+          <Flex
+            bg="white"
+            width="40%"
             height="90%"
-            margin="10px"
+            borderRadius="lg"
+            boxShadow="md"
             direction="column"
-            justifyContent="flex-start"
-            alignItems="center"
+            overflow="hidden"
           >
-            <InventoryTabs
-              items={items}
-              handleItemClick={handleItemClick}
-              handleTabClick={handleTabClick}
-              DetailsPanel={() => (
-                <DetailsPanel
-                  item={selectedItem}
-                  showDetails={showDetails}
-                  onClose={() => setShowDetails(false)}
-                  onSet={handleSet}
-                />
-              )}
-              selectedItem={selectedItem}
-              handleSet={handleSet}
+            <Box flex={1} minH={0} overflow="hidden">
+              <InventoryTabs
+                items={items}
+                handleItemClick={handleItemClick}
+                handleTabClick={handleTabClick}
+                selectedItem={selectedItem}
+              />
+            </Box>
+            <DetailsPanel
+              item={selectedItem}
+              showDetails={showDetails}
+              onClose={() => setShowDetails(false)}
+              onSet={handleSet}
             />
-          </VStack>
+          </Flex>
         </Flex>
       </>
     </FormContext.Provider>

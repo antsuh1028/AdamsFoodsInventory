@@ -1,4 +1,4 @@
-import { React, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Modal,
   ModalOverlay,
@@ -15,6 +15,7 @@ import {
   TabPanels,
   Tab,
   TabPanel,
+  HStack,
 } from "@chakra-ui/react";
 
 import { locationRows } from "../../utils/navbar/exportRows.js";
@@ -27,59 +28,95 @@ import InfoPopover from "./infoPopover.js";
 const SeatBlock = ({ id, seats, occupiedCells, onSeatClick }) => {
   const hasSixSeats = seats.length >= 6;
 
-  const handleClick = (e, seat) => {
-    onSeatClick(e, id, seat);
-  };
-
   return (
     <Box
       border="1px"
-      borderColor="gray.300"
+      borderColor="gray.200"
+      borderRadius="md"
       h="100%"
-      p={2}
+      p={1.5}
       minH="100%"
       overflow="hidden"
+      bg="white"
     >
       <Text
         textAlign="center"
-        fontWeight="bold"
+        fontWeight="semibold"
+        fontSize="xs"
+        color="gray.600"
         borderBottom="1px"
-        borderColor="gray.300"
+        borderColor="gray.100"
         mb={1}
+        pb={0.5}
       >
         {id}
       </Text>
       <Grid
         templateColumns={hasSixSeats ? "repeat(2, 1fr)" : "1fr"}
-        fontSize="md"
-        gap={1}
+        fontSize="xs"
+        gap={0.5}
       >
-        {seats.map((seat, index) => (
-          <Text
-            key={index}
-            p={1}
-            textAlign="center"
-            borderColor="gray.200"
-            bg={occupiedCells?.includes(`${id}${seat}`) ? "gray.300" : "white"}
-            _hover={{ bg: "blue.100", cursor: "pointer" }}
-            onClick={(e) => handleClick(e, seat)}
-          >
-            {seat}
-          </Text>
-        ))}
+        {seats.map((seat, index) => {
+          const isUnavailable = seat === "-";
+          const locationKey = `${id}${seat}`;
+          const isOccupied = !isUnavailable && occupiedCells?.includes(locationKey);
+
+          return (
+            <Box
+              key={index}
+              p={1}
+              textAlign="center"
+              borderRadius="sm"
+              bg={
+                isUnavailable
+                  ? "gray.100"
+                  : isOccupied
+                  ? "blue.100"
+                  : "white"
+              }
+              border="1px"
+              borderColor={
+                isUnavailable
+                  ? "transparent"
+                  : isOccupied
+                  ? "blue.300"
+                  : "gray.100"
+              }
+              color={isUnavailable ? "gray.300" : isOccupied ? "blue.700" : "gray.700"}
+              _hover={
+                isUnavailable
+                  ? {}
+                  : { bg: isOccupied ? "blue.200" : "teal.50", cursor: "pointer" }
+              }
+              onClick={isUnavailable ? undefined : (e) => onSeatClick(e, id, seat)}
+            >
+              {isUnavailable ? "—" : seat}
+            </Box>
+          );
+        })}
       </Grid>
     </Box>
   );
 };
 
-const generateMap = (level, occupiedCells, onSeatClick) => {
-  const generateRowData = (baseData, level) => {
-    return Object.entries(baseData).reduce((acc, [key, value]) => {
-      acc[`${key}`] = value;
-      return acc;
-    }, {});
-  };
+const Legend = () => (
+  <HStack spacing={4} justify="center" mb={3} fontSize="xs" color="gray.500">
+    <HStack spacing={1}>
+      <Box w={3} h={3} borderRadius="sm" bg="white" border="1px" borderColor="gray.200" />
+      <Text>Empty</Text>
+    </HStack>
+    <HStack spacing={1}>
+      <Box w={3} h={3} borderRadius="sm" bg="blue.100" border="1px" borderColor="blue.300" />
+      <Text>Occupied</Text>
+    </HStack>
+    <HStack spacing={1}>
+      <Box w={3} h={3} borderRadius="sm" bg="gray.100" />
+      <Text>Unavailable</Text>
+    </HStack>
+  </HStack>
+);
 
+const generateMap = (level, occupiedCells, onSeatClick) => {
   const topRowData =
     level === 1
       ? locationRows.topRow1
@@ -99,20 +136,12 @@ const generateMap = (level, occupiedCells, onSeatClick) => {
       ? locationRows.bottomRow2
       : locationRows.bottomRow3;
 
-  const mappedTopRow = generateRowData(topRowData, level);
-  const mappedRightRow = generateRowData(rightRowData, level);
-  const mappedBottomRow = generateRowData(bottomRowData, level);
-
   return (
-    <Box w="100%" maxW="100%" mx="auto" p={4}>
-      <Text textAlign="center" fontSize="xl" fontWeight="bold" mb={4}>
-        [LEVEL {level}]
-      </Text>
-
+    <Box w="100%" maxW="100%" mx="auto" p={3}>
       <Box w="100%">
-        <Flex justify="space-between" mb={8}>
+        <Flex justify="space-between" mb={6}>
           <Grid templateColumns="repeat(4, 1fr)" gap={2} w="31%">
-            {Object.entries(mappedTopRow).map(([id, seats]) => (
+            {Object.entries(topRowData).map(([id, seats]) => (
               <SeatBlock
                 key={id}
                 id={id}
@@ -123,20 +152,25 @@ const generateMap = (level, occupiedCells, onSeatClick) => {
             ))}
           </Grid>
 
-          <Box textAlign="center" px={8}>
+          <Flex align="center" justify="center" px={4}>
             <Box
               border="1px"
               borderColor="gray.300"
-              px={100}
-              py={3}
-              fontWeight="bold"
+              borderRadius="md"
+              px={8}
+              py={2}
+              fontWeight="semibold"
+              fontSize="sm"
+              color="gray.500"
+              bg="gray.50"
+              letterSpacing="widest"
             >
               DOOR
             </Box>
-          </Box>
+          </Flex>
 
           <Grid templateColumns="repeat(6, 1fr)" gap={2} w="48%">
-            {Object.entries(mappedRightRow).map(([id, seats]) => (
+            {Object.entries(rightRowData).map(([id, seats]) => (
               <SeatBlock
                 key={id}
                 id={id}
@@ -148,11 +182,10 @@ const generateMap = (level, occupiedCells, onSeatClick) => {
           </Grid>
         </Flex>
 
-        <Flex gap={2} w="100%" flexWrap="wrap" justifyContent="center">
-          {Object.entries(mappedBottomRow).map(([id, seats]) => (
+        <Flex gap={1.5} w="100%" flexWrap="wrap" justifyContent="center">
+          {Object.entries(bottomRowData).map(([id, seats]) => (
             <Box key={id} flex={1} flexGrow={1} minWidth={0}>
               <SeatBlock
-                key={id}
                 id={id}
                 seats={seats}
                 occupiedCells={occupiedCells}
@@ -170,7 +203,6 @@ function ShowMap({ isOpen, onClose }) {
   const [popoverInfo, setPopoverInfo] = useState([]);
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
   const [occCells, setOccCells] = useState([]);
-  const [selectedItem, setSelectedItem] = useState(null);
 
   const handleSeatClick = (e, id, seat) => {
     setPopoverPosition({ x: e.clientX, y: e.clientY });
@@ -191,7 +223,6 @@ function ShowMap({ isOpen, onClose }) {
           ]);
         } else {
           setPopoverInfo(result);
-          setSelectedItem(result[0]);
         }
       },
       null,
@@ -206,55 +237,78 @@ function ShowMap({ isOpen, onClose }) {
   const handleModalClose = () => {
     setPopoverInfo([]);
     setPopoverPosition({ x: 0, y: 0 });
-    handleClosePopover();
     onClose();
   };
 
   useEffect(() => {
     if (isOpen === true) {
-      function initializeMap() {
-        findItem(
-          { location: "" },
-          (newCells) => {
-            setOccCells(getLocations(newCells));
-          },
-          null,
-          null
-        );
-      }
-
-      initializeMap();
+      findItem(
+        { location: "" },
+        (newCells) => {
+          setOccCells(getLocations(newCells));
+        },
+        null,
+        null
+      );
     }
   }, [isOpen]);
 
   return (
     <Modal isOpen={isOpen} onClose={handleModalClose} size="xl">
-      <ModalOverlay />
-      <ModalContent maxW="90vw" height="90vh">
-        <ModalHeader>Freezer Map</ModalHeader>
-        <ModalCloseButton />
-        <ModalBody display="flex" justifyContent="center">
+      <ModalOverlay bg="blackAlpha.600" />
+      <ModalContent maxW="90vw" height="90vh" borderRadius="xl" overflow="hidden">
+        <ModalHeader
+          borderBottom="1px"
+          borderColor="gray.100"
+          py={3}
+          fontSize="lg"
+          fontWeight="semibold"
+        >
+          Freezer Map
+        </ModalHeader>
+        <ModalCloseButton top={3} />
+        <ModalBody display="flex" flexDirection="column" overflowY="auto" p={4}>
+          <Legend />
+          <Tabs isFitted colorScheme="blue" flex={1}>
+            <TabList mb={3} borderBottom="2px" borderColor="gray.100">
+              <Tab
+                onClick={handleClosePopover}
+                fontWeight="semibold"
+                fontSize="sm"
+                _selected={{ color: "blue.600", borderColor: "blue.500" }}
+              >
+                Level 1
+              </Tab>
+              <Tab
+                onClick={handleClosePopover}
+                fontWeight="semibold"
+                fontSize="sm"
+                _selected={{ color: "blue.600", borderColor: "blue.500" }}
+              >
+                Level 2
+              </Tab>
+              <Tab
+                onClick={handleClosePopover}
+                fontWeight="semibold"
+                fontSize="sm"
+                _selected={{ color: "blue.600", borderColor: "blue.500" }}
+              >
+                Level 3
+              </Tab>
+            </TabList>
+            <TabPanels>
+              <TabPanel p={0}>{generateMap(1, occCells, handleSeatClick)}</TabPanel>
+              <TabPanel p={0}>{generateMap(2, occCells, handleSeatClick)}</TabPanel>
+              <TabPanel p={0}>{generateMap(3, occCells, handleSeatClick)}</TabPanel>
+            </TabPanels>
+          </Tabs>
+
           <InfoPopover
             info={popoverInfo}
             position={popoverPosition}
             onClose={handleClosePopover}
             onModalClose={handleModalClose}
-            selectedItem={selectedItem}
-            setSelectedItem={setSelectedItem}
           />
-
-          <Tabs isFitted>
-            <TabList mb={4}>
-              <Tab onClick={handleClosePopover}>Level 1</Tab>
-              <Tab onClick={handleClosePopover}>Level 2</Tab>
-              <Tab onClick={handleClosePopover}>Level 3</Tab>
-            </TabList>
-            <TabPanels>
-              <TabPanel>{generateMap(1, occCells, handleSeatClick)}</TabPanel>
-              <TabPanel>{generateMap(2, occCells, handleSeatClick)}</TabPanel>
-              <TabPanel>{generateMap(3, occCells, handleSeatClick)}</TabPanel>
-            </TabPanels>
-          </Tabs>
         </ModalBody>
       </ModalContent>
     </Modal>

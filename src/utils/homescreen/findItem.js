@@ -1,11 +1,8 @@
-import axios from "axios";
+import axiosInstance from "../axiosInstance";
 
 function findItem(inputs, setItems, setShowDetails, toast) {
-  const API_BASE_URL = "https://server.afdcstorage.com";
-  const TEST_BASE_URL = "http://localhost:3001";
-
-  axios
-    .post(`${API_BASE_URL}/inventoryFind`, { inputs })
+  axiosInstance
+    .post("/inventoryFind", { inputs })
 
     .then((result) => {
       if (result.data === "INVALID") {

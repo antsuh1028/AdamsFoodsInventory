@@ -11,10 +11,8 @@ const Signup = () => {
   const handleSubmit = (e) => {
     e.preventDefault(); // Prevents the default form submission behavior
     axios.post('https://server.afdcstorage.com/signup', { email, password })
-      .then(result => {
-        console.log(result)
-      })
-      .catch(err => console.log(err));
+      .then(() => {})
+      .catch(err => console.error(err));
   };
 
   return (

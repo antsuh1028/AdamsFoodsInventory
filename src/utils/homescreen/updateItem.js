@@ -1,4 +1,5 @@
-import axios from "axios";
+import axiosInstance from "../axiosInstance";
+import postHistory from "./postHistory";
 
 function updateItem(
   updateInputs,
@@ -7,22 +8,15 @@ function updateItem(
   setCurrentItem,
   toast
 ) {
-  const API_BASE_URL = "https://server.afdcstorage.com";
-  const TEST_BASE_URL = "http://localhost:3001";
   if (!window.confirm("Are you sure you want to update this item?")) {
     return;
   }
 
-  axios
-    .post(`${API_BASE_URL}/inventoryUpdate`, { updateInputs })
-
+  axiosInstance
+    .post("/inventoryUpdate", { updateInputs })
     .then((result) => {
       setItems([result.data]);
-      return axios.post(`${API_BASE_URL}/addHistory`, {
-        ...updateInputs,
-        change: "UPDATE",
-        time: new Date().toLocaleString(),
-      });
+      return postHistory(updateInputs, "UPDATE");
     })
     .then(() => {
       toast({

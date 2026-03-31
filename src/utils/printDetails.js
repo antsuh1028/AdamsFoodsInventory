@@ -1,4 +1,4 @@
-import findItem from "../utils/homescreen/findItem.js";
+import findItem from "./homescreen/findItem.js";
 
 const printDetails = (item) => {
   if (!item) return;
@@ -9,8 +9,6 @@ const printDetails = (item) => {
   findItem(
     { location: item.location },
     (result) => {
-      console.log("Items found:", result);
-
       if (!result || result.length === 0) {
         console.log("No items found for this location.");
         return;
@@ -122,7 +120,7 @@ const printDetails = (item) => {
                 overflow: hidden;
               }
               .bottom-row th, .bottom-row td {
-    font-size: 90%;
+    font-size: 80%;
     font-weight: bold;
     padding: 5px !important;
     border-top: 2px solid black;
@@ -134,6 +132,7 @@ const printDetails = (item) => {
     display: flex;
     justify-content: flex-start;  /* Changed from space-between */
     gap: 30px;  /* Added specific gap between items */
+    font-size: 80%;
   }
               @media print {
                 body {
@@ -153,25 +152,33 @@ const printDetails = (item) => {
                     <th>Location</th>
                     <td class="table-content">${item.location || ""}</td>
                   </tr>
-                  <tr><th>LOT#</th><td class="table-content">${item.lot || ""}</td></tr>
-                  <tr><th>Vendor</th><td class="table-content">${item.vendor || ""}</td></tr>
-                  <tr><th>Date Rcvd</th><td class="table-content">${item.date_recvd || ""}</td></tr>
-                  <tr><th>BRAND</th><td class="table-content">${item.brand || ""}</td></tr>
+                  <tr><th>LOT#</th><td class="table-content">${
+                    item.lot || ""
+                  }</td></tr>
+                  <tr><th>Vendor</th><td class="table-content">${
+                    item.vendor || ""
+                  }</td></tr>
+                  <tr><th>Date Rcvd</th><td class="table-content">${
+                    item.date_recvd || ""
+                  }</td></tr>
+                  <tr><th>BRAND</th><td class="table-content">${
+                    item.brand || ""
+                  }</td></tr>
                   <tr><th>QTY (CS)</th><td class="table-content">${totalQuantity}</td></tr>
                   <tr><th>Total Weight</th><td class="table-content">${totalWeight} lbs</td></tr>
                   <tr>
                     <th>Description</th>
-                    <td class="description-content">${item.description || ""} ${packdateRange ? `<br>${packdateRange}` : ""}</td>
-                  </tr>
-                  <tr class="species-row">
-                    <th>Species</th>
-                    <td class="table-content">${item.species || ""}</td>
+                    <td class="description-content">${item.description || ""} ${
+        packdateRange ? `<br>${packdateRange}` : ""
+      }</td>
                   </tr>
                   <tr class="bottom-row">
-                    <th>Species / Grade</th>
+                    <th>Species /<br>Grade</th>
                     <td class="table-content">
                       <div class="bottom-info">
-                        <span>${item.species || ""}/${item.grade || ""}</span>
+                        <span>${item.species || ""}/<br>${
+        item.grade || ""
+      }</span>
                       </div>
                     </td>
                   </tr>

@@ -1,4 +1,5 @@
-import axios from "axios";
+import axiosInstance from "../axiosInstance";
+import postHistory from "./postHistory";
 
 function removeItem(
   currentItem,
@@ -8,9 +9,6 @@ function removeItem(
   setCurrentItem,
   toast
 ) {
-  const API_BASE_URL = "https://server.afdcstorage.com";
-  const TEST_BASE_URL = "http://localhost:3001";
-
   if (!window.confirm("Are you sure you want to delete this item?")) {
     return;
   }
@@ -29,15 +27,9 @@ function removeItem(
     return;
   }
 
-  axios
-    .post(`${API_BASE_URL}/inventoryRemove`, { currentItem })
-    .then(() => {
-      return axios.post(`${API_BASE_URL}/addHistory`, {
-        ...currentItem,
-        change: "REMOVE",
-        time: new Date().toLocaleString(),
-      });
-    })
+  axiosInstance
+    .post("/inventoryRemove", { currentItem })
+    .then(() => postHistory(currentItem, "REMOVE"))
     .then(() => {
       toast({
         title: "Remove Item Success",

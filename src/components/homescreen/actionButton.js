@@ -33,49 +33,50 @@ const ActionButtons = ({
           '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '4px' }
         }}
       >
-        <Button 
-          bg="green.200" 
-          _hover={{bg: "green.300", color:"white"}} 
-          margin={buttonMargin} 
-          onClick={onAdd} 
+        <Button
+          colorScheme="green"
+          margin={buttonMargin}
+          onClick={onAdd}
           isDisabled={loading}
           size={buttonSize}
           flexShrink={0}
         >
           {loading ? <Spinner /> : "Add"}
         </Button>
-        <Button 
-          bg="white" 
-          margin={buttonMargin} 
+        <Button
+          colorScheme="blue"
+          variant="outline"
+          margin={buttonMargin}
           onClick={onFind}
           size={buttonSize}
           flexShrink={0}
         >
           Find
         </Button>
-        <Button 
-          bg="white" 
-          margin={buttonMargin} 
-          onClick={onUpdate} 
+        <Button
+          colorScheme="teal"
+          variant="outline"
+          margin={buttonMargin}
+          onClick={onUpdate}
           type="submit"
           size={buttonSize}
           flexShrink={0}
         >
           Update
         </Button>
-        <Button 
-          bg="white" 
-          margin={buttonMargin} 
+        <Button
+          colorScheme="orange"
+          variant="outline"
+          margin={buttonMargin}
           onClick={onRemove}
           size={buttonSize}
           flexShrink={0}
         >
           Remove
         </Button>
-        <Button 
-          bg="red.200" 
-          _hover={{bg: "red.300", color:"white"}} 
-          margin={buttonMargin} 
+        <Button
+          colorScheme="red"
+          margin={buttonMargin}
           onClick={onClear}
           size={buttonSize}
           flexShrink={0}

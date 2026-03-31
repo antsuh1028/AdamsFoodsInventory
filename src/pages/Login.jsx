@@ -5,7 +5,6 @@ import {
   Input,
   Stack,
   Flex,
-  Center,
   Text,
   InputGroup,
   InputLeftElement,
@@ -14,8 +13,9 @@ import {
   VStack,
   Alert,
   AlertIcon,
+  Divider,
 } from "@chakra-ui/react";
-import { EmailIcon, UnlockIcon } from "@chakra-ui/icons";
+import { EmailIcon, LockIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 
@@ -24,162 +24,151 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleClick = () => setShow(!show);
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
-    axios
-      .post("https://server.afdcstorage.com/login", { email, password })
-      .then((result) => {
-        if (result.data.message === "Success") {
-          localStorage.setItem("token", result.data.token);
-          navigate("/loading...");
-        } else {
-          setError(result.data.message);
-        }
-      })
-      .catch((err) => {
-        console.error(err);
-        setError("An error occurred. Please try again.");
+    try {
+      const result = await axios.post("https://server.afdcstorage.com/login", {
+        email,
+        password,
       });
+      if (result.data.message === "Success") {
+        localStorage.setItem("token", result.data.token);
+        navigate("/loading...");
+      } else {
+        setError(result.data.message);
+      }
+    } catch (err) {
+      setError("An error occurred. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <VStack
+    <Flex
       width="100vw"
       height="100vh"
       alignItems="center"
       justifyContent="center"
-      _before={{
-        content: '""',
-        position: "absolute",
-        width: "100%",
-        height: "100%",
-        backgroundImage: 'url("/Fields.jpeg")',
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        zIndex: -1,
-      }}
-      _after={{
-        content: '""',
-        position: "absolute",
-        width: "100%",
-        height: "100%",
-        backgroundColor: "rgba(173, 216, 230, 0.6)",
-        zIndex: -1,
-      }}
+      position="relative"
+      overflow="hidden"
     >
+      {/* Background */}
       <Box
-        width={{ base: "100%", md: "100%" }}
-        height={{ base: "15vh", md: "20vh" }}
+        position="absolute"
+        inset={0}
+        backgroundImage='url("/Fields.jpeg")'
+        backgroundSize="cover"
+        backgroundPosition="center"
+        filter="brightness(0.45)"
+        zIndex={0}
+      />
+
+      {/* Card */}
+      <VStack
+        position="relative"
+        zIndex={1}
         bg="white"
-        color="white"
-        padding="10px"
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
+        borderRadius="2xl"
+        boxShadow="2xl"
+        px={{ base: 8, md: 12 }}
+        py={10}
+        spacing={6}
+        width={{ base: "90vw", sm: "420px" }}
       >
-        <Image 
-          src="AdamsWings.png" 
-          alt="Adams Wings" 
-          height={{ base: "80%", md: "100%" }} 
+        {/* Logo */}
+        <Image
+          src="AdamsWings.png"
+          alt="Adams Foods"
+          height="56px"
+          objectFit="contain"
         />
-      </Box>
 
-      <Flex 
-        flex="1" 
-        alignItems="center" 
-        justifyContent="center"
-        width="100%"
-      >
-        <Center>
-          <VStack 
-            bg="white" 
-            borderRadius="md" 
-            width={{ base: "90vw", md: "500px" }}
-            minHeight={{ base: "auto", md: "400px" }}
-            p={{ base: 4, md: 8 }}
-            spacing={4}
-            boxShadow="lg"
-          >
-            <Text
-              fontSize={{ base: "3xl", md: "4xl" }}
-              fontWeight="500"
-              fontFamily="sans-serif"
+        <Divider />
+
+        <Box width="100%" textAlign="left">
+          <Text fontSize="2xl" fontWeight="700" color="gray.800">
+            Sign in
+          </Text>
+          <Text fontSize="sm" color="gray.500" mt={1}>
+            Enter your credentials to access the inventory system
+          </Text>
+        </Box>
+
+        {error && (
+          <Alert status="error" borderRadius="md" width="100%">
+            <AlertIcon />
+            {error}
+          </Alert>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ width: "100%" }}>
+          <Stack spacing={4}>
+            <InputGroup size="md">
+              <InputLeftElement pointerEvents="none">
+                <EmailIcon color="gray.400" />
+              </InputLeftElement>
+              <Input
+                type="email"
+                placeholder="Email address"
+                onChange={(e) => setEmail(e.target.value)}
+                value={email}
+                required
+                borderColor="gray.300"
+                _hover={{ borderColor: "blue.400" }}
+                _focus={{ borderColor: "blue.500", boxShadow: "0 0 0 1px #3182ce" }}
+              />
+            </InputGroup>
+
+            <InputGroup size="md">
+              <InputLeftElement pointerEvents="none">
+                <LockIcon color="gray.400" />
+              </InputLeftElement>
+              <Input
+                type={show ? "text" : "password"}
+                pr="4.5rem"
+                placeholder="Password"
+                onChange={(e) => setPassword(e.target.value)}
+                value={password}
+                required
+                borderColor="gray.300"
+                _hover={{ borderColor: "blue.400" }}
+                _focus={{ borderColor: "blue.500", boxShadow: "0 0 0 1px #3182ce" }}
+              />
+              <InputRightElement width="4rem">
+                <Button
+                  h="1.6rem"
+                  size="xs"
+                  variant="ghost"
+                  color="gray.500"
+                  onClick={() => setShow(!show)}
+                >
+                  {show ? "Hide" : "Show"}
+                </Button>
+              </InputRightElement>
+            </InputGroup>
+
+            <Button
+              type="submit"
+              colorScheme="blue"
+              size="md"
+              width="100%"
               mt={2}
+              isLoading={loading}
+              loadingText="Signing in..."
             >
-              Login
-            </Text>
-
-            {error && (
-              <Alert status="error" width="90%">
-                <AlertIcon />
-                {error}
-              </Alert>
-            )}
-
-            <form onSubmit={handleSubmit} style={{ width: "90%" }}>
-              <Stack spacing={5}>
-                <InputGroup size={{ base: "md", md: "lg" }}>
-                  <InputLeftElement pointerEvents="none">
-                    <EmailIcon color="gray.300" />
-                  </InputLeftElement>
-                  <Input
-                    type="email"
-                    placeholder="Enter Email"
-                    onChange={(e) => setEmail(e.target.value)}
-                    value={email}
-                    required
-                    fontSize={{ base: "md", md: "lg" }}
-                  />
-                </InputGroup>
-
-                <InputGroup size={{ base: "md", md: "lg" }}>
-                  <InputLeftElement pointerEvents="none" color="gray.300">
-                    <UnlockIcon />
-                  </InputLeftElement>
-                  <Input
-                    type={show ? "text" : "password"}
-                    pr="4.5rem"
-                    placeholder="Enter Password"
-                    onChange={(e) => setPassword(e.target.value)}
-                    value={password}
-                    required
-                    fontSize={{ base: "md", md: "lg" }}
-                  />
-                  <InputRightElement width="4.5rem">
-                    <Button
-                      h="1.75rem"
-                      size="sm"
-                      onClick={handleClick}
-                    >
-                      {show ? "Hide" : "Show"}
-                    </Button>
-                  </InputRightElement>
-                </InputGroup>
-
-                <Flex width="100%" justifyContent="center" mt={6}>
-                  <Button
-                    bg="lightblue"
-                    size={{ base: "md", md: "lg" }}
-                    width={{ base: "100%", md: "45%" }}
-                    type="submit"
-                    py={6}
-                    fontSize={{ base: "md", md: "lg" }}
-                  >
-                    Login
-                  </Button>
-                </Flex>
-              </Stack>
-            </form>
-          </VStack>
-        </Center>
-      </Flex>
-    </VStack>
+              Sign in
+            </Button>
+          </Stack>
+        </form>
+      </VStack>
+    </Flex>
   );
 };
 
