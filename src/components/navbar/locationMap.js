@@ -25,7 +25,7 @@ import getLocations from "../../utils/navbar/getLocations.js";
 
 import InfoPopover from "./infoPopover.js";
 
-const SeatBlock = ({ id, seats, occupiedCells, onSeatClick }) => {
+const SeatBlock = ({ id, seats, occupiedCells, onSeatClick, highlightLocation }) => {
   const hasSixSeats = seats.length >= 6;
 
   return (
@@ -60,6 +60,7 @@ const SeatBlock = ({ id, seats, occupiedCells, onSeatClick }) => {
           const isUnavailable = seat === "-";
           const locationKey = `${id}${seat}`;
           const isOccupied = !isUnavailable && occupiedCells?.includes(locationKey);
+          const isHighlighted = !isUnavailable && locationKey === highlightLocation;
 
           return (
             <Box
@@ -70,23 +71,37 @@ const SeatBlock = ({ id, seats, occupiedCells, onSeatClick }) => {
               bg={
                 isUnavailable
                   ? "gray.100"
+                  : isHighlighted
+                  ? "orange.300"
                   : isOccupied
                   ? "blue.100"
                   : "white"
               }
-              border="1px"
+              border={isHighlighted ? "2px" : "1px"}
               borderColor={
                 isUnavailable
                   ? "transparent"
+                  : isHighlighted
+                  ? "orange.500"
                   : isOccupied
                   ? "blue.300"
                   : "gray.100"
               }
-              color={isUnavailable ? "gray.300" : isOccupied ? "blue.700" : "gray.700"}
+              color={
+                isUnavailable
+                  ? "gray.300"
+                  : isHighlighted
+                  ? "orange.900"
+                  : isOccupied
+                  ? "blue.700"
+                  : "gray.700"
+              }
+              fontWeight={isHighlighted ? "bold" : "normal"}
+              boxShadow={isHighlighted ? "0 0 0 2px orange" : "none"}
               _hover={
                 isUnavailable
                   ? {}
-                  : { bg: isOccupied ? "blue.200" : "teal.50", cursor: "pointer" }
+                  : { bg: isHighlighted ? "orange.400" : isOccupied ? "blue.200" : "teal.50", cursor: "pointer" }
               }
               onClick={isUnavailable ? undefined : (e) => onSeatClick(e, id, seat)}
             >
@@ -99,7 +114,7 @@ const SeatBlock = ({ id, seats, occupiedCells, onSeatClick }) => {
   );
 };
 
-const Legend = () => (
+const Legend = ({ showHighlight }) => (
   <HStack spacing={4} justify="center" mb={3} fontSize="xs" color="gray.500">
     <HStack spacing={1}>
       <Box w={3} h={3} borderRadius="sm" bg="white" border="1px" borderColor="gray.200" />
@@ -113,10 +128,16 @@ const Legend = () => (
       <Box w={3} h={3} borderRadius="sm" bg="gray.100" />
       <Text>Unavailable</Text>
     </HStack>
+    {showHighlight && (
+      <HStack spacing={1}>
+        <Box w={3} h={3} borderRadius="sm" bg="orange.300" border="2px" borderColor="orange.500" />
+        <Text color="orange.600" fontWeight="semibold">Located Item</Text>
+      </HStack>
+    )}
   </HStack>
 );
 
-const generateMap = (level, occupiedCells, onSeatClick) => {
+const generateMap = (level, occupiedCells, onSeatClick, highlightLocation) => {
   const topRowData =
     level === 1
       ? locationRows.topRow1
@@ -148,6 +169,7 @@ const generateMap = (level, occupiedCells, onSeatClick) => {
                 seats={seats}
                 occupiedCells={occupiedCells}
                 onSeatClick={onSeatClick}
+                highlightLocation={highlightLocation}
               />
             ))}
           </Grid>
@@ -177,6 +199,7 @@ const generateMap = (level, occupiedCells, onSeatClick) => {
                 seats={seats}
                 occupiedCells={occupiedCells}
                 onSeatClick={onSeatClick}
+                highlightLocation={highlightLocation}
               />
             ))}
           </Grid>
@@ -190,6 +213,7 @@ const generateMap = (level, occupiedCells, onSeatClick) => {
                 seats={seats}
                 occupiedCells={occupiedCells}
                 onSeatClick={onSeatClick}
+                highlightLocation={highlightLocation}
               />
             </Box>
           ))}
@@ -199,10 +223,19 @@ const generateMap = (level, occupiedCells, onSeatClick) => {
   );
 };
 
-function ShowMap({ isOpen, onClose }) {
+// Parse location string (e.g. "W101") to get 0-based tab index from level digit
+const getTabIndexFromLocation = (location) => {
+  if (!location || location.length < 2) return 0;
+  const level = parseInt(location[1]);
+  if (level >= 1 && level <= 3) return level - 1;
+  return 0;
+};
+
+function ShowMap({ isOpen, onClose, highlightLocation }) {
   const [popoverInfo, setPopoverInfo] = useState([]);
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
   const [occCells, setOccCells] = useState([]);
+  const [tabIndex, setTabIndex] = useState(0);
 
   const handleSeatClick = (e, id, seat) => {
     setPopoverPosition({ x: e.clientX, y: e.clientY });
@@ -250,8 +283,15 @@ function ShowMap({ isOpen, onClose }) {
         null,
         null
       );
+
+      // Auto-jump to the level tab that contains the highlighted location
+      if (highlightLocation) {
+        setTabIndex(getTabIndexFromLocation(highlightLocation));
+      } else {
+        setTabIndex(0);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, highlightLocation]);
 
   return (
     <Modal isOpen={isOpen} onClose={handleModalClose} size="xl">
@@ -265,11 +305,16 @@ function ShowMap({ isOpen, onClose }) {
           fontWeight="semibold"
         >
           Freezer Map
+          {highlightLocation && (
+            <Text as="span" fontSize="sm" fontWeight="normal" color="orange.500" ml={2}>
+              — Locating {highlightLocation}
+            </Text>
+          )}
         </ModalHeader>
         <ModalCloseButton top={3} />
         <ModalBody display="flex" flexDirection="column" overflowY="auto" p={4}>
-          <Legend />
-          <Tabs isFitted colorScheme="blue" flex={1}>
+          <Legend showHighlight={!!highlightLocation} />
+          <Tabs isFitted colorScheme="blue" flex={1} index={tabIndex} onChange={setTabIndex}>
             <TabList mb={3} borderBottom="2px" borderColor="gray.100">
               <Tab
                 onClick={handleClosePopover}
@@ -297,9 +342,9 @@ function ShowMap({ isOpen, onClose }) {
               </Tab>
             </TabList>
             <TabPanels>
-              <TabPanel p={0}>{generateMap(1, occCells, handleSeatClick)}</TabPanel>
-              <TabPanel p={0}>{generateMap(2, occCells, handleSeatClick)}</TabPanel>
-              <TabPanel p={0}>{generateMap(3, occCells, handleSeatClick)}</TabPanel>
+              <TabPanel p={0}>{generateMap(1, occCells, handleSeatClick, highlightLocation)}</TabPanel>
+              <TabPanel p={0}>{generateMap(2, occCells, handleSeatClick, highlightLocation)}</TabPanel>
+              <TabPanel p={0}>{generateMap(3, occCells, handleSeatClick, highlightLocation)}</TabPanel>
             </TabPanels>
           </Tabs>
 

@@ -8,7 +8,7 @@ import {
   FormLabel,
 } from "@chakra-ui/react";
 
-const LocationInput = ({ value, onChange, badgeState }) => {
+const LocationInput = ({ value, onChange, badgeState, isInvalid = false }) => {
   const getBadgeProps = (state) => {
     switch (state) {
       case "in":
@@ -24,7 +24,7 @@ const LocationInput = ({ value, onChange, badgeState }) => {
 
   return (
     <VStack spacing={1} width="75%">
-      <FormLabel marginTop="5px" textAlign="left" marginBottom="5px">
+      <FormLabel marginTop="5px" textAlign="left" marginBottom="5px" color={isInvalid ? "red.500" : undefined}>
         Location
       </FormLabel>
       <InputGroup size="md">
@@ -36,6 +36,8 @@ const LocationInput = ({ value, onChange, badgeState }) => {
           width="100%"
           placeholder="Enter Location"
           onChange={(e) => onChange(e.target.value.toUpperCase())}
+          isInvalid={isInvalid}
+          autoComplete="off"
         />
         <InputRightElement width="auto" marginRight="5px">
           {badgeState && <Badge {...getBadgeProps(badgeState)} p="2" />}

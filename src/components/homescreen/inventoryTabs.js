@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import {
   Tabs,
@@ -18,6 +18,7 @@ const InventoryLevelPanel = ({
   handleItemClick,
   level,
   selectedItem,
+  flashLocation,
 }) => {
   const scrollContainerRef = useRef(null);
 
@@ -84,6 +85,7 @@ const InventoryLevelPanel = ({
                 <List spacing={1}>
                   {groupItems.map((item, index) => {
                     const isSelected = selectedItem?.location === item.location;
+                    const isFlashing = flashLocation === item.location;
                     return (
                       <ListItem
                         key={`${item.location}-${index}`}
@@ -99,6 +101,14 @@ const InventoryLevelPanel = ({
                           cursor="pointer"
                           _hover={{ bg: isSelected ? "blue.100" : "gray.50", borderColor: "blue.200" }}
                           transition="all 0.15s"
+                          sx={isFlashing ? {
+                            animation: "itemFlash 2.5s ease-out forwards",
+                            "@keyframes itemFlash": {
+                              "0%":   { background: "var(--chakra-colors-green-100)", borderColor: "var(--chakra-colors-green-400)" },
+                              "60%":  { background: "var(--chakra-colors-green-50)",  borderColor: "var(--chakra-colors-green-200)" },
+                              "100%": { background: "var(--chakra-colors-white)",      borderColor: "var(--chakra-colors-gray-100)" },
+                            },
+                          } : undefined}
                         >
                           <Flex justify="space-between" align="center">
                             <Text fontSize="sm" fontWeight="semibold" color={isSelected ? "blue.700" : "gray.700"}>
@@ -129,9 +139,19 @@ const InventoryTabs = ({
   handleItemClick,
   handleTabClick,
   selectedItem,
+  flashLocation,
 }) => {
+  const [tabIndex, setTabIndex] = useState(0);
+
+  useEffect(() => {
+    if (flashLocation && flashLocation.length >= 2) {
+      const level = parseInt(flashLocation[1]);
+      if (level >= 1 && level <= 3) setTabIndex(level - 1);
+    }
+  }, [flashLocation]);
+
   return (
-    <Tabs variant="enclosed" width="100%" height="100%" display="flex" flexDirection="column">
+    <Tabs variant="enclosed" width="100%" height="100%" display="flex" flexDirection="column" index={tabIndex} onChange={(i) => { setTabIndex(i); handleTabClick(); }}>
       <TabList borderBottom="2px" borderColor="gray.100" px={2} pt={1}>
         {[1, 2, 3].map((level) => (
           <Tab
@@ -139,7 +159,6 @@ const InventoryTabs = ({
             fontWeight="semibold"
             fontSize="sm"
             _hover={{ bg: "blue.50" }}
-            onClick={handleTabClick}
             _selected={{
               color: "blue.600",
               borderColor: "blue.500",
@@ -159,6 +178,7 @@ const InventoryTabs = ({
             handleItemClick={handleItemClick}
             level={level}
             selectedItem={selectedItem}
+            flashLocation={flashLocation}
           />
         ))}
       </TabPanels>

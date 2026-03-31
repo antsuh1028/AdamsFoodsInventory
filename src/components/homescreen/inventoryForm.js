@@ -9,7 +9,7 @@ import {
 import { FormField, SPECIES_OPTIONS, GRADE_OPTIONS } from "./formFields";
 import LocationInput from "./locationInput";
 
-const InventoryForm = ({ formData, onInputChange, badgeState }) => {
+const InventoryForm = ({ formData, onInputChange, badgeState, validationErrors = {}, suggestions = {} }) => {
   const {
     location,
     lot,
@@ -34,6 +34,7 @@ const InventoryForm = ({ formData, onInputChange, badgeState }) => {
             value={location}
             onChange={(value) => onInputChange("location", value)}
             badgeState={badgeState}
+            isInvalid={validationErrors.location}
           />
           <FormField
             label="Lot"
@@ -41,6 +42,7 @@ const InventoryForm = ({ formData, onInputChange, badgeState }) => {
             placeholder="Enter Lot"
             onChange={(e) => onInputChange("lot", e.target.value.toUpperCase())}
             width="25%"
+            isInvalid={validationErrors.lot}
           />
         </HStack>
 
@@ -54,6 +56,7 @@ const InventoryForm = ({ formData, onInputChange, badgeState }) => {
               onInputChange("vendor", e.target.value.toUpperCase())
             }
             width="33%"
+            suggestions={suggestions.vendors}
           />
           <FormField
             label="Brand"
@@ -63,6 +66,8 @@ const InventoryForm = ({ formData, onInputChange, badgeState }) => {
               onInputChange("brand", e.target.value.toUpperCase())
             }
             width="33%"
+            isInvalid={validationErrors.brand}
+            suggestions={suggestions.brands}
           />
           <FormField
             label="Species"
@@ -72,11 +77,16 @@ const InventoryForm = ({ formData, onInputChange, badgeState }) => {
             options={SPECIES_OPTIONS}
             onChange={(e) => onInputChange("species", e.target.value)}
             width="33%"
+            isInvalid={validationErrors.species}
           />
         </HStack>
 
         {/* Description Field */}
-        <FormLabel marginTop="5px" marginBottom="5px">
+        <FormLabel
+          marginTop="5px"
+          marginBottom="5px"
+          color={validationErrors.description ? "red.500" : undefined}
+        >
           Description
         </FormLabel>
         <Input
@@ -87,6 +97,8 @@ const InventoryForm = ({ formData, onInputChange, badgeState }) => {
           size="lg"
           placeholder="Enter Description"
           onChange={(e) => onInputChange("description", e.target.value)}
+          isInvalid={validationErrors.description}
+          autoComplete="off"
         />
 
         {/* Grade, Quantity, Weight Row */}
@@ -99,6 +111,7 @@ const InventoryForm = ({ formData, onInputChange, badgeState }) => {
             options={GRADE_OPTIONS}
             onChange={(e) => onInputChange("grade", e.target.value)}
             width="32%"
+            isInvalid={validationErrors.grade}
           />
           <FormField
             label="Quantity"
@@ -107,6 +120,7 @@ const InventoryForm = ({ formData, onInputChange, badgeState }) => {
             placeholder="Enter Quantity"
             onChange={(e) => onInputChange("quantity", e.target.value)}
             width="32%"
+            isInvalid={validationErrors.quantity}
           />
           <FormField
             label="Weight"
@@ -115,6 +129,7 @@ const InventoryForm = ({ formData, onInputChange, badgeState }) => {
             placeholder="Enter Weight"
             onChange={(e) => onInputChange("weight", e.target.value)}
             width="32%"
+            isInvalid={validationErrors.weight}
           />
         </HStack>
 

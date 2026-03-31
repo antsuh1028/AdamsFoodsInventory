@@ -9,10 +9,6 @@ function removeItem(
   setCurrentItem,
   toast
 ) {
-  if (!window.confirm("Are you sure you want to delete this item?")) {
-    return;
-  }
-
   if (!currentItem || location !== currentItem.location) {
     toast({
       title: "Remove Item Error",

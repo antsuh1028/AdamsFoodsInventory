@@ -2,7 +2,7 @@ import axiosInstance from "../axiosInstance";
 import findItem from "./findItem";
 import postHistory from "./postHistory";
 
-function addItem(inputs, setShowDetails, setItems, toast, onSuccess) {
+function addItem(inputs, setShowDetails, setItems, toast, onSuccess, onOccupied, onHighlight) {
   const modifiedInputs = {
     ...inputs,
     description: inputs.description.toUpperCase(),
@@ -30,31 +30,42 @@ function addItem(inputs, setShowDetails, setItems, toast, onSuccess) {
   doAdd().catch((err) => {
     const data = err.response?.data;
 
-    // Location occupied — ask user if they want to add anyway
+    // Exact duplicate (same lot + same location) — show toast and highlight existing item
+    if (data?.code === "EXACT_DUPLICATE") {
+      toast({
+        title: "Adding Item Error",
+        position: "top",
+        description: data.error,
+        status: "error",
+        duration: 2000,
+        isClosable: true,
+      });
+      if (onHighlight) onHighlight(modifiedInputs.location);
+      return;
+    }
+
+    // Location occupied — let caller handle with a custom dialog
     if (data?.code === "LOCATION_OCCUPIED") {
-      if (
-        window.confirm(
-          `${data.error}\n\nAdd another item here anyway?`
-        )
-      ) {
-        doAdd(true).catch((retryErr) => {
-          toast({
-            title: "Adding Item Error",
-            position: "top",
-            description:
-              retryErr.response?.data?.error || "An error occurred",
-            status: "error",
-            duration: 2000,
-            isClosable: true,
+      if (onOccupied) {
+        onOccupied(data.error, () => {
+          doAdd(true).catch((retryErr) => {
+            toast({
+              title: "Adding Item Error",
+              position: "top",
+              description: retryErr.response?.data?.error || "An error occurred",
+              status: "error",
+              duration: 2000,
+              isClosable: true,
+            });
+            setItems([]);
+            setShowDetails(false);
           });
-          setItems([]);
-          setShowDetails(false);
         });
       }
       return;
     }
 
-    // All other errors (including hard duplicate block)
+    // All other errors
     toast({
       title: "Adding Item Error",
       position: "top",

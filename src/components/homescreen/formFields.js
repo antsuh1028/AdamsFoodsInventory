@@ -27,10 +27,14 @@ export const FormField = ({
   width = "100%",
   options,
   bg = "white",
+  isInvalid = false,
+  suggestions,
 }) => {
+  const listId = suggestions ? `${label.toLowerCase().replace(/\s+/g, "-")}-suggestions` : undefined;
+
   return (
     <VStack spacing={1} width={width}>
-      <FormLabel marginTop="5px" marginBottom="5px">
+      <FormLabel marginTop="5px" marginBottom="5px" color={isInvalid ? "red.500" : undefined}>
         {label}
       </FormLabel>
       {type === "select" ? (
@@ -40,6 +44,9 @@ export const FormField = ({
           width="100%"
           placeholder={placeholder}
           onChange={onChange}
+          isInvalid={isInvalid}
+          borderColor={isInvalid ? "red.400" : undefined}
+          _hover={isInvalid ? { borderColor: "red.500" } : undefined}
         >
           {options?.map((option) => (
             <option key={option.value} value={option.value}>
@@ -48,14 +55,30 @@ export const FormField = ({
           ))}
         </Select>
       ) : (
-        <Input
-          value={value}
-          type={type}
-          bg={bg}
-          width="100%"
-          placeholder={placeholder}
-          onChange={onChange}
-        />
+        <>
+          <Input
+            value={value}
+            type={type}
+            bg={bg}
+            width="100%"
+            placeholder={placeholder}
+            onChange={onChange}
+            isInvalid={isInvalid}
+            list={listId}
+            autoComplete="off"
+            sx={{
+              "&::-webkit-calendar-picker-indicator": { display: "none" },
+              "&::-webkit-list-button": { display: "none" },
+            }}
+          />
+          {suggestions && (
+            <datalist id={listId}>
+              {suggestions.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
+          )}
+        </>
       )}
     </VStack>
   );

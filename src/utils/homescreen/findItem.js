@@ -1,6 +1,6 @@
 import axiosInstance from "../axiosInstance";
 
-function findItem(inputs, setItems, setShowDetails, toast) {
+function findItem(inputs, setItems, setShowDetails, toast, onFound) {
   axiosInstance
     .post("/inventoryFind", { inputs })
 
@@ -21,13 +21,22 @@ function findItem(inputs, setItems, setShowDetails, toast) {
           setShowDetails(false);
         }
       } else {
-        const sortedItems = result.data.sort((a, b) =>
-          a.location.localeCompare(b.location)
-        );
+        const getLevel = (loc) => {
+          const c = loc[1];
+          if (c === "1") return 1;
+          if (c === "2") return 2;
+          return 3;
+        };
+        const sortedItems = result.data.sort((a, b) => {
+          const levelDiff = getLevel(a.location) - getLevel(b.location);
+          if (levelDiff !== 0) return levelDiff;
+          return a.location.localeCompare(b.location);
+        });
         setItems(sortedItems);
         if (setShowDetails) {
           setShowDetails(false);
         }
+        if (onFound) onFound(sortedItems[0]);
       }
     })
     .catch((err) => {

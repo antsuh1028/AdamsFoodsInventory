@@ -16,7 +16,7 @@ const Field = ({ label, value }) => {
   );
 };
 
-const DetailsPanel = ({ item, showDetails, onClose, onSet }) => {
+const DetailsPanel = ({ item, showDetails, onClose, onSet, onLocate }) => {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -80,6 +80,9 @@ const DetailsPanel = ({ item, showDetails, onClose, onSet }) => {
           <Flex gap={2}>
             <Button size="xs" variant="outline" onClick={() => printDetails(item)}>
               Print
+            </Button>
+            <Button size="xs" colorScheme="orange" onClick={() => onLocate(item)}>
+              Locate
             </Button>
             <Button size="xs" colorScheme="blue" onClick={() => onSet(item)}>
               Set

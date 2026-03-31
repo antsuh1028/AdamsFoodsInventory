@@ -6,15 +6,14 @@ function updateItem(
   setItems,
   setShowDetails,
   setCurrentItem,
-  toast
+  toast,
+  onSuccess
 ) {
-  if (!window.confirm("Are you sure you want to update this item?")) {
-    return;
-  }
-
+  let updatedItem = null;
   axiosInstance
     .post("/inventoryUpdate", { updateInputs })
     .then((result) => {
+      updatedItem = result.data;
       setItems([result.data]);
       return postHistory(updateInputs, "UPDATE");
     })
@@ -29,6 +28,7 @@ function updateItem(
       });
       setShowDetails(false);
       setCurrentItem(null);
+      if (onSuccess && updatedItem) onSuccess(updatedItem);
     })
     .catch((err) => {
       toast({
