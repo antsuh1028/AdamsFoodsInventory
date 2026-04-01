@@ -7,6 +7,7 @@ import {
   ModalContent,
   ModalHeader,
   ModalBody,
+  ModalFooter,
   ModalCloseButton,
   Text,
   Flex,
@@ -16,7 +17,9 @@ import {
   Grid,
   Spinner,
   HStack,
+  IconButton,
 } from "@chakra-ui/react";
+import { ChevronLeftIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import { useContext } from "react";
 import { FormContext } from "../../utils/homescreen/formContext.js";
 import printDetails from "../../utils/printDetails";
@@ -25,7 +28,7 @@ import getHistory from "../../utils/navbar/getHistory.js";
 const CHANGE_COLORS = {
   ADD: "green",
   UPDATE: "blue",
-  REMOVE: "orange",
+  REMOVE: "red",
 };
 
 const Field = ({ label, value }) => {
@@ -149,13 +152,17 @@ const HistoryRow = ({ item, onSet }) => {
   );
 };
 
+const PAGE_SIZE = 10;
+
 function ShowHistory({ isOpen, onClose }) {
   const [historyData, setHistoryData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(0);
   const { setFormData } = useContext(FormContext);
 
   useEffect(() => {
     if (!isOpen) return;
+    setPage(0);
     setLoading(true);
     getHistory()
       .then((data) => setHistoryData(data || []))
@@ -180,6 +187,9 @@ function ShowHistory({ isOpen, onClose }) {
     });
     onClose();
   };
+
+  const totalPages = Math.ceil(historyData.length / PAGE_SIZE);
+  const pageItems = historyData.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl">
@@ -208,12 +218,40 @@ function ShowHistory({ isOpen, onClose }) {
             </Flex>
           ) : (
             <Flex direction="column" gap={2}>
-              {historyData.map((item, index) => (
-                <HistoryRow key={index} item={item} onSet={handleSet} />
+              {pageItems.map((item, index) => (
+                <HistoryRow key={page * PAGE_SIZE + index} item={item} onSet={handleSet} />
               ))}
             </Flex>
           )}
         </ModalBody>
+
+        {totalPages > 1 && (
+          <ModalFooter borderTop="1px" borderColor="gray.100" py={3} justifyContent="center">
+            <Flex align="center" gap={2}>
+              <IconButton
+                icon={<ChevronLeftIcon />}
+                size="xs"
+                variant="outline"
+                borderRadius="md"
+                isDisabled={page === 0}
+                onClick={() => setPage((p) => p - 1)}
+                aria-label="Previous page"
+              />
+              <Text fontSize="xs" color="gray.500" minW="100px" textAlign="center">
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, historyData.length)} of {historyData.length}
+              </Text>
+              <IconButton
+                icon={<ChevronRightIcon />}
+                size="xs"
+                variant="outline"
+                borderRadius="md"
+                isDisabled={page >= totalPages - 1}
+                onClick={() => setPage((p) => p + 1)}
+                aria-label="Next page"
+              />
+            </Flex>
+          </ModalFooter>
+        )}
       </ModalContent>
     </Modal>
   );

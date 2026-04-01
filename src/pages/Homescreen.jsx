@@ -53,6 +53,7 @@ const Homescreen = () => {
     packdate: "",
     date_recvd: "",
     est: "",
+    price: "",
   });
 
   // Display state
@@ -66,6 +67,8 @@ const Homescreen = () => {
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [removeExpanded, setRemoveExpanded] = useState(false);
   const cancelRemoveRef = useRef();
+  const [bulkRemoveDialog, setBulkRemoveDialog] = useState({ open: false, ids: [], items: [], onSuccess: null });
+  const cancelBulkRemoveRef = useRef();
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [updateExpanded, setUpdateExpanded] = useState(false);
   const cancelUpdateRef = useRef();
@@ -108,6 +111,7 @@ const Homescreen = () => {
       packdate: "",
       date_recvd: "",
       est: "",
+      price: "",
     });
     setCurrentItem(null);
     setValidationErrors({});
@@ -225,6 +229,29 @@ const Homescreen = () => {
     handleClear();
   }, [currentItem, formData.location, toast, handleClear]);
 
+  const handleBulkRemove = useCallback((ids, selectedItems, onSuccess) => {
+    setBulkRemoveDialog({ open: true, ids, items: selectedItems, onSuccess });
+  }, []);
+
+  const confirmBulkRemove = useCallback(async () => {
+    const { ids, onSuccess } = bulkRemoveDialog;
+    setBulkRemoveDialog({ open: false, ids: [], items: [], onSuccess: null });
+    try {
+      await axiosInstance.post("/inventoryBulkRemove", { ids });
+      const idSet = new Set(ids);
+      setItems((prev) => prev.filter((item) => !idSet.has(item._id)));
+      if (currentItem && idSet.has(currentItem._id)) {
+        setShowDetails(false);
+        setSelectedItem(null);
+        handleClear();
+      }
+      toast({ title: `${ids.length} item${ids.length !== 1 ? "s" : ""} removed`, position: "top", status: "success", duration: 2000, isClosable: true });
+      if (onSuccess) onSuccess();
+    } catch {
+      toast({ title: "Failed to remove items", position: "top", status: "error", duration: 3000, isClosable: true });
+    }
+  }, [bulkRemoveDialog, currentItem, toast, handleClear]);
+
   const handleSet = useCallback((item) => {
     if (!item) return;
     setFormData({
@@ -240,6 +267,7 @@ const Homescreen = () => {
       packdate: item.packdate || "",
       date_recvd: item.date_recvd || "",
       est: item.est || "",
+      price: item.price || "",
     });
     setCurrentItem(item);
     setValidationErrors({});
@@ -312,25 +340,27 @@ const Homescreen = () => {
         <Navbar />
         <Flex
           width="100vw"
-          height="100vh"
-          alignItems="center"
+          height={{ base: "auto", lg: "100vh" }}
+          minHeight={{ base: "100vh", lg: "unset" }}
+          alignItems={{ base: "stretch", lg: "center" }}
           justifyContent="space-between"
           bg="gray.50"
-          pt="60px"
+          pt={{ base: "60px", md: "140px", lg: "80px", }}
           gap={3}
           px={3}
           pb={3}
+          direction={{ base: "column", lg: "row" }}
         >
           <Flex
             bg="white"
-            width="60%"
-            height="90%"
+            width={{ base: "100%", lg: "60%" }}
+            height={{ base: "auto", lg: "90%" }}
             borderRadius="lg"
             boxShadow="md"
             direction="column"
             justifyContent="flex-start"
             alignItems="center"
-            overflowY="auto"
+            overflowY={{ base: "visible", lg: "auto" }}
             p={4}
           >
             <InventoryForm
@@ -354,8 +384,9 @@ const Homescreen = () => {
 
           <Flex
             bg="white"
-            width="40%"
-            height="90%"
+            width={{ base: "100%", lg: "40%" }}
+            height={{ base: "auto", lg: "90%" }}
+            minH={{ base: "400px", lg: "unset" }}
             borderRadius="lg"
             boxShadow="md"
             direction="column"
@@ -368,6 +399,7 @@ const Homescreen = () => {
                 handleTabClick={handleTabClick}
                 selectedItem={selectedItem}
                 flashLocation={flashLocation}
+                onBulkRemove={handleBulkRemove}
               />
             </Box>
             <DetailsPanel
@@ -604,6 +636,66 @@ const Homescreen = () => {
                 w="full"
               >
                 Confirm Update
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          isOpen={bulkRemoveDialog.open}
+          leastDestructiveRef={cancelBulkRemoveRef}
+          onClose={() => setBulkRemoveDialog({ open: false, ids: [], items: [], onSuccess: null })}
+          isCentered
+        >
+          <AlertDialogOverlay backdropFilter="blur(2px)" />
+          <AlertDialogContent borderRadius="xl" maxW="400px">
+            <Box px={6} pt={5} pb={3} borderBottom="1px" borderColor="gray.100">
+              <Text fontWeight="bold" fontSize="md" color="gray.800">
+                Remove {bulkRemoveDialog.ids.length} Item{bulkRemoveDialog.ids.length !== 1 ? "s" : ""}
+              </Text>
+              <Text fontSize="xs" color="gray.400" mt={0.5}>
+                This action cannot be undone
+              </Text>
+            </Box>
+            <AlertDialogBody px={6} py={4}>
+              <Box maxH="220px" overflowY="auto" borderRadius="md" border="1px" borderColor="gray.100">
+                {bulkRemoveDialog.items.map((item, i) => (
+                  <Flex
+                    key={item._id || i}
+                    px={3}
+                    py={2}
+                    align="baseline"
+                    gap={2}
+                    borderBottom={i < bulkRemoveDialog.items.length - 1 ? "1px" : "none"}
+                    borderColor="gray.100"
+                  >
+                    <Text fontSize="sm" fontWeight="semibold" color="gray.700" flexShrink={0}>
+                      {item.location}
+                    </Text>
+                    <Text fontSize="xs" color="gray.400" noOfLines={1}>
+                      {item.description}
+                    </Text>
+                  </Flex>
+                ))}
+              </Box>
+            </AlertDialogBody>
+            <AlertDialogFooter px={6} pb={5} gap={3}>
+              <Button
+                ref={cancelBulkRemoveRef}
+                onClick={() => setBulkRemoveDialog({ open: false, ids: [], items: [], onSuccess: null })}
+                variant="outline"
+                borderRadius="lg"
+                w="full"
+              >
+                Cancel
+              </Button>
+              <Button
+                colorScheme="red"
+                onClick={confirmBulkRemove}
+                borderRadius="lg"
+                w="full"
+              >
+                Remove All
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>

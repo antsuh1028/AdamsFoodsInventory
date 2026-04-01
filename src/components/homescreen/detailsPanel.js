@@ -54,6 +54,8 @@ const DetailsPanel = ({ item, showDetails, onClose, onSet, onLocate }) => {
           <Field label="Quantity" value={item?.quantity ? `${item.quantity} bx` : null} />
           <Field label="Weight" value={item?.weight ? `${item.weight} lb` : null} />
           <Field label="Species" value={item?.species} />
+          <Field label="Price / lb" value={item?.price ? `$${item.price}` : null} />
+          <Field label="Total Value" value={item?.price && item?.weight ? `$${(parseFloat(item.price) * parseFloat(item.weight)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null} />
         </Grid>
 
         {/* Expanded details */}

@@ -1,15 +1,20 @@
-import React from "react";
+import React, { memo } from "react";
 import {
   FormControl,
-  VStack,
-  HStack,
+  Grid,
+  GridItem,
   FormLabel,
   Input,
+  InputGroup,
+  InputLeftElement,
+  VStack,
+  useBreakpointValue,
 } from "@chakra-ui/react";
 import { FormField, SPECIES_OPTIONS, GRADE_OPTIONS } from "./formFields";
 import LocationInput from "./locationInput";
 
-const InventoryForm = ({ formData, onInputChange, badgeState, validationErrors = {}, suggestions = {} }) => {
+const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErrors = {}, suggestions = {} }) => {
+  const inputSize = useBreakpointValue({ base: "sm", md: "lg" });
   const {
     location,
     lot,
@@ -23,52 +28,63 @@ const InventoryForm = ({ formData, onInputChange, badgeState, validationErrors =
     packdate,
     date_recvd,
     est,
+    price,
   } = formData;
 
   return (
     <FormControl width="90%">
-      <VStack spacing={2} alignItems="center">
-        {/* Location and Lot Row */}
-        <HStack spacing={2} width="100%">
+      <Grid
+        templateColumns={{ base: "repeat(2, 1fr)", xl: "repeat(3, 1fr)" }}
+        gap={2}
+        width="100%"
+        alignItems="start"
+      >
+        {/* Location — 2/3 on xl, full width on mobile */}
+        <GridItem colSpan={{ base: 2, xl: 2 }}>
           <LocationInput
             value={location}
             onChange={(value) => onInputChange("location", value)}
             badgeState={badgeState}
             isInvalid={validationErrors.location}
           />
+        </GridItem>
+
+        {/* Lot — pairs with Vendor on mobile, sits next to Location on xl */}
+        <GridItem colSpan={1}>
           <FormField
             label="Lot"
             value={lot}
             placeholder="Enter Lot"
             onChange={(e) => onInputChange("lot", e.target.value.toUpperCase())}
-            width="25%"
             isInvalid={validationErrors.lot}
           />
-        </HStack>
+        </GridItem>
 
-        {/* Vendor, Brand, Species Row */}
-        <HStack spacing={2} width="100%">
+        {/* Vendor */}
+        <GridItem colSpan={1}>
           <FormField
             label="Vendor"
             value={vendor}
             placeholder="Enter Vendor"
-            onChange={(e) =>
-              onInputChange("vendor", e.target.value.toUpperCase())
-            }
-            width="33%"
+            onChange={(e) => onInputChange("vendor", e.target.value.toUpperCase())}
             suggestions={suggestions.vendors}
           />
+        </GridItem>
+
+        {/* Brand */}
+        <GridItem colSpan={1}>
           <FormField
             label="Brand"
             value={brand}
             placeholder="Enter Brand"
-            onChange={(e) =>
-              onInputChange("brand", e.target.value.toUpperCase())
-            }
-            width="33%"
+            onChange={(e) => onInputChange("brand", e.target.value.toUpperCase())}
             isInvalid={validationErrors.brand}
             suggestions={suggestions.brands}
           />
+        </GridItem>
+
+        {/* Species */}
+        <GridItem colSpan={1}>
           <FormField
             label="Species"
             value={species}
@@ -76,33 +92,36 @@ const InventoryForm = ({ formData, onInputChange, badgeState, validationErrors =
             placeholder="Select Species"
             options={SPECIES_OPTIONS}
             onChange={(e) => onInputChange("species", e.target.value)}
-            width="33%"
             isInvalid={validationErrors.species}
           />
-        </HStack>
+        </GridItem>
 
-        {/* Description Field */}
-        <FormLabel
-          marginTop="5px"
-          marginBottom="5px"
-          color={validationErrors.description ? "red.500" : undefined}
-        >
-          Description
-        </FormLabel>
-        <Input
-          value={description}
-          type="text"
-          bg="white"
-          width="100%"
-          size="lg"
-          placeholder="Enter Description"
-          onChange={(e) => onInputChange("description", e.target.value)}
-          isInvalid={validationErrors.description}
-          autoComplete="off"
-        />
+        {/* Description — full width on both */}
+        <GridItem colSpan={{ base: 2, xl: 3 }}>
+          <FormLabel
+            marginTop="5px"
+            marginBottom="5px"
+            textAlign="center"
+            fontSize={{ base: "sm", md: "md" }}
+            color={validationErrors.description ? "red.500" : undefined}
+          >
+            Description
+          </FormLabel>
+          <Input
+            value={description}
+            type="text"
+            bg="white"
+            width="100%"
+            size={inputSize}
+            placeholder="Enter Description"
+            onChange={(e) => onInputChange("description", e.target.value)}
+            isInvalid={validationErrors.description}
+            autoComplete="off"
+          />
+        </GridItem>
 
-        {/* Grade, Quantity, Weight Row */}
-        <HStack spacing={4} width="100%">
+        {/* Grade */}
+        <GridItem colSpan={1}>
           <FormField
             label="Grade"
             value={grade}
@@ -110,56 +129,91 @@ const InventoryForm = ({ formData, onInputChange, badgeState, validationErrors =
             placeholder="Select Grade"
             options={GRADE_OPTIONS}
             onChange={(e) => onInputChange("grade", e.target.value)}
-            width="32%"
             isInvalid={validationErrors.grade}
           />
+        </GridItem>
+
+        {/* Quantity */}
+        <GridItem colSpan={1}>
           <FormField
             label="Quantity"
             value={quantity}
             type="number"
             placeholder="Enter Quantity"
             onChange={(e) => onInputChange("quantity", e.target.value)}
-            width="32%"
             isInvalid={validationErrors.quantity}
           />
+        </GridItem>
+
+        {/* Weight — pairs with Pack Date on mobile, completes Grade/Qty/Weight row on xl */}
+        <GridItem colSpan={1}>
           <FormField
             label="Weight"
             value={weight}
             type="number"
             placeholder="Enter Weight"
             onChange={(e) => onInputChange("weight", e.target.value)}
-            width="32%"
             isInvalid={validationErrors.weight}
           />
-        </HStack>
+        </GridItem>
 
-        {/* Pack Date, Received Date, EST Row */}
-        <HStack spacing={4} width="100%">
+        {/* Pack Date | Recv Date | EST# */}
+        <GridItem colSpan={1}>
           <FormField
             label="Pack Date"
             value={packdate}
             type="date"
             onChange={(e) => onInputChange("packdate", e.target.value)}
-            width="32%"
           />
+        </GridItem>
+
+        <GridItem colSpan={1}>
           <FormField
             label="Received Date"
             value={date_recvd}
             type="date"
             onChange={(e) => onInputChange("date_recvd", e.target.value)}
-            width="32%"
           />
+        </GridItem>
+
+        <GridItem colSpan={1}>
           <FormField
             label="EST#"
             value={est}
             placeholder="Enter Est"
             onChange={(e) => onInputChange("est", e.target.value)}
-            width="32%"
           />
-        </HStack>
-      </VStack>
+        </GridItem>
+
+        {/* Price — centered (middle column) on xl, full width on mobile */}
+        <GridItem
+          colSpan={{ base: 2, xl: 1 }}
+          colStart={{ base: 1, xl: 2 }}
+        >
+          <VStack spacing={1} width="100%">
+            <FormLabel marginTop="5px" marginBottom="5px" fontSize={{ base: "sm", md: "md" }}>
+              Price / lb
+            </FormLabel>
+            <InputGroup size={inputSize} width="100%">
+              <InputLeftElement pointerEvents="none" color="gray.400" fontSize="sm">
+                $
+              </InputLeftElement>
+              <Input
+                value={price}
+                type="number"
+                min="0"
+                step="0.01"
+                bg="white"
+                placeholder="0.00"
+                onChange={(e) => onInputChange("price", e.target.value)}
+                autoComplete="off"
+              />
+            </InputGroup>
+          </VStack>
+        </GridItem>
+      </Grid>
     </FormControl>
   );
-};
+});
 
 export default InventoryForm;

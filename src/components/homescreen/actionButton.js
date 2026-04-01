@@ -10,76 +10,52 @@ const ActionButtons = ({
   loading,
 }) => {
   const buttonSize = useBreakpointValue({ base: "sm", md: "md" });
-  const buttonMargin = useBreakpointValue({ base: "8px", md: "20px" });
-  const buttonDirection = useBreakpointValue({ base: "column", sm: "row" });
-  const containerWidth = useBreakpointValue({ base: "100%", sm: "auto" });
-  
+
   return (
-    <Flex
-      direction={buttonDirection}
-      overflowX="auto"
-      width="100%"
-      justifyContent="center"
-      py={2}
-    >
-      <Flex
-        direction={buttonDirection}
-        wrap="nowrap"
-        width={containerWidth}
-        overflowX="auto"
-        overflowY="hidden"
-        css={{
-          '&::-webkit-scrollbar': { height: '8px' },
-          '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '4px' }
-        }}
-      >
+    <Flex width="100%" justifyContent="center" py={2} px={1}>
+      <Flex wrap="wrap" gap={2} justifyContent="center" width="100%">
         <Button
           colorScheme="green"
-          margin={buttonMargin}
           onClick={onAdd}
           isDisabled={loading}
           size={buttonSize}
-          flexShrink={0}
+          flex={{ base: "1 1 45%", sm: "0 0 auto" }}
         >
           {loading ? <Spinner /> : "Add"}
         </Button>
         <Button
           colorScheme="blue"
           variant="outline"
-          margin={buttonMargin}
           onClick={onFind}
           size={buttonSize}
-          flexShrink={0}
+          flex={{ base: "1 1 45%", sm: "0 0 auto" }}
         >
           Find
         </Button>
         <Button
           colorScheme="teal"
           variant="outline"
-          margin={buttonMargin}
           onClick={onUpdate}
           type="submit"
           size={buttonSize}
-          flexShrink={0}
+          flex={{ base: "1 1 45%", sm: "0 0 auto" }}
         >
           Update
         </Button>
         <Button
           colorScheme="orange"
           variant="outline"
-          margin={buttonMargin}
           onClick={onRemove}
           size={buttonSize}
-          flexShrink={0}
+          flex={{ base: "1 1 45%", sm: "0 0 auto" }}
         >
           Remove
         </Button>
         <Button
           colorScheme="red"
-          margin={buttonMargin}
           onClick={onClear}
           size={buttonSize}
-          flexShrink={0}
+          flex={{ base: "1 1 45%", sm: "0 0 auto" }}
         >
           Clear
         </Button>

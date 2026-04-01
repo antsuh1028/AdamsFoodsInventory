@@ -1,5 +1,5 @@
 import React from "react";
-import { FormLabel, Input, Select, VStack } from "@chakra-ui/react";
+import { FormLabel, Input, Select, VStack, useBreakpointValue } from "@chakra-ui/react";
 
 export const SPECIES_OPTIONS = [
   { value: "Beef", label: "Beef" },
@@ -30,11 +30,12 @@ export const FormField = ({
   isInvalid = false,
   suggestions,
 }) => {
+  const inputSize = useBreakpointValue({ base: "sm", md: "md" });
   const listId = suggestions ? `${label.toLowerCase().replace(/\s+/g, "-")}-suggestions` : undefined;
 
   return (
     <VStack spacing={1} width={width}>
-      <FormLabel marginTop="5px" marginBottom="5px" color={isInvalid ? "red.500" : undefined}>
+      <FormLabel marginTop="5px" marginBottom="5px" fontSize={{ base: "sm", md: "md" }} color={isInvalid ? "red.500" : undefined}>
         {label}
       </FormLabel>
       {type === "select" ? (
@@ -42,6 +43,7 @@ export const FormField = ({
           value={value}
           bg={bg}
           width="100%"
+          size={inputSize}
           placeholder={placeholder}
           onChange={onChange}
           isInvalid={isInvalid}
@@ -61,6 +63,7 @@ export const FormField = ({
             type={type}
             bg={bg}
             width="100%"
+            size={inputSize}
             placeholder={placeholder}
             onChange={onChange}
             isInvalid={isInvalid}

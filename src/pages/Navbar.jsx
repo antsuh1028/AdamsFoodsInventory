@@ -22,6 +22,8 @@ import UploadFile from "../components/navbar/uploadFile.js";
 import ShowMap from "../components/navbar/locationMap.js";
 import OpenHelp from "../components/navbar/openHelp.js";
 import IncomingOrders from "../components/navbar/incomingOrders.js";
+import ExportInventory from "../components/navbar/exportInventory.js";
+import InventoryReport from "../components/navbar/inventoryReport.js";
 
 const ShowDrawer = ({
   isOpen,
@@ -31,6 +33,8 @@ const ShowDrawer = ({
   onHistoryOpen,
   onDrawerClose,
   onIPROpen,
+  onExportOpen,
+  onReportOpen,
 }) => {
   const navigate = useNavigate();
   const handleLogout = () => {
@@ -84,6 +88,26 @@ const ShowDrawer = ({
           >
             Incoming Product Records
           </Button>
+          <Button
+            bg="white"
+            justifyContent="flex-start"
+            onClick={() => {
+              onExportOpen();
+              onDrawerClose();
+            }}
+          >
+            Export Inventory
+          </Button>
+          <Button
+            bg="white"
+            justifyContent="flex-start"
+            onClick={() => {
+              onReportOpen();
+              onDrawerClose();
+            }}
+          >
+            Inventory Report
+          </Button>
         </Stack>
         <DrawerFooter justifyContent="center">
           <Button
@@ -130,6 +154,16 @@ const Navbar = () => {
     isOpen: isHelpOpen,
     onOpen: onHelpOpen,
     onClose: onHelpClose,
+  } = useDisclosure();
+  const {
+    isOpen: isExportOpen,
+    onOpen: onExportOpen,
+    onClose: onExportClose,
+  } = useDisclosure();
+  const {
+    isOpen: isReportOpen,
+    onOpen: onReportOpen,
+    onClose: onReportClose,
   } = useDisclosure();
 
   return (
@@ -203,6 +237,8 @@ const Navbar = () => {
         onHistoryOpen={onHistoryOpen}
         onIPROpen={onIPROpen}
         onDrawerClose={onDrawerClose}
+        onExportOpen={onExportOpen}
+        onReportOpen={onReportOpen}
       />
       <UploadFile isOpen={isUploadOpen} onClose={onUploadClose} />
       <IncomingOrders isOpen={isIPROpen} onClose={onIPRClose} />
@@ -210,6 +246,8 @@ const Navbar = () => {
       <ShowMap isOpen={isMapOpen} onClose={onMapClose} />
       <ShowHistory isOpen={isHistoryOpen} onClose={onHistoryClose} />
       <OpenHelp isOpen={isHelpOpen} onClose={onHelpClose} />
+      <ExportInventory isOpen={isExportOpen} onClose={onExportClose} />
+      <InventoryReport isOpen={isReportOpen} onClose={onReportClose} />
     </>
   );
 };

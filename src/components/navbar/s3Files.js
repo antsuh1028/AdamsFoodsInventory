@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Box,
   Text,
   Flex,
   IconButton,
-  Button,
+  Input,
+  InputGroup,
+  InputLeftElement,
   useToast,
   Modal,
   ModalOverlay,
@@ -12,12 +14,19 @@ import {
   ModalHeader,
   ModalCloseButton,
   ModalBody,
+  ModalFooter,
   useDisclosure,
   Spinner,
   Icon,
   Badge,
+  Button,
+  AlertDialog,
+  AlertDialogOverlay,
+  AlertDialogContent,
+  AlertDialogBody,
+  AlertDialogFooter,
 } from "@chakra-ui/react";
-import { DownloadIcon, ViewIcon } from "@chakra-ui/icons";
+import { DownloadIcon, ViewIcon, DeleteIcon, SearchIcon } from "@chakra-ui/icons";
 import { API_BASE_URL } from "../../config/api";
 
 const authFetch = (url, options = {}) => {
@@ -37,36 +46,48 @@ const PdfRowIcon = () => (
   </Icon>
 );
 
-const S3FileList = ({ isOpen }) => {
+const S3FileList = ({ isOpen, onRefresh }) => {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
-  const { isOpen: isPdfOpen, onOpen, onClose } = useDisclosure();
+  const [deletingId, setDeletingId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const { isOpen: isPdfOpen, onOpen: onPdfOpen, onClose: onPdfClose } = useDisclosure();
+  const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure();
+  const cancelDeleteRef = useRef();
   const toast = useToast();
 
-  useEffect(() => {
+  const loadFiles = () => {
     if (!isOpen) return;
     setLoading(true);
     authFetch(`${API_BASE_URL}/list-pdfs`)
       .then((r) => r.json())
-      .then((data) => setFiles(Array.isArray(data) ? data : []))
+      .then((data) => setFiles(Array.isArray(data) ? data.sort((a, b) => new Date(b.uploadDate) - new Date(a.uploadDate)) : []))
       .catch(() => {
-        toast({
-          title: "Failed to load files",
-          position: "top",
-          status: "error",
-          duration: 3000,
-          isClosable: true,
-        });
+        toast({ title: "Failed to load files", position: "top", status: "error", duration: 3000, isClosable: true });
       })
       .finally(() => setLoading(false));
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  };
+
+  useEffect(() => { loadFiles(); }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleView = async (fileKey) => {
+    try {
+      const response = await authFetch(`${API_BASE_URL}/get-pdf/${encodeURIComponent(fileKey)}`);
+      if (!response.ok) throw new Error("Failed to load PDF");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setSelectedFile(url);
+      onPdfOpen();
+    } catch (err) {
+      toast({ title: "Failed to load PDF", description: err.message, position: "top", status: "error", duration: 3000, isClosable: true });
+    }
+  };
 
   const handleDownload = async (fileKey, fileName) => {
     try {
-      const response = await authFetch(
-        `${API_BASE_URL}/get-pdf/${encodeURIComponent(fileKey)}`
-      );
+      const response = await authFetch(`${API_BASE_URL}/get-pdf/${encodeURIComponent(fileKey)}`);
       if (!response.ok) throw new Error("Download failed");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -77,30 +98,33 @@ const S3FileList = ({ isOpen }) => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast({
-        title: "Downloaded",
-        description: fileName,
-        position: "top",
-        status: "success",
-        duration: 2000,
-        isClosable: true,
-      });
+      toast({ title: "Downloaded", description: fileName, position: "top", status: "success", duration: 2000, isClosable: true });
     } catch (err) {
-      toast({
-        title: "Download failed",
-        description: err.message,
-        position: "top",
-        status: "error",
-        duration: 3000,
-        isClosable: true,
-      });
+      toast({ title: "Download failed", description: err.message, position: "top", status: "error", duration: 3000, isClosable: true });
     }
   };
 
-  const handleView = (fileKey) => {
-    setSelectedFile(`${API_BASE_URL}/get-pdf/${encodeURIComponent(fileKey)}`);
-    onOpen();
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeletingId(deleteTarget._id);
+    onDeleteClose();
+    try {
+      const response = await authFetch(`${API_BASE_URL}/delete-pdf/${deleteTarget._id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Delete failed");
+      setFiles((prev) => prev.filter((f) => f._id !== deleteTarget._id));
+      toast({ title: "Deleted", description: deleteTarget.fileName, position: "top", status: "success", duration: 2000, isClosable: true });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      toast({ title: "Delete failed", description: err.message, position: "top", status: "error", duration: 3000, isClosable: true });
+    } finally {
+      setDeletingId(null);
+      setDeleteTarget(null);
+    }
   };
+
+  const filtered = files.filter((f) =>
+    f.fileName.toLowerCase().includes(search.toLowerCase())
+  );
 
   if (loading) {
     return (
@@ -110,65 +134,101 @@ const S3FileList = ({ isOpen }) => {
     );
   }
 
-  if (files.length === 0) {
-    return (
-      <Flex justify="center" align="center" py={10} direction="column" gap={1}>
-        <Text color="gray.400" fontSize="sm">No files uploaded yet.</Text>
-      </Flex>
-    );
-  }
-
   return (
     <>
-      <Flex direction="column" gap={2}>
-        {files.map((file) => (
-          <Flex
-            key={file.fileUrl}
-            align="center"
-            gap={3}
-            px={3}
-            py={2.5}
-            border="1px"
-            borderColor="gray.100"
+      {/* Search + count */}
+      <Flex align="center" gap={2} mb={3}>
+        <InputGroup size="sm" flex={1}>
+          <InputLeftElement pointerEvents="none">
+            <SearchIcon color="gray.400" boxSize={3} />
+          </InputLeftElement>
+          <Input
+            placeholder="Search files..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
             borderRadius="lg"
-            bg="white"
-            _hover={{ borderColor: "gray.200", bg: "gray.50" }}
-            transition="all 0.1s"
-          >
-            <PdfRowIcon />
-            <Box flex={1} minW={0}>
-              <Text fontSize="sm" fontWeight="medium" color="gray.700" noOfLines={1}>
-                {file.fileName}
-              </Text>
-              <Text fontSize="xs" color="gray.400">
-                {new Date(file.uploadDate).toLocaleDateString(undefined, {
-                  year: "numeric", month: "short", day: "numeric",
-                })}
-              </Text>
-            </Box>
-            <Flex gap={1}>
-              <IconButton
-                icon={<ViewIcon />}
-                aria-label="View"
-                size="sm"
-                variant="ghost"
-                colorScheme="blue"
-                onClick={() => handleView(file.fileKey)}
-              />
-              <IconButton
-                icon={<DownloadIcon />}
-                aria-label="Download"
-                size="sm"
-                variant="ghost"
-                colorScheme="gray"
-                onClick={() => handleDownload(file.fileKey, file.fileName)}
-              />
-            </Flex>
-          </Flex>
-        ))}
+            bg="gray.50"
+          />
+        </InputGroup>
+        <Badge colorScheme="gray" fontSize="xs" px={2} py={1} borderRadius="md">
+          {filtered.length} file{filtered.length !== 1 ? "s" : ""}
+        </Badge>
       </Flex>
 
-      <Modal isOpen={isPdfOpen} onClose={onClose} size="5xl">
+      {/* File list with overflow */}
+      <Box maxH="340px" overflowY="auto" pr={1}>
+        {filtered.length === 0 ? (
+          <Flex justify="center" align="center" py={10} direction="column" gap={1}>
+            <Text color="gray.400" fontSize="sm">
+              {search ? "No files match your search." : "No files uploaded yet."}
+            </Text>
+          </Flex>
+        ) : (
+          <Flex direction="column" gap={2}>
+            {filtered.map((file) => (
+              <Flex
+                key={file._id}
+                align="center"
+                gap={3}
+                px={3}
+                py={2.5}
+                border="1px"
+                borderColor="gray.100"
+                borderRadius="lg"
+                bg="white"
+                _hover={{ borderColor: "gray.200", bg: "gray.50" }}
+                transition="all 0.1s"
+              >
+                <PdfRowIcon />
+                <Box flex={1} minW={0}>
+                  <Text fontSize="sm" fontWeight="medium" color="gray.700" noOfLines={1}>
+                    {file.fileName}
+                  </Text>
+                  <Text fontSize="xs" color="gray.400">
+                    {new Date(file.uploadDate).toLocaleDateString(undefined, {
+                      year: "numeric", month: "short", day: "numeric",
+                    })}
+                  </Text>
+                </Box>
+                <Flex gap={1}>
+                  <IconButton
+                    icon={<ViewIcon />}
+                    aria-label="View"
+                    size="sm"
+                    variant="ghost"
+                    colorScheme="blue"
+                    onClick={() => handleView(file.fileKey)}
+                  />
+                  <IconButton
+                    icon={<DownloadIcon />}
+                    aria-label="Download"
+                    size="sm"
+                    variant="ghost"
+                    colorScheme="gray"
+                    onClick={() => handleDownload(file.fileKey, file.fileName)}
+                  />
+                  <IconButton
+                    icon={<DeleteIcon />}
+                    aria-label="Delete"
+                    size="sm"
+                    variant="ghost"
+                    colorScheme="red"
+                    isLoading={deletingId === file._id}
+                    onClick={() => { setDeleteTarget(file); onDeleteOpen(); }}
+                  />
+                </Flex>
+              </Flex>
+            ))}
+          </Flex>
+        )}
+      </Box>
+
+      {/* PDF Viewer Modal */}
+      <Modal
+        isOpen={isPdfOpen}
+        onClose={() => { if (selectedFile) URL.revokeObjectURL(selectedFile); setSelectedFile(null); onPdfClose(); }}
+        size="5xl"
+      >
         <ModalOverlay bg="blackAlpha.600" />
         <ModalContent h="90vh" borderRadius="xl" overflow="hidden">
           <ModalHeader borderBottom="1px" borderColor="gray.100" py={3} fontSize="md" fontWeight="semibold">
@@ -186,6 +246,30 @@ const S3FileList = ({ isOpen }) => {
           </ModalBody>
         </ModalContent>
       </Modal>
+
+      {/* Delete Confirm Dialog */}
+      <AlertDialog isOpen={isDeleteOpen} leastDestructiveRef={cancelDeleteRef} onClose={onDeleteClose} isCentered>
+        <AlertDialogOverlay backdropFilter="blur(2px)" />
+        <AlertDialogContent borderRadius="xl" maxW="380px">
+          <Box px={6} pt={5} pb={3} borderBottom="1px" borderColor="gray.100">
+            <Text fontWeight="bold" fontSize="md" color="gray.800">Delete File</Text>
+            <Text fontSize="xs" color="gray.400" mt={0.5}>This cannot be undone</Text>
+          </Box>
+          <AlertDialogBody px={6} py={4}>
+            <Text fontSize="sm" color="gray.600">
+              Are you sure you want to delete <Text as="span" fontWeight="semibold" color="gray.800">{deleteTarget?.fileName}</Text>?
+            </Text>
+          </AlertDialogBody>
+          <AlertDialogFooter px={6} pb={5} gap={3}>
+            <Button ref={cancelDeleteRef} onClick={onDeleteClose} variant="outline" borderRadius="lg" w="full">
+              Cancel
+            </Button>
+            <Button colorScheme="red" onClick={handleDeleteConfirm} borderRadius="lg" w="full">
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };
