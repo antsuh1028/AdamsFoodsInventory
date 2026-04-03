@@ -136,7 +136,7 @@ const InventoryReport = ({ isOpen, onClose }) => {
             <Flex justify="center" align="center" py={16}>
               <Spinner color="blue.400" />
             </Flex>
-          ) : !stats ? (
+          ) : !stats || stats.error || stats.totalItems === undefined ? (
             <Flex justify="center" align="center" py={16}>
               <Text color="gray.400" fontSize="sm">Failed to load stats.</Text>
             </Flex>

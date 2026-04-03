@@ -183,7 +183,7 @@ const Homescreen = () => {
       setUpdateExpanded(false);
       setUpdateDialogOpen(true);
     },
-    [formData, currentItem, toast, validateForm]
+    [currentItem, toast, validateForm]
   );
 
   const doUpdate = useCallback(() => {

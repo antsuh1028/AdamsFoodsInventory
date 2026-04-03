@@ -14,7 +14,6 @@ import {
   ModalHeader,
   ModalCloseButton,
   ModalBody,
-  ModalFooter,
   useDisclosure,
   Spinner,
   Icon,
@@ -74,7 +73,7 @@ const S3FileList = ({ isOpen, onRefresh }) => {
 
   const handleView = async (fileKey) => {
     try {
-      const response = await authFetch(`${API_BASE_URL}/get-pdf/${encodeURIComponent(fileKey)}`);
+      const response = await authFetch(`${API_BASE_URL}/get-pdf?key=${encodeURIComponent(fileKey)}`);
       if (!response.ok) throw new Error("Failed to load PDF");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -87,7 +86,7 @@ const S3FileList = ({ isOpen, onRefresh }) => {
 
   const handleDownload = async (fileKey, fileName) => {
     try {
-      const response = await authFetch(`${API_BASE_URL}/get-pdf/${encodeURIComponent(fileKey)}`);
+      const response = await authFetch(`${API_BASE_URL}/get-pdf?key=${encodeURIComponent(fileKey)}`);
       if (!response.ok) throw new Error("Download failed");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
