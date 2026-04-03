@@ -1,0 +1,6 @@
+[submodule "AdamsFoodsInventory"]
+	path = AdamsFoodsInventory
+	url = https://github.com/antsuh1028/AdamsFoodsInventory
+[submodule "AdamsFoodsServer"]
+	path = AdamsFoodsServer
+	url = https://github.com/ShawnnnLiu/AdamsFoodsServer
