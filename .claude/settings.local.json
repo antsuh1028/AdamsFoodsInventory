@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm uninstall:*)",
-      "Bash(grep -A 5 \"\\\\.post\\\\|\\\\.get\" utils/homescreen/*.js)"
+      "Bash(grep -A 5 \"\\\\.post\\\\|\\\\.get\" utils/homescreen/*.js)",
+      "Bash(node -e \"require\\(''xlsx''\\); console.log\\(''xlsx ok''\\)\")",
+      "Bash(npm start:*)"
     ]
   }
 }
