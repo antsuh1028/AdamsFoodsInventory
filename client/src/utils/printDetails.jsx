@@ -1,4 +1,4 @@
-import findItem from "./homescreen/findItem.js";
+import findItem from "./homescreen/findItem";
 
 const printDetails = (item) => {
   if (!item) return;

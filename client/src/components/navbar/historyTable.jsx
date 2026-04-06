@@ -21,9 +21,9 @@ import {
 } from "@chakra-ui/react";
 import { ChevronLeftIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import { useContext } from "react";
-import { FormContext } from "../../utils/homescreen/formContext.js";
+import { FormContext } from "../../utils/homescreen/formContext";
 import printDetails from "../../utils/printDetails";
-import getHistory from "../../utils/navbar/getHistory.js";
+import getHistory from "../../utils/navbar/getHistory";
 
 const CHANGE_COLORS = {
   ADD: "green",

@@ -18,6 +18,8 @@ import {
 import { EmailIcon, LockIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import adamsWings from "../assets/AdamsWings.png";
+import fieldsBg from "../assets/Fields.jpeg";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -63,7 +65,7 @@ const Login = () => {
       <Box
         position="absolute"
         inset={0}
-        backgroundImage='url("/Fields.jpeg")'
+        backgroundImage={`url(${fieldsBg})`}
         backgroundSize="cover"
         backgroundPosition="center"
         filter="brightness(0.45)"
@@ -84,7 +86,7 @@ const Login = () => {
       >
         {/* Logo */}
         <Image
-          src="AdamsWings.png"
+          src={adamsWings}
           alt="Adams Foods"
           height="56px"
           objectFit="contain"

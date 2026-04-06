@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useContext } from "react";
 import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
   Button, Flex, Box, Text, Input, FormControl, FormLabel, SimpleGrid, Spinner, Image, Badge,
@@ -8,6 +8,8 @@ import {
 } from "@chakra-ui/react";
 import { WarningTwoIcon } from "@chakra-ui/icons";
 import { API_BASE_URL } from "../../config/api";
+import { FormContext } from "../../utils/homescreen/formContext";
+import postHistory from "../../utils/homescreen/postHistory";
 
 const FIELDS = [
   { key: "location", label: "Location" },
@@ -43,6 +45,7 @@ const FormScanner = ({ isOpen, onClose }) => {
   const cancelConflictRef = useRef(null);
   const toast = useToast();
 
+  const { onScannerAdd } = useContext(FormContext);
   const token = localStorage.getItem("token");
 
   const handleFileChange = (e) => {
@@ -94,7 +97,9 @@ const FormScanner = ({ isOpen, onClose }) => {
         return;
       }
       if (!res.ok) throw new Error(data.error || "Failed to add item");
+      postHistory({ ...fields, boxes: individualWeights.map((w) => ({ weight: w })) }, "Scanner Add").catch(() => {});
       toast({ title: "Item added", status: "success", position: "top", duration: 2000, isClosable: true });
+      onScannerAdd(fields.location);
       handleClose();
     } catch (err) {
       toast({ title: "Failed to add", description: err.message, status: "error", position: "top", duration: 3000, isClosable: true });
@@ -114,6 +119,7 @@ const FormScanner = ({ isOpen, onClose }) => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
       toast({ title: action === "update" ? "Item updated" : "Item replaced", status: "success", position: "top", duration: 2000, isClosable: true });
+      onScannerAdd(fields.location);
       onConflictClose();
       handleClose();
     } catch (err) {

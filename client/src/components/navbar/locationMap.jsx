@@ -36,10 +36,10 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 
-import { locationRows } from "../../utils/navbar/exportRows.js";
-import findItem from "../../utils/homescreen/findItem.js";
-import InfoPopover from "./infoPopover.js";
-import axiosInstance from "../../utils/axiosInstance.js";
+import { locationRows } from "../../utils/navbar/exportRows";
+import findItem from "../../utils/homescreen/findItem";
+import InfoPopover from "./infoPopover";
+import axiosInstance from "../../utils/axiosInstance";
 
 // ─── SeatCell ────────────────────────────────────────────────────────────────
 const SeatCell = ({

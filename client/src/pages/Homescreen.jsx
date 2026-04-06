@@ -5,7 +5,7 @@ import {
   AlertDialogBody, AlertDialogFooter,
   Button,
 } from "@chakra-ui/react";
-import Navbar from "./Navbar";
+import Navbar from "../components/layout/Navbar";
 import ShowMap from "../components/navbar/locationMap";
 import axiosInstance from "../utils/axiosInstance";
 
@@ -288,6 +288,20 @@ const Homescreen = () => {
     setLocateMapOpen(true);
   }, []);
 
+  const handleScannerAdd = useCallback(async (location) => {
+    if (!location) return;
+    try {
+      const res = await axiosInstance.post("/inventoryFind", { inputs: { location: location.toUpperCase() } });
+      if (res.data !== "INVALID" && res.data.length > 0) {
+        setItems(res.data);
+        setSelectedItem(res.data[0]);
+        setShowDetails(true);
+        setFlashLocation(res.data[0].location);
+        setTimeout(() => setFlashLocation(null), 2500);
+      }
+    } catch { /* silent */ }
+  }, []);
+
   const handleTabClick = useCallback(() => {
     setShowDetails(false);
   }, []);
@@ -339,6 +353,7 @@ const Homescreen = () => {
         setFormData,
         setCurrentItem,
         formData,
+        onScannerAdd: handleScannerAdd,
       }}
     >
       <>

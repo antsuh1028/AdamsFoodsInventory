@@ -96,12 +96,12 @@ router.post("/inventoryUpdate", verifyToken, (req, res) => {
 
 // ----------------- Remove -----------------
 router.post("/inventoryRemove", verifyToken, (req, res) => {
-  const filter = req.body.currentItem || {};
-  if (!filter.location || filter.location.trim() === "") return res.status(400).json({ error: "Location field cannot be blank." });
+  const currentItem = req.body.currentItem || {};
+  if (!currentItem._id) return res.status(400).json({ error: "Item ID is required." });
 
-  FreezerModel.findOne(filter)
+  FreezerModel.findByIdAndDelete(currentItem._id)
     .then((item) => item
-      ? FreezerModel.deleteOne(filter).then(() => res.status(200).json({ message: "Item Successfully Deleted." }))
+      ? res.status(200).json({ message: "Item Successfully Deleted." })
       : res.status(404).json({ error: "No Items Found" })
     )
     .catch(() => res.status(500).json({ error: "An error occurred while removing the item." }));

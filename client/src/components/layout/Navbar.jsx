@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import adamsWings from "../../assets/AdamsWings.png";
 import {
   Box,
   Flex,
@@ -21,14 +22,14 @@ import { ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import { HamburgerIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 
-import ShowHistory from "../components/navbar/historyTable.js";
-import UploadFile from "../components/navbar/uploadFile.js";
-import ShowMap from "../components/navbar/locationMap.js";
-import OpenHelp from "../components/navbar/openHelp.js";
-import IncomingOrders from "../components/navbar/incomingOrders.js";
-import ExportInventory from "../components/navbar/exportInventory.js";
-import InventoryReport from "../components/navbar/inventoryReport.js";
-import FormScanner from "../components/navbar/formScanner.jsx";
+import ShowHistory from "../navbar/historyTable.jsx";
+import UploadFile from "../navbar/uploadFile.jsx";
+import ShowMap from "../navbar/locationMap.jsx";
+import OpenHelp from "../navbar/openHelp.jsx";
+import IncomingOrders from "../navbar/incomingOrders.jsx";
+import ExportInventory from "../navbar/exportInventory.jsx";
+import InventoryReport from "../navbar/inventoryReport.jsx";
+import FormScanner from "../navbar/formScanner.jsx";
 
 const ShowDrawer = ({
   isOpen,
@@ -183,7 +184,7 @@ const Navbar = () => {
                 maxW={{ base: "120px", sm: "150px", md: "180px", lg: "200px" }}
                 w="auto"
                 objectFit="contain"
-                src="AdamsWings.png"
+                src={adamsWings}
                 alt="Adams Wings"
                 transition="all 0.2s ease-in-out"
                 _hover={{ transform: "scale(1.02)" }}

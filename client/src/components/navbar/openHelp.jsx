@@ -1,4 +1,9 @@
 import React from "react";
+import addGif from "../../assets/AF_ADD.gif";
+import findGif from "../../assets/AF_FIND.gif";
+import updateGif from "../../assets/AF_UPDATE.gif";
+import removeGif from "../../assets/AF_REMOVE.gif";
+import uploadGif from "../../assets/AF_UPLOAD.gif";
 import {
   Text,
   Button,
@@ -36,13 +41,13 @@ function OpenHelp({ isOpen, onClose }) {
 
             <TabPanels>
               <TabPanel>
-                <Image h="100%" w="100%" src="AF_ADD.gif" alt="InventoryAdd" />
+                <Image h="100%" w="100%" src={addGif} alt="InventoryAdd" />
               </TabPanel>
               <TabPanel>
                 <Image
                   h="100%"
                   w="100%"
-                  src="AF_FIND.gif"
+                  src={findGif}
                   alt="InventoryFind"
                 />
               </TabPanel>
@@ -50,7 +55,7 @@ function OpenHelp({ isOpen, onClose }) {
                 <Image
                   h="100%"
                   w="100%"
-                  src="AF_UPDATE.gif"
+                  src={updateGif}
                   alt="InventoryUpdate"
                 />
                 <Text textAlign="center" fontSize="small">
@@ -61,7 +66,7 @@ function OpenHelp({ isOpen, onClose }) {
                 <Image
                   h="100%"
                   w="100%"
-                  src="AF_REMOVE.gif"
+                  src={removeGif}
                   alt="InventoryRemove"
                 />
                 <Text textAlign="center" fontSize="small">
@@ -69,7 +74,7 @@ function OpenHelp({ isOpen, onClose }) {
                 </Text>
               </TabPanel>
               <TabPanel>
-                <Image h="100%" w="100%" src="AF_UPLOAD.gif" alt="UploadFile" />
+                <Image h="100%" w="100%" src={uploadGif} alt="UploadFile" />
                 <Text textAlign="center" fontSize="small">
                   - File must be a "Incoming Product Record Form" -
                 </Text>
