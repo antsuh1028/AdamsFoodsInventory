@@ -19,12 +19,13 @@
     "react-router-dom": "^6.26.1",
     "react-scripts": "^5.0.1",
     "read-excel-file": "^5.8.5",
+    "recharts": "^3.8.1",
     "web-vitals": "^2.1.4",
     "xlsx": "^0.18.5"
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build",
+    "build": "NODE_OPTIONS=--max-old-space-size=1536 react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },

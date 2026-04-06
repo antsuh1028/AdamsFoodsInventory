@@ -28,6 +28,7 @@ export const FormField = ({
   options,
   bg = "white",
   isInvalid = false,
+  isReadOnly = false,
   suggestions,
 }) => {
   const inputSize = useBreakpointValue({ base: "sm", md: "md" });
@@ -67,8 +68,11 @@ export const FormField = ({
             placeholder={placeholder}
             onChange={onChange}
             isInvalid={isInvalid}
+            isReadOnly={isReadOnly}
             list={listId}
             autoComplete="off"
+            cursor={isReadOnly ? "default" : undefined}
+            _readOnly={{ color: "gray.400", borderColor: "gray.200" }}
             sx={{
               "&::-webkit-calendar-picker-indicator": { display: "none" },
               "&::-webkit-list-button": { display: "none" },

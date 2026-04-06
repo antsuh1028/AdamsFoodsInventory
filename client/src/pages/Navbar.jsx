@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Box,
   Flex,
@@ -12,7 +12,11 @@ import {
   DrawerHeader,
   DrawerFooter,
   Image,
+  Collapse,
+  Text,
+  Divider,
 } from "@chakra-ui/react";
+import { ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
 
 import { HamburgerIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
@@ -24,6 +28,7 @@ import OpenHelp from "../components/navbar/openHelp.js";
 import IncomingOrders from "../components/navbar/incomingOrders.js";
 import ExportInventory from "../components/navbar/exportInventory.js";
 import InventoryReport from "../components/navbar/inventoryReport.js";
+import FormScanner from "../components/navbar/formScanner.jsx";
 
 const ShowDrawer = ({
   isOpen,
@@ -35,87 +40,54 @@ const ShowDrawer = ({
   onIPROpen,
   onExportOpen,
   onReportOpen,
+  onScanOpen,
 }) => {
   const navigate = useNavigate();
+  const [otherOpen, setOtherOpen] = useState(false);
+
   const handleLogout = () => {
     localStorage.removeItem("token");
     navigate("/");
   };
 
+  const navBtn = (label, handler) => (
+    <Button bg="white" justifyContent="flex-start" onClick={() => { handler(); onDrawerClose(); }}>
+      {label}
+    </Button>
+  );
+
   return (
     <Drawer placement="left" onClose={onClose} isOpen={isOpen}>
       <DrawerOverlay />
       <DrawerContent>
-        <DrawerHeader borderBottomWidth="1px">Other Actions</DrawerHeader>
-        <Stack direction="column" spacing={4} p={4}>
+        <DrawerHeader borderBottomWidth="1px">Menu</DrawerHeader>
+        <Stack direction="column" spacing={3} p={4}>
+          {navBtn("Freezer Map", onMapOpen)}
+          {navBtn("Scan Pallet Form", onScanOpen)}
+          {navBtn("History Log", onHistoryOpen)}
+
+          <Divider />
+
           <Button
             bg="white"
             justifyContent="flex-start"
-            onClick={() => {
-              onMapOpen();
-              onDrawerClose();
-            }}
+            onClick={() => setOtherOpen((v) => !v)}
+            rightIcon={otherOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
           >
-            Freezer Map
+            <Text flex={1} textAlign="left">Other</Text>
           </Button>
-          <Button
-            bg="white"
-            justifyContent="flex-start"
-            onClick={() => {
-              onHistoryOpen();
-              onDrawerClose();
-            }}
-          >
-            History Log
-          </Button>
-          <Button
-            bg="white"
-            justifyContent="flex-start"
-            onClick={() => {
-              onUploadOpen();
-              onDrawerClose();
-            }}
-          >
-            Upload File
-          </Button>
-          <Button
-            bg="white"
-            justifyContent="flex-start"
-            onClick={() => {
-              onIPROpen();
-              onDrawerClose();
-            }}
-          >
-            Incoming Product Records
-          </Button>
-          <Button
-            bg="white"
-            justifyContent="flex-start"
-            onClick={() => {
-              onExportOpen();
-              onDrawerClose();
-            }}
-          >
-            Export Inventory
-          </Button>
-          <Button
-            bg="white"
-            justifyContent="flex-start"
-            onClick={() => {
-              onReportOpen();
-              onDrawerClose();
-            }}
-          >
-            Inventory Report
-          </Button>
+          <Collapse in={otherOpen} animateOpacity>
+            <Stack direction="column" spacing={2} pl={3}>
+              {navBtn("Upload IPF File", onUploadOpen)}
+              {navBtn("Incoming Product Records", onIPROpen)}
+              {navBtn("Export Inventory", onExportOpen)}
+              {navBtn("Inventory Report", onReportOpen)}
+            </Stack>
+          </Collapse>
         </Stack>
+
         <DrawerFooter justifyContent="center">
-          <Button
-            bg="red.400"
-            _hover={{ bg: "red.500", color: "white" }}
-            color="black"
-            onClick={handleLogout}
-          >
+          <Button bg="red.400" _hover={{ bg: "red.500", color: "white" }} color="black" onClick={handleLogout}>
             Log Out
           </Button>
         </DrawerFooter>
@@ -164,6 +136,11 @@ const Navbar = () => {
     isOpen: isReportOpen,
     onOpen: onReportOpen,
     onClose: onReportClose,
+  } = useDisclosure();
+  const {
+    isOpen: isScanOpen,
+    onOpen: onScanOpen,
+    onClose: onScanClose,
   } = useDisclosure();
 
   return (
@@ -239,6 +216,7 @@ const Navbar = () => {
         onDrawerClose={onDrawerClose}
         onExportOpen={onExportOpen}
         onReportOpen={onReportOpen}
+        onScanOpen={onScanOpen}
       />
       <UploadFile isOpen={isUploadOpen} onClose={onUploadClose} />
       <IncomingOrders isOpen={isIPROpen} onClose={onIPRClose} />
@@ -248,6 +226,7 @@ const Navbar = () => {
       <OpenHelp isOpen={isHelpOpen} onClose={onHelpClose} />
       <ExportInventory isOpen={isExportOpen} onClose={onExportClose} />
       <InventoryReport isOpen={isReportOpen} onClose={onReportClose} />
+      <FormScanner isOpen={isScanOpen} onClose={onScanClose} />
     </>
   );
 };

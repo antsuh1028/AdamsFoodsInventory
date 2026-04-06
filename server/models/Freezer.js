@@ -14,7 +14,9 @@ const FreezerSchema = new mongoose.Schema({
     packdate: String,
     date_recvd: String,
     est: String,
-    price: String
+    price: String,
+    scanImageKey: String,
+    boxes: [{ weight: String }],
 });
 
 // Connect the schema to the `freezerinventories` collection

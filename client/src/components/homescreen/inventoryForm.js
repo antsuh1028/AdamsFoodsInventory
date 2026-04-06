@@ -133,27 +133,30 @@ const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErr
           />
         </GridItem>
 
-        {/* Quantity */}
+        {/* Quantity — auto-calculated from box count */}
         <GridItem colSpan={1}>
           <FormField
-            label="Quantity"
+            label="Quantity (auto)"
             value={quantity}
             type="number"
-            placeholder="Enter Quantity"
-            onChange={(e) => onInputChange("quantity", e.target.value)}
-            isInvalid={validationErrors.quantity}
+            placeholder="Set via boxes"
+            onChange={() => {}}
+            isReadOnly
+            bg="gray.50"
           />
         </GridItem>
 
-        {/* Weight — pairs with Pack Date on mobile, completes Grade/Qty/Weight row on xl */}
+        {/* Weight — read-only, driven by box management in the details panel */}
         <GridItem colSpan={1}>
           <FormField
-            label="Weight"
+            label="Weight (auto)"
             value={weight}
             type="number"
-            placeholder="Enter Weight"
-            onChange={(e) => onInputChange("weight", e.target.value)}
+            placeholder="Set via boxes"
+            onChange={() => {}}
             isInvalid={validationErrors.weight}
+            isReadOnly
+            bg="gray.50"
           />
         </GridItem>
 

@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  },
+  "scripts": {
+    "deploy": "ssh bitnami@34.209.235.176 'bash ~/deploy.sh'"
+  }
+}

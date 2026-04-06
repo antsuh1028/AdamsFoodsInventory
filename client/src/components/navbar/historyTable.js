@@ -158,6 +158,7 @@ function ShowHistory({ isOpen, onClose }) {
   const [historyData, setHistoryData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
+  const [showBoxEvents, setShowBoxEvents] = useState(false);
   const { setFormData } = useContext(FormContext);
 
   useEffect(() => {
@@ -188,8 +189,9 @@ function ShowHistory({ isOpen, onClose }) {
     onClose();
   };
 
-  const totalPages = Math.ceil(historyData.length / PAGE_SIZE);
-  const pageItems = historyData.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const filteredData = showBoxEvents ? historyData : historyData.filter((h) => h.category !== "box");
+  const totalPages = Math.ceil(filteredData.length / PAGE_SIZE);
+  const pageItems = filteredData.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl">
@@ -198,10 +200,21 @@ function ShowHistory({ isOpen, onClose }) {
         <ModalHeader borderBottom="1px" borderColor="gray.100" py={3}>
           <Flex align="center" gap={3}>
             <Text fontSize="lg" fontWeight="semibold">History Log</Text>
-            {!loading && historyData.length > 0 && (
+            {!loading && filteredData.length > 0 && (
               <Badge colorScheme="gray" fontSize="xs">
-                {historyData.length} entries
+                {filteredData.length} entries
               </Badge>
+            )}
+            {!loading && (
+              <Button
+                size="xs"
+                variant={showBoxEvents ? "solid" : "outline"}
+                colorScheme="gray"
+                borderRadius="md"
+                onClick={() => { setShowBoxEvents((v) => !v); setPage(0); }}
+              >
+                {showBoxEvents ? "Hide box events" : "Show box events"}
+              </Button>
             )}
           </Flex>
         </ModalHeader>
@@ -212,9 +225,9 @@ function ShowHistory({ isOpen, onClose }) {
             <Flex justify="center" align="center" py={12}>
               <Spinner color="blue.400" />
             </Flex>
-          ) : historyData.length === 0 ? (
+          ) : filteredData.length === 0 ? (
             <Flex justify="center" align="center" py={12}>
-              <Text color="gray.400" fontSize="sm">No history yet.</Text>
+              <Text color="gray.400" fontSize="sm">{historyData.length === 0 ? "No history yet." : "No pallet events yet."}</Text>
             </Flex>
           ) : (
             <Flex direction="column" gap={2}>

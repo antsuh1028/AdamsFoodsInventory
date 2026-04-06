@@ -22,7 +22,7 @@ import InventoryForm from "../components/homescreen/inventoryForm";
 import ActionButtons from "../components/homescreen/actionButton";
 import DetailsPanel from "../components/homescreen/detailsPanel";
 
-const REQUIRED_FIELDS = ["location", "lot", "brand", "species", "description", "grade", "quantity", "weight"];
+const REQUIRED_FIELDS = ["location", "lot", "species"];
 
 const RemoveField = ({ label, value }) => {
   if (!value) return null;
@@ -278,6 +278,11 @@ const Homescreen = () => {
     setShowDetails(true);
   }, []);
 
+  const handleItemUpdate = useCallback((updatedItem) => {
+    setItems((prev) => prev.map((i) => (i._id === updatedItem._id ? updatedItem : i)));
+    setSelectedItem(updatedItem);
+  }, []);
+
   const handleLocate = useCallback((item) => {
     setLocateLocation(item?.location || null);
     setLocateMapOpen(true);
@@ -408,6 +413,7 @@ const Homescreen = () => {
               onClose={() => setShowDetails(false)}
               onSet={handleSet}
               onLocate={handleLocate}
+              onItemUpdate={handleItemUpdate}
             />
           </Flex>
         </Flex>

@@ -17,6 +17,7 @@ import {
 } from "@chakra-ui/react";
 import S3Uploader from "../../utils/navbar/S3Uploader";
 import S3FileList from "./s3Files";
+import ScanImageList from "./scanImageList";
 
 function IncomingOrders({ isOpen, onClose }) {
   const [tabIndex, setTabIndex] = useState(0);
@@ -47,19 +48,14 @@ function IncomingOrders({ isOpen, onClose }) {
         <ModalBody p={0} overflowY="auto">
           <Tabs index={tabIndex} onChange={setTabIndex} colorScheme="blue">
             <TabList px={4} pt={2} borderBottom="2px" borderColor="gray.100">
-              <Tab
-                fontSize="sm"
-                fontWeight="semibold"
-                _selected={{ color: "blue.600", borderColor: "blue.500" }}
-              >
+              <Tab fontSize="sm" fontWeight="semibold" _selected={{ color: "blue.600", borderColor: "blue.500" }}>
                 Files
               </Tab>
-              <Tab
-                fontSize="sm"
-                fontWeight="semibold"
-                _selected={{ color: "blue.600", borderColor: "blue.500" }}
-              >
+              <Tab fontSize="sm" fontWeight="semibold" _selected={{ color: "blue.600", borderColor: "blue.500" }}>
                 Upload
+              </Tab>
+              <Tab fontSize="sm" fontWeight="semibold" _selected={{ color: "blue.600", borderColor: "blue.500" }}>
+                Scans
               </Tab>
             </TabList>
 
@@ -69,6 +65,9 @@ function IncomingOrders({ isOpen, onClose }) {
               </TabPanel>
               <TabPanel px={4} py={4}>
                 <S3Uploader onUploadSuccess={handleUploadSuccess} />
+              </TabPanel>
+              <TabPanel px={4} py={4}>
+                <ScanImageList isOpen={isOpen && tabIndex === 2} />
               </TabPanel>
             </TabPanels>
           </Tabs>

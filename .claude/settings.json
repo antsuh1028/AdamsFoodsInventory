@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l **/*.js **/*.jsx)",
+      "Bash(while read:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/DATWO/Desktop/AdamsFoodsInventory/**)",
+      "Bash(done)",
+      "Bash(npm install:*)"
+    ]
+  }
+}
