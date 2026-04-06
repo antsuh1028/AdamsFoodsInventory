@@ -85,10 +85,11 @@ router.post("/inventoryUpdate", verifyToken, (req, res) => {
   const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, currentItem } = req.body.updateInputs || {};
 
   if (!location) return res.status(400).json({ error: "Location cannot be empty." });
+  if (!currentItem?._id) return res.status(400).json({ error: "Item ID is required." });
 
   const update = { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price };
 
-  FreezerModel.findOneAndUpdate(currentItem, update, { new: true })
+  FreezerModel.findByIdAndUpdate(currentItem._id, update, { new: true })
     .then((item) => item ? res.status(200).json(item) : res.status(404).json({ error: "No Items Found" }))
     .catch(() => res.status(500).json({ error: "An error occurred while updating the item." }));
 });

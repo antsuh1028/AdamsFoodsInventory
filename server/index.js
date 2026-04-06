@@ -4,9 +4,12 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 
 const app = express();
+const allowedOrigins = [process.env.ALLOWED_ORIGIN, "http://localhost:3000"].filter(Boolean);
+const corsOptions = { origin: allowedOrigins };
+
 app.use(express.json());
-app.use(cors());
-app.options("*", cors());
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 mongoose
   .connect(process.env.MONGO_DB_URI)
