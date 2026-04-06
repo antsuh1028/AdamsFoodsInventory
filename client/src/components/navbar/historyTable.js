@@ -185,7 +185,7 @@ function ShowHistory({ isOpen, onClose }) {
       packdate: item.packdate || "",
       date_recvd: item.date_recvd || "",
       est: item.est || "",
-    });
+    }); 
     onClose();
   };
 
