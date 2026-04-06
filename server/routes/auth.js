@@ -38,15 +38,4 @@ router.post("/login", loginLimiter, async (req, res) => {
   }
 });
 
-router.post("/signup", async (req, res) => {
-  const { email, password } = req.body;
-  try {
-    const hashed = await bcrypt.hash(password, 10);
-    await UserModel.create({ username: email, password: hashed });
-    res.json({ message: "User created successfully" });
-  } catch {
-    res.status(500).json({ error: "Error creating user" });
-  }
-});
-
 module.exports = router;
