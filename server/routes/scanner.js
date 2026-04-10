@@ -183,4 +183,65 @@ router.post("/scanner-resolve", verifyToken, async (req, res) => {
   }
 });
 
+// ─── Order Sheet OCR ─────────────────────────────────────────────────────────
+
+const ORDER_PROMPT = `
+You are parsing an Adams Foods outgoing order sheet (customer pick/ship document).
+The sheet lists multiple line items. For each item extract:
+- lot: lot number in parentheses like "(26061-03)" → normalize to "XXXXX-XX" format
+- quantity: the PL/CS/BX count (the large bold number on the left of each row)
+- description: the product name/description text
+
+Return JSON only: { "items": [ { "lot": "...", "quantity": "...", "description": "..." }, ... ] }
+Only include items that have a lot number. No explanation, no markdown.
+`.trim();
+
+router.post("/extract-order", verifyToken, upload.single("image"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+  try {
+    const mime = req.file.mimetype || "";
+    const isHeic = mime.includes("heic") || mime.includes("heif");
+    const imageBuffer = isHeic
+      ? Buffer.from(await heicConvert({ buffer: req.file.buffer, format: "JPEG", quality: 0.9 }))
+      : req.file.buffer;
+
+    const textractResponse = await textractClient.send(new DetectDocumentTextCommand({
+      Document: { Bytes: imageBuffer },
+    }));
+    const lineTexts = textractResponse.Blocks
+      .filter((b) => b.BlockType === "LINE")
+      .map((b) => b.Text || "");
+
+    const gptResponse = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: `${ORDER_PROMPT}\n\nOCR TEXT:\n${lineTexts.join("\n")}` }],
+      response_format: { type: "json_object" },
+    });
+
+    const { items } = JSON.parse(gptResponse.choices[0].message.content);
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(422).json({ error: "No line items found in the image." });
+    }
+
+    // Look up each lot in inventory
+    const lots = items.map((i) => i.lot).filter(Boolean);
+    const matches = await FreezerModel.find({ lot: { $in: lots } }).lean();
+    const byLot = {};
+    for (const m of matches) {
+      if (!byLot[m.lot]) byLot[m.lot] = [];
+      byLot[m.lot].push(m);
+    }
+
+    const result = items.map((item) => ({
+      ...item,
+      matches: byLot[item.lot] || [],
+    }));
+
+    res.json({ items: result });
+  } catch (err) {
+    console.error("Order extraction error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -30,6 +30,7 @@ import IncomingOrders from "../navbar/incomingOrders.jsx";
 import ExportInventory from "../navbar/exportInventory.jsx";
 import InventoryReport from "../navbar/inventoryReport.jsx";
 import FormScanner from "../navbar/formScanner.jsx";
+import OrderScanner from "../navbar/orderScanner.jsx";
 
 const ShowDrawer = ({
   isOpen,
@@ -42,6 +43,7 @@ const ShowDrawer = ({
   onExportOpen,
   onReportOpen,
   onScanOpen,
+  onOrderScanOpen,
 }) => {
   const navigate = useNavigate();
   const [otherOpen, setOtherOpen] = useState(false);
@@ -65,6 +67,7 @@ const ShowDrawer = ({
         <Stack direction="column" spacing={3} p={4}>
           {navBtn("Freezer Map", onMapOpen)}
           {navBtn("Scan Pallet Form", onScanOpen)}
+          {navBtn("Scan Order Sheet", onOrderScanOpen)}
           {navBtn("History Log", onHistoryOpen)}
 
           <Divider />
@@ -143,6 +146,11 @@ const Navbar = () => {
     onOpen: onScanOpen,
     onClose: onScanClose,
   } = useDisclosure();
+  const {
+    isOpen: isOrderScanOpen,
+    onOpen: onOrderScanOpen,
+    onClose: onOrderScanClose,
+  } = useDisclosure();
 
   return (
     <>
@@ -218,6 +226,7 @@ const Navbar = () => {
         onExportOpen={onExportOpen}
         onReportOpen={onReportOpen}
         onScanOpen={onScanOpen}
+        onOrderScanOpen={onOrderScanOpen}
       />
       <UploadFile isOpen={isUploadOpen} onClose={onUploadClose} />
       <IncomingOrders isOpen={isIPROpen} onClose={onIPRClose} />
@@ -228,6 +237,7 @@ const Navbar = () => {
       <ExportInventory isOpen={isExportOpen} onClose={onExportClose} />
       <InventoryReport isOpen={isReportOpen} onClose={onReportClose} />
       <FormScanner isOpen={isScanOpen} onClose={onScanClose} />
+      <OrderScanner isOpen={isOrderScanOpen} onClose={onOrderScanClose} />
     </>
   );
 };
