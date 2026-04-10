@@ -2,7 +2,6 @@ import { useState, useRef, useContext } from "react";
 import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
   Button, Flex, Box, Text, Input, FormControl, FormLabel, SimpleGrid, Spinner, Image, Badge,
-  AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogBody, AlertDialogFooter,
   Collapse,
   useToast, useDisclosure,
 } from "@chakra-ui/react";
@@ -37,12 +36,8 @@ const FormScanner = ({ isOpen, onClose }) => {
   const [scanImageKey, setScanImageKey] = useState(null);
   const [isTally, setIsTally] = useState(true);
   const [boxesOpen, setBoxesOpen] = useState(false);
-  const [conflictItem, setConflictItem] = useState(null);
-  const [resolving, setResolving] = useState(false);
-  const { isOpen: isConflictOpen, onOpen: onConflictOpen, onClose: onConflictClose } = useDisclosure();
   const { isOpen: isImageOpen, onOpen: onImageOpen, onClose: onImageClose } = useDisclosure();
   const inputRef = useRef(null);
-  const cancelConflictRef = useRef(null);
   const toast = useToast();
 
   const { onScannerAdd } = useContext(FormContext);
@@ -91,11 +86,6 @@ const FormScanner = ({ isOpen, onClose }) => {
         body: JSON.stringify({ inputs: { ...fields, scanImageKey, boxes: individualWeights.map((w) => ({ weight: w })) }, force: true, source: "scanner" }),
       });
       const data = await res.json();
-      if (res.status === 409 && data.code === "EXACT_DUPLICATE") {
-        setConflictItem(data.existingItem);
-        onConflictOpen();
-        return;
-      }
       if (!res.ok) throw new Error(data.error || "Failed to add item");
       toast({ title: "Item added", status: "success", position: "top", duration: 2000, isClosable: true });
       onScannerAdd(fields.location);
@@ -104,27 +94,6 @@ const FormScanner = ({ isOpen, onClose }) => {
       toast({ title: "Failed to add", description: err.message, status: "error", position: "top", duration: 3000, isClosable: true });
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleResolve = async (action) => {
-    setResolving(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/scanner-resolve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: token || "" },
-        body: JSON.stringify({ action, existingId: conflictItem._id, inputs: { ...fields, scanImageKey, boxes: individualWeights.map((w) => ({ weight: w })) } }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed");
-      toast({ title: action === "update" ? "Item updated" : "Item replaced", status: "success", position: "top", duration: 2000, isClosable: true });
-      onScannerAdd(fields.location);
-      onConflictClose();
-      handleClose();
-    } catch (err) {
-      toast({ title: "Failed", description: err.message, status: "error", position: "top", duration: 3000, isClosable: true });
-    } finally {
-      setResolving(false);
     }
   };
 
@@ -350,41 +319,6 @@ const FormScanner = ({ isOpen, onClose }) => {
       </ModalContent>
     </Modal>
 
-    <AlertDialog isOpen={isConflictOpen} leastDestructiveRef={cancelConflictRef} onClose={onConflictClose} isCentered>
-      <AlertDialogOverlay backdropFilter="blur(2px)" />
-      <AlertDialogContent borderRadius="xl" maxW="400px">
-        <Box px={6} pt={5} pb={3} borderBottom="1px" borderColor="gray.100">
-          <Text fontWeight="bold" fontSize="md" color="gray.800">Lot Already Exists</Text>
-          <Text fontSize="xs" color="gray.400" mt={0.5}>
-            Lot {conflictItem?.lot} is already at {conflictItem?.location}
-          </Text>
-        </Box>
-        <AlertDialogBody px={6} py={4}>
-          <Text fontSize="sm" color="gray.600" mb={3}>How would you like to proceed?</Text>
-          <Flex direction="column" gap={2}>
-            <Box p={3} borderRadius="lg" border="1px" borderColor="blue.100" bg="blue.50">
-              <Text fontSize="sm" fontWeight="semibold" color="blue.700">Update</Text>
-              <Text fontSize="xs" color="blue.600">Merge scanned fields into the existing item. Use this if it's the same pallet with new data.</Text>
-            </Box>
-            <Box p={3} borderRadius="lg" border="1px" borderColor="red.100" bg="red.50">
-              <Text fontSize="sm" fontWeight="semibold" color="red.700">Override</Text>
-              <Text fontSize="xs" color="red.600">Remove the existing item and add this as a new one. Use this if the old pallet left and a new one arrived.</Text>
-            </Box>
-          </Flex>
-        </AlertDialogBody>
-        <AlertDialogFooter px={6} pb={5} gap={2}>
-          <Button ref={cancelConflictRef} variant="outline" borderRadius="lg" size="sm" onClick={onConflictClose} isDisabled={resolving}>
-            Cancel
-          </Button>
-          <Button colorScheme="blue" borderRadius="lg" size="sm" onClick={() => handleResolve("update")} isLoading={resolving}>
-            Update
-          </Button>
-          <Button colorScheme="red" borderRadius="lg" size="sm" onClick={() => handleResolve("override")} isLoading={resolving}>
-            Override
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
     </>
   );
 };

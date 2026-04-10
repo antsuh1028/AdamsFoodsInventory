@@ -47,16 +47,6 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
   const locationUpper = location.toUpperCase();
 
   try {
-    if (lot) {
-      const sameLot = await FreezerModel.findOne({ lot: new RegExp(`^${lot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") });
-      if (sameLot) {
-        const similarDesc = descriptionsSimilar(sameLot.description, description);
-        if (similarDesc) {
-          return res.status(409).json({ error: `Lot ${lot} already exists at ${sameLot.location}.`, code: "EXACT_DUPLICATE", existingItem: sameLot });
-        }
-      }
-    }
-
     if (!force) {
       const occupiedCount = await FreezerModel.countDocuments({ location: locationUpper });
       if (occupiedCount > 0) return res.status(409).json({ error: `${location} already has ${occupiedCount} item(s) stored there.`, code: "LOCATION_OCCUPIED", count: occupiedCount });
@@ -67,14 +57,13 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
 
     const createdItem = await FreezerModel.create({ location: locationUpper, lot, vendor, brand, species, description, grade, quantity: computedQuantity, weight: computedWeight, packdate, date_recvd, est, price, scanImageKey, boxes: parsedBoxes });
 
-    if (req.body.source === "scanner") {
-      await HistoryModel.create(historyEntry(createdItem, "Scanner Add", {
-        vendor: createdItem.vendor, brand: createdItem.brand,
-        grade: createdItem.grade, quantity: createdItem.quantity,
-        weight: createdItem.weight, packdate: createdItem.packdate,
-        date_recvd: createdItem.date_recvd, est: createdItem.est,
-      }));
-    }
+    const addLabel = req.body.source === "scanner" ? "Scanner Add" : "Added";
+    await HistoryModel.create(historyEntry(createdItem, addLabel, {
+      vendor: createdItem.vendor, brand: createdItem.brand,
+      grade: createdItem.grade, quantity: createdItem.quantity,
+      weight: createdItem.weight, packdate: createdItem.packdate,
+      date_recvd: createdItem.date_recvd, est: createdItem.est,
+    }));
 
     res.status(201).json(createdItem);
   } catch {
@@ -109,7 +98,7 @@ router.post("/inventoryFind", verifyToken, (req, res) => {
 });
 
 // ----------------- Update -----------------
-router.post("/inventoryUpdate", verifyToken, (req, res) => {
+router.post("/inventoryUpdate", verifyToken, async (req, res) => {
   const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, currentItem } = req.body.updateInputs || {};
 
   if (!location) return res.status(400).json({ error: "Location cannot be empty." });
@@ -117,22 +106,37 @@ router.post("/inventoryUpdate", verifyToken, (req, res) => {
 
   const update = { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price };
 
-  FreezerModel.findByIdAndUpdate(currentItem._id, update, { new: true })
-    .then((item) => item ? res.status(200).json(item) : res.status(404).json({ error: "No Items Found" }))
-    .catch(() => res.status(500).json({ error: "An error occurred while updating the item." }));
+  try {
+    const item = await FreezerModel.findByIdAndUpdate(currentItem._id, update, { new: true });
+    if (!item) return res.status(404).json({ error: "No Items Found" });
+    await HistoryModel.create(historyEntry(item, "Updated", {
+      vendor: item.vendor, brand: item.brand, grade: item.grade,
+      quantity: item.quantity, weight: item.weight,
+      packdate: item.packdate, date_recvd: item.date_recvd, est: item.est,
+    }));
+    res.status(200).json(item);
+  } catch {
+    res.status(500).json({ error: "An error occurred while updating the item." });
+  }
 });
 
 // ----------------- Remove -----------------
-router.post("/inventoryRemove", verifyToken, (req, res) => {
+router.post("/inventoryRemove", verifyToken, async (req, res) => {
   const currentItem = req.body.currentItem || {};
   if (!currentItem._id) return res.status(400).json({ error: "Item ID is required." });
 
-  FreezerModel.findByIdAndDelete(currentItem._id)
-    .then((item) => item
-      ? res.status(200).json({ message: "Item Successfully Deleted." })
-      : res.status(404).json({ error: "No Items Found" })
-    )
-    .catch(() => res.status(500).json({ error: "An error occurred while removing the item." }));
+  try {
+    const item = await FreezerModel.findByIdAndDelete(currentItem._id);
+    if (!item) return res.status(404).json({ error: "No Items Found" });
+    await HistoryModel.create(historyEntry(item, "Removed", {
+      vendor: item.vendor, brand: item.brand, grade: item.grade,
+      quantity: item.quantity, weight: item.weight,
+      packdate: item.packdate, date_recvd: item.date_recvd, est: item.est,
+    }));
+    res.status(200).json({ message: "Item Successfully Deleted." });
+  } catch {
+    res.status(500).json({ error: "An error occurred while removing the item." });
+  }
 });
 
 // ----------------- Move -----------------
@@ -140,8 +144,11 @@ router.post("/inventoryMove", verifyToken, async (req, res) => {
   const { itemId, destLocation } = req.body;
   if (!itemId || !destLocation) return res.status(400).json({ error: "itemId and destLocation are required." });
   try {
+    const before = await FreezerModel.findById(itemId);
+    if (!before) return res.status(404).json({ error: "Item not found." });
+    const fromLocation = before.location;
     const updated = await FreezerModel.findByIdAndUpdate(itemId, { location: destLocation.toUpperCase() }, { new: true });
-    if (!updated) return res.status(404).json({ error: "Item not found." });
+    await HistoryModel.create(historyEntry(updated, `Moved: ${fromLocation} → ${updated.location}`));
     res.status(200).json(updated);
   } catch {
     res.status(500).json({ error: "An error occurred while moving the item." });
@@ -190,7 +197,13 @@ router.post("/inventoryBulkRemove", verifyToken, async (req, res) => {
   const { ids } = req.body;
   if (!ids || !Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "No IDs provided." });
   try {
+    const items = await FreezerModel.find({ _id: { $in: ids } }).lean();
     const result = await FreezerModel.deleteMany({ _id: { $in: ids } });
+    await HistoryModel.insertMany(items.map((item) => historyEntry(item, "Bulk Removed", {
+      vendor: item.vendor, brand: item.brand, grade: item.grade,
+      quantity: item.quantity, weight: item.weight,
+      packdate: item.packdate, date_recvd: item.date_recvd, est: item.est,
+    })));
     res.status(200).json({ message: `${result.deletedCount} item(s) removed.`, deletedCount: result.deletedCount });
   } catch {
     res.status(500).json({ error: "An error occurred while removing items." });
