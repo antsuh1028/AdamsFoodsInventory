@@ -2,7 +2,6 @@ import { useState, useRef } from "react";
 import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
   Button, Flex, Box, Text, Image, Badge, Spinner, Checkbox,
-  Table, Thead, Tbody, Tr, Th, Td,
   AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogBody, AlertDialogFooter,
   useToast, useDisclosure,
 } from "@chakra-ui/react";
@@ -11,12 +10,12 @@ import { API_BASE_URL } from "../../config/api";
 import axiosInstance from "../../utils/axiosInstance";
 
 const OrderScanner = ({ isOpen, onClose }) => {
-  const [step, setStep] = useState("upload"); // upload | review
+  const [step, setStep] = useState("upload");
   const [imagePreview, setImagePreview] = useState(null);
   const [imageFile, setImageFile] = useState(null);
   const [extracting, setExtracting] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [items, setItems] = useState([]); // [{ lot, quantity, description, matches: [], selectedId, checked }]
+  const [items, setItems] = useState([]);
   const inputRef = useRef(null);
   const cancelRef = useRef(null);
   const toast = useToast();
@@ -48,7 +47,6 @@ const OrderScanner = ({ isOpen, onClose }) => {
         throw new Error(err.error || "Extraction failed");
       }
       const data = await res.json();
-      // Initialize selection state: check all that have exactly one match, pick that match
       const enriched = data.items.map((item) => ({
         ...item,
         checked: item.matches.length === 1,
@@ -68,7 +66,7 @@ const OrderScanner = ({ isOpen, onClose }) => {
   };
 
   const selectMatch = (i, id) => {
-    setItems((prev) => prev.map((item, idx) => idx === i ? { ...item, selectedId: id } : item));
+    setItems((prev) => prev.map((item, idx) => idx === i ? { ...item, selectedId: id, checked: true } : item));
   };
 
   const toRemove = items.filter((item) => item.checked && item.selectedId);
@@ -106,18 +104,22 @@ const OrderScanner = ({ isOpen, onClose }) => {
   };
 
   const statusIcon = (item) => {
-    if (item.matches.length === 0) return <WarningIcon color="orange.400" boxSize={3.5} />;
-    if (item.matches.length === 1) return <CheckCircleIcon color="green.400" boxSize={3.5} />;
-    return <InfoIcon color="blue.400" boxSize={3.5} />;
+    if (item.matches.length === 0) return <WarningIcon color="orange.400" boxSize={3} />;
+    if (item.matches.length === 1) return <CheckCircleIcon color="green.400" boxSize={3} />;
+    return <InfoIcon color="blue.400" boxSize={3} />;
   };
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={handleClose} size="4xl" scrollBehavior="inside" blockScrollOnMount={false}>
+      <Modal isOpen={isOpen} onClose={handleClose} size="2xl" scrollBehavior="inside" blockScrollOnMount={false}>
         <ModalOverlay backdropFilter="blur(2px)" />
-        <ModalContent borderRadius="xl" sx={{ maxHeight: { base: "85dvh", md: "90dvh" } }} mx={{ base: 2, md: "auto" }}>
+        <ModalContent
+          borderRadius="xl"
+          sx={{ maxHeight: { base: "90dvh", md: "90dvh" } }}
+          mx={{ base: 2, md: "auto" }}
+        >
           <ModalHeader borderBottom="1px" borderColor="gray.100" py={3} fontSize="md" fontWeight="semibold">
-            <Flex align="center" gap={2}>
+            <Flex align="center" gap={2} flexWrap="wrap">
               Scan Order Sheet
               <Badge colorScheme="red" fontSize="xs">Bulk Remove</Badge>
               <Badge colorScheme="blue" fontSize="xs">OCR</Badge>
@@ -125,7 +127,8 @@ const OrderScanner = ({ isOpen, onClose }) => {
           </ModalHeader>
           <ModalCloseButton top={3} />
 
-          <ModalBody py={5} overflowY="auto">
+          <ModalBody py={4} px={{ base: 3, md: 5 }} overflowY="auto" sx={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
+            {/* ── Upload step ── */}
             {step === "upload" && (
               <Flex direction="column" gap={4} align="center">
                 <Box
@@ -146,7 +149,7 @@ const OrderScanner = ({ isOpen, onClose }) => {
                     <Image src={imagePreview} maxH="400px" objectFit="contain" />
                   ) : (
                     <Flex direction="column" align="center" gap={2} p={8}>
-                      <Text fontSize="sm" color="gray.500">Click to upload a photo of the order sheet</Text>
+                      <Text fontSize="sm" color="gray.500">Tap to upload a photo of the order sheet</Text>
                       <Text fontSize="xs" color="gray.400">JPG, PNG, HEIC supported</Text>
                     </Flex>
                   )}
@@ -160,14 +163,15 @@ const OrderScanner = ({ isOpen, onClose }) => {
               </Flex>
             )}
 
+            {/* ── Review step ── */}
             {step === "review" && (
-              <Flex direction="column" gap={4}>
-                {/* Thumbnail + summary */}
+              <Flex direction="column" gap={3}>
+                {/* Summary bar */}
                 <Flex align="center" gap={3} bg="gray.50" borderRadius="lg" p={3}>
                   {imagePreview && (
                     <Image
                       src={imagePreview}
-                      h="55px"
+                      h="48px"
                       w="auto"
                       objectFit="contain"
                       borderRadius="md"
@@ -176,129 +180,121 @@ const OrderScanner = ({ isOpen, onClose }) => {
                       flexShrink={0}
                       cursor="zoom-in"
                       onClick={onImageOpen}
-                      title="Click to view full image"
                     />
                   )}
                   <Box>
-                    <Text fontSize="xs" color="gray.500" fontWeight="bold">
-                      {items.length} line item{items.length !== 1 ? "s" : ""} extracted — check the ones to remove
+                    <Text fontSize="xs" color="gray.600" fontWeight="semibold">
+                      {items.length} line item{items.length !== 1 ? "s" : ""} — check to remove
                     </Text>
-                    <Flex gap={3} mt={1} flexWrap="wrap">
-                      <Text fontSize="xs" color="green.600">
-                        ✓ {items.filter((i) => i.matches.length === 1).length} matched
-                      </Text>
-                      <Text fontSize="xs" color="blue.600">
-                        ⚠ {items.filter((i) => i.matches.length > 1).length} multiple
-                      </Text>
-                      <Text fontSize="xs" color="orange.500">
-                        ✗ {items.filter((i) => i.matches.length === 0).length} not found
-                      </Text>
+                    <Flex gap={3} mt={0.5} flexWrap="wrap">
+                      <Text fontSize="xs" color="green.600">✓ {items.filter((i) => i.matches.length === 1).length} matched</Text>
+                      {items.filter((i) => i.matches.length > 1).length > 0 && (
+                        <Text fontSize="xs" color="blue.600">⚠ {items.filter((i) => i.matches.length > 1).length} pick needed</Text>
+                      )}
+                      {items.filter((i) => i.matches.length === 0).length > 0 && (
+                        <Text fontSize="xs" color="orange.500">✗ {items.filter((i) => i.matches.length === 0).length} not found</Text>
+                      )}
                     </Flex>
                   </Box>
                 </Flex>
 
-                {/* Review table */}
-                <Box overflowX="auto" borderRadius="lg" border="1px" borderColor="gray.100">
-                  <Table size="sm" variant="simple">
-                    <Thead bg="gray.50">
-                      <Tr>
-                        <Th w="40px" px={2}></Th>
-                        <Th fontSize="xs">Lot</Th>
-                        <Th fontSize="xs">Order Desc.</Th>
-                        <Th fontSize="xs">Taking</Th>
-                        <Th fontSize="xs">In Stock → After</Th>
-                        <Th fontSize="xs">Inventory Match</Th>
-                        <Th fontSize="xs">Location</Th>
-                      </Tr>
-                    </Thead>
-                    <Tbody>
-                      {items.map((item, i) => (
-                        <Tr key={i} bg={item.checked && item.selectedId ? "red.50" : "white"} opacity={item.matches.length === 0 ? 0.6 : 1}>
-                          <Td px={2}>
-                            <Checkbox
-                              isChecked={item.checked && !!item.selectedId}
-                              isDisabled={item.matches.length === 0 || !item.selectedId}
-                              onChange={() => toggleCheck(i)}
-                              colorScheme="red"
-                            />
-                          </Td>
-                          <Td>
-                            <Flex align="center" gap={1.5}>
-                              {statusIcon(item)}
-                              <Text fontSize="xs" fontWeight="semibold" fontFamily="mono">{item.lot}</Text>
-                            </Flex>
-                          </Td>
-                          <Td>
-                            <Text fontSize="xs" color="gray.600" noOfLines={2}>{item.description}</Text>
-                          </Td>
-                          <Td>
-                            <Text fontSize="xs" fontWeight="semibold">{item.quantity}</Text>
-                          </Td>
-                          <Td>
-                            {(() => {
-                              const match = item.matches.find((m) => m._id === item.selectedId) || item.matches[0];
-                              if (!match) return <Text fontSize="xs" color="gray.400">—</Text>;
-                              const inStock = parseInt(match.quantity) || 0;
-                              const taking = parseInt(item.quantity) || 0;
-                              const after = Math.max(0, inStock - taking);
-                              return (
-                                <Text fontSize="xs">
-                                  {inStock} → <Text as="span" fontWeight="semibold" color={after === 0 ? "red.500" : "green.600"}>{after}</Text>
-                                </Text>
-                              );
-                            })()}
-                          </Td>
-                          <Td>
-                            {item.matches.length === 0 && (
-                              <Text fontSize="xs" color="orange.500">Not in inventory</Text>
-                            )}
-                            {item.matches.length === 1 && (
-                              <Text fontSize="xs" color="gray.700" noOfLines={2}>{item.matches[0].description}</Text>
-                            )}
-                            {item.matches.length > 1 && (
-                              <Flex direction="column" gap={1}>
-                                {item.matches.map((m) => (
-                                  <Box
-                                    key={m._id}
-                                    px={2}
-                                    py={1}
-                                    borderRadius="md"
-                                    border="1px"
-                                    borderColor={item.selectedId === m._id ? "blue.400" : "gray.200"}
-                                    bg={item.selectedId === m._id ? "blue.50" : "white"}
-                                    cursor="pointer"
-                                    onClick={() => selectMatch(i, m._id)}
-                                    _hover={{ borderColor: "blue.300" }}
-                                  >
-                                    <Text fontSize="xs" fontWeight={item.selectedId === m._id ? "semibold" : "normal"}>
-                                      {m.description}
-                                    </Text>
-                                    <Text fontSize="10px" color="gray.400">{m.location}</Text>
-                                  </Box>
-                                ))}
-                              </Flex>
-                            )}
-                          </Td>
-                          <Td>
-                            {item.matches.length === 1 && (
+                {/* Cards */}
+                <Flex direction="column" gap={2}>
+                  {items.map((item, i) => {
+                    const match = item.matches.find((m) => m._id === item.selectedId) || item.matches[0];
+                    const inStock = parseInt(match?.quantity) || 0;
+                    const taking = parseInt(item.quantity) || 0;
+                    const after = Math.max(0, inStock - taking);
+                    const isChecked = item.checked && !!item.selectedId;
+
+                    return (
+                      <Box
+                        key={i}
+                        border="1px"
+                        borderColor={isChecked ? "red.200" : "gray.100"}
+                        borderRadius="lg"
+                        bg={isChecked ? "red.50" : "white"}
+                        p={3}
+                        opacity={item.matches.length === 0 ? 0.55 : 1}
+                      >
+                        {/* Top row: checkbox + lot + status + qty badge */}
+                        <Flex align="center" gap={2} mb={1.5}>
+                          <Checkbox
+                            isChecked={isChecked}
+                            isDisabled={item.matches.length === 0 || !item.selectedId}
+                            onChange={() => toggleCheck(i)}
+                            colorScheme="red"
+                            flexShrink={0}
+                          />
+                          {statusIcon(item)}
+                          <Text fontSize="sm" fontWeight="bold" fontFamily="mono" flex={1} noOfLines={1}>
+                            {item.lot}
+                          </Text>
+                          <Badge colorScheme="gray" fontSize="xs">{item.quantity} bx</Badge>
+                        </Flex>
+
+                        {/* Order description */}
+                        <Text fontSize="xs" color="gray.500" mb={1.5} pl={6} noOfLines={2}>
+                          {item.description}
+                        </Text>
+
+                        {/* Match info */}
+                        {item.matches.length === 0 && (
+                          <Box pl={6}>
+                            <Text fontSize="xs" color="orange.500">Not found in inventory</Text>
+                          </Box>
+                        )}
+
+                        {item.matches.length === 1 && (
+                          <Flex pl={6} align="center" justify="space-between" flexWrap="wrap" gap={1}>
+                            <Text fontSize="xs" color="gray.700" noOfLines={1} flex={1}>
+                              {item.matches[0].description}
+                            </Text>
+                            <Flex align="center" gap={2} flexShrink={0}>
                               <Text fontSize="xs" fontFamily="mono" color="blue.600">{item.matches[0].location}</Text>
-                            )}
-                            {item.matches.length > 1 && item.selectedId && (
-                              <Text fontSize="xs" fontFamily="mono" color="blue.600">
-                                {item.matches.find((m) => m._id === item.selectedId)?.location}
+                              <Text fontSize="xs" color="gray.400">
+                                {inStock} → <Text as="span" fontWeight="bold" color={after === 0 ? "red.500" : "green.600"}>{after}</Text>
                               </Text>
-                            )}
-                          </Td>
-                        </Tr>
-                      ))}
-                    </Tbody>
-                  </Table>
-                </Box>
+                            </Flex>
+                          </Flex>
+                        )}
+
+                        {item.matches.length > 1 && (
+                          <Box pl={6}>
+                            <Text fontSize="xs" color="blue.500" mb={1}>Multiple matches — tap to select:</Text>
+                            <Flex direction="column" gap={1}>
+                              {item.matches.map((m) => (
+                                <Flex
+                                  key={m._id}
+                                  px={2}
+                                  py={1.5}
+                                  borderRadius="md"
+                                  border="1px"
+                                  borderColor={item.selectedId === m._id ? "blue.400" : "gray.200"}
+                                  bg={item.selectedId === m._id ? "blue.50" : "white"}
+                                  cursor="pointer"
+                                  onClick={() => selectMatch(i, m._id)}
+                                  align="center"
+                                  justify="space-between"
+                                >
+                                  <Text fontSize="xs" fontWeight={item.selectedId === m._id ? "semibold" : "normal"} noOfLines={1}>
+                                    {m.description}
+                                  </Text>
+                                  <Text fontSize="xs" fontFamily="mono" color="blue.500" ml={2} flexShrink={0}>{m.location}</Text>
+                                </Flex>
+                              ))}
+                            </Flex>
+                          </Box>
+                        )}
+                      </Box>
+                    );
+                  })}
+                </Flex>
               </Flex>
             )}
           </ModalBody>
 
-          <ModalFooter borderTop="1px" borderColor="gray.100" gap={2}>
+          <ModalFooter borderTop="1px" borderColor="gray.100" gap={2} flexWrap="wrap">
             {step === "upload" ? (
               <>
                 <Button variant="ghost" onClick={handleClose} size="sm">Cancel</Button>
@@ -316,7 +312,7 @@ const OrderScanner = ({ isOpen, onClose }) => {
               <>
                 <Button variant="ghost" size="sm" onClick={() => setStep("upload")}>Back</Button>
                 <Text fontSize="xs" color="gray.400" flex={1}>
-                  {toRemove.length} item{toRemove.length !== 1 ? "s" : ""} selected for removal
+                  {toRemove.length} selected
                 </Text>
                 <Button
                   colorScheme="red"
@@ -336,7 +332,7 @@ const OrderScanner = ({ isOpen, onClose }) => {
       {/* Full image preview */}
       <Modal isOpen={isImageOpen} onClose={onImageClose} size="4xl" isCentered>
         <ModalOverlay backdropFilter="blur(2px)" />
-        <ModalContent borderRadius="xl" bg="gray.900">
+        <ModalContent borderRadius="xl" bg="gray.900" mx={2}>
           <ModalCloseButton color="white" />
           <ModalBody p={3} display="flex" justifyContent="center" alignItems="center">
             <Image src={imagePreview} maxH="85vh" maxW="100%" objectFit="contain" borderRadius="md" />
@@ -347,7 +343,7 @@ const OrderScanner = ({ isOpen, onClose }) => {
       {/* Confirm removal */}
       <AlertDialog isOpen={isConfirmOpen} leastDestructiveRef={cancelRef} onClose={onConfirmClose} isCentered>
         <AlertDialogOverlay backdropFilter="blur(2px)" />
-        <AlertDialogContent borderRadius="xl" maxW="380px">
+        <AlertDialogContent borderRadius="xl" mx={3}>
           <Box px={6} pt={5} pb={3} borderBottom="1px" borderColor="gray.100">
             <Text fontWeight="bold" fontSize="md" color="gray.800">Confirm Removal</Text>
             <Text fontSize="xs" color="gray.400" mt={0.5}>This action cannot be undone</Text>
@@ -360,25 +356,22 @@ const OrderScanner = ({ isOpen, onClose }) => {
                 const taking = parseInt(item.quantity) || 0;
                 const after = Math.max(0, inStock - taking);
                 return (
-                  <Flex key={i} justify="space-between" align="baseline" py={1.5} borderBottom="1px" borderColor="gray.100">
-                    <Box>
+                  <Flex key={i} justify="space-between" align="flex-start" py={1.5} borderBottom="1px" borderColor="gray.100" gap={2}>
+                    <Box flex={1} minW={0}>
                       <Text fontSize="xs" fontFamily="mono" color="gray.400">{item.lot}</Text>
                       <Text fontSize="sm" fontWeight="medium" color="gray.800" noOfLines={1}>{match?.description}</Text>
                       <Text fontSize="xs" color="gray.500">
-                        {taking} box{taking !== 1 ? "es" : ""} removed — {after} remaining
-                        {after === 0 ? " (item deleted)" : ""}
+                        {taking} box{taking !== 1 ? "es" : ""} removed — {after} remaining{after === 0 ? " (deleted)" : ""}
                       </Text>
                     </Box>
-                    <Text fontSize="xs" fontFamily="mono" color="blue.500" flexShrink={0} ml={3}>{match?.location}</Text>
+                    <Text fontSize="xs" fontFamily="mono" color="blue.500" flexShrink={0}>{match?.location}</Text>
                   </Flex>
                 );
               })}
             </Flex>
           </AlertDialogBody>
           <AlertDialogFooter px={6} pb={5} gap={3}>
-            <Button ref={cancelRef} onClick={onConfirmClose} variant="outline" borderRadius="lg" w="full">
-              Cancel
-            </Button>
+            <Button ref={cancelRef} onClick={onConfirmClose} variant="outline" borderRadius="lg" w="full">Cancel</Button>
             <Button colorScheme="red" borderRadius="lg" w="full" onClick={handleConfirmRemove}>
               Remove {toRemove.length} Item{toRemove.length !== 1 ? "s" : ""}
             </Button>
