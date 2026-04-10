@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import {
   Box, Flex, Text, Image, Spinner, Modal, ModalOverlay, ModalContent,
-  ModalHeader, ModalCloseButton, ModalBody, useDisclosure, Badge,
+  ModalHeader, ModalCloseButton, ModalBody, useDisclosure, Badge, Button, HStack,
 } from "@chakra-ui/react";
+import { ChevronLeftIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import { API_BASE_URL } from "../../config/api";
 
 const authFetch = (url, options = {}) => {
@@ -13,36 +14,37 @@ const authFetch = (url, options = {}) => {
 const ScanImageList = ({ isOpen }) => {
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selectedUrl, setSelectedUrl] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [selectedItem, setSelectedItem] = useState(null);
   const { isOpen: isImgOpen, onOpen: onImgOpen, onClose: onImgClose } = useDisclosure();
 
   useEffect(() => {
     if (!isOpen) return;
     setLoading(true);
-    authFetch(`${API_BASE_URL}/list-scans`)
+    authFetch(`${API_BASE_URL}/list-scans?page=${page}`)
       .then((r) => r.json())
-      .then((data) => setScans(Array.isArray(data) ? data : []))
+      .then((data) => {
+        setScans(Array.isArray(data.items) ? data.items : []);
+        setTotalPages(data.pages || 1);
+        setTotal(data.total || 0);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, [isOpen, page]);
+
+  // Reset to page 1 when tab opens
+  useEffect(() => {
+    if (isOpen) setPage(1);
   }, [isOpen]);
 
-  const handleView = async (item) => {
-    try {
-      const res = await authFetch(`${API_BASE_URL}/get-scan-image?key=${encodeURIComponent(item.scanImageKey)}`);
-      if (!res.ok) throw new Error();
-      const blob = await res.blob();
-      setSelectedUrl(URL.createObjectURL(blob));
-      setSelectedItem(item);
-      onImgOpen();
-    } catch {
-      // silent
-    }
+  const handleView = (item) => {
+    setSelectedItem(item);
+    onImgOpen();
   };
 
   const handleClose = () => {
-    if (selectedUrl) URL.revokeObjectURL(selectedUrl);
-    setSelectedUrl(null);
     setSelectedItem(null);
     onImgClose();
   };
@@ -55,7 +57,7 @@ const ScanImageList = ({ isOpen }) => {
     );
   }
 
-  if (scans.length === 0) {
+  if (!loading && scans.length === 0) {
     return (
       <Flex justify="center" align="center" py={10}>
         <Text fontSize="sm" color="gray.400">No scan images yet.</Text>
@@ -65,7 +67,7 @@ const ScanImageList = ({ isOpen }) => {
 
   return (
     <>
-      <Box maxH="340px" overflowY="auto" pr={1}>
+      <Box>
         <Flex direction="column" gap={2}>
           {scans.map((item) => (
             <Flex
@@ -83,7 +85,9 @@ const ScanImageList = ({ isOpen }) => {
               transition="all 0.1s"
               onClick={() => handleView(item)}
             >
-              <ScanThumb scanImageKey={item.scanImageKey} />
+              <Box w="40px" h="40px" borderRadius="md" overflow="hidden" bg="gray.100" flexShrink={0}>
+                <Image src={item.signedUrl} w="100%" h="100%" objectFit="cover" />
+              </Box>
               <Box flex={1} minW={0}>
                 <Text fontSize="sm" fontWeight="medium" color="gray.700" noOfLines={1}>
                   {item.location} {item.lot ? `— Lot ${item.lot}` : ""}
@@ -96,6 +100,32 @@ const ScanImageList = ({ isOpen }) => {
             </Flex>
           ))}
         </Flex>
+
+        {totalPages > 1 && (
+          <HStack justify="space-between" align="center" mt={3} px={1}>
+            <Button
+              size="xs"
+              variant="ghost"
+              leftIcon={<ChevronLeftIcon />}
+              isDisabled={page === 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              Prev
+            </Button>
+            <Text fontSize="xs" color="gray.400">
+              {page} / {totalPages} ({total} total)
+            </Text>
+            <Button
+              size="xs"
+              variant="ghost"
+              rightIcon={<ChevronRightIcon />}
+              isDisabled={page === totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </HStack>
+        )}
       </Box>
 
       <Modal isOpen={isImgOpen} onClose={handleClose} size="2xl" isCentered>
@@ -106,42 +136,13 @@ const ScanImageList = ({ isOpen }) => {
           </ModalHeader>
           <ModalCloseButton top={3} />
           <ModalBody p={4}>
-            {selectedUrl && (
-              <Image src={selectedUrl} w="100%" objectFit="contain" borderRadius="lg" />
+            {selectedItem?.signedUrl && (
+              <Image src={selectedItem.signedUrl} w="100%" objectFit="contain" borderRadius="lg" />
             )}
           </ModalBody>
         </ModalContent>
       </Modal>
     </>
-  );
-};
-
-// Small thumbnail fetched lazily per row
-const ScanThumb = ({ scanImageKey }) => {
-  const [src, setSrc] = useState(null);
-  const token = localStorage.getItem("token");
-
-  useEffect(() => {
-    let objUrl;
-    fetch(`${API_BASE_URL}/get-scan-image?key=${encodeURIComponent(scanImageKey)}`, {
-      headers: { Authorization: token || "" },
-    })
-      .then((r) => r.blob())
-      .then((blob) => {
-        objUrl = URL.createObjectURL(blob);
-        setSrc(objUrl);
-      })
-      .catch(() => {});
-    return () => { if (objUrl) URL.revokeObjectURL(objUrl); };
-  }, [scanImageKey, token]);
-
-  return (
-    <Box w="40px" h="40px" borderRadius="md" overflow="hidden" bg="gray.100" flexShrink={0}>
-      {src
-        ? <Image src={src} w="100%" h="100%" objectFit="cover" />
-        : <Flex w="100%" h="100%" align="center" justify="center"><Spinner size="xs" color="gray.400" /></Flex>
-      }
-    </Box>
   );
 };
 

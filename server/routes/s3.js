@@ -1,5 +1,6 @@
 const router = require("express").Router();
 const { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const PDF = require("../models/PDF");
 const FreezerModel = require("../models/Freezer");
 const verifyToken = require("../middleware/verifyToken");
@@ -33,13 +34,29 @@ router.get("/list-pdfs", verifyToken, async (req, res) => {
 });
 
 router.get("/list-scans", verifyToken, async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = 10;
+  const skip = (page - 1) * limit;
   try {
-    const items = await FreezerModel.find(
-      { scanImageKey: { $exists: true, $ne: null, $ne: "" } },
-      { scanImageKey: 1, location: 1, lot: 1, species: 1, description: 1, date_recvd: 1, _id: 1 }
-    ).sort({ _id: -1 });
-    res.json(items);
-  } catch {
+    const [items, total] = await Promise.all([
+      FreezerModel.find(
+        { scanImageKey: { $exists: true, $ne: null, $ne: "" } },
+        { scanImageKey: 1, location: 1, lot: 1, species: 1, description: 1, date_recvd: 1, _id: 1 }
+      ).sort({ _id: -1 }).skip(skip).limit(limit),
+      FreezerModel.countDocuments({ scanImageKey: { $exists: true, $ne: null, $ne: "" } }),
+    ]);
+
+    const itemsWithUrls = await Promise.all(items.map(async (item) => {
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: item.scanImageKey }),
+        { expiresIn: 3600 }
+      );
+      return { ...item.toObject(), signedUrl };
+    }));
+
+    res.json({ items: itemsWithUrls, total, page, pages: Math.ceil(total / limit) });
+  } catch (err) {
     res.status(500).json({ error: "Failed to retrieve scan images" });
   }
 });
