@@ -28,9 +28,12 @@ const EDITABLE_FIELDS = [
   "price",
 ];
 
+const species = ["BEEF", "PORK", "CHICKEN", "LAMB", "OTHER"];
+
 const EditableField = ({ label, value, fieldKey, onStage }) => {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+
 
   const startEdit = () => {
     if (!EDITABLE_FIELDS.includes(fieldKey)) return;
@@ -39,7 +42,8 @@ const EditableField = ({ label, value, fieldKey, onStage }) => {
   };
 
   const commit = () => {
-    if (draft !== (value || "")) onStage(fieldKey, label, value || "", draft);
+    const processedDraft = fieldKey === "species" ? draft.toUpperCase() : draft;
+    if (processedDraft !== (value || "") && (fieldKey !== "species" || species.includes(processedDraft))) onStage(fieldKey, label, value || "", processedDraft);
     setEditing(false);
   };
 
@@ -274,9 +278,15 @@ const DetailsPanel = ({
             <Text fontWeight="bold" fontSize="sm" color="gray.800">
               {item?.location}
             </Text>
-            <Text fontSize="xs" color="gray.500" noOfLines={1}>
+            {/* <Text fontSize="xs" color="gray.500" noOfLines={1}>
               {item?.description}
-            </Text>
+            </Text> */}
+            <EditableField
+            // label="Description"
+            value={item?.description}
+            fieldKey="description"
+            onStage={handleStage}
+          />
           </Box>
           <Button
             size="xs"
@@ -397,26 +407,6 @@ const DetailsPanel = ({
             fieldKey="price"
             onStage={handleStage}
           />
-          {/* <GridItem>
-            <Text
-              fontSize="xs"
-              color="gray.400"
-              fontWeight="medium"
-              textTransform="uppercase"
-              letterSpacing="wide"
-            >
-              Total Value
-            </Text>
-            <Text
-              fontSize="sm"
-              color={item?.price && item?.weight ? "gray.700" : "gray.300"}
-              fontWeight="medium"
-            >
-              {item?.price && item?.weight
-                ? `$${(parseFloat(item.price) * parseFloat(item.weight)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                : "—"}
-            </Text>
-          </GridItem> */}
         </Grid>
 
         {/* Expanded details */}
