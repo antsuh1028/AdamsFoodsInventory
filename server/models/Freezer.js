@@ -17,6 +17,7 @@ const FreezerSchema = new mongoose.Schema({
     price: String,
     scanImageKey: String,
     boxes: [{ weight: String }],
+    type: { type: String, enum: ["raw", "prc", null], default: null },
 });
 
 // Connect the schema to the `freezerinventories` collection

@@ -8,6 +8,11 @@ export const SPECIES_OPTIONS = [
   { value: "Lamb", label: "Lamb" },
 ];
 
+export const TYPE_OPTIONS = [
+  { value: "raw", label: "Raw" },
+  { value: "prc", label: "Processed" },
+];
+
 export const GRADE_OPTIONS = [
   { value: "Wagyu", label: "Wagyu" },
   { value: "Prime", label: "Prime" },

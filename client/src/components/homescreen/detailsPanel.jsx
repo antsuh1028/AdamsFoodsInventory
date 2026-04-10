@@ -9,6 +9,8 @@ import {
   Grid,
   GridItem,
   Input,
+  Select,
+  Badge,
   useToast,
 } from "@chakra-ui/react";
 import printDetails from "../../utils/printDetails";
@@ -22,6 +24,7 @@ const EDITABLE_FIELDS = [
   "species",
   "description",
   "grade",
+  "type",
   "packdate",
   "date_recvd",
   "est",
@@ -62,18 +65,26 @@ const EditableField = ({ label, value, fieldKey, onStage }) => {
         >
           {label}
         </Text>
-        <Input
-          size="xs"
-          value={draft}
-          autoFocus
-          borderRadius="md"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commit();
-            if (e.key === "Escape") cancel();
-          }}
-          onBlur={commit}
-        />
+        {fieldKey === "type" ? (
+          <Select size="xs" value={draft} autoFocus borderRadius="md" onChange={(e) => setDraft(e.target.value)} onBlur={commit}>
+            <option value="">—</option>
+            <option value="raw">Raw</option>
+            <option value="prc">Processed</option>
+          </Select>
+        ) : (
+          <Input
+            size="xs"
+            value={draft}
+            autoFocus
+            borderRadius="md"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") cancel();
+            }}
+            onBlur={commit}
+          />
+        )}
       </GridItem>
     );
   }
@@ -90,18 +101,30 @@ const EditableField = ({ label, value, fieldKey, onStage }) => {
       >
         {label}
       </Text>
-      <Text
-        fontSize="sm"
-        color={value ? "gray.700" : "gray.300"}
-        fontWeight="medium"
-        cursor={isEditable ? "text" : "default"}
-        title={isEditable ? "Double-click to edit" : undefined}
-        onDoubleClick={isEditable ? startEdit : undefined}
-        _hover={isEditable ? { color: "blue.500" } : undefined}
-        transition="color 0.1s"
-      >
-        {value || "—"}
-      </Text>
+      {fieldKey === "type" ? (
+        <Badge
+          colorScheme={value === "raw" ? "green" : value === "prc" ? "purple" : "gray"}
+          fontSize="xs"
+          cursor={isEditable ? "pointer" : "default"}
+          onDoubleClick={isEditable ? startEdit : undefined}
+          title={isEditable ? "Double-click to edit" : undefined}
+        >
+          {value === "raw" ? "Raw" : value === "prc" ? "Processed" : "—"}
+        </Badge>
+      ) : (
+        <Text
+          fontSize="sm"
+          color={value ? "gray.700" : "gray.300"}
+          fontWeight="medium"
+          cursor={isEditable ? "text" : "default"}
+          title={isEditable ? "Double-click to edit" : undefined}
+          onDoubleClick={isEditable ? startEdit : undefined}
+          _hover={isEditable ? { color: "blue.500" } : undefined}
+          transition="color 0.1s"
+        >
+          {value || "—"}
+        </Text>
+      )}
     </GridItem>
   );
 };
@@ -405,6 +428,12 @@ const DetailsPanel = ({
             label="Price / lb"
             value={item?.price ? `$${item.price}` : null}
             fieldKey="price"
+            onStage={handleStage}
+          />
+          <EditableField
+            label="Type"
+            value={item?.type}
+            fieldKey="type"
             onStage={handleStage}
           />
         </Grid>

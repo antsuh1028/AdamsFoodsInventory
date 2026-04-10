@@ -31,7 +31,7 @@ router.post("/login", loginLimiter, async (req, res) => {
 
     if (!passwordMatch) return res.status(401).json({ message: "Invalid credentials" });
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "8h" });
+    const token = jwt.sign({ userId: user._id, role: user.role || "user", username: user.username }, process.env.JWT_SECRET, { expiresIn: "8h" });
     res.json({ message: "Success", token });
   } catch {
     res.status(500).json({ error: "Internal Server Error" });

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import getRole from "../../utils/getRole";
 import adamsWings from "../../assets/AdamsWings.png";
 import {
   Box,
@@ -28,6 +29,7 @@ import ShowMap from "../navbar/locationMap.jsx";
 import OpenHelp from "../navbar/openHelp.jsx";
 import IncomingOrders from "../navbar/incomingOrders.jsx";
 import ExportInventory from "../navbar/exportInventory.jsx";
+import ExportByType from "../navbar/exportByType.jsx";
 import InventoryReport from "../navbar/inventoryReport.jsx";
 import FormScanner from "../navbar/formScanner.jsx";
 import OrderScanner from "../navbar/orderScanner.jsx";
@@ -41,12 +43,16 @@ const ShowDrawer = ({
   onDrawerClose,
   onIPROpen,
   onExportOpen,
+  onExportTypeOpen,
   onReportOpen,
   onScanOpen,
   onOrderScanOpen,
 }) => {
   const navigate = useNavigate();
   const [otherOpen, setOtherOpen] = useState(false);
+  const role = getRole();
+  const isAdmin = role === "admin";
+  const isAdminOrManager = role === "admin" || role === "manager";
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -59,6 +65,16 @@ const ShowDrawer = ({
     </Button>
   );
 
+  const adminOnlyItems = isAdmin ? (
+    <Stack direction="column" spacing={2} pl={3}>
+      {navBtn("Upload IPF File", onUploadOpen)}
+      {navBtn("Incoming Product Records", onIPROpen)}
+      {navBtn("Export Inventory", onExportOpen)}
+      {navBtn("Export by Type", onExportTypeOpen)}
+      {navBtn("Inventory Report", onReportOpen)}
+    </Stack>
+  ) : null;
+
   return (
     <Drawer placement="left" onClose={onClose} isOpen={isOpen}>
       <DrawerOverlay />
@@ -68,26 +84,24 @@ const ShowDrawer = ({
           {navBtn("Freezer Map", onMapOpen)}
           {navBtn("Scan Pallet Form", onScanOpen)}
           {navBtn("Scan Order Sheet", onOrderScanOpen)}
-          {navBtn("History Log", onHistoryOpen)}
+          {isAdminOrManager && navBtn("History Log", onHistoryOpen)}
 
-          <Divider />
-
-          <Button
-            bg="white"
-            justifyContent="flex-start"
-            onClick={() => setOtherOpen((v) => !v)}
-            rightIcon={otherOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
-          >
-            <Text flex={1} textAlign="left">Other</Text>
-          </Button>
-          <Collapse in={otherOpen} animateOpacity>
-            <Stack direction="column" spacing={2} pl={3}>
-              {navBtn("Upload IPF File", onUploadOpen)}
-              {navBtn("Incoming Product Records", onIPROpen)}
-              {navBtn("Export Inventory", onExportOpen)}
-              {navBtn("Inventory Report", onReportOpen)}
-            </Stack>
-          </Collapse>
+          {isAdmin && (
+            <>
+              <Divider />
+              <Button
+                bg="white"
+                justifyContent="flex-start"
+                onClick={() => setOtherOpen((v) => !v)}
+                rightIcon={otherOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
+              >
+                <Text flex={1} textAlign="left">Other</Text>
+              </Button>
+              <Collapse in={otherOpen} animateOpacity>
+                {adminOnlyItems}
+              </Collapse>
+            </>
+          )}
         </Stack>
 
         <DrawerFooter justifyContent="center">
@@ -135,6 +149,11 @@ const Navbar = () => {
     isOpen: isExportOpen,
     onOpen: onExportOpen,
     onClose: onExportClose,
+  } = useDisclosure();
+  const {
+    isOpen: isExportTypeOpen,
+    onOpen: onExportTypeOpen,
+    onClose: onExportTypeClose,
   } = useDisclosure();
   const {
     isOpen: isReportOpen,
@@ -224,6 +243,7 @@ const Navbar = () => {
         onIPROpen={onIPROpen}
         onDrawerClose={onDrawerClose}
         onExportOpen={onExportOpen}
+        onExportTypeOpen={onExportTypeOpen}
         onReportOpen={onReportOpen}
         onScanOpen={onScanOpen}
         onOrderScanOpen={onOrderScanOpen}
@@ -235,6 +255,7 @@ const Navbar = () => {
       <ShowHistory isOpen={isHistoryOpen} onClose={onHistoryClose} />
       <OpenHelp isOpen={isHelpOpen} onClose={onHelpClose} />
       <ExportInventory isOpen={isExportOpen} onClose={onExportClose} />
+      <ExportByType isOpen={isExportTypeOpen} onClose={onExportTypeClose} />
       <InventoryReport isOpen={isReportOpen} onClose={onReportClose} />
       <FormScanner isOpen={isScanOpen} onClose={onScanClose} />
       <OrderScanner isOpen={isOrderScanOpen} onClose={onOrderScanClose} />

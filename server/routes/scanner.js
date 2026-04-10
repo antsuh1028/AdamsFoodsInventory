@@ -34,6 +34,7 @@ FIELDS (do NOT extract individualWeights — that is handled separately):
 - quantity: digits only as a string
 - uniformWeight: if the sheet shows "N x W.WW" (e.g. "36 x 50.00"), return W.WW as a number. Otherwise return null.
 - uniformCount: if uniformWeight is set, return N as a number. Otherwise return null.
+- type: look for "prc" or "raw" anywhere on the sheet (typically top-right corner). Return "prc" or "raw" exactly, or null if not found.
 - isTally: true
 
 Return JSON only. No explanation, no markdown.
@@ -140,7 +141,7 @@ router.post("/extract-form", verifyToken, upload.single("image"), async (req, re
 
 router.post("/scanner-resolve", verifyToken, async (req, res) => {
   const { action, existingId, inputs } = req.body;
-  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, scanImageKey, boxes } = inputs || {};
+  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, type, scanImageKey, boxes } = inputs || {};
   const parsedBoxes = Array.isArray(boxes) ? boxes.map((b) => ({ weight: String(b.weight ?? b) })) : [];
   const computedWeight = parsedBoxes.length > 0
     ? parsedBoxes.map((b) => parseFloat(b.weight)).filter((w) => !isNaN(w)).reduce((s, w) => s + w, 0).toFixed(2)
@@ -149,6 +150,7 @@ router.post("/scanner-resolve", verifyToken, async (req, res) => {
 
   const logEntry = (item, change) => ({
     time: new Date().toLocaleString(), change,
+    changedBy: req.username || "",
     location: item.location, lot: item.lot, vendor: item.vendor, brand: item.brand,
     species: item.species, description: item.description, grade: item.grade,
     quantity: item.quantity, weight: item.weight, packdate: item.packdate,
@@ -159,7 +161,7 @@ router.post("/scanner-resolve", verifyToken, async (req, res) => {
     if (action === "update") {
       const updated = await FreezerModel.findByIdAndUpdate(
         existingId,
-        { $set: { vendor, brand, species, description, grade, quantity: computedQuantity, weight: computedWeight, packdate, date_recvd, est, price, scanImageKey, boxes: parsedBoxes } },
+        { $set: { vendor, brand, species, description, grade, quantity: computedQuantity, weight: computedWeight, packdate, date_recvd, est, price, type: type || null, scanImageKey, boxes: parsedBoxes } },
         { new: true }
       );
       if (!updated) return res.status(404).json({ error: "Item not found" });
@@ -172,7 +174,7 @@ router.post("/scanner-resolve", verifyToken, async (req, res) => {
       await HistoryModel.create(logEntry(existing, "Scanner Override - Removed"));
       await FreezerModel.findByIdAndDelete(existingId);
       const locationUpper = (location || existing.location).toUpperCase();
-      const newItem = await FreezerModel.create({ location: locationUpper, lot, vendor, brand, species, description, grade, quantity: computedQuantity, weight: computedWeight, packdate, date_recvd, est, price, scanImageKey, boxes: parsedBoxes });
+      const newItem = await FreezerModel.create({ location: locationUpper, lot, vendor, brand, species, description, grade, quantity: computedQuantity, weight: computedWeight, packdate, date_recvd, est, price, type: type || null, scanImageKey, boxes: parsedBoxes });
       await HistoryModel.create(logEntry(newItem, "Scanner Override - Added"));
       return res.status(201).json(newItem);
     }

@@ -102,6 +102,11 @@ const HistoryRow = ({ item, onSet }) => {
               {item.quantity} bx
             </Text>
           )}
+          {item.changedBy && (
+            <Text fontSize="xs" color="purple.400" fontWeight="medium">
+              {item.changedBy}
+            </Text>
+          )}
           <Text fontSize="xs" color="gray.400" textAlign="right">
             {item.time}
           </Text>
@@ -127,6 +132,8 @@ const HistoryRow = ({ item, onSet }) => {
             <Field label="Pack Date" value={item.packdate} />
             <Field label="Date Received" value={item.date_recvd} />
             <Field label="EST #" value={item.est} />
+            <Field label="Type" value={item.type} />
+            <Field label="Changed By" value={item.changedBy} />
           </Grid>
           {item.description && (
             <Box mb={4}>

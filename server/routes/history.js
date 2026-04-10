@@ -1,8 +1,9 @@
 const router = require("express").Router();
 const HistoryModel = require("../models/History");
 const verifyToken = require("../middleware/verifyToken");
+const requireRole = require("../middleware/requireRole");
 
-router.post("/addHistory", verifyToken, (req, res) => {
+router.post("/addHistory", verifyToken, requireRole("admin", "manager"), (req, res) => {
   const newHistory = {
     time: new Date().toLocaleString(),
     change: req.body.change || "",
@@ -27,7 +28,7 @@ router.post("/addHistory", verifyToken, (req, res) => {
     .catch(() => res.status(500).json({ error: "Error adding history item" }));
 });
 
-router.get("/getHistory", verifyToken, (req, res) => {
+router.get("/getHistory", verifyToken, requireRole("admin", "manager"), (req, res) => {
   HistoryModel.find()
     .sort({ _id: -1 })
     .limit(50)

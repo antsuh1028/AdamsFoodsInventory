@@ -10,7 +10,7 @@ import {
   VStack,
   useBreakpointValue,
 } from "@chakra-ui/react";
-import { FormField, SPECIES_OPTIONS, GRADE_OPTIONS } from "./formFields";
+import { FormField, SPECIES_OPTIONS, GRADE_OPTIONS, TYPE_OPTIONS } from "./formFields";
 import LocationInput from "./locationInput";
 
 const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErrors = {}, suggestions = {} }) => {
@@ -29,6 +29,7 @@ const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErr
     date_recvd,
     est,
     price,
+    type,
   } = formData;
 
   return (
@@ -130,6 +131,18 @@ const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErr
             options={GRADE_OPTIONS}
             onChange={(e) => onInputChange("grade", e.target.value)}
             isInvalid={validationErrors.grade}
+          />
+        </GridItem>
+
+        {/* Type */}
+        <GridItem colSpan={1}>
+          <FormField
+            label="Type"
+            value={type}
+            type="select"
+            placeholder="Select Type"
+            options={TYPE_OPTIONS}
+            onChange={(e) => onInputChange("type", e.target.value)}
           />
         </GridItem>
 

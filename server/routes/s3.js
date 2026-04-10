@@ -4,9 +4,10 @@ const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const PDF = require("../models/PDF");
 const FreezerModel = require("../models/Freezer");
 const verifyToken = require("../middleware/verifyToken");
+const requireRole = require("../middleware/requireRole");
 const { s3Client, upload } = require("../utils/aws");
 
-router.post("/upload-pdf", verifyToken, upload.single("file"), async (req, res) => {
+router.post("/upload-pdf", verifyToken, requireRole("admin"), upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   try {
     const fileKey = `pdfs/${Date.now()}-${req.file.originalname}`;
@@ -33,7 +34,7 @@ router.get("/list-pdfs", verifyToken, async (req, res) => {
   }
 });
 
-router.get("/list-scans", verifyToken, async (req, res) => {
+router.get("/list-scans", verifyToken, requireRole("admin"), async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = 10;
   const skip = (page - 1) * limit;

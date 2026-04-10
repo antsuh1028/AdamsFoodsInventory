@@ -2,9 +2,10 @@ const router = require("express").Router();
 const FreezerModel = require("../models/Freezer");
 const HistoryModel = require("../models/History");
 const verifyToken = require("../middleware/verifyToken");
+const requireRole = require("../middleware/requireRole");
 const validLocations = require("../utils/locations");
 
-const EDITABLE_FIELDS = ["lot", "vendor", "brand", "species", "description", "grade", "packdate", "date_recvd", "est", "price"];
+const EDITABLE_FIELDS = ["lot", "vendor", "brand", "species", "description", "grade", "packdate", "date_recvd", "est", "price", "type"];
 
 // Returns true if two descriptions are similar enough to be the same product
 const descriptionsSimilar = (a, b) => {
@@ -26,20 +27,21 @@ const computeFromBoxes = (parsedBoxes, fallbackWeight, fallbackQuantity) => {
   return { weight, quantity: String(parsedBoxes.length) };
 };
 
-const historyEntry = (item, change, extra = {}) => ({
+const historyEntry = (item, change, extra = {}, username = "") => ({
   time: new Date().toLocaleString(),
   change,
   location: item.location,
   lot: item.lot,
   species: item.species,
   description: item.description,
+  changedBy: username,
   ...extra,
 });
 
 // ----------------- Add -----------------
 router.post("/inventoryAdd", verifyToken, async (req, res) => {
   const { inputs, force } = req.body;
-  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, scanImageKey, boxes } = inputs || {};
+  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, type, scanImageKey, boxes } = inputs || {};
 
   if (!location || location.trim() === "") return res.status(400).json({ error: "Location field cannot be blank." });
   if (!validLocations.includes(location)) return res.status(400).json({ error: "Location Does Not Exist" });
@@ -55,7 +57,7 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
     const parsedBoxes = parsedBoxesFromInput(boxes);
     const { weight: computedWeight, quantity: computedQuantity } = computeFromBoxes(parsedBoxes, weight, quantity);
 
-    const createdItem = await FreezerModel.create({ location: locationUpper, lot, vendor, brand, species, description, grade, quantity: computedQuantity, weight: computedWeight, packdate, date_recvd, est, price, scanImageKey, boxes: parsedBoxes });
+    const createdItem = await FreezerModel.create({ location: locationUpper, lot, vendor, brand, species, description, grade, quantity: computedQuantity, weight: computedWeight, packdate, date_recvd, est, price, type: type || null, scanImageKey, boxes: parsedBoxes });
 
     const addLabel = req.body.source === "scanner" ? "Scanner Add" : "Added";
     await HistoryModel.create(historyEntry(createdItem, addLabel, {
@@ -63,7 +65,7 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
       grade: createdItem.grade, quantity: createdItem.quantity,
       weight: createdItem.weight, packdate: createdItem.packdate,
       date_recvd: createdItem.date_recvd, est: createdItem.est,
-    }));
+    }, req.username));
 
     res.status(201).json(createdItem);
   } catch {
@@ -73,7 +75,7 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
 
 // ----------------- Find -----------------
 router.post("/inventoryFind", verifyToken, (req, res) => {
-  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price } = req.body.inputs || {};
+  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, type } = req.body.inputs || {};
 
   const ci = (v) => ({ $regex: new RegExp(`^${v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") });
 
@@ -91,6 +93,7 @@ router.post("/inventoryFind", verifyToken, (req, res) => {
   if (date_recvd) query.date_recvd = date_recvd;
   if (est) query.est = est;
   if (price) query.price = price;
+  if (type) query.type = type;
 
   FreezerModel.find(query)
     .then((items) => items.length > 0 ? res.json(items) : res.send("INVALID"))
@@ -99,12 +102,12 @@ router.post("/inventoryFind", verifyToken, (req, res) => {
 
 // ----------------- Update -----------------
 router.post("/inventoryUpdate", verifyToken, async (req, res) => {
-  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, currentItem } = req.body.updateInputs || {};
+  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, type, currentItem } = req.body.updateInputs || {};
 
   if (!location) return res.status(400).json({ error: "Location cannot be empty." });
   if (!currentItem?._id) return res.status(400).json({ error: "Item ID is required." });
 
-  const update = { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price };
+  const update = { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, type: type || null };
 
   try {
     const item = await FreezerModel.findByIdAndUpdate(currentItem._id, update, { new: true });
@@ -113,7 +116,7 @@ router.post("/inventoryUpdate", verifyToken, async (req, res) => {
       vendor: item.vendor, brand: item.brand, grade: item.grade,
       quantity: item.quantity, weight: item.weight,
       packdate: item.packdate, date_recvd: item.date_recvd, est: item.est,
-    }));
+    }, req.username));
     res.status(200).json(item);
   } catch {
     res.status(500).json({ error: "An error occurred while updating the item." });
@@ -132,7 +135,7 @@ router.post("/inventoryRemove", verifyToken, async (req, res) => {
       vendor: item.vendor, brand: item.brand, grade: item.grade,
       quantity: item.quantity, weight: item.weight,
       packdate: item.packdate, date_recvd: item.date_recvd, est: item.est,
-    }));
+    }, req.username));
     res.status(200).json({ message: "Item Successfully Deleted." });
   } catch {
     res.status(500).json({ error: "An error occurred while removing the item." });
@@ -148,7 +151,7 @@ router.post("/inventoryMove", verifyToken, async (req, res) => {
     if (!before) return res.status(404).json({ error: "Item not found." });
     const fromLocation = before.location;
     const updated = await FreezerModel.findByIdAndUpdate(itemId, { location: destLocation.toUpperCase() }, { new: true });
-    await HistoryModel.create(historyEntry(updated, `Moved: ${fromLocation} → ${updated.location}`));
+    await HistoryModel.create(historyEntry(updated, `Moved: ${fromLocation} → ${updated.location}`, {}, req.username));
     res.status(200).json(updated);
   } catch {
     res.status(500).json({ error: "An error occurred while moving the item." });
@@ -172,7 +175,7 @@ router.post("/inventoryOrderRemove", verifyToken, async (req, res) => {
       const removedWeight = removedBoxes.map((b) => parseFloat(b.weight) || 0).reduce((s, w) => s + w, 0).toFixed(2);
 
       if (boxes.length === 0) {
-        await HistoryModel.create(historyEntry(item, `Order Removal — all ${n} box(es) (${removedWeight} lb) removed, item deleted`));
+        await HistoryModel.create(historyEntry(item, `Order Removal — all ${n} box(es) (${removedWeight} lb) removed, item deleted`, {}, req.username));
         await FreezerModel.findByIdAndDelete(id);
         results.push({ id, status: "deleted" });
       } else {
@@ -182,7 +185,7 @@ router.post("/inventoryOrderRemove", verifyToken, async (req, res) => {
         item.weight = String(newTotal);
         item.quantity = String(boxes.length);
         await item.save();
-        await HistoryModel.create(historyEntry(item, `Order Removal — ${n} box(es) (${removedWeight} lb) removed, ${boxes.length} remaining (${newTotal} lb)`));
+        await HistoryModel.create(historyEntry(item, `Order Removal — ${n} box(es) (${removedWeight} lb) removed, ${boxes.length} remaining (${newTotal} lb)`, {}, req.username));
         results.push({ id, status: "updated", remaining: boxes.length });
       }
     }
@@ -203,7 +206,7 @@ router.post("/inventoryBulkRemove", verifyToken, async (req, res) => {
       vendor: item.vendor, brand: item.brand, grade: item.grade,
       quantity: item.quantity, weight: item.weight,
       packdate: item.packdate, date_recvd: item.date_recvd, est: item.est,
-    })));
+    }, req.username)));
     res.status(200).json({ message: `${result.deletedCount} item(s) removed.`, deletedCount: result.deletedCount });
   } catch {
     res.status(500).json({ error: "An error occurred while removing items." });
@@ -217,7 +220,7 @@ router.patch("/inventory/:id/field", verifyToken, async (req, res) => {
   try {
     const item = await FreezerModel.findByIdAndUpdate(req.params.id, { $set: { [field]: value } }, { new: true });
     if (!item) return res.status(404).json({ error: "Item not found" });
-    await HistoryModel.create(historyEntry(item, `Field Updated: ${field} → "${value}"`));
+    await HistoryModel.create(historyEntry(item, `Field Updated: ${field} → "${value}"`, {}, req.username));
     res.json(item);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -241,7 +244,7 @@ router.patch("/inventory/:id/box/remove", verifyToken, async (req, res) => {
     item.weight = String(newTotal);
     item.quantity = String(boxes.length);
     await item.save();
-    await HistoryModel.create(historyEntry(item, `Box Removed (${removedWeight} lb) — ${boxes.length} box(es) remaining, ${newTotal} lb total`, { category: "box" }));
+    await HistoryModel.create(historyEntry(item, `Box Removed (${removedWeight} lb) — ${boxes.length} box(es) remaining, ${newTotal} lb total`, { category: "box" }, req.username));
     res.json(item);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -263,7 +266,7 @@ router.patch("/inventory/:id/box/add", verifyToken, async (req, res) => {
     item.weight = String(newTotal);
     item.quantity = String(boxes.length);
     await item.save();
-    await HistoryModel.create(historyEntry(item, `Box Added (${weight} lb) — ${boxes.length} box(es) total, ${newTotal} lb total`, { category: "box" }));
+    await HistoryModel.create(historyEntry(item, `Box Added (${weight} lb) — ${boxes.length} box(es) total, ${newTotal} lb total`, { category: "box" }, req.username));
     res.json(item);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -277,7 +280,7 @@ router.post("/verifyLocation", verifyToken, (req, res) => {
 });
 
 // ----------------- Stats -----------------
-router.get("/inventoryStats", verifyToken, async (req, res) => {
+router.get("/inventoryStats", verifyToken, requireRole("admin"), async (req, res) => {
   try {
     const safeDouble = (field) => ({ $convert: { input: { $ifNull: [field, "0"] }, to: "double", onError: 0, onNull: 0 } });
     const safeWeight = safeDouble("$weight");
@@ -324,7 +327,7 @@ router.get("/inventoryStats", verifyToken, async (req, res) => {
 });
 
 // ----------------- Weekly Throughput -----------------
-router.get("/inventoryWeeklyThroughput", verifyToken, async (req, res) => {
+router.get("/inventoryWeeklyThroughput", verifyToken, requireRole("admin"), async (req, res) => {
   try {
     const weeks = 8;
     const now = new Date();
@@ -345,7 +348,7 @@ router.get("/inventoryWeeklyThroughput", verifyToken, async (req, res) => {
 });
 
 // ----------------- All / Distinct -----------------
-router.get("/inventoryAll", verifyToken, async (req, res) => {
+router.get("/inventoryAll", verifyToken, requireRole("admin"), async (req, res) => {
   try {
     res.json(await FreezerModel.find().lean());
   } catch {

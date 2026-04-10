@@ -1,7 +1,7 @@
 import { useState, useRef, useContext } from "react";
 import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
-  Button, Flex, Box, Text, Input, FormControl, FormLabel, SimpleGrid, Spinner, Image, Badge,
+  Button, Flex, Box, Text, Input, Select, FormControl, FormLabel, SimpleGrid, Spinner, Image, Badge,
   Collapse,
   useToast, useDisclosure,
 } from "@chakra-ui/react";
@@ -17,6 +17,7 @@ const FIELDS = [
   { key: "species", label: "Species" },
   { key: "description", label: "Description" },
   { key: "grade", label: "Grade" },
+  { key: "type", label: "Type", type: "select", options: [{ value: "", label: "—" }, { value: "raw", label: "Raw" }, { value: "prc", label: "Processed" }] },
   { key: "quantity", label: "Quantity" },
   { key: "weight", label: "Total Weight (lb)" },
   { key: "date_recvd", label: "Date Received", type: "date" },
@@ -24,6 +25,15 @@ const FIELDS = [
   { key: "est", label: "EST #" },
   { key: "price", label: "Price" },
 ];
+
+const classifyType = (brand = "", description = "") => {
+  const b = brand.toLowerCase();
+  const d = description.toLowerCase();
+  if (b.includes("shabuya") || b.includes("pho gyu")) return "prc";
+  if (b.includes("creekstone")) return "raw";
+  if (/\b\d{5,}\b/.test(d)) return "prc";
+  return "";
+};
 
 const FormScanner = ({ isOpen, onClose }) => {
   const [step, setStep] = useState("upload"); // upload | review
@@ -68,7 +78,7 @@ const FormScanner = ({ isOpen, onClose }) => {
       setIndividualWeights(iw || []);
       setScanImageKey(key || null);
       setIsTally(tally !== false);
-      setFields(rest);
+      setFields({ ...rest, type: rest.type || classifyType(rest.brand, rest.description) });
       setStep("review");
     } catch (err) {
       toast({ title: "Extraction failed", description: err.message, status: "error", position: "top", duration: 3000, isClosable: true });
@@ -211,18 +221,33 @@ const FormScanner = ({ isOpen, onClose }) => {
                 <Text fontSize="xs" color="gray.500" fontWeight="bold">Review and correct the extracted fields before adding to inventory.</Text>
               </Flex>
               <SimpleGrid columns={2} spacing={3}>
-                {FIELDS.map(({ key, label, type }) => (
+                {FIELDS.map(({ key, label, type, options }) => (
                   <FormControl key={key}>
                     <FormLabel fontSize="xs" color="gray.500" mb={1}>{label}</FormLabel>
-                    <Input
-                      size="sm"
-                      borderRadius="lg"
-                      type={type || "text"}
-                      value={fields[key] || ""}
-                      onChange={(e) => setFields((prev) => ({ ...prev, [key]: e.target.value }))}
-                      bg={fields[key] ? "white" : "yellow.50"}
-                      borderColor={fields[key] ? "gray.200" : "yellow.300"}
-                    />
+                    {type === "select" ? (
+                      <Select
+                        size="sm"
+                        borderRadius="lg"
+                        value={fields[key] || ""}
+                        onChange={(e) => setFields((prev) => ({ ...prev, [key]: e.target.value }))}
+                        bg={fields[key] ? "white" : "yellow.50"}
+                        borderColor={fields[key] ? "gray.200" : "yellow.300"}
+                      >
+                        {options.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <Input
+                        size="sm"
+                        borderRadius="lg"
+                        type={type || "text"}
+                        value={fields[key] || ""}
+                        onChange={(e) => setFields((prev) => ({ ...prev, [key]: e.target.value }))}
+                        bg={fields[key] ? "white" : "yellow.50"}
+                        borderColor={fields[key] ? "gray.200" : "yellow.300"}
+                      />
+                    )}
                   </FormControl>
                 ))}
               </SimpleGrid>
