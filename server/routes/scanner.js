@@ -187,9 +187,11 @@ router.post("/scanner-resolve", verifyToken, async (req, res) => {
 
 const ORDER_PROMPT = `
 You are parsing an Adams Foods outgoing order sheet (customer pick/ship document).
-The sheet lists multiple line items. For each item extract:
+The sheet has a column header "PL/CS/BX" on the left and a price column on the far right.
+
+For each line item extract:
 - lot: lot number in parentheses like "(26061-03)" → normalize to "XXXXX-XX" format
-- quantity: the PL/CS/BX count (the large bold number on the left of each row)
+- quantity: the PL/CS/BX count — this is the large bold integer on the LEFT side of the row (e.g. 14, 7, 25). It is NEVER a decimal. Do NOT use the price (right column, e.g. 3.99, 4.89).
 - description: the product name/description text
 
 Return JSON only: { "items": [ { "lot": "...", "quantity": "...", "description": "..." }, ... ] }
