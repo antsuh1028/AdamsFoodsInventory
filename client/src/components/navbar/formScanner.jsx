@@ -9,7 +9,6 @@ import {
 import { WarningTwoIcon } from "@chakra-ui/icons";
 import { API_BASE_URL } from "../../config/api";
 import { FormContext } from "../../utils/homescreen/formContext";
-import postHistory from "../../utils/homescreen/postHistory";
 
 const FIELDS = [
   { key: "location", label: "Location" },
@@ -41,6 +40,7 @@ const FormScanner = ({ isOpen, onClose }) => {
   const [conflictItem, setConflictItem] = useState(null);
   const [resolving, setResolving] = useState(false);
   const { isOpen: isConflictOpen, onOpen: onConflictOpen, onClose: onConflictClose } = useDisclosure();
+  const { isOpen: isImageOpen, onOpen: onImageOpen, onClose: onImageClose } = useDisclosure();
   const inputRef = useRef(null);
   const cancelConflictRef = useRef(null);
   const toast = useToast();
@@ -88,7 +88,7 @@ const FormScanner = ({ isOpen, onClose }) => {
       const res = await fetch(`${API_BASE_URL}/inventoryAdd`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: token || "" },
-        body: JSON.stringify({ inputs: { ...fields, scanImageKey, boxes: individualWeights.map((w) => ({ weight: w })) }, force: true }),
+        body: JSON.stringify({ inputs: { ...fields, scanImageKey, boxes: individualWeights.map((w) => ({ weight: w })) }, force: true, source: "scanner" }),
       });
       const data = await res.json();
       if (res.status === 409 && data.code === "EXACT_DUPLICATE") {
@@ -97,7 +97,6 @@ const FormScanner = ({ isOpen, onClose }) => {
         return;
       }
       if (!res.ok) throw new Error(data.error || "Failed to add item");
-      postHistory({ ...fields, boxes: individualWeights.map((w) => ({ weight: w })) }, "Scanner Add").catch(() => {});
       toast({ title: "Item added", status: "success", position: "top", duration: 2000, isClosable: true });
       onScannerAdd(fields.location);
       handleClose();
@@ -226,7 +225,19 @@ const FormScanner = ({ isOpen, onClose }) => {
               )}
               <Flex align="center" gap={3} bg="gray.100" borderRadius={4}>
                 {imagePreview && (
-                  <Image src={imagePreview} h="60px" w="auto" objectFit="contain" borderRadius="md" border="1px solid" borderColor="gray.200" flexShrink={0} />
+                  <Image
+                    src={imagePreview}
+                    h="60px"
+                    w="auto"
+                    objectFit="contain"
+                    borderRadius="md"
+                    border="1px solid"
+                    borderColor="gray.200"
+                    flexShrink={0}
+                    cursor="zoom-in"
+                    onClick={onImageOpen}
+                    title="Click to view full image"
+                  />
                 )}
                 <Text fontSize="xs" color="gray.500" fontWeight="bold">Review and correct the extracted fields before adding to inventory.</Text>
               </Flex>
@@ -326,6 +337,16 @@ const FormScanner = ({ isOpen, onClose }) => {
             </>
           )}
         </ModalFooter>
+      </ModalContent>
+    </Modal>
+
+    <Modal isOpen={isImageOpen} onClose={onImageClose} size="4xl" isCentered>
+      <ModalOverlay backdropFilter="blur(2px)" />
+      <ModalContent borderRadius="xl" bg="gray.900">
+        <ModalCloseButton color="white" />
+        <ModalBody p={3} display="flex" justifyContent="center" alignItems="center">
+          <Image src={imagePreview} maxH="85vh" maxW="100%" objectFit="contain" borderRadius="md" />
+        </ModalBody>
       </ModalContent>
     </Modal>
 

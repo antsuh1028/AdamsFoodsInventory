@@ -50,6 +50,16 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
     const { weight: computedWeight, quantity: computedQuantity } = computeFromBoxes(parsedBoxes, weight, quantity);
 
     const createdItem = await FreezerModel.create({ location: locationUpper, lot, vendor, brand, species, description, grade, quantity: computedQuantity, weight: computedWeight, packdate, date_recvd, est, price, scanImageKey, boxes: parsedBoxes });
+
+    if (req.body.source === "scanner") {
+      await HistoryModel.create(historyEntry(createdItem, "Scanner Add", {
+        vendor: createdItem.vendor, brand: createdItem.brand,
+        grade: createdItem.grade, quantity: createdItem.quantity,
+        weight: createdItem.weight, packdate: createdItem.packdate,
+        date_recvd: createdItem.date_recvd, est: createdItem.est,
+      }));
+    }
+
     res.status(201).json(createdItem);
   } catch {
     res.status(500).json({ error: "An error occurred while adding the item." });

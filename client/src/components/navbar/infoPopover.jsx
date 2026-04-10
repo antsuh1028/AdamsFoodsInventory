@@ -9,7 +9,7 @@ const InfoPopover = ({
   onClose,
   onModalClose,
 }) => {
-  const { setFormData, setCurrentItem } = useContext(FormContext);
+  const { setFormData, setCurrentItem, onScannerAdd } = useContext(FormContext);
   const [selectedPrint, setSelectedPrint] = useState(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -206,6 +206,20 @@ const InfoPopover = ({
           onClick={() => handleSet(selectedPrint || info[0])}
         >
           Set
+        </Button>
+        <Button
+          size="xs"
+          colorScheme="teal"
+          flex={1}
+          isDisabled={isEmpty}
+          onClick={() => {
+            const item = selectedPrint || info[0];
+            onScannerAdd(item.location);
+            onClose();
+            onModalClose();
+          }}
+        >
+          Find
         </Button>
         <Button
           size="xs"

@@ -12,7 +12,7 @@
   "description": "",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.744.0",
-    "@aws-sdk/client-textract": "^3.1023.0",
+    "@aws-sdk/client-textract": "^3.1025.0",
     "axios": "^1.7.4",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
@@ -24,6 +24,7 @@
     "mongoose": "^8.5.3",
     "multer": "^1.4.5-lts.1",
     "nodemon": "^3.1.4",
+    "openai": "^6.33.0",
     "read-excel-file": "^5.8.5",
     "sharp": "^0.34.5"
   }
