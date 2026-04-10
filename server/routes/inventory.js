@@ -304,9 +304,18 @@ router.get("/inventoryAll", verifyToken, async (req, res) => {
 });
 
 router.get("/inventoryDistinct", verifyToken, async (req, res) => {
+  const dedupeCI = (arr) => {
+    const seen = new Map();
+    for (const v of arr) {
+      if (!v) continue;
+      const key = v.toLowerCase().trim();
+      if (!seen.has(key)) seen.set(key, v);
+    }
+    return [...seen.values()].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  };
   try {
     const [vendors, brands] = await Promise.all([FreezerModel.distinct("vendor"), FreezerModel.distinct("brand")]);
-    res.json({ vendors: vendors.filter(Boolean).sort(), brands: brands.filter(Boolean).sort() });
+    res.json({ vendors: dedupeCI(vendors), brands: dedupeCI(brands) });
   } catch {
     res.status(500).json({ error: "Failed to fetch suggestions" });
   }
