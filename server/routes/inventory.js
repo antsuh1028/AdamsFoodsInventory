@@ -6,6 +6,17 @@ const validLocations = require("../utils/locations");
 
 const EDITABLE_FIELDS = ["lot", "vendor", "brand", "species", "description", "grade", "packdate", "date_recvd", "est", "price"];
 
+// Returns true if two descriptions are similar enough to be the same product
+const descriptionsSimilar = (a, b) => {
+  if (!a || !b) return false;
+  const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
+  const wordsA = new Set(normalize(a).split(/\s+/).filter(Boolean));
+  const wordsB = new Set(normalize(b).split(/\s+/).filter(Boolean));
+  const intersection = [...wordsA].filter((w) => wordsB.has(w)).length;
+  const union = new Set([...wordsA, ...wordsB]).size;
+  return union > 0 && intersection / union >= 0.5;
+};
+
 const parsedBoxesFromInput = (boxes) =>
   Array.isArray(boxes) ? boxes.map((b) => ({ weight: String(b.weight ?? b) })) : [];
 
@@ -37,8 +48,13 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
 
   try {
     if (lot) {
-      const exactDuplicate = await FreezerModel.findOne({ location: locationUpper, lot });
-      if (exactDuplicate) return res.status(409).json({ error: `Lot ${lot} already exists at ${location}.`, code: "EXACT_DUPLICATE", existingItem: exactDuplicate });
+      const sameLot = await FreezerModel.findOne({ lot: new RegExp(`^${lot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") });
+      if (sameLot) {
+        const similarDesc = descriptionsSimilar(sameLot.description, description);
+        if (similarDesc) {
+          return res.status(409).json({ error: `Lot ${lot} already exists at ${sameLot.location}.`, code: "EXACT_DUPLICATE", existingItem: sameLot });
+        }
+      }
     }
 
     if (!force) {
@@ -70,14 +86,16 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
 router.post("/inventoryFind", verifyToken, (req, res) => {
   const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price } = req.body.inputs || {};
 
+  const ci = (v) => ({ $regex: new RegExp(`^${v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") });
+
   const query = {};
   if (location) query.location = location.toUpperCase();
-  if (lot) query.lot = lot;
-  if (vendor) query.vendor = vendor;
-  if (brand) query.brand = brand;
-  if (species) query.species = species;
-  if (description) query.description = description;
-  if (grade) query.grade = grade;
+  if (lot) query.lot = ci(lot);
+  if (vendor) query.vendor = ci(vendor);
+  if (brand) query.brand = ci(brand);
+  if (species) query.species = ci(species);
+  if (description) query.description = ci(description);
+  if (grade) query.grade = ci(grade);
   if (quantity) query.quantity = quantity;
   if (weight) query.weight = weight;
   if (packdate) query.packdate = packdate;

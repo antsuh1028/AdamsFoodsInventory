@@ -55,7 +55,7 @@ const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErr
             label="Lot"
             value={lot}
             placeholder="Enter Lot"
-            onChange={(e) => onInputChange("lot", e.target.value.toUpperCase())}
+            onChange={(e) => onInputChange("lot", e.target.value)}
             isInvalid={validationErrors.lot}
           />
         </GridItem>
@@ -66,7 +66,7 @@ const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErr
             label="Vendor"
             value={vendor}
             placeholder="Enter Vendor"
-            onChange={(e) => onInputChange("vendor", e.target.value.toUpperCase())}
+            onChange={(e) => onInputChange("vendor", e.target.value)}
             suggestions={suggestions.vendors}
           />
         </GridItem>
@@ -77,7 +77,7 @@ const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErr
             label="Brand"
             value={brand}
             placeholder="Enter Brand"
-            onChange={(e) => onInputChange("brand", e.target.value.toUpperCase())}
+            onChange={(e) => onInputChange("brand", e.target.value)}
             isInvalid={validationErrors.brand}
             suggestions={suggestions.brands}
           />

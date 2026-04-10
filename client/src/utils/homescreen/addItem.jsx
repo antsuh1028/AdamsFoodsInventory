@@ -3,10 +3,7 @@ import findItem from "./findItem";
 import postHistory from "./postHistory";
 
 function addItem(inputs, setShowDetails, setItems, toast, onSuccess, onOccupied, onHighlight) {
-  const modifiedInputs = {
-    ...inputs,
-    description: inputs.description.toUpperCase(),
-  };
+  const modifiedInputs = { ...inputs };
 
   const doAdd = (force = false) => {
     return axiosInstance
