@@ -77,10 +77,13 @@ const OrderScanner = ({ isOpen, onClose }) => {
     onConfirmClose();
     setRemoving(true);
     try {
-      const ids = toRemove.map((item) => item.selectedId);
-      await axiosInstance.post("/inventoryBulkRemove", { ids });
+      const removals = toRemove.map((item) => ({
+        id: item.selectedId,
+        quantityToRemove: parseInt(item.quantity) || 1,
+      }));
+      await axiosInstance.post("/inventoryOrderRemove", { removals });
       toast({
-        title: `${ids.length} item${ids.length !== 1 ? "s" : ""} removed`,
+        title: `${removals.length} item${removals.length !== 1 ? "s" : ""} updated`,
         status: "success",
         position: "top",
         duration: 2500,
@@ -202,7 +205,8 @@ const OrderScanner = ({ isOpen, onClose }) => {
                         <Th w="40px" px={2}></Th>
                         <Th fontSize="xs">Lot</Th>
                         <Th fontSize="xs">Order Desc.</Th>
-                        <Th fontSize="xs">Qty</Th>
+                        <Th fontSize="xs">Taking</Th>
+                        <Th fontSize="xs">In Stock → After</Th>
                         <Th fontSize="xs">Inventory Match</Th>
                         <Th fontSize="xs">Location</Th>
                       </Tr>
@@ -228,7 +232,21 @@ const OrderScanner = ({ isOpen, onClose }) => {
                             <Text fontSize="xs" color="gray.600" noOfLines={2}>{item.description}</Text>
                           </Td>
                           <Td>
-                            <Text fontSize="xs">{item.quantity}</Text>
+                            <Text fontSize="xs" fontWeight="semibold">{item.quantity}</Text>
+                          </Td>
+                          <Td>
+                            {(() => {
+                              const match = item.matches.find((m) => m._id === item.selectedId) || item.matches[0];
+                              if (!match) return <Text fontSize="xs" color="gray.400">—</Text>;
+                              const inStock = parseInt(match.quantity) || 0;
+                              const taking = parseInt(item.quantity) || 0;
+                              const after = Math.max(0, inStock - taking);
+                              return (
+                                <Text fontSize="xs">
+                                  {inStock} → <Text as="span" fontWeight="semibold" color={after === 0 ? "red.500" : "green.600"}>{after}</Text>
+                                </Text>
+                              );
+                            })()}
                           </Td>
                           <Td>
                             {item.matches.length === 0 && (
@@ -338,11 +356,18 @@ const OrderScanner = ({ isOpen, onClose }) => {
             <Flex direction="column" gap={2} maxH="260px" overflowY="auto">
               {toRemove.map((item, i) => {
                 const match = item.matches.find((m) => m._id === item.selectedId);
+                const inStock = parseInt(match?.quantity) || 0;
+                const taking = parseInt(item.quantity) || 0;
+                const after = Math.max(0, inStock - taking);
                 return (
-                  <Flex key={i} justify="space-between" align="baseline" py={1} borderBottom="1px" borderColor="gray.50">
+                  <Flex key={i} justify="space-between" align="baseline" py={1.5} borderBottom="1px" borderColor="gray.100">
                     <Box>
-                      <Text fontSize="xs" fontFamily="mono" color="gray.500">{item.lot}</Text>
+                      <Text fontSize="xs" fontFamily="mono" color="gray.400">{item.lot}</Text>
                       <Text fontSize="sm" fontWeight="medium" color="gray.800" noOfLines={1}>{match?.description}</Text>
+                      <Text fontSize="xs" color="gray.500">
+                        {taking} box{taking !== 1 ? "es" : ""} removed — {after} remaining
+                        {after === 0 ? " (item deleted)" : ""}
+                      </Text>
                     </Box>
                     <Text fontSize="xs" fontFamily="mono" color="blue.500" flexShrink={0} ml={3}>{match?.location}</Text>
                   </Flex>

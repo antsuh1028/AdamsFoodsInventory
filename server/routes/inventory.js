@@ -148,6 +148,43 @@ router.post("/inventoryMove", verifyToken, async (req, res) => {
   }
 });
 
+// ----------------- Order Partial Remove -----------------
+// Removes N boxes from each item. Deletes the item entirely if no boxes remain.
+router.post("/inventoryOrderRemove", verifyToken, async (req, res) => {
+  const { removals } = req.body; // [{ id, quantityToRemove }]
+  if (!Array.isArray(removals) || removals.length === 0) return res.status(400).json({ error: "No removals provided." });
+  try {
+    const results = [];
+    for (const { id, quantityToRemove } of removals) {
+      const item = await FreezerModel.findById(id);
+      if (!item) { results.push({ id, status: "not_found" }); continue; }
+
+      const boxes = Array.isArray(item.boxes) ? [...item.boxes] : [];
+      const n = Math.min(parseInt(quantityToRemove) || 1, boxes.length);
+      const removedBoxes = boxes.splice(0, n);
+      const removedWeight = removedBoxes.map((b) => parseFloat(b.weight) || 0).reduce((s, w) => s + w, 0).toFixed(2);
+
+      if (boxes.length === 0) {
+        await HistoryModel.create(historyEntry(item, `Order Removal — all ${n} box(es) (${removedWeight} lb) removed, item deleted`));
+        await FreezerModel.findByIdAndDelete(id);
+        results.push({ id, status: "deleted" });
+      } else {
+        const newTotal = boxes.map((b) => parseFloat(b.weight) || 0).reduce((s, w) => s + w, 0).toFixed(2);
+        item.boxes = boxes;
+        item.markModified("boxes");
+        item.weight = String(newTotal);
+        item.quantity = String(boxes.length);
+        await item.save();
+        await HistoryModel.create(historyEntry(item, `Order Removal — ${n} box(es) (${removedWeight} lb) removed, ${boxes.length} remaining (${newTotal} lb)`));
+        results.push({ id, status: "updated", remaining: boxes.length });
+      }
+    }
+    res.json({ results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ----------------- Bulk Remove -----------------
 router.post("/inventoryBulkRemove", verifyToken, async (req, res) => {
   const { ids } = req.body;
