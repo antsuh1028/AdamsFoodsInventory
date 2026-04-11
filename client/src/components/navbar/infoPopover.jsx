@@ -36,6 +36,7 @@ const InfoPopover = ({
       packdate: item.packdate || "",
       date_recvd: item.date_recvd || "",
       est: item.est || "",
+      type: item.type || "",
     });
     setCurrentItem(item);
     onClose();
@@ -128,6 +129,11 @@ const InfoPopover = ({
               {item.lot && (
                 <Text fontSize="xs" color="gray.400">
                   Lot: {item.lot}
+                </Text>
+              )}
+              {item.type && (
+                <Text fontSize="xs" color="gray.400">
+                  Type: {item.type}
                 </Text>
               )}
             </Box>

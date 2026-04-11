@@ -36,7 +36,7 @@ router.get("/list-pdfs", verifyToken, async (req, res) => {
 
 router.get("/list-scans", verifyToken, requireRole("admin"), async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
-  const limit = 10;
+  const limit = 20;
   const skip = (page - 1) * limit;
   try {
     const [items, total] = await Promise.all([

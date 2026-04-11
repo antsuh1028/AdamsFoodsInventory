@@ -1,5 +1,4 @@
 import axiosInstance from "../axiosInstance";
-import postHistory from "./postHistory";
 
 function removeItem(
   currentItem,
@@ -25,7 +24,6 @@ function removeItem(
 
   axiosInstance
     .post("/inventoryRemove", { currentItem })
-    .then(() => postHistory(currentItem, "REMOVE"))
     .then(() => {
       toast({
         title: "Remove Item Success",

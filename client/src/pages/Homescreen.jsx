@@ -305,6 +305,14 @@ const Homescreen = () => {
     } catch { /* silent */ }
   }, []);
 
+  const handleExportSelect = useCallback((item) => {
+    setItems([item]);
+    setSelectedItem(item);
+    setShowDetails(true);
+    setFlashLocation(item.location);
+    setTimeout(() => setFlashLocation(null), 2500);
+  }, []);
+
   const handleTabClick = useCallback(() => {
     setShowDetails(false);
   }, []);
@@ -357,6 +365,7 @@ const Homescreen = () => {
         setCurrentItem,
         formData,
         onScannerAdd: handleScannerAdd,
+        onExportSelect: handleExportSelect,
       }}
     >
       <>

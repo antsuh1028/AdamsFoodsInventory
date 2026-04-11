@@ -1,6 +1,5 @@
 import axiosInstance from "../axiosInstance";
 import findItem from "./findItem";
-import postHistory from "./postHistory";
 
 function addItem(inputs, setShowDetails, setItems, toast, onSuccess, onOccupied, onHighlight) {
   const modifiedInputs = { ...inputs };
@@ -8,7 +7,6 @@ function addItem(inputs, setShowDetails, setItems, toast, onSuccess, onOccupied,
   const doAdd = (force = false) => {
     return axiosInstance
       .post("/inventoryAdd", { inputs: modifiedInputs, force })
-      .then(() => postHistory(modifiedInputs, "ADD"))
       .then(() => {
         toast({
           title: "Item Added Successfully",

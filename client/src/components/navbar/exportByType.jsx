@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
   Button, Text, Flex, Box, Spinner, Table, Thead, Tbody, Tr, Th, Td, TableContainer,
-  Badge, IconButton, ButtonGroup,
+  Badge, IconButton, ButtonGroup, Input,
 } from "@chakra-ui/react";
 import { DownloadIcon, ChevronLeftIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import * as XLSX from "xlsx";
@@ -41,17 +41,30 @@ const COLUMNS = [
 
 const PAGE_SIZE = 50;
 
+const SortIndicator = ({ colKey, sortKey, sortDir }) => (
+  <span style={{ marginLeft: 4, opacity: sortKey === colKey ? 1 : 0.25, fontSize: "10px" }}>
+    {sortKey === colKey ? (sortDir === "asc" ? "▲" : "▼") : "▲"}
+  </span>
+);
+
 const ExportByType = ({ isOpen, onClose }) => {
   const [allItems, setAllItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [activeType, setActiveType] = useState("raw");
   const [page, setPage] = useState(0);
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+  const [editCell, setEditCell] = useState(null); // { id, key }
+  const [editValue, setEditValue] = useState("");
+  const inputRef = useRef(null);
   const toast = useToast();
 
   useEffect(() => {
     if (!isOpen) return;
     setPage(0);
+    setSortKey(null);
+    setEditCell(null);
     setLoading(true);
     authFetch(`${API_BASE_URL}/inventoryAll`)
       .then((r) => r.json())
@@ -69,13 +82,69 @@ const ExportByType = ({ isOpen, onClose }) => {
       .finally(() => setLoading(false));
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (editCell && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editCell]);
+
   const items = allItems.filter((i) => i.type === activeType);
-  const totalPages = Math.ceil(items.length / PAGE_SIZE);
-  const pageItems = items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  const sortedItems = sortKey
+    ? [...items].sort((a, b) => {
+        const av = String(a[sortKey] ?? "").toLowerCase();
+        const bv = String(b[sortKey] ?? "").toLowerCase();
+        const numA = parseFloat(av);
+        const numB = parseFloat(bv);
+        const isNumeric = !isNaN(numA) && !isNaN(numB);
+        const cmp = isNumeric ? numA - numB : av.localeCompare(bv);
+        return sortDir === "asc" ? cmp : -cmp;
+      })
+    : items;
+
+  const totalPages = Math.ceil(sortedItems.length / PAGE_SIZE);
+  const pageItems = sortedItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   const handleTabChange = (type) => {
     setActiveType(type);
     setPage(0);
+    setSortKey(null);
+    setEditCell(null);
+  };
+
+  const handleSort = (key) => {
+    setPage(0);
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const NON_EDITABLE = new Set(["weight", "quantity"]);
+
+  const startEdit = (id, key, value) => {
+    if (NON_EDITABLE.has(key)) return;
+    setEditCell({ id, key });
+    setEditValue(value ?? "");
+  };
+
+  const commitEdit = () => {
+    if (!editCell) return;
+    // Update allItems so edits persist when switching tabs
+    setAllItems((prev) =>
+      prev.map((item) =>
+        item._id === editCell.id ? { ...item, [editCell.key]: editValue } : item
+      )
+    );
+    setEditCell(null);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") commitEdit();
+    if (e.key === "Escape") setEditCell(null);
   };
 
   const handleDownload = () => {
@@ -156,8 +225,19 @@ const ExportByType = ({ isOpen, onClose }) => {
                   <Thead bg="gray.50">
                     <Tr>
                       {COLUMNS.map((col) => (
-                        <Th key={col.key} fontSize="xs" color="gray.500" whiteSpace="nowrap" py={3}>
+                        <Th
+                          key={col.key}
+                          fontSize="xs"
+                          whiteSpace="nowrap"
+                          py={3}
+                          cursor="pointer"
+                          userSelect="none"
+                          color={sortKey === col.key ? "blue.600" : "gray.500"}
+                          _hover={{ bg: "gray.100", color: "gray.700" }}
+                          onClick={() => handleSort(col.key)}
+                        >
                           {col.label}
+                          <SortIndicator colKey={col.key} sortKey={sortKey} sortDir={sortDir} />
                         </Th>
                       ))}
                     </Tr>
@@ -165,11 +245,39 @@ const ExportByType = ({ isOpen, onClose }) => {
                   <Tbody>
                     {pageItems.map((item, i) => (
                       <Tr key={item._id || i} _hover={{ bg: "gray.50" }}>
-                        {COLUMNS.map((col) => (
-                          <Td key={col.key} fontSize="xs" color="gray.700" whiteSpace="nowrap" py={2}>
-                            {item[col.key] ?? ""}
-                          </Td>
-                        ))}
+                        {COLUMNS.map((col) => {
+                          const isEditing = editCell?.id === item._id && editCell?.key === col.key;
+                          return (
+                            <Td
+                              key={col.key}
+                              fontSize="xs"
+                              color="gray.700"
+                              whiteSpace="nowrap"
+                              py={1}
+                              px={2}
+                              bg={isEditing ? "blue.50" : undefined}
+                              onDoubleClick={() => startEdit(item._id, col.key, item[col.key])}
+                              title="Double-click to edit"
+                            >
+                              {isEditing ? (
+                                <Input
+                                  ref={inputRef}
+                                  size="xs"
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  onBlur={commitEdit}
+                                  onKeyDown={handleKeyDown}
+                                  bg="white"
+                                  borderRadius="sm"
+                                  minW="80px"
+                                  px={1}
+                                />
+                              ) : (
+                                item[col.key] ?? ""
+                              )}
+                            </Td>
+                          );
+                        })}
                       </Tr>
                     ))}
                   </Tbody>

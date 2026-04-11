@@ -1,38 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useContext } from "react";
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalCloseButton,
-  ModalBody,
-  ModalFooter,
-  Button,
-  Text,
-  Flex,
-  Box,
-  useToast,
-  Spinner,
-  Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
-  TableContainer,
-  Badge,
-  IconButton,
+  Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
+  Button, Text, Flex, Box, useToast, Spinner, Table, Thead, Tbody, Tr, Th, Td,
+  TableContainer, Badge, IconButton, Input, InputGroup, InputLeftElement, InputRightElement,
 } from "@chakra-ui/react";
-import { DownloadIcon, ChevronLeftIcon, ChevronRightIcon } from "@chakra-ui/icons";
+import { DownloadIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon, CloseIcon, ArrowForwardIcon } from "@chakra-ui/icons";
 import * as XLSX from "xlsx";
 import { API_BASE_URL } from "../../config/api";
+import { FormContext } from "../../utils/homescreen/formContext";
 
 const authFetch = (url, options = {}) => {
   const token = localStorage.getItem("token");
-  return fetch(url, {
-    ...options,
-    headers: { ...options.headers, Authorization: token || "" },
-  });
+  return fetch(url, { ...options, headers: { ...options.headers, Authorization: token || "" } });
 };
 
 const getLevel = (loc) => {
@@ -62,16 +41,32 @@ const COLUMNS = [
 
 const PAGE_SIZE = 50;
 
+const SortIndicator = ({ colKey, sortKey, sortDir }) => (
+  <span style={{ marginLeft: 4, opacity: sortKey === colKey ? 1 : 0.25, fontSize: "10px" }}>
+    {sortKey === colKey ? (sortDir === "asc" ? "▲" : "▼") : "▲"}
+  </span>
+);
+
 const ExportInventory = ({ isOpen, onClose }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [page, setPage] = useState(0);
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+  const [editCell, setEditCell] = useState(null); // { id, key }
+  const [editValue, setEditValue] = useState("");
+  const [search, setSearch] = useState("");
+  const inputRef = useRef(null);
   const toast = useToast();
+  const { onExportSelect } = useContext(FormContext);
 
   useEffect(() => {
     if (!isOpen) return;
     setPage(0);
+    setSortKey(null);
+    setEditCell(null);
+    setSearch("");
     setLoading(true);
     authFetch(`${API_BASE_URL}/inventoryAll`)
       .then((r) => r.json())
@@ -79,7 +74,9 @@ const ExportInventory = ({ isOpen, onClose }) => {
         const sorted = [...data].sort((a, b) => {
           const levelDiff = getLevel(a.location) - getLevel(b.location);
           if (levelDiff !== 0) return levelDiff;
+          
           return (a.location || "").localeCompare(b.location || "");
+          
         });
         setItems(sorted);
       })
@@ -89,8 +86,73 @@ const ExportInventory = ({ isOpen, onClose }) => {
       .finally(() => setLoading(false));
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const totalPages = Math.ceil(items.length / PAGE_SIZE);
-  const pageItems = items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  useEffect(() => {
+    if (editCell && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editCell]);
+
+  const filteredItems = search.trim()
+    ? items.filter((item) => {
+        const q = search.toLowerCase();
+        return COLUMNS.some((col) => String(item[col.key] ?? "").toLowerCase().includes(q));
+      })
+    : items;
+
+  const sortedItems = sortKey
+    ? [...filteredItems].sort((a, b) => {
+        const av = String(a[sortKey] ?? "").toLowerCase();
+        const bv = String(b[sortKey] ?? "").toLowerCase();
+        const numA = parseFloat(av);
+        const numB = parseFloat(bv);
+        const isNumeric = !isNaN(numA) && !isNaN(numB);
+        const cmp = isNumeric ? numA - numB : av.localeCompare(bv);
+        return sortDir === "asc" ? cmp : -cmp;
+      })
+    : filteredItems;
+
+  const totalPages = Math.ceil(sortedItems.length / PAGE_SIZE);
+  const pageItems = sortedItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  const handleSearch = (val) => {
+    setSearch(val);
+    setPage(0);
+    setEditCell(null);
+  };
+
+  const handleSort = (key) => {
+    setPage(0);
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const NON_EDITABLE = new Set(["weight", "quantity"]);
+
+  const startEdit = (id, key, value) => {
+    if (NON_EDITABLE.has(key)) return;
+    setEditCell({ id, key });
+    setEditValue(value ?? "");
+  };
+
+  const commitEdit = () => {
+    if (!editCell) return;
+    setItems((prev) =>
+      prev.map((item) =>
+        item._id === editCell.id ? { ...item, [editCell.key]: editValue } : item
+      )
+    );
+    setEditCell(null);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") commitEdit();
+    if (e.key === "Escape") setEditCell(null);
+  };
 
   const handleDownload = () => {
     setDownloading(true);
@@ -102,15 +164,9 @@ const ExportInventory = ({ isOpen, onClose }) => {
         }, {})
       );
 
-      const ws = XLSX.utils.json_to_sheet(rows, {
-        header: COLUMNS.map((c) => c.label),
-      });
-
+      const ws = XLSX.utils.json_to_sheet(rows, { header: COLUMNS.map((c) => c.label) });
       ws["!cols"] = COLUMNS.map((col) => ({
-        wch: Math.max(
-          col.label.length,
-          ...items.map((item) => String(item[col.key] ?? "").length)
-        ) + 2,
+        wch: Math.max(col.label.length, ...items.map((item) => String(item[col.key] ?? "").length)) + 2,
       }));
 
       const wb = XLSX.utils.book_new();
@@ -133,12 +189,32 @@ const ExportInventory = ({ isOpen, onClose }) => {
       <ModalOverlay backdropFilter="blur(2px)" />
       <ModalContent borderRadius="xl" maxH="85vh">
         <ModalHeader fontSize="md" fontWeight="semibold" pb={1} borderBottom="1px" borderColor="gray.100">
-          <Flex align="center" gap={3}>
+          <Flex align="center" gap={3} flexWrap="wrap">
             Export Inventory
             {!loading && items.length > 0 && (
               <Badge colorScheme="gray" fontSize="xs" px={2} py={1} borderRadius="md">
-                {items.length} item{items.length !== 1 ? "s" : ""}
+                {search.trim() ? `${filteredItems.length} of ${items.length}` : `${items.length} item${items.length !== 1 ? "s" : ""}`}
               </Badge>
+            )}
+            {!loading && items.length > 0 && (
+              <InputGroup size="xs" maxW="200px">
+                <InputLeftElement pointerEvents="none">
+                  <SearchIcon color="gray.400" />
+                </InputLeftElement>
+                <Input
+                  placeholder="Search..."
+                  value={search}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  borderRadius="md"
+                  bg="gray.50"
+                  _focus={{ bg: "white", borderColor: "blue.300" }}
+                />
+                {search && (
+                  <InputRightElement cursor="pointer" onClick={() => handleSearch("")}>
+                    <CloseIcon boxSize={2} color="gray.400" />
+                  </InputRightElement>
+                )}
+              </InputGroup>
             )}
           </Flex>
         </ModalHeader>
@@ -159,9 +235,21 @@ const ExportInventory = ({ isOpen, onClose }) => {
                 <Table size="sm" variant="simple">
                   <Thead bg="gray.50">
                     <Tr>
+                      <Th w="28px" />
                       {COLUMNS.map((col) => (
-                        <Th key={col.key} fontSize="xs" color="gray.500" whiteSpace="nowrap" py={3}>
+                        <Th
+                          key={col.key}
+                          fontSize="xs"
+                          whiteSpace="nowrap"
+                          py={3}
+                          cursor="pointer"
+                          userSelect="none"
+                          color={sortKey === col.key ? "blue.600" : "gray.500"}
+                          _hover={{ bg: "gray.100", color: "gray.700" }}
+                          onClick={() => handleSort(col.key)}
+                        >
                           {col.label}
+                          <SortIndicator colKey={col.key} sortKey={sortKey} sortDir={sortDir} />
                         </Th>
                       ))}
                     </Tr>
@@ -169,11 +257,53 @@ const ExportInventory = ({ isOpen, onClose }) => {
                   <Tbody>
                     {pageItems.map((item, i) => (
                       <Tr key={item._id || i} _hover={{ bg: "gray.50" }}>
-                        {COLUMNS.map((col) => (
-                          <Td key={col.key} fontSize="xs" color="gray.700" whiteSpace="nowrap" py={2}>
-                            {item[col.key] ?? ""}
-                          </Td>
-                        ))}
+                        <Td py={1} px={1}>
+                          <IconButton
+                            icon={<ArrowForwardIcon />}
+                            size="xs"
+                            variant="ghost"
+                            colorScheme="gray"
+                            color="gray.500"
+                            borderRadius="md"
+                            aria-label="View in inventory"
+                            title="View in inventory"
+                            _hover={{ color: "blue.400", bg: "blue.50" }}
+                            onClick={() => { onExportSelect(item); onClose(); }}
+                          />
+                        </Td>
+                        {COLUMNS.map((col) => {
+                          const isEditing = editCell?.id === item._id && editCell?.key === col.key;
+                          return (
+                            <Td
+                              key={col.key}
+                              fontSize="xs"
+                              color="gray.700"
+                              whiteSpace="nowrap"
+                              py={1}
+                              px={2}
+                              bg={isEditing ? "blue.50" : undefined}
+                              onDoubleClick={() => startEdit(item._id, col.key, item[col.key])}
+                              title="Double-click to edit"
+                            >
+                              {isEditing ? (
+                                <Input
+                                  ref={inputRef}
+                                  size="xs"
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  onBlur={commitEdit}
+                                  onKeyDown={handleKeyDown}
+                                  bg="white"
+                                  borderRadius="sm"
+                                  minW="80px"
+                                  px={1}
+                                />
+                              ) : (
+                                item[col.key] ?? ""
+                              )}
+                            </Td>
+                          );
+                        })}
                       </Tr>
                     ))}
                   </Tbody>
@@ -184,7 +314,6 @@ const ExportInventory = ({ isOpen, onClose }) => {
         </ModalBody>
 
         <ModalFooter borderTop="1px" borderColor="gray.100" gap={3} justifyContent="space-between">
-          {/* Pagination */}
           {totalPages > 1 ? (
             <Flex align="center" gap={2}>
               <IconButton

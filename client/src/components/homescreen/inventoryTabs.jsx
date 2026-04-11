@@ -13,7 +13,12 @@ import {
   Box,
   Checkbox,
   Button,
+  Input,
+  InputGroup,
+  InputLeftElement,
+  InputRightElement,
 } from "@chakra-ui/react";
+import { SearchIcon, CloseIcon } from "@chakra-ui/icons";
 
 const getAgeDays = (packdate, date_recvd) => {
   const str = packdate || date_recvd;
@@ -199,6 +204,8 @@ const InventoryLevelPanel = ({
   );
 };
 
+const SEARCH_KEYS = ["location", "lot", "vendor", "brand", "species", "description"];
+
 const InventoryTabs = ({
   items,
   handleItemClick,
@@ -209,6 +216,7 @@ const InventoryTabs = ({
 }) => {
   const [tabIndex, setTabIndex] = useState(0);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (flashLocation && flashLocation.length >= 2) {
@@ -216,6 +224,11 @@ const InventoryTabs = ({
       if (level >= 1 && level <= 3) setTabIndex(level - 1);
     }
   }, [flashLocation]);
+
+  // Reset search when a new find result comes in
+  useEffect(() => {
+    setSearch("");
+  }, [items]);
 
   // Prune selections that no longer exist in items
   useEffect(() => {
@@ -225,6 +238,13 @@ const InventoryTabs = ({
       return next.size === prev.size ? prev : next;
     });
   }, [items]);
+
+  const filteredItems = search.trim()
+    ? items.filter((item) => {
+        const q = search.toLowerCase();
+        return SEARCH_KEYS.some((k) => String(item[k] ?? "").toLowerCase().includes(q));
+      })
+    : items;
 
   const handleToggleSelect = useCallback((id) => {
     setSelectedIds((prev) => {
@@ -291,6 +311,29 @@ const InventoryTabs = ({
         ))}
       </Flex>
 
+      {items.length > 0 && (
+        <Box px={3} py={1.5} borderBottom="1px" borderColor="gray.100" flexShrink={0}>
+          <InputGroup size="xs">
+            <InputLeftElement pointerEvents="none">
+              <SearchIcon color="gray.400" />
+            </InputLeftElement>
+            <Input
+              placeholder={`Filter ${items.length} result${items.length !== 1 ? "s" : ""}…`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              borderRadius="md"
+              bg="gray.50"
+              _focus={{ bg: "white", borderColor: "blue.300" }}
+            />
+            {search && (
+              <InputRightElement cursor="pointer" onClick={() => setSearch("")}>
+                <CloseIcon boxSize={2} color="gray.400" />
+              </InputRightElement>
+            )}
+          </InputGroup>
+        </Box>
+      )}
+
       {selectedIds.size > 0 && (
         <Flex
           px={3}
@@ -331,7 +374,7 @@ const InventoryTabs = ({
         {[1, 2, 3].map((level) => (
           <InventoryLevelPanel
             key={`panel-${level}`}
-            items={items}
+            items={filteredItems}
             handleItemClick={handleItemClick}
             level={level}
             selectedItem={selectedItem}

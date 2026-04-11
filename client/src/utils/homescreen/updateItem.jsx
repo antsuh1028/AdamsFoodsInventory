@@ -1,5 +1,4 @@
 import axiosInstance from "../axiosInstance";
-import postHistory from "./postHistory";
 
 function updateItem(
   updateInputs,
@@ -15,9 +14,6 @@ function updateItem(
     .then((result) => {
       updatedItem = result.data;
       setItems([result.data]);
-      return postHistory(updateInputs, "UPDATE");
-    })
-    .then(() => {
       toast({
         title: "Update Item Success",
         position: "top",
