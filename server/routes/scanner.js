@@ -35,45 +35,147 @@ FIELDS (do NOT extract individualWeights — that is handled separately):
 - uniformWeight: if the sheet shows "N x W.WW" (e.g. "36 x 50.00"), return W.WW as a number. Otherwise return null.
 - uniformCount: if uniformWeight is set, return N as a number. Otherwise return null.
 - type: look for "prc" or "raw" anywhere on the sheet (typically top-right corner). Return "prc" or "raw" exactly, or null if not found.
+- price: price per lb if shown (e.g. "3.25", "4.50"). Return as a string with 2 decimal places, or empty string if not found.
 - isTally: true
 
 Return JSON only. No explanation, no markdown.
 `.trim();
 
+function isValidWeight(v) {
+  return v >= 15 && v <= 200;
+}
+
+// LINE-based extraction: handles decimal weights + 4-digit integer formats
 function extractWeightsFromLines(lines) {
   const weights = [];
   let inWeightZone = false;
   for (const line of lines) {
     let normalized = line.trim();
-    // European comma decimals → dot
     normalized = normalized.replace(/(\d+),(\d{2})/g, "$1.$2");
 
-    // Enter weight zone on: (1) a decimal weight, or (2) a line with multiple 4-digit tokens
     if (!inWeightZone) {
       if (/\b\d{2,3}\.\d{1,2}\b/.test(normalized)) inWeightZone = true;
       else if (/\b\d{4}\b.*\b\d{4}\b/.test(normalized)) inWeightZone = true;
+      // Trigger on row of many 2-digit tokens ("72 02 65 82 59 77 ...")
+      else if ((normalized.match(/\b\d{2}\b/g) || []).length >= 8) inWeightZone = true;
     }
 
-    if (inWeightZone) {
-      if (/^\d{4}$/.test(normalized)) {
-        // Whole line is one 4-digit number
-        normalized = normalized.slice(0, 2) + "." + normalized.slice(2);
-      } else {
-        // Convert space-separated 4-digit tokens to XX.XX decimals
-        normalized = normalized.replace(/\b(\d{2})(\d{2})\b/g, (match, a, b) => {
-          const w = parseFloat(`${a}.${b}`);
-          return (w >= 15 && w <= 200) ? `${a}.${b}` : match;
-        });
-      }
+    if (!inWeightZone) continue;
+
+    // Expand 8+ digit runs into groups of 4
+    normalized = normalized.replace(/\d{8,}/g, (match) => {
+      const parts = [];
+      for (let i = 0; i + 4 <= match.length; i += 4) parts.push(match.slice(i, i + 4));
+      return parts.join(" ");
+    });
+
+    // 5-7 digit run: extract the leading 4 digits
+    normalized = normalized.replace(/\b(\d{4})\d{1,3}\b/g, "$1");
+
+    // Whole line is a single 4-digit number
+    if (/^\d{4}$/.test(normalized)) {
+      normalized = normalized.slice(0, 2) + "." + normalized.slice(2);
+    } else {
+      // Space-separated 4-digit tokens → XX.XX
+      normalized = normalized.replace(/\b(\d{2})(\d{2})\b/g, (match, a, b) => {
+        const w = parseFloat(`${a}.${b}`);
+        return isValidWeight(w) ? `${a}.${b}` : match;
+      });
+      // Adjacent 2-digit pair "XX YY" → XX.YY (for split OCR reads like "72 02")
+      normalized = normalized.replace(/\b([1-9]\d)\s+(\d{2})\b/g, (match, a, b) => {
+        const w = parseFloat(`${a}.${b}`);
+        return isValidWeight(w) ? `${a}.${b}` : match;
+      });
     }
 
-    const matches = normalized.match(/\d{2,3}\.\d{1,2}/g);
+    const matches = normalized.match(/\b\d{2,3}\.\d{1,2}\b/g);
     if (matches) {
       for (const m of matches) {
         const val = parseFloat(m);
-        if (val >= 15 && val <= 200) weights.push(val);
+        if (isValidWeight(val)) weights.push(val);
       }
     }
+  }
+  return weights;
+}
+
+// WORD-level extraction: uses individual Textract WORD blocks sorted by page position.
+// More reliable when LINE aggregation merges or splits adjacent handwritten numbers.
+function extractWeightsFromWords(blocks) {
+  const wordBlocks = blocks
+    .filter((b) => b.BlockType === "WORD")
+    .sort((a, b) => {
+      const topA = a.Geometry?.BoundingBox?.Top ?? 0;
+      const topB = b.Geometry?.BoundingBox?.Top ?? 0;
+      if (Math.abs(topA - topB) > 0.025) return topA - topB;
+      return (a.Geometry?.BoundingBox?.Left ?? 0) - (b.Geometry?.BoundingBox?.Left ?? 0);
+    });
+
+  const weights = [];
+  let inWeightZone = false;
+  let i = 0;
+
+  while (i < wordBlocks.length) {
+    const raw = (wordBlocks[i].Text || "").trim();
+    const text = raw.replace(/,(\d{2})/, ".$1"); // European comma
+
+    // Trigger weight zone when "Box" or "Pcs" header row is seen
+    if (/^(box|boxes|pcs|pieces)$/i.test(text)) {
+      inWeightZone = true;
+      i++;
+      continue;
+    }
+
+    if (!inWeightZone) { i++; continue; }
+
+    // Already a decimal weight
+    if (/^\d{2,3}\.\d{1,2}$/.test(text)) {
+      const v = parseFloat(text);
+      if (isValidWeight(v)) weights.push(v);
+      i++;
+      continue;
+    }
+
+    // 4-digit integer → XX.XX
+    if (/^\d{4}$/.test(text)) {
+      const v = parseFloat(text.slice(0, 2) + "." + text.slice(2));
+      if (isValidWeight(v)) weights.push(v);
+      i++;
+      continue;
+    }
+
+    // 5-7 digit: extract leading 4 digits as weight
+    if (/^\d{5,7}$/.test(text)) {
+      const v = parseFloat(text.slice(0, 2) + "." + text.slice(2, 4));
+      if (isValidWeight(v)) weights.push(v);
+      i++;
+      continue;
+    }
+
+    // 8+ digit run: split every 4 digits
+    if (/^\d{8,}$/.test(text)) {
+      for (let j = 0; j + 4 <= text.length; j += 4) {
+        const v = parseFloat(text.slice(j, j + 2) + "." + text.slice(j + 2, j + 4));
+        if (isValidWeight(v)) weights.push(v);
+      }
+      i++;
+      continue;
+    }
+
+    // 2-digit token: try pairing with the next 2-digit token (split handwriting)
+    if (/^\d{2}$/.test(text) && i + 1 < wordBlocks.length) {
+      const nextText = (wordBlocks[i + 1].Text || "").trim();
+      if (/^\d{2}$/.test(nextText)) {
+        const v = parseFloat(text + "." + nextText);
+        if (isValidWeight(v)) {
+          weights.push(v);
+          i += 2;
+          continue;
+        }
+      }
+    }
+
+    i++;
   }
   return weights;
 }
@@ -89,16 +191,19 @@ router.post("/extract-form", verifyToken, upload.single("image"), async (req, re
       ? Buffer.from(await heicConvert({ buffer: req.file.buffer, format: "JPEG", quality: 0.9 }))
       : req.file.buffer;
 
-    // Step 1: Textract extracts raw text lines (character-accurate OCR)
+    // Step 1: Textract extracts raw text blocks
     const textractResponse = await textractClient.send(new DetectDocumentTextCommand({
       Document: { Bytes: imageBuffer },
     }));
-    const lineTexts = textractResponse.Blocks
+    const allBlocks = textractResponse.Blocks;
+    const lineTexts = allBlocks
       .filter((b) => b.BlockType === "LINE")
       .map((b) => b.Text || "");
 
-    // Step 2: Regex extracts all weights deterministically from the raw lines
-    const regexWeights = extractWeightsFromLines(lineTexts);
+    // Step 2: Extract weights using both LINE and WORD approaches; take the better result
+    const lineWeights = extractWeightsFromLines(lineTexts);
+    const wordWeights = extractWeightsFromWords(allBlocks);
+    const regexWeights = wordWeights.length > lineWeights.length ? wordWeights : lineWeights;
 
     // Step 3: GPT-4o parses header fields only (location, lot, dates, vendor, description, quantity)
     const gptResponse = await openai.chat.completions.create({
