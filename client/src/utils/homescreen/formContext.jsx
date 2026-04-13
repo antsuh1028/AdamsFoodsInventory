@@ -5,4 +5,5 @@ export const FormContext = createContext({
   setCurrentItem: () => {},
   onScannerAdd: () => {},
   onExportSelect: () => {},
+  suggestions: { vendors: [], brands: [] },
 });

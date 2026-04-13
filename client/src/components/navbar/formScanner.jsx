@@ -1,13 +1,15 @@
-import { useState, useRef, useContext } from "react";
+import { useState, useRef, useContext, useEffect } from "react";
 import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
   Button, Flex, Box, Text, Input, Select, FormControl, FormLabel, SimpleGrid, Spinner, Image, Badge,
+  InputGroup, InputRightElement,
   Collapse,
   useToast, useDisclosure,
 } from "@chakra-ui/react";
 import { WarningTwoIcon } from "@chakra-ui/icons";
 import { API_BASE_URL } from "../../config/api";
 import { FormContext } from "../../utils/homescreen/formContext";
+import { AutocompleteInput } from "../homescreen/formFields";
 
 const FIELDS = [
   { key: "location", label: "Location" },
@@ -50,8 +52,38 @@ const FormScanner = ({ isOpen, onClose }) => {
   const inputRef = useRef(null);
   const toast = useToast();
 
-  const { onScannerAdd } = useContext(FormContext);
+  const { onScannerAdd, suggestions } = useContext(FormContext);
   const token = localStorage.getItem("token");
+  const [badgeState, setBadgeState] = useState(null);
+
+  useEffect(() => {
+    const loc = fields.location;
+    if (!loc) { setBadgeState(null); return; }
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const verifyRes = await fetch(`${API_BASE_URL}/verifyLocation`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: token || "" },
+          body: JSON.stringify({ location: loc }),
+          signal: controller.signal,
+        });
+        const verifyData = await verifyRes.text();
+        if (verifyData !== "OK") { setBadgeState("error"); return; }
+        const findRes = await fetch(`${API_BASE_URL}/inventoryFind`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: token || "" },
+          body: JSON.stringify({ inputs: { location: loc } }),
+          signal: controller.signal,
+        });
+        const findData = await findRes.json();
+        setBadgeState(findData === "INVALID" ? "out" : "in");
+      } catch (err) {
+        if (err.name !== "AbortError") setBadgeState("error");
+      }
+    }, 400);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [fields.location, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -141,6 +173,7 @@ const FormScanner = ({ isOpen, onClose }) => {
     setScanImageKey(null);
     setIsTally(true);
     setBoxesOpen(false);
+    setBadgeState(null);
     onClose();
   };
 
@@ -237,6 +270,33 @@ const FormScanner = ({ isOpen, onClose }) => {
                           <option key={o.value} value={o.value}>{o.label}</option>
                         ))}
                       </Select>
+                    ) : key === "location" ? (
+                      <InputGroup size="sm">
+                        <Input
+                          size="sm"
+                          borderRadius="lg"
+                          value={fields.location || ""}
+                          onChange={(e) => setFields((prev) => ({ ...prev, location: e.target.value.toUpperCase() }))}
+                          bg={fields.location ? "white" : "yellow.50"}
+                          borderColor={fields.location ? "gray.200" : "yellow.300"}
+                          autoComplete="off"
+                        />
+                        <InputRightElement width="auto" mr={1}>
+                          {badgeState === "in"  && <Badge colorScheme="gray"  p="1" fontSize="10px">Occupied</Badge>}
+                          {badgeState === "out" && <Badge colorScheme="green" p="1" fontSize="10px">Empty</Badge>}
+                          {badgeState === "error" && <Badge colorScheme="red" p="1" fontSize="10px">Invalid</Badge>}
+                        </InputRightElement>
+                      </InputGroup>
+                    ) : (key === "vendor" || key === "brand") ? (
+                      <AutocompleteInput
+                        value={fields[key] || ""}
+                        suggestions={key === "vendor" ? (suggestions?.vendors ?? []) : (suggestions?.brands ?? [])}
+                        onChange={(e) => setFields((prev) => ({ ...prev, [key]: e.target.value }))}
+                        inputSize="sm"
+                        bg={fields[key] ? "white" : "yellow.50"}
+                        placeholder=""
+                        type="text"
+                      />
                     ) : (
                       <Input
                         size="sm"

@@ -366,6 +366,7 @@ const Homescreen = () => {
         formData,
         onScannerAdd: handleScannerAdd,
         onExportSelect: handleExportSelect,
+        suggestions,
       }}
     >
       <>

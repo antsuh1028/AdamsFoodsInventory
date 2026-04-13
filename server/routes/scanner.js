@@ -45,13 +45,28 @@ function extractWeightsFromLines(lines) {
   let inWeightZone = false;
   for (const line of lines) {
     let normalized = line.trim();
+    // European comma decimals → dot
     normalized = normalized.replace(/(\d+),(\d{2})/g, "$1.$2");
-    // Once a real decimal weight is seen, we're in the weight zone
-    if (!inWeightZone && /\b\d{2,3}\.\d{1,2}\b/.test(normalized)) inWeightZone = true;
-    // Only convert standalone 4-digit integers inside the weight zone (avoids lot numbers, phone numbers in header)
-    if (inWeightZone && /^\d{4}$/.test(normalized)) {
-      normalized = normalized.slice(0, 2) + "." + normalized.slice(2);
+
+    // Enter weight zone on: (1) a decimal weight, or (2) a line with multiple 4-digit tokens
+    if (!inWeightZone) {
+      if (/\b\d{2,3}\.\d{1,2}\b/.test(normalized)) inWeightZone = true;
+      else if (/\b\d{4}\b.*\b\d{4}\b/.test(normalized)) inWeightZone = true;
     }
+
+    if (inWeightZone) {
+      if (/^\d{4}$/.test(normalized)) {
+        // Whole line is one 4-digit number
+        normalized = normalized.slice(0, 2) + "." + normalized.slice(2);
+      } else {
+        // Convert space-separated 4-digit tokens to XX.XX decimals
+        normalized = normalized.replace(/\b(\d{2})(\d{2})\b/g, (match, a, b) => {
+          const w = parseFloat(`${a}.${b}`);
+          return (w >= 15 && w <= 200) ? `${a}.${b}` : match;
+        });
+      }
+    }
+
     const matches = normalized.match(/\d{2,3}\.\d{1,2}/g);
     if (matches) {
       for (const m of matches) {

@@ -67,8 +67,8 @@ const ShowDrawer = ({
 
   const adminOnlyItems = isAdmin ? (
     <Stack direction="column" spacing={2} pl={3}>
-      {navBtn("Upload IPF File", onUploadOpen)}
-      {navBtn("Incoming Product Records", onIPROpen)}
+      {/* {navBtn("Upload IPF File", onUploadOpen)} */}
+      {navBtn("All Scans", onIPROpen)}
       {navBtn("Export Inventory", onExportOpen)}
       {navBtn("Export by Type", onExportTypeOpen)}
       {navBtn("Inventory Report", onReportOpen)}
