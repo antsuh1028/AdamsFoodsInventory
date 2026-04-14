@@ -18,6 +18,7 @@ import {
 import { EmailIcon, LockIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { API_BASE_URL } from "../config/api";
 import adamsWings from "../assets/AdamsWings.png";
 import fieldsBg from "../assets/Fields.jpeg";
 
@@ -35,7 +36,7 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const result = await axios.post("https://server.afdcstorage.com/login", {
+      const result = await axios.post(`${API_BASE_URL}/login`, {
         email,
         password,
       });

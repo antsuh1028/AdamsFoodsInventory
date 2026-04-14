@@ -331,17 +331,40 @@ router.get("/inventoryWeeklyThroughput", verifyToken, requireRole("admin"), asyn
   try {
     const weeks = 8;
     const now = new Date();
-    const result = [];
+    const buckets = [];
     for (let i = weeks - 1; i >= 0; i--) {
       const weekStart = new Date(now);
       weekStart.setDate(now.getDate() - i * 7 - now.getDay());
       weekStart.setHours(0, 0, 0, 0);
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekStart.getDate() + 7);
-      const count = await HistoryModel.countDocuments({ change: /^Added/i, createdAt: { $gte: weekStart, $lt: weekEnd } });
-      result.push({ week: `${weekStart.getMonth() + 1}/${weekStart.getDate()}`, added: count });
+      buckets.push({ start: weekStart, end: weekEnd, label: `${weekStart.getMonth() + 1}/${weekStart.getDate()}` });
     }
-    res.json(result);
+
+    const boundaries = [...buckets.map((b) => b.start), buckets[buckets.length - 1].end];
+    const aggResult = await HistoryModel.aggregate([
+      { $match: { change: { $regex: /^(Added|Scanner Add)$/i }, createdAt: { $gte: boundaries[0] } } },
+      { $bucket: {
+        groupBy: "$createdAt",
+        boundaries,
+        default: "other",
+        output: {
+          added:   { $sum: { $cond: [{ $eq: [{ $toLower: "$change" }, "added"] }, 1, 0] } },
+          scanner: { $sum: { $cond: [{ $eq: [{ $toLower: "$change" }, "scanner add"] }, 1, 0] } },
+        },
+      }},
+    ]);
+
+    const byStart = {};
+    for (const r of aggResult) {
+      if (r._id instanceof Date) byStart[r._id.toISOString()] = r;
+    }
+
+    res.json(buckets.map((b) => ({
+      week: b.label,
+      added:   byStart[b.start.toISOString()]?.added   ?? 0,
+      scanner: byStart[b.start.toISOString()]?.scanner ?? 0,
+    })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

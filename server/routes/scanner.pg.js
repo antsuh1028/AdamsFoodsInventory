@@ -3,12 +3,13 @@ const OpenAI = require("openai");
 const { DetectDocumentTextCommand } = require("@aws-sdk/client-textract");
 const { PutObjectCommand } = require("@aws-sdk/client-s3");
 const heicConvert = require("heic-convert");
-const FreezerModel = require("../models/Freezer");
-const HistoryModel = require("../models/History");
-const verifyToken = require("../middleware/verifyToken");
+const verifyToken = require("../middleware/verifyToken.pg");
 const { s3Client, textractClient, upload } = require("../utils/aws");
+const pool = require("../utils/pg");
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// ── Prompts & OCR logic (unchanged from scanner.js) ──────────────────────────
 
 const EXTRACTION_PROMPT = `
 You are parsing OCR text extracted from an Adams Foods handwritten tally sheet.
@@ -45,7 +46,6 @@ function isValidWeight(v) {
   return v >= 15 && v <= 200;
 }
 
-// LINE-based extraction: handles decimal weights + 4-digit integer formats
 function extractWeightsFromLines(lines) {
   const weights = [];
   let inWeightZone = false;
@@ -56,32 +56,26 @@ function extractWeightsFromLines(lines) {
     if (!inWeightZone) {
       if (/\b\d{2,3}\.\d{1,2}\b/.test(normalized)) inWeightZone = true;
       else if (/\b\d{4}\b.*\b\d{4}\b/.test(normalized)) inWeightZone = true;
-      // Trigger on row of many 2-digit tokens ("72 02 65 82 59 77 ...")
       else if ((normalized.match(/\b\d{2}\b/g) || []).length >= 8) inWeightZone = true;
     }
 
     if (!inWeightZone) continue;
 
-    // Expand 8+ digit runs into groups of 4
     normalized = normalized.replace(/\d{8,}/g, (match) => {
       const parts = [];
       for (let i = 0; i + 4 <= match.length; i += 4) parts.push(match.slice(i, i + 4));
       return parts.join(" ");
     });
 
-    // 5-7 digit run: extract the leading 4 digits
     normalized = normalized.replace(/\b(\d{4})\d{1,3}\b/g, "$1");
 
-    // Whole line is a single 4-digit number
     if (/^\d{4}$/.test(normalized)) {
       normalized = normalized.slice(0, 2) + "." + normalized.slice(2);
     } else {
-      // Space-separated 4-digit tokens → XX.XX
       normalized = normalized.replace(/\b(\d{2})(\d{2})\b/g, (match, a, b) => {
         const w = parseFloat(`${a}.${b}`);
         return isValidWeight(w) ? `${a}.${b}` : match;
       });
-      // Adjacent 2-digit pair "XX YY" → XX.YY (for split OCR reads like "72 02")
       normalized = normalized.replace(/\b([1-9]\d)\s+(\d{2})\b/g, (match, a, b) => {
         const w = parseFloat(`${a}.${b}`);
         return isValidWeight(w) ? `${a}.${b}` : match;
@@ -99,8 +93,6 @@ function extractWeightsFromLines(lines) {
   return weights;
 }
 
-// WORD-level extraction: uses individual Textract WORD blocks sorted by page position.
-// More reliable when LINE aggregation merges or splits adjacent handwritten numbers.
 function extractWeightsFromWords(blocks) {
   const wordBlocks = blocks
     .filter((b) => b.BlockType === "WORD")
@@ -118,9 +110,8 @@ function extractWeightsFromWords(blocks) {
 
   while (i < wordBlocks.length) {
     const raw = (wordBlocks[i].Text || "").trim();
-    const text = raw.replace(/,(\d{2})/, ".$1"); // European comma
+    const text = raw.replace(/,(\d{2})/, ".$1");
 
-    // Trigger weight zone on header keywords
     if (/^(box|boxes|bx|pcs|pieces|qty|quantity)$/i.test(text)) {
       inWeightZone = true;
       weightLikeRun = 0;
@@ -128,7 +119,6 @@ function extractWeightsFromWords(blocks) {
       continue;
     }
 
-    // Density fallback: 3+ consecutive weight-shaped words also trigger the zone
     if (!inWeightZone) {
       if (/^\d{4}$/.test(text) || /^\d{2,3}\.\d{1,2}$/.test(text)) {
         weightLikeRun++;
@@ -140,59 +130,43 @@ function extractWeightsFromWords(blocks) {
 
     if (!inWeightZone) { i++; continue; }
 
-    // Already a decimal weight
     if (/^\d{2,3}\.\d{1,2}$/.test(text)) {
       const v = parseFloat(text);
       if (isValidWeight(v)) weights.push(v);
-      i++;
-      continue;
+      i++; continue;
     }
-
-    // 4-digit integer → XX.XX
     if (/^\d{4}$/.test(text)) {
       const v = parseFloat(text.slice(0, 2) + "." + text.slice(2));
       if (isValidWeight(v)) weights.push(v);
-      i++;
-      continue;
+      i++; continue;
     }
-
-    // 5-7 digit: extract leading 4 digits as weight
     if (/^\d{5,7}$/.test(text)) {
       const v = parseFloat(text.slice(0, 2) + "." + text.slice(2, 4));
       if (isValidWeight(v)) weights.push(v);
-      i++;
-      continue;
+      i++; continue;
     }
-
-    // 8+ digit run: split every 4 digits
     if (/^\d{8,}$/.test(text)) {
       for (let j = 0; j + 4 <= text.length; j += 4) {
         const v = parseFloat(text.slice(j, j + 2) + "." + text.slice(j + 2, j + 4));
         if (isValidWeight(v)) weights.push(v);
       }
-      i++;
-      continue;
+      i++; continue;
     }
-
-    // 2-digit token: try pairing with the next 2-digit token (split handwriting)
     if (/^\d{2}$/.test(text) && i + 1 < wordBlocks.length) {
       const nextText = (wordBlocks[i + 1].Text || "").trim();
       if (/^\d{2}$/.test(nextText)) {
         const v = parseFloat(text + "." + nextText);
-        if (isValidWeight(v)) {
-          weights.push(v);
-          i += 2;
-          continue;
-        }
+        if (isValidWeight(v)) { weights.push(v); i += 2; continue; }
       }
     }
-
     i++;
   }
   return weights;
 }
 
-// ----------------- Routes -----------------
+const toNum = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+
+// ── Routes ────────────────────────────────────────────────────────────────────
 
 router.post("/extract-form", verifyToken, upload.single("image"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No image uploaded" });
@@ -203,33 +177,24 @@ router.post("/extract-form", verifyToken, upload.single("image"), async (req, re
       ? Buffer.from(await heicConvert({ buffer: req.file.buffer, format: "JPEG", quality: 0.9 }))
       : req.file.buffer;
 
-    // Step 1: Textract extracts raw text blocks
     const textractResponse = await textractClient.send(new DetectDocumentTextCommand({
       Document: { Bytes: imageBuffer },
     }));
     const allBlocks = textractResponse.Blocks;
-    const lineTexts = allBlocks
-      .filter((b) => b.BlockType === "LINE")
-      .map((b) => b.Text || "");
+    const lineTexts = allBlocks.filter((b) => b.BlockType === "LINE").map((b) => b.Text || "");
 
-    // Step 2: Extract weights using both LINE and WORD approaches; take the better result
     const lineWeights = extractWeightsFromLines(lineTexts);
     const wordWeights = extractWeightsFromWords(allBlocks);
     const regexWeights = wordWeights.length > lineWeights.length ? wordWeights : lineWeights;
 
-    // Step 3: GPT-4o parses header fields only (location, lot, dates, vendor, description, quantity)
     const gptResponse = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages: [{
-        role: "user",
-        content: `${EXTRACTION_PROMPT}\n\nOCR TEXT:\n${lineTexts.join("\n")}`,
-      }],
+      messages: [{ role: "user", content: `${EXTRACTION_PROMPT}\n\nOCR TEXT:\n${lineTexts.join("\n")}` }],
       response_format: { type: "json_object" },
     });
 
     const extracted = JSON.parse(gptResponse.choices[0].message.content);
 
-    // Resolve individualWeights: uniform format takes priority, then regex extraction
     let individualWeights;
     if (extracted.uniformWeight && extracted.uniformCount) {
       const w = parseFloat(extracted.uniformWeight);
@@ -273,51 +238,103 @@ router.post("/extract-form", verifyToken, upload.single("image"), async (req, re
 
 router.post("/scanner-resolve", verifyToken, async (req, res) => {
   const { action, existingId, inputs } = req.body;
-  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, type, scanImageKey, boxes } = inputs || {};
+  const { location, lot, vendor, brand, species, description, grade, quantity, weight,
+          packdate, date_recvd, est, price, type, scanImageKey, boxes } = inputs || {};
+
   const parsedBoxes = Array.isArray(boxes) ? boxes.map((b) => ({ weight: String(b.weight ?? b) })) : [];
   const computedWeight = parsedBoxes.length > 0
     ? parsedBoxes.map((b) => parseFloat(b.weight)).filter((w) => !isNaN(w)).reduce((s, w) => s + w, 0).toFixed(2)
     : weight;
   const computedQuantity = parsedBoxes.length > 0 ? String(parsedBoxes.length) : quantity;
 
-  const logEntry = (item, change) => ({
-    time: new Date().toLocaleString(), change,
-    changedBy: req.username || "",
-    location: item.location, lot: item.lot, vendor: item.vendor, brand: item.brand,
-    species: item.species, description: item.description, grade: item.grade,
-    quantity: item.quantity, weight: item.weight, packdate: item.packdate,
-    date_recvd: item.date_recvd, est: item.est,
-  });
-
+  const client = await pool.connect();
   try {
+    await client.query("BEGIN");
+
     if (action === "update") {
-      const updated = await FreezerModel.findByIdAndUpdate(
-        existingId,
-        { $set: { vendor, brand, species, description, grade, quantity: computedQuantity, weight: computedWeight, packdate, date_recvd, est, price, type: type || null, scanImageKey, boxes: parsedBoxes } },
-        { new: true }
+      const upd = await client.query(
+        `UPDATE inventory SET vendor=$1,brand=$2,species=$3,description=$4,grade=$5,
+         quantity=$6,weight=$7,packdate=$8,date_recvd=$9,est=$10,price=$11,type=$12,scan_image_key=$13
+         WHERE id=$14 AND tenant_id=$15 RETURNING *`,
+        [vendor||null, brand||null, species||null, description||null, grade||null,
+         computedQuantity||null, toNum(computedWeight), packdate||null, date_recvd||null,
+         est||null, toNum(price), type||null, scanImageKey||null, existingId, req.tenantId]
       );
-      if (!updated) return res.status(404).json({ error: "Item not found" });
-      await HistoryModel.create(logEntry(updated, "Scanner Update"));
-      return res.json(updated);
+      if (upd.rows.length === 0) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Item not found" }); }
+
+      // Replace boxes (JSONB)
+      await client.query(
+        `UPDATE inventory SET boxes = $1::jsonb WHERE id = $2 AND tenant_id = $3`,
+        [JSON.stringify(parsedBoxes), existingId, req.tenantId]
+      );
+
+      await client.query(
+        `INSERT INTO history (tenant_id,time,change,changed_by,location,lot,vendor,brand,species,description,grade,quantity,weight,packdate,date_recvd,est)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        [req.tenantId, new Date().toLocaleString(), "Scanner Update", req.username||"",
+         upd.rows[0].location||"", upd.rows[0].lot||"", vendor||"", brand||"",
+         species||"", description||"", grade||"", computedQuantity||"",
+         computedWeight||"", packdate||"", date_recvd||"", est||""]
+      );
+
+      await client.query("COMMIT");
+      return res.json({ ...upd.rows[0], _id: upd.rows[0].id });
     }
+
     if (action === "override") {
-      const existing = await FreezerModel.findById(existingId);
-      if (!existing) return res.status(404).json({ error: "Item not found" });
-      await HistoryModel.create(logEntry(existing, "Scanner Override - Removed"));
-      await FreezerModel.findByIdAndDelete(existingId);
-      const locationUpper = (location || existing.location).toUpperCase();
-      const newItem = await FreezerModel.create({ location: locationUpper, lot, vendor, brand, species, description, grade, quantity: computedQuantity, weight: computedWeight, packdate, date_recvd, est, price, type: type || null, scanImageKey, boxes: parsedBoxes });
-      await HistoryModel.create(logEntry(newItem, "Scanner Override - Added"));
-      return res.status(201).json(newItem);
+      const existing = await client.query(
+        `SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`, [existingId, req.tenantId]
+      );
+      if (existing.rows.length === 0) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Item not found" }); }
+      const old = existing.rows[0];
+
+      await client.query(
+        `INSERT INTO history (tenant_id,time,change,changed_by,location,lot,vendor,brand,species,description,grade,quantity,weight,packdate,date_recvd,est)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        [req.tenantId, new Date().toLocaleString(), "Scanner Override - Removed", req.username||"",
+         old.location||"", old.lot||"", old.vendor||"", old.brand||"",
+         old.species||"", old.description||"", old.grade||"", old.quantity||"",
+         old.weight||"", old.packdate||"", old.date_recvd||"", old.est||""]
+      );
+
+      await client.query(`DELETE FROM inventory WHERE id = $1`, [existingId]);
+
+      const locationUpper = (location || old.location || "").toUpperCase();
+      const ins = await client.query(
+        `INSERT INTO inventory (tenant_id,location,lot,vendor,brand,species,description,grade,quantity,weight,packdate,date_recvd,est,price,type,scan_image_key,boxes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb) RETURNING *`,
+        [req.tenantId, locationUpper, lot||null, vendor||null, brand||null, species||null,
+         description||null, grade||null, computedQuantity||null, toNum(computedWeight),
+         packdate||null, date_recvd||null, est||null, toNum(price), type||null, scanImageKey||null,
+         JSON.stringify(parsedBoxes)]
+      );
+      const newItem = ins.rows[0];
+
+      await client.query(
+        `INSERT INTO history (tenant_id,time,change,changed_by,location,lot,vendor,brand,species,description,grade,quantity,weight,packdate,date_recvd,est)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        [req.tenantId, new Date().toLocaleString(), "Scanner Override - Added", req.username||"",
+         newItem.location||"", newItem.lot||"", vendor||"", brand||"",
+         species||"", description||"", grade||"", computedQuantity||"",
+         computedWeight||"", packdate||"", date_recvd||"", est||""]
+      );
+
+      await client.query("COMMIT");
+      return res.status(201).json({ ...newItem, _id: newItem.id });
     }
+
+    await client.query("ROLLBACK");
     return res.status(400).json({ error: "Invalid action" });
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("scanner-resolve error:", err);
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
-// ─── Order Sheet OCR ─────────────────────────────────────────────────────────
+// ── Order Sheet OCR ───────────────────────────────────────────────────────────
 
 const ORDER_PROMPT = `
 You are parsing an Adams Foods outgoing order sheet (customer pick/ship document).
@@ -359,21 +376,18 @@ router.post("/extract-order", verifyToken, upload.single("image"), async (req, r
       return res.status(422).json({ error: "No line items found in the image." });
     }
 
-    // Look up each lot in inventory
     const lots = items.map((i) => i.lot).filter(Boolean);
-    const matches = await FreezerModel.find({ lot: { $in: lots } }).lean();
+    const matchRes = await pool.query(
+      `SELECT * FROM inventory WHERE tenant_id = $1 AND lot = ANY($2)`,
+      [req.tenantId, lots]
+    );
     const byLot = {};
-    for (const m of matches) {
+    for (const m of matchRes.rows) {
       if (!byLot[m.lot]) byLot[m.lot] = [];
-      byLot[m.lot].push(m);
+      byLot[m.lot].push({ ...m, _id: m.id });
     }
 
-    const result = items.map((item) => ({
-      ...item,
-      matches: byLot[item.lot] || [],
-    }));
-
-    res.json({ items: result });
+    res.json({ items: items.map((item) => ({ ...item, matches: byLot[item.lot] || [] })) });
   } catch (err) {
     console.error("Order extraction error:", err);
     res.status(500).json({ error: err.message });

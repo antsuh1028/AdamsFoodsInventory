@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody,
-  Box, Text, Flex, Spinner, SimpleGrid, Divider, Button, Badge,
+  Box, Text, Flex, Spinner, SimpleGrid, Divider, Button, Badge, IconButton,
 } from "@chakra-ui/react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { ChevronLeftIcon, ChevronRightIcon } from "@chakra-ui/icons";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { API_BASE_URL } from "../../config/api";
 
 const authFetch = (url, options = {}) => {
@@ -36,13 +37,13 @@ const StatCard = ({ label, value, sub }) => (
 const BreakdownRow = ({ label, count, weight, value, maxCount }) => {
   const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
   return (
-    <Box>
-      <Flex justify="space-between" align="baseline" mb={1}>
-        <Text fontSize="sm" color="gray.700" fontWeight="medium" noOfLines={1} maxW="45%">{label || "—"}</Text>
-        <Flex gap={3} flexShrink={0}>
-          <Text fontSize="xs" color="gray.500">{count} item{count !== 1 ? "s" : ""}</Text>
-          {weight > 0 && <Text fontSize="xs" color="gray.400">{weight.toLocaleString()} lb</Text>}
-          {value > 0 && <Text fontSize="xs" color="green.500" fontWeight="medium">${Math.round(value).toLocaleString()}</Text>}
+    <Box overflow="hidden">
+      <Flex justify="space-between" align="baseline" mb={1} gap={2} overflow="hidden">
+        <Text fontSize="sm" color="gray.700" fontWeight="medium" noOfLines={1} minW={0} flex={1} overflow="hidden" textOverflow="ellipsis">{label || "—"}</Text>
+        <Flex gap={2} flexShrink={0} align="baseline" wrap="nowrap">
+          <Text fontSize="xs" color="gray.500" whiteSpace="nowrap">{count} item{count !== 1 ? "s" : ""}</Text>
+          {weight > 0 && <Text fontSize="xs" color="gray.400" whiteSpace="nowrap">{weight.toLocaleString()} lb</Text>}
+          {value > 0 && <Text fontSize="xs" color="green.500" fontWeight="medium" whiteSpace="nowrap">${Math.round(value).toLocaleString()}</Text>}
         </Flex>
       </Flex>
       <Box bg="gray.100" borderRadius="full" h="6px" w="100%">
@@ -52,16 +53,30 @@ const BreakdownRow = ({ label, count, weight, value, maxCount }) => {
   );
 };
 
+const PAGE_SIZE = 10;
+
 const BreakdownSection = ({ title, data }) => {
+  const [page, setPage] = useState(0);
+  const totalPages = Math.ceil(data.length / PAGE_SIZE);
+  const pageData = data.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
   const maxCount = data[0]?.count ?? 1;
   return (
     <Box>
-      <Text fontSize="xs" fontWeight="semibold" color="gray.600" mb={3} textTransform="uppercase" letterSpacing="wide">{title}</Text>
+      <Flex justify="space-between" align="center" mb={3}>
+        <Text fontSize="xs" fontWeight="semibold" color="gray.600" textTransform="uppercase" letterSpacing="wide">{title}</Text>
+        {totalPages > 1 && (
+          <Flex align="center" gap={1}>
+            <IconButton icon={<ChevronLeftIcon />} size="xs" variant="ghost" isDisabled={page === 0} onClick={() => setPage((p) => p - 1)} aria-label="prev" />
+            <Text fontSize="xs" color="gray.400">{page + 1}/{totalPages}</Text>
+            <IconButton icon={<ChevronRightIcon />} size="xs" variant="ghost" isDisabled={page === totalPages - 1} onClick={() => setPage((p) => p + 1)} aria-label="next" />
+          </Flex>
+        )}
+      </Flex>
       {data.length === 0 ? (
         <Text fontSize="sm" color="gray.300">No data</Text>
       ) : (
         <Flex direction="column" gap={3}>
-          {data.map((row) => (
+          {pageData.map((row) => (
             <BreakdownRow key={row._id} label={row._id} count={row.count} weight={Math.round(row.weight)} value={row.value} maxCount={maxCount} />
           ))}
         </Flex>
@@ -130,7 +145,8 @@ const WeeklyThroughput = () => {
       <Text fontSize="xs" fontWeight="semibold" color="gray.600" mb={3} textTransform="uppercase" letterSpacing="wide">
         Items Added Per Week
       </Text>
-      <ResponsiveContainer width="100%" height={180}>
+      <Box sx={{ "& .recharts-rectangle:focus": { outline: "none" } }}>
+      <ResponsiveContainer width="100%" height={200}>
         <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis dataKey="week" tick={{ fontSize: 11, fill: "#a0aec0" }} axisLine={false} tickLine={false} />
@@ -139,9 +155,12 @@ const WeeklyThroughput = () => {
             contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "12px" }}
             labelStyle={{ fontWeight: 600, color: "#2d3748" }}
           />
-          <Bar dataKey="added" fill="#4299e1" radius={[4, 4, 0, 0]} name="Added" />
+          <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} />
+          <Bar dataKey="added"   fill="#4299e1" radius={[4, 4, 0, 0]} name="Manual" />
+          <Bar dataKey="scanner" fill="#48bb78" radius={[4, 4, 0, 0]} name="OCR Scanner" />
         </BarChart>
       </ResponsiveContainer>
+      </Box>
     </Box>
   );
 };
