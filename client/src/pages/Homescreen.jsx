@@ -22,7 +22,7 @@ import InventoryForm from "../components/homescreen/inventoryForm";
 import ActionButtons from "../components/homescreen/actionButton";
 import DetailsPanel from "../components/homescreen/detailsPanel";
 
-const REQUIRED_FIELDS = ["location", "lot", "species"];
+const REQUIRED_FIELDS = ["location", "species"];
 
 const RemoveField = ({ label, value }) => {
   if (!value) return null;
