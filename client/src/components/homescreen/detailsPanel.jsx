@@ -443,7 +443,7 @@ const DetailsPanel = ({
           <Divider mb={3} />
           <Grid templateColumns="repeat(3, 1fr)" gap={3} mb={3}>
             <EditableField
-              label="Vendor"
+              label="Vendor/Brand"
               value={item?.vendor}
               fieldKey="vendor"
               onStage={handleStage}

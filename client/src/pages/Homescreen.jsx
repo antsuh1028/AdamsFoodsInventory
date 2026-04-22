@@ -282,9 +282,14 @@ const Homescreen = () => {
   }, []);
 
   const handleItemUpdate = useCallback((updatedItem) => {
+    if (updatedItem?.deleted) {
+      setItems((prev) => prev.filter((i) => i._id !== selectedItem?._id));
+      setSelectedItem(null);
+      return;
+    }
     setItems((prev) => prev.map((i) => (i._id === updatedItem._id ? updatedItem : i)));
     setSelectedItem(updatedItem);
-  }, []);
+  }, [selectedItem]);
 
   const handleLocate = useCallback((item) => {
     setLocateLocation(item?.location || null);
@@ -634,7 +639,7 @@ const Homescreen = () => {
               <Collapse in={updateExpanded} animateOpacity>
                 <Divider my={3} />
                 <Grid templateColumns="repeat(3, 1fr)" gap={3}>
-                  <RemoveField label="Vendor" value={formData.vendor} />
+                  <RemoveField label="Vendor/Brand" value={formData.vendor} />
                   <RemoveField label="EST #" value={formData.est} />
                   <RemoveField label="Pack Date" value={formData.packdate} />
                   <RemoveField label="Date Received" value={formData.date_recvd} />
@@ -779,7 +784,7 @@ const Homescreen = () => {
               <Collapse in={removeExpanded} animateOpacity>
                 <Divider my={3} />
                 <Grid templateColumns="repeat(3, 1fr)" gap={3}>
-                  <RemoveField label="Vendor" value={currentItem?.vendor} />
+                  <RemoveField label="Vendor/Brand" value={currentItem?.vendor} />
                   <RemoveField label="EST #" value={currentItem?.est} />
                   <RemoveField label="Pack Date" value={currentItem?.packdate} />
                   <RemoveField label="Date Received" value={currentItem?.date_recvd} />

@@ -61,12 +61,12 @@ const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErr
           />
         </GridItem>
 
-        {/* Vendor */}
+        {/* Vendor/Brand */}
         <GridItem colSpan={1}>
           <FormField
-            label="Vendor"
+            label="Vendor/Brand"
             value={vendor}
-            placeholder="Enter Vendor"
+            placeholder="Enter Vendor/Brand"
             onChange={(e) => onInputChange("vendor", e.target.value)}
             suggestions={suggestions.vendors}
           />

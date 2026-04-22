@@ -155,7 +155,7 @@ const printDetails = (item) => {
                   <tr><th>LOT#</th><td class="table-content">${
                     item.lot || ""
                   }</td></tr>
-                  <tr><th>Vendor</th><td class="table-content">${
+                  <tr><th>Vendor/Brand</th><td class="table-content">${
                     item.vendor || ""
                   }</td></tr>
                   <tr><th>Date Rcvd</th><td class="table-content">${

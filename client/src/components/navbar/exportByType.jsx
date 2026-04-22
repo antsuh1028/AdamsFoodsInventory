@@ -25,7 +25,7 @@ const getLevel = (loc) => {
 const COLUMNS = [
   { key: "location", label: "Location" },
   { key: "lot", label: "Lot" },
-  { key: "vendor", label: "Vendor" },
+  { key: "vendor", label: "Vendor/Brand" },
   { key: "brand", label: "Brand" },
   { key: "species", label: "Species" },
   { key: "description", label: "Description" },

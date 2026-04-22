@@ -25,7 +25,7 @@ const getLevel = (loc) => {
 const COLUMNS = [
   { key: "location", label: "Location" },
   { key: "lot", label: "Lot" },
-  { key: "vendor", label: "Vendor" },
+  { key: "vendor", label: "Vendor/Brand" },
   { key: "brand", label: "Brand" },
   { key: "species", label: "Species" },
   { key: "description", label: "Description" },
@@ -131,7 +131,7 @@ const ExportInventory = ({ isOpen, onClose }) => {
     }
   };
 
-  const NON_EDITABLE = new Set(["weight", "quantity"]);
+  const NON_EDITABLE = new Set(["weight", "quantity", "location"]);
 
   const startEdit = (id, key, value) => {
     if (NON_EDITABLE.has(key)) return;
@@ -139,14 +139,31 @@ const ExportInventory = ({ isOpen, onClose }) => {
     setEditValue(value ?? "");
   };
 
-  const commitEdit = () => {
+  const commitEdit = async () => {
     if (!editCell) return;
-    setItems((prev) =>
-      prev.map((item) =>
-        item._id === editCell.id ? { ...item, [editCell.key]: editValue } : item
-      )
-    );
+    const { id, key } = editCell;
+    const value = editValue;
     setEditCell(null);
+    setItems((prev) =>
+      prev.map((item) => (item._id === id ? { ...item, [key]: value } : item))
+    );
+    try {
+      const res = await authFetch(`${API_BASE_URL}/inventory/${id}/field`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ field: key, value }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Save failed");
+      }
+    } catch (err) {
+      toast({ title: "Save failed", description: err.message, position: "top", status: "error", duration: 3000, isClosable: true });
+      // revert
+      setItems((prev) =>
+        prev.map((item) => (item._id === id ? { ...item, [key]: undefined } : item))
+      );
+    }
   };
 
   const handleKeyDown = (e) => {

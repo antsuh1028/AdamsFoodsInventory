@@ -27,7 +27,7 @@ app.use("/", require("./routes/scanner.pg"));
 // app.use("/", require("./routes/history"));
 // app.use("/", require("./routes/scanner"));
 
-// s3 route is shared (no DB calls, just S3 presigned URLs)
-app.use("/", require("./routes/s3"));
+app.use("/", require("./routes/s3.pg"));
+app.use("/", require("./routes/production.pg"));
 
 app.listen(3001, () => console.log("Server running on port 3001 [postgres]"));

@@ -106,22 +106,27 @@ router.post("/inventoryFind", verifyToken, async (req, res) => {
   const params = [req.tenantId];
   let idx = 2;
 
-  const exact = (col, val) => { conditions.push(`LOWER(${col}) = LOWER($${idx++})`); params.push(val); };
+  // For free-text fields, split into tokens and require each token to appear (ILIKE)
+  const tokenMatch = (col, val) => {
+    const tokens = val.trim().split(/\s+/).filter(Boolean);
+    for (const t of tokens) { conditions.push(`${col} ILIKE $${idx++}`); params.push(`%${t}%`); }
+  };
+  const ilike = (col, val) => { conditions.push(`${col} ILIKE $${idx++}`); params.push(`%${val.trim()}%`); };
 
   if (location)    { conditions.push(`location = $${idx++}`); params.push(location.toUpperCase()); }
-  if (lot)         exact("lot", lot);
-  if (vendor)      exact("vendor", vendor);
-  if (brand)       exact("brand", brand);
-  if (species)     exact("species", species);
-  if (description) exact("description", description);
-  if (grade)       exact("grade", grade);
+  if (lot)         ilike("lot", lot);
+  if (vendor)      tokenMatch("vendor", vendor);
+  if (brand)       tokenMatch("brand", brand);
+  if (species)     tokenMatch("species", species);
+  if (description) tokenMatch("description", description);
+  if (grade)       ilike("grade", grade);
   if (quantity)    { conditions.push(`quantity = $${idx++}`); params.push(quantity); }
   if (weight)      { conditions.push(`weight = $${idx++}`); params.push(toNum(weight)); }
   if (packdate)    { conditions.push(`packdate = $${idx++}`); params.push(packdate); }
   if (date_recvd)  { conditions.push(`date_recvd = $${idx++}`); params.push(date_recvd); }
-  if (est)         exact("est", est);
+  if (est)         ilike("est", est);
   if (price)       { conditions.push(`price = $${idx++}`); params.push(toNum(price)); }
-  if (type)        { conditions.push(`type = $${idx++}`); params.push(type); }
+  if (type)        { conditions.push(`LOWER(type) = LOWER($${idx++})`); params.push(type); }
 
   try {
     const result = await pool.query(
@@ -268,16 +273,17 @@ router.post("/inventoryBulkRemove", verifyToken, async (req, res) => {
   try {
     await client.query("BEGIN");
     const items = await client.query(
-      `SELECT * FROM inventory WHERE id = ANY($1) AND tenant_id = $2`,
+      `SELECT * FROM inventory WHERE id = ANY($1::uuid[]) AND tenant_id = $2`,
       [ids, req.tenantId]
     );
     for (const item of items.rows) await historyEntry(client, req.tenantId, item, "Bulk Removed", req.username);
-    const del = await client.query(`DELETE FROM inventory WHERE id = ANY($1) AND tenant_id = $2`, [ids, req.tenantId]);
+    const del = await client.query(`DELETE FROM inventory WHERE id = ANY($1::uuid[]) AND tenant_id = $2`, [ids, req.tenantId]);
     await client.query("COMMIT");
     res.status(200).json({ message: `${del.rowCount} item(s) removed.`, deletedCount: del.rowCount });
   } catch (err) {
     await client.query("ROLLBACK");
-    res.status(500).json({ error: "An error occurred while removing items." });
+    console.error("inventoryBulkRemove error:", err.message);
+    res.status(500).json({ error: err.message });
   } finally {
     client.release();
   }
@@ -288,15 +294,17 @@ router.patch("/inventory/:id/field", verifyToken, async (req, res) => {
   const { field, value } = req.body;
   if (!field || !EDITABLE_FIELDS.includes(field)) return res.status(400).json({ error: "Invalid field" });
   const col = field === "scanImageKey" ? "scan_image_key" : field;
+  const NUMERIC_FIELDS = ["price"];
+  const dbValue = NUMERIC_FIELDS.includes(field) ? toNum(value) : (value === "" ? null : value);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const upd = await client.query(
       `UPDATE inventory SET ${col} = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *`,
-      [value, req.params.id, req.tenantId]
+      [dbValue, req.params.id, req.tenantId]
     );
     if (upd.rows.length === 0) return res.status(404).json({ error: "Item not found" });
-    await historyEntry(client, req.tenantId, upd.rows[0], `Field Updated: ${field} → "${value}"`, req.username);
+    await historyEntry(client, req.tenantId, upd.rows[0], `Field Updated: ${field} → "${dbValue ?? ""}"`, req.username);
     await client.query("COMMIT");
     res.json(fmt(upd.rows[0]));
   } catch (err) {
@@ -321,6 +329,15 @@ router.patch("/inventory/:id/box/remove", verifyToken, async (req, res) => {
     const removedWeight = boxes[index].weight;
     const remaining = boxes.filter((_, i) => i !== index);
     const newTotal = boxesWeight(remaining);
+
+    if (remaining.length === 0) {
+      await historyEntry(client, req.tenantId, itemRes.rows[0],
+        `Box Removed (${removedWeight} lb) — last box, item deleted`, req.username);
+      await client.query(`DELETE FROM inventory WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+      await client.query("COMMIT");
+      return res.json({ deleted: true });
+    }
+
     const upd = await client.query(
       `UPDATE inventory SET boxes = $1::jsonb, weight = $2, quantity = $3 WHERE id = $4 AND tenant_id = $5 RETURNING *`,
       [JSON.stringify(remaining), toNum(newTotal), String(remaining.length), req.params.id, req.tenantId]
@@ -503,6 +520,34 @@ router.get("/inventoryDistinct", verifyToken, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch suggestions" });
+  }
+});
+
+// ── Production inventory search (partial match, boxes only) ───────────────────
+router.get("/inventorySearch", verifyToken, async (req, res) => {
+  const q    = (req.query.q    || "").trim();
+  const type = (req.query.type || "").trim();
+  if (!q) return res.json([]);
+  try {
+    const params = [req.tenantId, `%${q}%`];
+    const typeClause = type ? `AND (LOWER(type) = LOWER($${params.push(type)}) OR type IS NULL)` : "";
+    const sql = `SELECT id, location, lot, species, description, type, weight, boxes, jsonb_array_length(boxes) AS box_count
+       FROM inventory
+       WHERE tenant_id = $1
+         AND jsonb_array_length(boxes) > 0
+         ${typeClause}
+         AND (
+           location    ILIKE $2 OR
+           lot         ILIKE $2 OR
+           species     ILIKE $2 OR
+           description ILIKE $2
+         )
+       ORDER BY location
+       LIMIT 50`;
+    const result = await pool.query(sql, params);
+    res.json(result.rows.map(fmt));
+  } catch (err) {
+    res.status(500).json({ error: "Search failed" });
   }
 });
 

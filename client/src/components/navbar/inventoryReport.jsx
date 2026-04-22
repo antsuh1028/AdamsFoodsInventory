@@ -235,7 +235,7 @@ const InventoryReport = ({ isOpen, onClose }) => {
               <SimpleGrid columns={{ base: 1, md: 3 }} spacing={8}>
                 <BreakdownSection title="By Species" data={stats.bySpecies} />
                 <BreakdownSection title="By Grade" data={stats.byGrade} />
-                <BreakdownSection title="By Vendor" data={stats.byVendor} />
+                <BreakdownSection title="By Vendor/Brand" data={stats.byVendor} />
               </SimpleGrid>
 
             </Flex>

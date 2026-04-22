@@ -152,7 +152,7 @@ const InfoPopover = ({
                 <Grid templateColumns="1fr 1fr" gap={2} mb={1}>
                   {item.vendor && (
                     <Box>
-                      <Text fontSize="10px" color="gray.400" textTransform="uppercase" fontWeight="medium">Vendor</Text>
+                      <Text fontSize="10px" color="gray.400" textTransform="uppercase" fontWeight="medium">Vendor/Brand</Text>
                       <Text fontSize="xs" color="gray.700" fontWeight="medium">{item.vendor}</Text>
                     </Box>
                   )}

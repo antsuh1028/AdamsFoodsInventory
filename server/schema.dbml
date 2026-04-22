@@ -1,0 +1,129 @@
+// Adams Foods Distribution Center — Database Schema
+// Includes production workflow (Step 1: Receive → Step 2: Send to Processor → Step 3: Return as Finished Good)
+
+Project AdamsFoods {
+  database_type: 'PostgreSQL'
+}
+
+// ── Core ──────────────────────────────────────────────────────────────────────
+
+Table tenants {
+  id         uuid [pk, default: `gen_random_uuid()`]
+  name       text [not null]
+  slug       text [not null, unique]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table users {
+  id         uuid [pk, default: `gen_random_uuid()`]
+  tenant_id  uuid [not null, ref: > tenants.id]
+  username   text [not null]
+  password   text [not null]
+  role       text [not null, default: 'user']
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (tenant_id, username) [unique]
+  }
+}
+
+// ── Inventory ─────────────────────────────────────────────────────────────────
+
+Table inventory {
+  id             uuid [pk, default: `gen_random_uuid()`]
+  tenant_id      uuid [not null, ref: > tenants.id]
+  location       text
+  lot            text
+  vendor         text
+  brand          text
+  species        text
+  description    text
+  grade          text
+  quantity       text
+  weight         decimal(10,2)
+  packdate       text
+  date_recvd     text
+  est            text
+  price          decimal(10,2)
+  scan_image_key text
+  type           text        // 'raw' | 'prc'
+  boxes          jsonb       [not null, default: '[]']  // [{ weight: string }]
+  source_id      uuid        [ref: > inventory.id]      // finished good → original raw item
+  mongo_id       text        [unique]                   // migration dedup key
+  created_at     timestamptz [not null, default: `now()`]
+
+  Note: 'source_id links a finished good (prc) back to the raw inventory item it came from'
+}
+
+// ── History ───────────────────────────────────────────────────────────────────
+
+Table history {
+  id          uuid [pk, default: `gen_random_uuid()`]
+  tenant_id   uuid [not null, ref: > tenants.id]
+  time        text
+  change      text        // 'add' | 'update' | 'remove' | 'move' | 'sent_to_processor' | 'returned_from_processor'
+  changed_by  text
+  location    text
+  lot         text
+  vendor      text
+  brand       text
+  species     text
+  description text
+  grade       text
+  quantity    text
+  weight      text
+  packdate    text
+  date_recvd  text
+  est         text
+  mongo_id    text        [unique]
+  created_at  timestamptz [not null, default: `now()`]
+}
+
+// ── PDFs / BOLs ───────────────────────────────────────────────────────────────
+
+Table pdfs {
+  id          uuid [pk, default: `gen_random_uuid()`]
+  tenant_id   uuid [ref: > tenants.id]
+  file_name   text
+  file_key    text        // S3 key
+  file_url    text        // S3 URL
+  upload_date text
+  created_at  timestamptz [not null, default: `now()`]
+
+  Note: 'Future: inventory.bol_id → pdfs.id to link a BOL to a pallet'
+}
+
+// ── Production Workflow ───────────────────────────────────────────────────────
+
+Table production_orders {
+  id             uuid        [pk, default: `gen_random_uuid()`]
+  tenant_id      uuid        [not null, ref: > tenants.id]
+  sent_date      text        [not null]
+  processor_name text        [not null]   // e.g. 'Noblesse'
+  status         text        [not null, default: 'pending']  // 'pending' | 'returned'
+  return_date    text                     // filled in when goods come back
+  yield          decimal(5,2)            // finished_weight / total raw sent, stored at close
+  created_at     timestamptz [not null, default: `now()`]
+
+  Note: 'One order = one trip to the processor. yield stored at close time.'
+}
+
+Table production_order_items {
+  id                  uuid          [pk, default: `gen_random_uuid()`]
+  production_order_id uuid          [not null, ref: > production_orders.id]
+  inventory_id        uuid          [not null, ref: > inventory.id]  // specific pallet pulled from
+  weight_sent         decimal(10,2) [not null]
+  boxes_sent          jsonb         [not null, default: '[]']  // boxes removed from inventory
+  created_at          timestamptz   [not null, default: `now()`]
+
+  Note: 'One row per pallet pulled. boxes_sent mirrors boxes removed from inventory.boxes'
+}
+
+Table production_order_returns {
+  id                  uuid        [pk, default: `gen_random_uuid()`]
+  production_order_id uuid        [not null, ref: > production_orders.id]
+  inventory_id        uuid        [not null, ref: > inventory.id]  // new prc inventory item created on return
+  created_at          timestamptz [not null, default: `now()`]
+
+  Note: 'One row per finished-good pallet scanned back in. inventory.source_id on the linked item points to the original raw item.'
+}

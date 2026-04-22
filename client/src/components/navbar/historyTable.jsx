@@ -128,7 +128,7 @@ const HistoryRow = ({ item, onSet }) => {
             <Field label="Quantity" value={item.quantity ? `${item.quantity} bx` : null} />
             <Field label="Weight" value={item.weight ? `${item.weight} lb` : null} />
             <Field label="Species" value={item.species} />
-            <Field label="Vendor" value={item.vendor} />
+            <Field label="Vendor/Brand" value={item.vendor} />
             <Field label="Pack Date" value={item.packdate} />
             <Field label="Date Received" value={item.date_recvd} />
             <Field label="EST #" value={item.est} />

@@ -33,6 +33,7 @@ import ExportByType from "../navbar/exportByType.jsx";
 import InventoryReport from "../navbar/inventoryReport.jsx";
 import FormScanner from "../navbar/formScanner.jsx";
 import OrderScanner from "../navbar/orderScanner.jsx";
+import ProductionOrders from "../navbar/productionOrders.jsx";
 
 const ShowDrawer = ({
   isOpen,
@@ -47,6 +48,7 @@ const ShowDrawer = ({
   onReportOpen,
   onScanOpen,
   onOrderScanOpen,
+  onProductionOpen,
 }) => {
   const navigate = useNavigate();
   const [otherOpen, setOtherOpen] = useState(false);
@@ -85,6 +87,7 @@ const ShowDrawer = ({
           {navBtn("Scan Pallet Form", onScanOpen)}
           {navBtn("Scan Order Sheet", onOrderScanOpen)}
           {isAdminOrManager && navBtn("History Log", onHistoryOpen)}
+          {isAdminOrManager && navBtn("Production Orders", onProductionOpen)}
 
           {isAdmin && (
             <>
@@ -170,6 +173,11 @@ const Navbar = () => {
     onOpen: onOrderScanOpen,
     onClose: onOrderScanClose,
   } = useDisclosure();
+  const {
+    isOpen: isProductionOpen,
+    onOpen: onProductionOpen,
+    onClose: onProductionClose,
+  } = useDisclosure();
 
   return (
     <>
@@ -247,6 +255,7 @@ const Navbar = () => {
         onReportOpen={onReportOpen}
         onScanOpen={onScanOpen}
         onOrderScanOpen={onOrderScanOpen}
+        onProductionOpen={onProductionOpen}
       />
       <UploadFile isOpen={isUploadOpen} onClose={onUploadClose} />
       <IncomingOrders isOpen={isIPROpen} onClose={onIPRClose} />
@@ -259,6 +268,7 @@ const Navbar = () => {
       <InventoryReport isOpen={isReportOpen} onClose={onReportClose} />
       <FormScanner isOpen={isScanOpen} onClose={onScanClose} />
       <OrderScanner isOpen={isOrderScanOpen} onClose={onOrderScanClose} />
+      <ProductionOrders isOpen={isProductionOpen} onClose={onProductionClose} />
     </>
   );
 };
