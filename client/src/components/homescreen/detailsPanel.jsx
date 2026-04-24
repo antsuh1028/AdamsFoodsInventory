@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Box,
   Text,
@@ -145,6 +145,9 @@ const DetailsPanel = ({
   const [lastRemovedBox, setLastRemovedBox] = useState(null);
   const [pendingEdit, setPendingEdit] = useState(null); // { field, label, oldValue, newValue }
   const [saving, setSaving] = useState(false);
+  const [prodExpanded, setProdExpanded] = useState(false);
+  const [prodHistory, setProdHistory] = useState(null);
+  const [prodLoading, setProdLoading] = useState(false);
   const toast = useToast();
   const token = localStorage.getItem("token");
 
@@ -157,6 +160,24 @@ const DetailsPanel = ({
       },
       body: JSON.stringify(body),
     });
+
+  const toggleProd = async () => {
+    if (prodExpanded) { setProdExpanded(false); return; }
+    setProdExpanded(true);
+    if (prodHistory) return;
+    setProdLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/inventory/${item._id}/production`, {
+        headers: { Authorization: token || "" },
+      });
+      const data = await res.json();
+      setProdHistory(data);
+    } catch {
+      setProdHistory({ outgoing: [], incoming: [] });
+    } finally {
+      setProdLoading(false);
+    }
+  };
 
   const handleStage = (field, label, oldValue, newValue) => {
     if (newValue.trim() === oldValue.trim()) return;
@@ -279,6 +300,11 @@ const DetailsPanel = ({
   };
 
   const itemBoxes = item?.boxes ?? [];
+
+  useEffect(() => {
+    setProdHistory(null);
+    setProdExpanded(false);
+  }, [item?._id]);
 
   return (
     <Collapse
@@ -621,6 +647,69 @@ const DetailsPanel = ({
             </Collapse>
           </>
         )}
+
+        {/* Production History */}
+        <Divider mb={3} />
+        <Button
+          size="xs"
+          variant="ghost"
+          color="gray.400"
+          _hover={{ color: "gray.600" }}
+          mb={prodExpanded ? 2 : 0}
+          onClick={toggleProd}
+          isLoading={prodLoading}
+        >
+          {prodExpanded ? "Hide Production" : "Production"}
+        </Button>
+        <Collapse in={prodExpanded} animateOpacity>
+          <Box fontSize="xs" color="gray.600">
+            {(() => {
+              const out = prodHistory?.outgoing ?? [];
+              const inc = prodHistory?.incoming ?? [];
+              if (!prodHistory) return null;
+              if (out.length === 0 && inc.length === 0) {
+                return <Text color="gray.400">No production history</Text>;
+              }
+              return (
+                <>
+                  {inc.length > 0 && (
+                    <Box mb={3}>
+                      <Text fontWeight="semibold" color="gray.500" mb={1} textTransform="uppercase" letterSpacing="wide" fontSize="10px">
+                        Returned From
+                      </Text>
+                      {inc.map((r) => (
+                        <Box key={r.orderId} px={2} py={1.5} bg="green.50" borderRadius="md" border="1px" borderColor="green.200" mb={1}>
+                          <Text fontWeight="medium" color="gray.700">{r.processorName}</Text>
+                          <Text color="gray.500">Sent {r.sentDate}{r.returnDate ? ` · Returned ${r.returnDate}` : ""}</Text>
+                          {r.yieldPct && <Text color="gray.500">Yield: {r.yieldPct}%</Text>}
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                  {out.length > 0 && (
+                    <Box>
+                      <Text fontWeight="semibold" color="gray.500" mb={1} textTransform="uppercase" letterSpacing="wide" fontSize="10px">
+                        Sent To
+                      </Text>
+                      {out.map((r) => (
+                        <Box key={r.orderId} px={2} py={1.5} bg="blue.50" borderRadius="md" border="1px" borderColor="blue.200" mb={1}>
+                          <Text fontWeight="medium" color="gray.700">{r.processorName}</Text>
+                          <Text color="gray.500">
+                            {r.sentDate} · {r.weightSent} lb · {r.boxesSent.length} box(es)
+                          </Text>
+                          <Badge size="xs" colorScheme={r.status === "returned" ? "green" : "orange"}>
+                            {r.status}
+                          </Badge>
+                          {r.yieldPct && <Text color="gray.500" ml={1} display="inline">· Yield: {r.yieldPct}%</Text>}
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                </>
+              );
+            })()}
+          </Box>
+        </Collapse>
 
         <Flex gap={2} justify="space-between" align="center">
           <Button

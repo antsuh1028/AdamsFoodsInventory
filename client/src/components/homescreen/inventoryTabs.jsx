@@ -412,6 +412,14 @@ const InventoryTabs = ({
     });
   }, []);
 
+  const handleRowClick = useCallback((item) => {
+    if (selectedIds.size > 0) {
+      if (item._id) handleToggleSelect(item._id);
+    } else {
+      handleItemClick(item);
+    }
+  }, [selectedIds, handleToggleSelect, handleItemClick]);
+
   const handleBulkRemove = useCallback(() => {
     const selectedItems = items.filter((item) => item._id && selectedIds.has(item._id));
     onBulkRemove([...selectedIds], selectedItems, () => setSelectedIds(new Set()));
@@ -528,7 +536,7 @@ const InventoryTabs = ({
           <InventoryLevelPanel
             key={`panel-${level}`}
             items={filteredItems}
-            handleItemClick={handleItemClick}
+            handleItemClick={handleRowClick}
             level={level}
             selectedItem={selectedItem}
             flashLocation={flashLocation}
@@ -539,7 +547,7 @@ const InventoryTabs = ({
         ))}
         <InventoryOtherPanel
           items={filteredItems}
-          handleItemClick={handleItemClick}
+          handleItemClick={handleRowClick}
           selectedItem={selectedItem}
           flashLocation={flashLocation}
           selectedIds={selectedIds}

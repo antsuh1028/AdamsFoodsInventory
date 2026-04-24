@@ -164,6 +164,54 @@ router.post("/production-orders", verifyToken, async (req, res) => {
   }
 });
 
+// ── Production history for a single inventory item ────────────────────────────
+router.get("/inventory/:id/production", verifyToken, async (req, res) => {
+  try {
+    const [outRes, inRes] = await Promise.all([
+      pool.query(
+        `SELECT poi.weight_sent, poi.boxes_sent,
+                po.id AS order_id, po.sent_date, po.processor_name, po.status, po.return_date, po.yield
+         FROM production_order_items poi
+         JOIN production_orders po ON po.id = poi.production_order_id
+         WHERE poi.inventory_id = $1 AND po.tenant_id = $2
+         ORDER BY po.sent_date DESC`,
+        [req.params.id, req.tenantId]
+      ),
+      pool.query(
+        `SELECT po.id AS order_id, po.sent_date, po.processor_name, po.status, po.return_date, po.yield
+         FROM production_order_returns por
+         JOIN production_orders po ON po.id = por.production_order_id
+         WHERE por.inventory_id = $1 AND po.tenant_id = $2
+         ORDER BY po.return_date DESC`,
+        [req.params.id, req.tenantId]
+      ),
+    ]);
+    res.json({
+      outgoing: outRes.rows.map((r) => ({
+        orderId:       r.order_id,
+        processorName: r.processor_name,
+        sentDate:      r.sent_date,
+        status:        r.status,
+        returnDate:    r.return_date || null,
+        yieldPct:      r.yield != null ? String(r.yield) : null,
+        weightSent:    String(r.weight_sent),
+        boxesSent:     Array.isArray(r.boxes_sent) ? r.boxes_sent : [],
+      })),
+      incoming: inRes.rows.map((r) => ({
+        orderId:       r.order_id,
+        processorName: r.processor_name,
+        sentDate:      r.sent_date,
+        returnDate:    r.return_date || null,
+        yieldPct:      r.yield != null ? String(r.yield) : null,
+        status:        r.status,
+      })),
+    });
+  } catch (err) {
+    console.error("inventory production history error:", err.message);
+    res.status(500).json({ error: "Failed to fetch production history" });
+  }
+});
+
 // ── List Orders ───────────────────────────────────────────────────────────────
 // Query: ?status=pending|returned
 router.get("/production-orders", verifyToken, async (req, res) => {
