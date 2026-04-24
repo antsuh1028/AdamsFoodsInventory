@@ -16,6 +16,7 @@ app.use("/", require("./routes/auth.pg"));
 app.use("/", require("./routes/inventory.pg"));
 app.use("/", require("./routes/history.pg"));
 app.use("/", require("./routes/scanner.pg"));
+app.use("/", require("./routes/snapshots.pg"));
 
 // ── Mongo routes (commented out) ──────────────────────────────────────────────
 // const mongoose = require("mongoose");
