@@ -57,6 +57,7 @@ const ExportInventory = ({ isOpen, onClose }) => {
   const [editCell, setEditCell] = useState(null); // { id, key }
   const [editValue, setEditValue] = useState("");
   const [search, setSearch] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const inputRef = useRef(null);
   const toast = useToast();
   const { onExportSelect } = useContext(FormContext);
@@ -185,9 +186,9 @@ const ExportInventory = ({ isOpen, onClose }) => {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="5xl" scrollBehavior="inside">
+    <Modal isOpen={isOpen} onClose={onClose} size={isFullscreen ? "full" : "5xl"} scrollBehavior="inside">
       <ModalOverlay backdropFilter="blur(2px)" />
-      <ModalContent borderRadius="xl" maxH="85vh">
+      <ModalContent borderRadius={isFullscreen ? "none" : "xl"} maxH={isFullscreen ? "100vh" : "85vh"}>
         <ModalHeader fontSize="md" fontWeight="semibold" pb={1} borderBottom="1px" borderColor="gray.100">
           <Flex align="center" gap={3} flexWrap="wrap">
             Export Inventory
@@ -218,7 +219,17 @@ const ExportInventory = ({ isOpen, onClose }) => {
             )}
           </Flex>
         </ModalHeader>
-        <ModalCloseButton top={3} />
+        <ModalCloseButton top={2} right={2} />
+        <IconButton
+          icon={<Text fontSize="md">{isFullscreen ? "⊡" : "⊞"}</Text>}
+          size="sm"
+          variant="ghost"
+          position="absolute"
+          top={2}
+          right={10}
+          aria-label="Toggle fullscreen"
+          onClick={() => setIsFullscreen((v) => !v)}
+        />
 
         <ModalBody p={0}>
           {loading ? (
