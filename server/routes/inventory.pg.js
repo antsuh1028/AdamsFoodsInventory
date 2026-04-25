@@ -54,9 +54,8 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
   const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, type, scanImageKey, boxes } = inputs || {};
 
   if (!location || !location.trim()) return res.status(400).json({ error: "Location field cannot be blank." });
-  if (!validLocations.includes(location)) return res.status(400).json({ error: "Location Does Not Exist" });
-
   const locationUpper = location.toUpperCase();
+  if (!validLocations.includes(locationUpper)) return res.status(400).json({ error: "Location Does Not Exist" });
   const parsedBoxes = Array.isArray(boxes) ? boxes.map((b) => ({ weight: String(b.weight ?? b) })) : [];
   const computedWeight = parsedBoxes.length > 0 ? boxesWeight(parsedBoxes) : weight;
   const computedQty    = parsedBoxes.length > 0 ? String(parsedBoxes.length) : quantity;
@@ -106,14 +105,13 @@ router.post("/inventoryFind", verifyToken, async (req, res) => {
   const params = [req.tenantId];
   let idx = 2;
 
-  // For free-text fields, split into tokens and require each token to appear (ILIKE)
   const tokenMatch = (col, val) => {
     const tokens = val.trim().split(/\s+/).filter(Boolean);
     for (const t of tokens) { conditions.push(`${col} ILIKE $${idx++}`); params.push(`%${t}%`); }
   };
   const ilike = (col, val) => { conditions.push(`${col} ILIKE $${idx++}`); params.push(`%${val.trim()}%`); };
 
-  if (location)    { conditions.push(`location = $${idx++}`); params.push(location.toUpperCase()); }
+  if (location)    { conditions.push(`location ILIKE $${idx++}`); params.push(location.toUpperCase() + "%"); }
   if (lot)         ilike("lot", lot);
   if (vendor)      tokenMatch("vendor", vendor);
   if (brand)       tokenMatch("brand", brand);
@@ -372,6 +370,39 @@ router.patch("/inventory/:id/box/add", verifyToken, async (req, res) => {
     );
     await historyEntry(client, req.tenantId, upd.rows[0],
       `Box Added (${weight} lb) — ${newBoxes.length} box(es) total, ${newTotal} lb total`, req.username);
+    await client.query("COMMIT");
+    res.json(fmt(upd.rows[0]));
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ── Box Bulk Add ──────────────────────────────────────────────────────────────
+router.patch("/inventory/:id/box/bulk-add", verifyToken, async (req, res) => {
+  const { count, weight } = req.body;
+  const n = parseInt(count);
+  const w = parseFloat(weight);
+  if (!n || n <= 0 || isNaN(n)) return res.status(400).json({ error: "count must be a positive integer" });
+  if (!w || w <= 0 || isNaN(w)) return res.status(400).json({ error: "weight must be a positive number" });
+  if (n > 500) return res.status(400).json({ error: "count cannot exceed 500" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+    if (itemRes.rows.length === 0) return res.status(404).json({ error: "Item not found" });
+    const existing = Array.isArray(itemRes.rows[0].boxes) ? itemRes.rows[0].boxes : [];
+    const newBoxes = [...existing, ...Array.from({ length: n }, () => ({ weight: String(w) }))];
+    const newTotal = boxesWeight(newBoxes);
+    const upd = await client.query(
+      `UPDATE inventory SET boxes = $1::jsonb, weight = $2, quantity = $3 WHERE id = $4 AND tenant_id = $5 RETURNING *`,
+      [JSON.stringify(newBoxes), toNum(newTotal), String(newBoxes.length), req.params.id, req.tenantId]
+    );
+    await historyEntry(client, req.tenantId, upd.rows[0],
+      `Bulk Added ${n} box(es) @ ${w} lb each — ${newBoxes.length} box(es) total, ${newTotal} lb total`, req.username);
     await client.query("COMMIT");
     res.json(fmt(upd.rows[0]));
   } catch (err) {

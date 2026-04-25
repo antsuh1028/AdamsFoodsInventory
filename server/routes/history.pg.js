@@ -29,7 +29,12 @@ router.get("/getHistory", verifyToken, requireRole("admin", "manager"), async (r
       `SELECT * FROM history WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 50`,
       [req.tenantId]
     );
-    res.json(result.rows.map((r) => ({ ...r, _id: r.id })));
+    const getCategory = (change = "") => {
+      const c = change.toLowerCase();
+      if (c.includes("box")) return "box";
+      return "other";
+    };
+    res.json(result.rows.map((r) => ({ ...r, _id: r.id, changedBy: r.changed_by, time: r.time, category: getCategory(r.change) })));
   } catch (err) {
     res.status(500).json({ error: "Unable to retrieve history" });
   }

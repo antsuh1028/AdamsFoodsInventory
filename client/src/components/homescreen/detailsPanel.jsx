@@ -139,6 +139,9 @@ const DetailsPanel = ({
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [addingBox, setAddingBox] = useState(false);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkCount, setBulkCount] = useState("");
+  const [bulkWeight, setBulkWeight] = useState("");
   const [newBoxWeight, setNewBoxWeight] = useState("");
   const [boxLoading, setBoxLoading] = useState(null);
   const [boxesExpanded, setBoxesExpanded] = useState(false);
@@ -294,6 +297,28 @@ const DetailsPanel = ({
         duration: 3000,
         isClosable: true,
       });
+    } finally {
+      setBoxLoading(null);
+    }
+  };
+
+  const handleBulkAdd = async () => {
+    const n = parseInt(bulkCount);
+    const w = parseFloat(bulkWeight);
+    if (!n || n <= 0) { toast({ title: "Enter a valid count", status: "warning", position: "top", duration: 2000, isClosable: true }); return; }
+    if (!w || w <= 0) { toast({ title: "Enter a valid weight", status: "warning", position: "top", duration: 2000, isClosable: true }); return; }
+    setBoxLoading("bulk");
+    try {
+      const res = await authPatch(`${API_BASE_URL}/inventory/${item._id}/box/bulk-add`, { count: n, weight: w });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      onItemUpdate(data);
+      setBulkCount("");
+      setBulkWeight("");
+      setBulkMode(false);
+      setAddingBox(false);
+    } catch (err) {
+      toast({ title: "Failed to bulk add", description: err.message, status: "error", position: "top", duration: 3000, isClosable: true });
     } finally {
       setBoxLoading(null);
     }
@@ -599,47 +624,29 @@ const DetailsPanel = ({
                   </Flex>
                 )}
                 {addingBox ? (
-                  <Flex gap={2} mb={2}>
-                    <Input
-                      size="xs"
-                      placeholder="Weight (lb)"
-                      value={newBoxWeight}
-                      onChange={(e) => setNewBoxWeight(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleAddBox();
-                      }}
-                      borderRadius="md"
-                      w="120px"
-                      autoFocus
-                    />
-                    <Button
-                      size="xs"
-                      colorScheme="blue"
-                      borderRadius="md"
-                      isLoading={boxLoading === "add"}
-                      onClick={handleAddBox}
-                    >
-                      Add
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      colorScheme="gray"
-                      onClick={() => {
-                        setAddingBox(false);
-                        setNewBoxWeight("");
-                      }}
-                    >
-                      Cancel
-                    </Button>
+                  <Flex direction="column" gap={2}>
+                    <Flex gap={1} bg="gray.100" borderRadius="md" p={0.5} w="fit-content">
+                      <Button size="xs" borderRadius="sm" bg={!bulkMode ? "white" : "transparent"} color={!bulkMode ? "gray.700" : "gray.400"} boxShadow={!bulkMode ? "sm" : "none"} onClick={() => setBulkMode(false)} _hover={{}}>Single</Button>
+                      <Button size="xs" borderRadius="sm" bg={bulkMode ? "white" : "transparent"} color={bulkMode ? "blue.600" : "gray.400"} boxShadow={bulkMode ? "sm" : "none"} onClick={() => setBulkMode(true)} _hover={{}}>Bulk</Button>
+                    </Flex>
+                    {bulkMode ? (
+                      <Flex gap={2} align="center" flexWrap="wrap">
+                        <Input size="xs" placeholder="Count" value={bulkCount} onChange={(e) => setBulkCount(e.target.value)} borderRadius="md" w="70px" type="number" min={1} />
+                        <Text fontSize="xs" color="gray.400">×</Text>
+                        <Input size="xs" placeholder="lb each" value={bulkWeight} onChange={(e) => setBulkWeight(e.target.value)} borderRadius="md" w="80px" type="number" min={0} onKeyDown={(e) => { if (e.key === "Enter") handleBulkAdd(); }} />
+                        <Button size="xs" colorScheme="blue" borderRadius="md" isLoading={boxLoading === "bulk"} onClick={handleBulkAdd}>Add</Button>
+                        <Button size="xs" variant="ghost" colorScheme="gray" onClick={() => { setAddingBox(false); setBulkMode(false); setBulkCount(""); setBulkWeight(""); }}>Cancel</Button>
+                      </Flex>
+                    ) : (
+                      <Flex gap={2}>
+                        <Input size="xs" placeholder="Weight (lb)" value={newBoxWeight} onChange={(e) => setNewBoxWeight(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleAddBox(); }} borderRadius="md" w="120px" autoFocus />
+                        <Button size="xs" colorScheme="blue" borderRadius="md" isLoading={boxLoading === "add"} onClick={handleAddBox}>Add</Button>
+                        <Button size="xs" variant="ghost" colorScheme="gray" onClick={() => { setAddingBox(false); setNewBoxWeight(""); }}>Cancel</Button>
+                      </Flex>
+                    )}
                   </Flex>
                 ) : (
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    colorScheme="blue"
-                    onClick={() => setAddingBox(true)}
-                  >
+                  <Button size="xs" variant="ghost" colorScheme="blue" onClick={() => setAddingBox(true)}>
                     + Add Box
                   </Button>
                 )}

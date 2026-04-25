@@ -298,6 +298,43 @@ const generateMap = (level, occupiedCells, onSeatClick, highlightLocation, moveM
             </Box>
           ))}
         </Flex>
+
+        {level === 1 && (
+          <>
+            <Divider my={4} borderColor="gray.200" />
+            <Text fontSize="xs" fontWeight="semibold" color="gray.400" textTransform="uppercase" letterSpacing="wider" mb={2}>
+              Floor Areas
+            </Text>
+            <Flex gap={3}>
+              {["FLOOR", "CHILLING"].map((loc) => {
+                const isOccupied = occupiedCells?.includes(loc);
+                const isHighlighted = loc === highlightLocation;
+                return (
+                  <Box
+                    key={loc}
+                    flex={1}
+                    px={4}
+                    py={3}
+                    borderRadius="md"
+                    border={isHighlighted ? "2px" : "1px"}
+                    borderColor={isHighlighted ? "orange.500" : isOccupied ? "blue.300" : "gray.200"}
+                    bg={isHighlighted ? "orange.300" : isOccupied ? "blue.100" : "white"}
+                    color={isHighlighted ? "orange.900" : isOccupied ? "blue.700" : "gray.500"}
+                    fontWeight={isHighlighted ? "bold" : "semibold"}
+                    fontSize="sm"
+                    textAlign="center"
+                    cursor={moveMode && isOccupied ? "grab" : "pointer"}
+                    _hover={{ bg: isHighlighted ? "orange.400" : isOccupied ? "blue.200" : "teal.50", borderColor: isHighlighted ? "orange.500" : "blue.200" }}
+                    transition="all 0.1s"
+                    onClick={moveMode ? undefined : (e) => onSeatClick(e, loc)}
+                  >
+                    {loc}
+                  </Box>
+                );
+              })}
+            </Flex>
+          </>
+        )}
       </Box>
     </Box>
   );
