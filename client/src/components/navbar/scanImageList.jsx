@@ -144,12 +144,12 @@ const ScanImageList = ({ isOpen }) => {
 
       <Modal isOpen={isImgOpen} onClose={handleClose} size="2xl" isCentered>
         <ModalOverlay bg="blackAlpha.600" />
-        <ModalContent borderRadius="xl">
+        <ModalContent borderRadius="xl" maxH="90vh">
           <ModalHeader borderBottom="1px" borderColor="gray.100" py={3} fontSize="sm" fontWeight="semibold">
             {selectedItem?.location} {selectedItem?.lot ? `— Lot ${selectedItem.lot}` : ""}
           </ModalHeader>
           <ModalCloseButton top={3} />
-          <ModalBody p={4}>
+          <ModalBody p={4} overflowY="auto">
             {selectedItem?.signedUrl && (
               <Image src={selectedItem.signedUrl} w="100%" objectFit="contain" borderRadius="lg" />
             )}

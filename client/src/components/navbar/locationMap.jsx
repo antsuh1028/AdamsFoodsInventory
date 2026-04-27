@@ -306,36 +306,86 @@ const generateMap = (level, occupiedCells, onSeatClick, highlightLocation, moveM
               Floor Areas
             </Text>
             <Flex gap={3}>
-              {["FLOOR", "CHILLING"].map((loc) => {
-                const isOccupied = occupiedCells?.includes(loc);
-                const isHighlighted = loc === highlightLocation;
-                return (
-                  <Box
-                    key={loc}
-                    flex={1}
-                    px={4}
-                    py={3}
-                    borderRadius="md"
-                    border={isHighlighted ? "2px" : "1px"}
-                    borderColor={isHighlighted ? "orange.500" : isOccupied ? "blue.300" : "gray.200"}
-                    bg={isHighlighted ? "orange.300" : isOccupied ? "blue.100" : "white"}
-                    color={isHighlighted ? "orange.900" : isOccupied ? "blue.700" : "gray.500"}
-                    fontWeight={isHighlighted ? "bold" : "semibold"}
-                    fontSize="sm"
-                    textAlign="center"
-                    cursor={moveMode && isOccupied ? "grab" : "pointer"}
-                    _hover={{ bg: isHighlighted ? "orange.400" : isOccupied ? "blue.200" : "teal.50", borderColor: isHighlighted ? "orange.500" : "blue.200" }}
-                    transition="all 0.1s"
-                    onClick={moveMode ? undefined : (e) => onSeatClick(e, loc)}
-                  >
-                    {loc}
-                  </Box>
-                );
-              })}
+              {["FLOOR", "CHILLING"].map((loc) => (
+                <FloorCell
+                  key={loc}
+                  loc={loc}
+                  isOccupied={occupiedCells?.includes(loc)}
+                  isHighlighted={loc === highlightLocation}
+                  moveMode={moveMode}
+                  activeId={activeId}
+                  onSeatClick={onSeatClick}
+                />
+              ))}
             </Flex>
           </>
         )}
       </Box>
+    </Box>
+  );
+};
+
+// ─── FloorCell — droppable+draggable for FLOOR / CHILLING ────────────────────
+const FloorCell = ({ loc, isOccupied, isHighlighted, moveMode, activeId, onSeatClick }) => {
+  const isSelf = loc === activeId;
+
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
+    id: loc,
+    disabled: !moveMode || !isOccupied,
+  });
+
+  const { isOver, setNodeRef: setDropRef } = useDroppable({
+    id: `drop-${loc}`,
+    disabled: isSelf,
+  });
+
+  const ref = useCallback(
+    (node) => { setDragRef(node); setDropRef(node); },
+    [setDragRef, setDropRef]
+  );
+
+  let bg, borderColor, color, border;
+  if (isDragging) {
+    bg = "blue.50"; borderColor = "blue.200"; color = "blue.300"; border = "1px";
+  } else if (isHighlighted) {
+    bg = "orange.300"; borderColor = "orange.500"; color = "orange.900"; border = "2px";
+  } else if (moveMode && isOver && !isSelf && activeId) {
+    bg = isOccupied ? "yellow.100" : "green.100";
+    borderColor = isOccupied ? "yellow.400" : "green.400";
+    color = isOccupied ? "yellow.800" : "green.800";
+    border = "2px";
+  } else if (isOccupied) {
+    bg = "blue.100"; borderColor = "blue.300"; color = "blue.700"; border = "1px";
+  } else {
+    bg = "white"; borderColor = "gray.200"; color = "gray.500"; border = "1px";
+  }
+
+  return (
+    <Box
+      ref={ref}
+      flex={1}
+      px={4}
+      py={3}
+      borderRadius="md"
+      border={border}
+      borderColor={borderColor}
+      bg={bg}
+      color={color}
+      fontWeight={isHighlighted ? "bold" : "semibold"}
+      fontSize="sm"
+      textAlign="center"
+      opacity={isDragging ? 0.35 : 1}
+      cursor={moveMode && isOccupied ? "grab" : moveMode ? "default" : "pointer"}
+      _hover={
+        moveMode
+          ? {}
+          : { bg: isHighlighted ? "orange.400" : isOccupied ? "blue.200" : "teal.50", borderColor: isHighlighted ? "orange.500" : "blue.200" }
+      }
+      transition="all 0.1s"
+      onClick={moveMode ? undefined : (e) => onSeatClick(e, loc)}
+      {...(moveMode && isOccupied ? { ...attributes, ...listeners } : {})}
+    >
+      {loc}
     </Box>
   );
 };
@@ -610,29 +660,55 @@ function ShowMap({ isOpen, onClose, highlightLocation }) {
 
               <DragOverlay dropAnimation={null}>
                 {activeId ? (
-                  <Box
-                    bg="blue.600"
-                    color="white"
-                    borderRadius="md"
-                    px={2}
-                    py={1.5}
-                    fontSize="xs"
-                    fontWeight="bold"
-                    boxShadow="lg"
-                    minW="44px"
-                    textAlign="center"
-                    opacity={0.92}
-                    pointerEvents="none"
-                  >
-                    {activeId}
-                    {itemsByLocation[activeId]?.length > 0 && (
-                      <Text fontSize="10px" fontWeight="normal" opacity={0.85} noOfLines={1} mt={0.5}>
-                        {itemsByLocation[activeId].length > 1
-                          ? `${itemsByLocation[activeId].length} items`
-                          : itemsByLocation[activeId][0].description}
-                      </Text>
-                    )}
-                  </Box>
+                  ["FLOOR", "CHILLING"].includes(activeId) ? (
+                    <Box
+                      bg="blue.600"
+                      color="white"
+                      borderRadius="md"
+                      w="56px"
+                      h="56px"
+                      display="flex"
+                      flexDirection="column"
+                      alignItems="center"
+                      justifyContent="center"
+                      boxShadow="lg"
+                      opacity={0.92}
+                      pointerEvents="none"
+                    >
+                      <Text fontSize="xs" fontWeight="bold" lineHeight={1}>{activeId}</Text>
+                      {itemsByLocation[activeId]?.length > 0 && (
+                        <Text fontSize="9px" fontWeight="normal" opacity={0.85} mt={0.5}>
+                          {itemsByLocation[activeId].length > 1
+                            ? `${itemsByLocation[activeId].length} items`
+                            : "1 item"}
+                        </Text>
+                      )}
+                    </Box>
+                  ) : (
+                    <Box
+                      bg="blue.600"
+                      color="white"
+                      borderRadius="md"
+                      px={2}
+                      py={1.5}
+                      fontSize="xs"
+                      fontWeight="bold"
+                      boxShadow="lg"
+                      minW="44px"
+                      textAlign="center"
+                      opacity={0.92}
+                      pointerEvents="none"
+                    >
+                      {activeId}
+                      {itemsByLocation[activeId]?.length > 0 && (
+                        <Text fontSize="10px" fontWeight="normal" opacity={0.85} noOfLines={1} mt={0.5}>
+                          {itemsByLocation[activeId].length > 1
+                            ? `${itemsByLocation[activeId].length} items`
+                            : itemsByLocation[activeId][0].description}
+                        </Text>
+                      )}
+                    </Box>
+                  )
                 ) : null}
               </DragOverlay>
             </DndContext>
@@ -681,6 +757,7 @@ function ShowMap({ isOpen, onClose, highlightLocation }) {
                 <Text fontSize="xs" color="gray.400" mb={1}>
                   Select the item to move to {pendingMove.toLocation}
                 </Text>
+                <Flex direction="column" gap={2} maxH="300px" overflowY="auto" pr={1}>
                 {pendingMove.items.map((item) => (
                   <ItemCard
                     key={item._id}
@@ -691,6 +768,7 @@ function ShowMap({ isOpen, onClose, highlightLocation }) {
                     }
                   />
                 ))}
+                </Flex>
               </Flex>
             )}
 

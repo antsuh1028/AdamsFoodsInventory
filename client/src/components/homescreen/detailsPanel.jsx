@@ -394,6 +394,8 @@ const DetailsPanel = ({
         px={4}
         pt={3}
         pb={4}
+        maxH="55vh"
+        overflowY="auto"
       >
         <Flex justify="space-between" align="flex-start" mb={2}>
           <Box>
@@ -831,9 +833,6 @@ const DetailsPanel = ({
                 </Flex>
 
                 <Flex gap={2}>
-                  <Button size="xs" variant="ghost" colorScheme="gray" onClick={() => { setNoblesseOpen(false); setNoblesseIndices([]); }}>
-                    Cancel
-                  </Button>
                   <Button
                     size="xs"
                     colorScheme="orange"
@@ -846,17 +845,15 @@ const DetailsPanel = ({
                 </Flex>
               </Box>
             </Collapse>
-            {!noblesseOpen && (
-              <Button
-                size="xs"
-                colorScheme="orange"
-                variant="outline"
-                mb={3}
-                onClick={() => setNoblesseOpen(true)}
-              >
-                Send to Noblesse
-              </Button>
-            )}
+            <Button
+              size="xs"
+              colorScheme={noblesseOpen ? "gray" : "orange"}
+              variant="outline"
+              mb={3}
+              onClick={() => { setNoblesseOpen((v) => !v); setNoblesseIndices([]); }}
+            >
+              {noblesseOpen ? "Cancel" : "Send to Noblesse"}
+            </Button>
           </>
         )}
 
