@@ -3,6 +3,9 @@ const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 
+// Auto-migrate: add old_data column if it doesn't exist
+pool.query(`ALTER TABLE history ADD COLUMN IF NOT EXISTS old_data JSONB`).catch(() => {});
+
 router.post("/addHistory", verifyToken, requireRole("admin", "manager"), async (req, res) => {
   const { change, location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est } = req.body;
   if (!change) return res.status(400).json({ error: "Change type is required" });
@@ -24,17 +27,52 @@ router.post("/addHistory", verifyToken, requireRole("admin", "manager"), async (
 });
 
 router.get("/getHistory", verifyToken, requireRole("admin", "manager"), async (req, res) => {
+  const LIMIT = 50;
+  const offset = Math.max(0, parseInt(req.query.offset) || 0);
+  const search = req.query.search?.trim() || "";
+
+  const SEARCH_COLS = ["location", "lot", "brand", "species", "description", "vendor", "change", "changed_by"];
+
+  let where = "WHERE tenant_id = $1";
+  let params = [req.tenantId];
+
+  if (search) {
+    const like = `%${search}%`;
+    const clause = SEARCH_COLS.map((col, i) => `${col} ILIKE $${i + 2}`).join(" OR ");
+    where += ` AND (${clause})`;
+    params = [req.tenantId, ...SEARCH_COLS.map(() => like)];
+  }
+
+  const limitIdx = params.length + 1;
+  const offsetIdx = params.length + 2;
+
   try {
-    const result = await pool.query(
-      `SELECT * FROM history WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 50`,
-      [req.tenantId]
-    );
+    const [result, countResult] = await Promise.all([
+      pool.query(
+        `SELECT * FROM history ${where} ORDER BY created_at DESC, id DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+        [...params, LIMIT, offset]
+      ),
+      pool.query(`SELECT COUNT(*) FROM history ${where}`, params),
+    ]);
+    const total = parseInt(countResult.rows[0].count);
     const getCategory = (change = "") => {
       const c = change.toLowerCase();
       if (c.includes("box")) return "box";
       return "other";
     };
-    res.json(result.rows.map((r) => ({ ...r, _id: r.id, changedBy: r.changed_by, time: r.time, category: getCategory(r.change) })));
+    res.json({
+      items: result.rows.map((r) => ({
+        ...r,
+        _id: r.id,
+        changedBy: r.changed_by,
+        time: r.time,
+        category: getCategory(r.change),
+        oldData: r.old_data || null,
+      })),
+      total,
+      offset,
+      hasMore: offset + result.rows.length < total,
+    });
   } catch (err) {
     res.status(500).json({ error: "Unable to retrieve history" });
   }
