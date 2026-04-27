@@ -54,28 +54,21 @@ router.get("/list-pdfs", verifyToken, async (req, res) => {
 });
 
 router.get("/list-scans", verifyToken, requireRole("admin", "manager"), async (req, res) => {
-  const page = Math.max(1, parseInt(req.query.page) || 1);
-  const limit = 20;
-  const offset = (page - 1) * limit;
-  const location = req.query.location?.trim() || "";
-
-  const baseWhere = `tenant_id = $1 AND scan_image_key IS NOT NULL AND scan_image_key != ''`;
-  const params = [req.tenantId];
-  let where = baseWhere;
-  if (location) {
-    params.push(`%${location}%`);
-    where += ` AND location ILIKE $${params.length}`;
-  }
+  const limit = 500;
 
   try {
     const [itemsRes, countRes] = await Promise.all([
       pool.query(
         `SELECT id, location, lot, species, description, date_recvd, scan_image_key
-         FROM inventory WHERE ${where}
-         ORDER BY id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-        [...params, limit, offset]
+         FROM inventory
+         WHERE tenant_id = $1 AND scan_image_key IS NOT NULL AND scan_image_key != ''
+         ORDER BY id DESC LIMIT $2`,
+        [req.tenantId, limit]
       ),
-      pool.query(`SELECT COUNT(*) FROM inventory WHERE ${where}`, params),
+      pool.query(
+        `SELECT COUNT(*) FROM inventory WHERE tenant_id = $1 AND scan_image_key IS NOT NULL AND scan_image_key != ''`,
+        [req.tenantId]
+      ),
     ]);
 
     const total = parseInt(countRes.rows[0].count);
@@ -89,7 +82,7 @@ router.get("/list-scans", verifyToken, requireRole("admin", "manager"), async (r
       return { ...item, scanImageKey: item.scan_image_key, signedUrl };
     }));
 
-    res.json({ items: itemsWithUrls, total, page, pages: Math.ceil(total / limit) });
+    res.json({ items: itemsWithUrls, total });
   } catch (err) {
     console.error("list-scans error:", err);
     res.status(500).json({ error: "Failed to retrieve scan images" });

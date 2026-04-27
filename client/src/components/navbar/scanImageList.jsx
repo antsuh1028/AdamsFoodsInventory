@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Box, Flex, Text, Image, Spinner, Modal, ModalOverlay, ModalContent,
   ModalHeader, ModalCloseButton, ModalBody, useDisclosure, Badge, Button, HStack,
@@ -7,88 +7,83 @@ import {
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, CloseIcon } from "@chakra-ui/icons";
 import { API_BASE_URL } from "../../config/api";
 
+const PAGE_SIZE = 20;
+
 const authFetch = (url, options = {}) => {
   const token = localStorage.getItem("token");
   return fetch(url, { ...options, headers: { ...options.headers, Authorization: token || "" } });
 };
 
+const matchesSearch = (item, term) => {
+  const t = term.toLowerCase();
+  return (
+    (item.location    || "").toLowerCase().includes(t) ||
+    (item.description || "").toLowerCase().includes(t) ||
+    (item.lot         || "").toLowerCase().includes(t)
+  );
+};
+
 const ScanImageList = ({ isOpen }) => {
-  const [scans, setScans] = useState([]);
+  const [allScans, setAllScans] = useState([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [searchInput, setSearchInput] = useState("");
-  const [activeSearch, setActiveSearch] = useState("");
-  const debounceRef = useRef(null);
+  const [search, setSearch] = useState("");
   const { isOpen: isImgOpen, onOpen: onImgOpen, onClose: onImgClose } = useDisclosure();
 
+  // Load all scans once when tab opens
   useEffect(() => {
     if (!isOpen) return;
+    let cancelled = false;
     setLoading(true);
-    const params = new URLSearchParams({ page });
-    if (activeSearch) params.set("location", activeSearch);
-    authFetch(`${API_BASE_URL}/list-scans?${params}`)
+    authFetch(`${API_BASE_URL}/list-scans`)
       .then((r) => r.json())
       .then((data) => {
-        setScans(Array.isArray(data.items) ? data.items : []);
-        setTotalPages(data.pages || 1);
-        setTotal(data.total || 0);
+        if (cancelled) return;
+        setAllScans(Array.isArray(data.items) ? data.items : []);
+        console.log("Loaded scans:", data.items);
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [isOpen, page, activeSearch]);
+      .catch(() => { if (!cancelled) setAllScans([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [isOpen]);
 
-  // Reset to page 1 when tab opens
+  // Reset on tab open
   useEffect(() => {
-    if (isOpen) { setPage(1); setSearchInput(""); setActiveSearch(""); }
+    if (isOpen) { setPage(1); setSearch(""); }
   }, [isOpen]);
 
   const handleSearchChange = (val) => {
-    setSearchInput(val);
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setPage(1);
-      setActiveSearch(val.trim());
-    }, 350);
+    setSearch(val);
+    setPage(1); // reset to first page on every search change
   };
 
-  const clearSearch = () => {
-    setSearchInput("");
-    setActiveSearch("");
-    clearTimeout(debounceRef.current);
-  };
+  const handleView = (item) => { setSelectedItem(item); onImgOpen(); };
+  const handleClose = () => { setSelectedItem(null); onImgClose(); };
 
-  const handleView = (item) => {
-    setSelectedItem(item);
-    onImgOpen();
-  };
-
-  const handleClose = () => {
-    setSelectedItem(null);
-    onImgClose();
-  };
+  // Filter all loaded scans, then paginate the filtered result
+  const filtered = search.trim() ? allScans.filter((s) => matchesSearch(s, search.trim())) : allScans;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <>
       <Box>
-        {/* Search */}
         <InputGroup size="sm" mb={3}>
           <InputLeftElement pointerEvents="none">
             <SearchIcon color="gray.400" boxSize={3} />
           </InputLeftElement>
           <Input
-            placeholder="Search by location…"
-            value={searchInput}
+            placeholder="Search location, description, lot…"
+            value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
             borderRadius="md"
             bg="gray.50"
             _focus={{ bg: "white", borderColor: "blue.300" }}
-            pr={searchInput ? 8 : undefined}
+            pr={search ? 8 : undefined}
           />
-          {searchInput && (
-            <InputRightElement cursor="pointer" onClick={clearSearch}>
+          {search && (
+            <InputRightElement cursor="pointer" onClick={() => { setSearch(""); setPage(1); }}>
               <CloseIcon boxSize={2.5} color="gray.400" />
             </InputRightElement>
           )}
@@ -98,15 +93,15 @@ const ScanImageList = ({ isOpen }) => {
           <Flex justify="center" align="center" py={10}>
             <Spinner color="blue.400" />
           </Flex>
-        ) : scans.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <Flex justify="center" align="center" py={10}>
             <Text fontSize="sm" color="gray.400">
-              {activeSearch ? `No scans found for "${activeSearch}".` : "No scan images yet."}
+              {search ? `No scans matching "${search}".` : "No scan images yet."}
             </Text>
           </Flex>
         ) : (
           <Flex direction="column" gap={2}>
-            {scans.map((item) => (
+            {pageItems.map((item) => (
               <Flex
                 key={item.id}
                 align="center"
@@ -142,26 +137,16 @@ const ScanImageList = ({ isOpen }) => {
         {totalPages > 1 && (
           <HStack justify="space-between" align="center" mt={3} px={1}>
             <Button
-              size="xs"
-              variant="ghost"
-              leftIcon={<ChevronLeftIcon />}
-              isDisabled={page === 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              Prev
-            </Button>
+              size="xs" variant="ghost" leftIcon={<ChevronLeftIcon />}
+              isDisabled={page === 1} onClick={() => setPage((p) => p - 1)}
+            >Prev</Button>
             <Text fontSize="xs" color="gray.400">
-              {page} / {totalPages} ({total} total)
+              {page} / {totalPages} ({filtered.length}{search ? ` of ${allScans.length}` : ""} scans)
             </Text>
             <Button
-              size="xs"
-              variant="ghost"
-              rightIcon={<ChevronRightIcon />}
-              isDisabled={page === totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </Button>
+              size="xs" variant="ghost" rightIcon={<ChevronRightIcon />}
+              isDisabled={page === totalPages} onClick={() => setPage((p) => p + 1)}
+            >Next</Button>
           </HStack>
         )}
       </Box>
