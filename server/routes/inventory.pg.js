@@ -34,16 +34,17 @@ const toNum = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
 const boxesWeight = (boxes) =>
   boxes.map((b) => parseFloat(b.weight)).filter((w) => !isNaN(w)).reduce((s, w) => s + w, 0).toFixed(2);
 
-const historyEntry = async (client, tenantId, item, change, username) => {
+const historyEntry = async (client, tenantId, item, change, username, oldData = null) => {
   await client.query(
-    `INSERT INTO history (tenant_id, time, change, changed_by, location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+    `INSERT INTO history (tenant_id, time, change, changed_by, location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, old_data)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
     [
       tenantId, new Date().toLocaleString(), change, username || "",
       item.location || "", item.lot || "", item.vendor || "", item.brand || "",
       item.species || "", item.description || "", item.grade || "",
       item.quantity || "", item.weight != null ? String(item.weight) : "",
       item.packdate || "", item.date_recvd || "", item.est || "",
+      oldData ? JSON.stringify(oldData) : null,
     ]
   );
 };
@@ -147,6 +148,12 @@ router.post("/inventoryUpdate", verifyToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const before = await client.query(
+      `SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`,
+      [currentItem._id, req.tenantId]
+    );
+    if (before.rows.length === 0) return res.status(404).json({ error: "No Items Found" });
+    const oldRow = before.rows[0];
     const upd = await client.query(
       `UPDATE inventory SET location=$1,lot=$2,vendor=$3,brand=$4,species=$5,description=$6,grade=$7,
        quantity=$8,weight=$9,packdate=$10,date_recvd=$11,est=$12,price=$13,type=$14
@@ -156,7 +163,13 @@ router.post("/inventoryUpdate", verifyToken, async (req, res) => {
        currentItem._id, req.tenantId]
     );
     if (upd.rows.length === 0) return res.status(404).json({ error: "No Items Found" });
-    await historyEntry(client, req.tenantId, upd.rows[0], "Updated", req.username);
+    const oldData = {
+      location: oldRow.location, lot: oldRow.lot, vendor: oldRow.vendor, brand: oldRow.brand,
+      species: oldRow.species, description: oldRow.description, grade: oldRow.grade,
+      quantity: oldRow.quantity, weight: oldRow.weight != null ? String(oldRow.weight) : "",
+      packdate: oldRow.packdate, date_recvd: oldRow.date_recvd, est: oldRow.est,
+    };
+    await historyEntry(client, req.tenantId, upd.rows[0], "Updated", req.username, oldData);
     await client.query("COMMIT");
     res.status(200).json(fmt(upd.rows[0]));
   } catch (err) {
