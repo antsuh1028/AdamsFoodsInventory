@@ -1,11 +1,23 @@
 const router = require("express").Router();
 const { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-const PDF = require("../models/PDF");
-const FreezerModel = require("../models/Freezer");
-const verifyToken = require("../middleware/verifyToken");
+const pool = require("../utils/pg");
+const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { s3Client, upload } = require("../utils/aws");
+
+// Auto-create pdfs table if it doesn't exist
+pool.query(`
+  CREATE TABLE IF NOT EXISTS pdfs (
+    id        SERIAL PRIMARY KEY,
+    tenant_id TEXT,
+    file_name TEXT,
+    file_key  TEXT,
+    file_url  TEXT,
+    upload_date TIMESTAMPTZ DEFAULT NOW(),
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+  )
+`).catch(() => {});
 
 router.post("/upload-pdf", verifyToken, requireRole("admin"), upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -18,8 +30,11 @@ router.post("/upload-pdf", verifyToken, requireRole("admin"), upload.single("fil
       ContentType: req.file.mimetype,
     }));
     const fileUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
-    const savedPDF = await PDF.create({ fileName: req.file.originalname, fileKey, fileUrl, uploadDate: new Date().toISOString().split("T")[0] });
-    res.status(201).json({ message: "File uploaded successfully", fileUrl, pdf: savedPDF });
+    const result = await pool.query(
+      `INSERT INTO pdfs (tenant_id, file_name, file_key, file_url) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [req.tenantId || null, req.file.originalname, fileKey, fileUrl]
+    );
+    res.status(201).json({ message: "File uploaded successfully", fileUrl, pdf: result.rows[0] });
   } catch (error) {
     console.error("Upload error:", error);
     res.status(500).json({ error: error.message || "Error uploading file" });
@@ -28,36 +43,55 @@ router.post("/upload-pdf", verifyToken, requireRole("admin"), upload.single("fil
 
 router.get("/list-pdfs", verifyToken, async (req, res) => {
   try {
-    res.json(await PDF.find());
-  } catch {
+    const { rows } = await pool.query(
+      `SELECT * FROM pdfs WHERE tenant_id = $1 OR tenant_id IS NULL ORDER BY created_at DESC`,
+      [req.tenantId]
+    );
+    res.json(rows);
+  } catch (err) {
     res.status(500).json({ error: "An error occurred while retrieving the PDFs" });
   }
 });
 
-router.get("/list-scans", verifyToken, requireRole("admin"), async (req, res) => {
+router.get("/list-scans", verifyToken, requireRole("admin", "manager"), async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = 20;
-  const skip = (page - 1) * limit;
+  const offset = (page - 1) * limit;
+  const location = req.query.location?.trim() || "";
+
+  const baseWhere = `tenant_id = $1 AND scan_image_key IS NOT NULL AND scan_image_key != ''`;
+  const params = [req.tenantId];
+  let where = baseWhere;
+  if (location) {
+    params.push(`%${location}%`);
+    where += ` AND location ILIKE $${params.length}`;
+  }
+
   try {
-    const [items, total] = await Promise.all([
-      FreezerModel.find(
-        { scanImageKey: { $exists: true, $ne: null, $ne: "" } },
-        { scanImageKey: 1, location: 1, lot: 1, species: 1, description: 1, date_recvd: 1, _id: 1 }
-      ).sort({ _id: -1 }).skip(skip).limit(limit),
-      FreezerModel.countDocuments({ scanImageKey: { $exists: true, $ne: null, $ne: "" } }),
+    const [itemsRes, countRes] = await Promise.all([
+      pool.query(
+        `SELECT id, location, lot, species, description, date_recvd, scan_image_key
+         FROM inventory WHERE ${where}
+         ORDER BY id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit, offset]
+      ),
+      pool.query(`SELECT COUNT(*) FROM inventory WHERE ${where}`, params),
     ]);
 
-    const itemsWithUrls = await Promise.all(items.map(async (item) => {
+    const total = parseInt(countRes.rows[0].count);
+
+    const itemsWithUrls = await Promise.all(itemsRes.rows.map(async (item) => {
       const signedUrl = await getSignedUrl(
         s3Client,
-        new GetObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: item.scanImageKey }),
+        new GetObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: item.scan_image_key }),
         { expiresIn: 3600 }
       );
-      return { ...item.toObject(), signedUrl };
+      return { ...item, scanImageKey: item.scan_image_key, signedUrl };
     }));
 
     res.json({ items: itemsWithUrls, total, page, pages: Math.ceil(total / limit) });
   } catch (err) {
+    console.error("list-scans error:", err);
     res.status(500).json({ error: "Failed to retrieve scan images" });
   }
 });
@@ -89,10 +123,10 @@ router.get("/get-scan-image", verifyToken, async (req, res) => {
 
 router.delete("/delete-pdf/:id", verifyToken, async (req, res) => {
   try {
-    const pdf = await PDF.findById(req.params.id);
-    if (!pdf) return res.status(404).json({ error: "PDF not found" });
-    await s3Client.send(new DeleteObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: pdf.fileKey }));
-    await PDF.findByIdAndDelete(req.params.id);
+    const { rows } = await pool.query(`SELECT * FROM pdfs WHERE id = $1`, [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: "PDF not found" });
+    await s3Client.send(new DeleteObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: rows[0].file_key }));
+    await pool.query(`DELETE FROM pdfs WHERE id = $1`, [req.params.id]);
     res.json({ message: "PDF deleted successfully" });
   } catch (error) {
     console.error("Delete PDF error:", error);
