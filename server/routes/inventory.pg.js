@@ -562,10 +562,11 @@ router.get("/inventorySearch", verifyToken, async (req, res) => {
   try {
     const params = [req.tenantId, `%${q}%`];
     const typeClause = type ? `AND (LOWER(type) = LOWER($${params.push(type)}) OR type IS NULL)` : "";
-    const sql = `SELECT id, location, lot, species, description, type, weight, boxes, jsonb_array_length(boxes) AS box_count
+    const sql = `SELECT id, location, lot, species, description, type, weight, boxes,
+            COALESCE(jsonb_array_length(boxes), 0) AS box_count
        FROM inventory
        WHERE tenant_id = $1
-         AND jsonb_array_length(boxes) > 0
+         AND (weight IS NOT NULL AND weight > 0)
          ${typeClause}
          AND (
            location    ILIKE $2 OR

@@ -15,6 +15,9 @@ import {
 } from "@chakra-ui/react";
 import printDetails from "../../utils/printDetails";
 import { API_BASE_URL } from "../../config/api";
+import axiosInstance from "../../utils/axiosInstance";
+
+const todayISO = () => new Date().toISOString().split("T")[0];
 
 // Fields that can be inline-edited (weight/quantity are auto, location has its own move flow)
 const EDITABLE_FIELDS = [
@@ -151,6 +154,10 @@ const DetailsPanel = ({
   const [prodExpanded, setProdExpanded] = useState(false);
   const [prodHistory, setProdHistory] = useState(null);
   const [prodLoading, setProdLoading] = useState(false);
+  const [noblesseOpen, setNoblesseOpen] = useState(false);
+  const [noblesseIndices, setNoblesseIndices] = useState([]);
+  const [noblesseSentDate, setNoblesseSentDate] = useState(todayISO);
+  const [noblesseSending, setNoblesseSending] = useState(false);
   const toast = useToast();
   const token = localStorage.getItem("token");
 
@@ -324,11 +331,52 @@ const DetailsPanel = ({
     }
   };
 
+  const toggleNoblesseIndex = (i) => {
+    setNoblesseIndices((prev) =>
+      prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
+    );
+  };
+
+  const handleSendToNoblesse = async () => {
+    const boxes = item?.boxes ?? [];
+    let boxesSent, weightSent;
+    if (boxes.length > 0) {
+      if (noblesseIndices.length === 0) return;
+      boxesSent = noblesseIndices.map((i) => boxes[i]);
+      weightSent = boxesSent.reduce((s, b) => s + parseFloat(b.weight || 0), 0);
+    } else {
+      // No box records — send full pallet weight as one entry
+      const w = parseFloat(item?.weight || 0);
+      if (!w) return;
+      boxesSent = [{ weight: String(w) }];
+      weightSent = w;
+    }
+    setNoblesseSending(true);
+    try {
+      await axiosInstance.post("/production-orders", {
+        sentDate: noblesseSentDate,
+        processorName: "Noblesse Trading",
+        items: [{ inventoryId: item._id, weightSent, boxesSent }],
+      });
+      toast({ title: "Sent to Noblesse Trading", status: "success", position: "top", duration: 3000, isClosable: true });
+      setNoblesseOpen(false);
+      setNoblesseIndices([]);
+      setProdHistory(null); // stale, will reload on next expand
+    } catch (err) {
+      toast({ title: err.response?.data?.error || "Failed to create order", status: "error", position: "top", duration: 4000, isClosable: true });
+    } finally {
+      setNoblesseSending(false);
+    }
+  };
+
   const itemBoxes = item?.boxes ?? [];
 
   useEffect(() => {
     setProdHistory(null);
     setProdExpanded(false);
+    setNoblesseOpen(false);
+    setNoblesseIndices([]);
+    setNoblesseSentDate(todayISO());
   }, [item?._id]);
 
   return (
@@ -717,6 +765,100 @@ const DetailsPanel = ({
             })()}
           </Box>
         </Collapse>
+
+        {/* Send to Noblesse — only for CHILLING location */}
+        {item?.location?.toUpperCase() === "CHILLING" && (
+          <>
+            <Divider mb={3} />
+            <Collapse in={noblesseOpen} animateOpacity>
+              <Box bg="orange.50" border="1px" borderColor="orange.200" borderRadius="md" p={3} mb={2}>
+                <Text fontSize="xs" fontWeight="semibold" color="orange.700" mb={2}>
+                  Send to Noblesse Trading
+                </Text>
+
+                {itemBoxes.length > 0 ? (
+                  <>
+                    <Text fontSize="10px" color="gray.500" mb={1.5}>Select boxes to send:</Text>
+                    <Flex flexWrap="wrap" gap={1.5} mb={2}>
+                      {itemBoxes.map((box, i) => {
+                        const sel = noblesseIndices.includes(i);
+                        return (
+                          <Flex
+                            key={i}
+                            align="center"
+                            px={2}
+                            py={0.5}
+                            bg={sel ? "orange.100" : "gray.100"}
+                            border="1px"
+                            borderColor={sel ? "orange.400" : "gray.200"}
+                            borderRadius="full"
+                            fontSize="xs"
+                            cursor="pointer"
+                            onClick={() => toggleNoblesseIndex(i)}
+                            color={sel ? "orange.700" : "gray.600"}
+                            fontWeight={sel ? "semibold" : "normal"}
+                          >
+                            {parseFloat(box.weight).toFixed(2)} lb
+                          </Flex>
+                        );
+                      })}
+                    </Flex>
+                    <Flex gap={2} mb={2} align="center">
+                      <Button size="xs" variant="ghost" colorScheme="orange" onClick={() => setNoblesseIndices(itemBoxes.map((_, i) => i))}>All</Button>
+                      <Button size="xs" variant="ghost" colorScheme="gray" onClick={() => setNoblesseIndices([])}>None</Button>
+                      {noblesseIndices.length > 0 && (
+                        <Text fontSize="xs" color="orange.600">
+                          {noblesseIndices.length} boxes · {noblesseIndices.reduce((s, i) => s + parseFloat(itemBoxes[i]?.weight || 0), 0).toFixed(1)} lb
+                        </Text>
+                      )}
+                    </Flex>
+                  </>
+                ) : (
+                  <Text fontSize="xs" color="gray.500" mb={2}>
+                    No individual boxes recorded — will send as full pallet ({item?.weight} lb)
+                  </Text>
+                )}
+
+                <Flex align="center" gap={2} mb={3}>
+                  <Text fontSize="xs" color="gray.500" flexShrink={0}>Send date:</Text>
+                  <Input
+                    size="xs"
+                    type="date"
+                    value={noblesseSentDate}
+                    onChange={(e) => setNoblesseSentDate(e.target.value)}
+                    w="130px"
+                  />
+                </Flex>
+
+                <Flex gap={2}>
+                  <Button size="xs" variant="ghost" colorScheme="gray" onClick={() => { setNoblesseOpen(false); setNoblesseIndices([]); }}>
+                    Cancel
+                  </Button>
+                  <Button
+                    size="xs"
+                    colorScheme="orange"
+                    isLoading={noblesseSending}
+                    isDisabled={itemBoxes.length > 0 && noblesseIndices.length === 0}
+                    onClick={handleSendToNoblesse}
+                  >
+                    Confirm Send
+                  </Button>
+                </Flex>
+              </Box>
+            </Collapse>
+            {!noblesseOpen && (
+              <Button
+                size="xs"
+                colorScheme="orange"
+                variant="outline"
+                mb={3}
+                onClick={() => setNoblesseOpen(true)}
+              >
+                Send to Noblesse
+              </Button>
+            )}
+          </>
+        )}
 
         <Flex gap={2} justify="space-between" align="center">
           <Button

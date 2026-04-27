@@ -239,7 +239,7 @@ const OrderRow = ({ order, detail, onToggle, isExpanded, onOpenReturn, activeRet
           {order.status}
         </Badge>
         {order.yield && (
-          <Badge colorScheme="purple" fontSize="xs">Yield {order.yield}%</Badge>
+          <Badge  fontSize="xs">Yield {order.yield}%</Badge>
         )}
       </Flex>
 

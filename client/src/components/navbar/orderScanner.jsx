@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
-  Button, Flex, Box, Text, Image, Badge, Spinner, Checkbox,
+  Button, Flex, Box, Text, Image, Badge, Spinner, Checkbox, Input,
   AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogBody, AlertDialogFooter,
   useToast, useDisclosure,
 } from "@chakra-ui/react";
@@ -67,6 +67,10 @@ const OrderScanner = ({ isOpen, onClose }) => {
 
   const selectMatch = (i, id) => {
     setItems((prev) => prev.map((item, idx) => idx === i ? { ...item, selectedId: id, checked: true } : item));
+  };
+
+  const updateItem = (i, field, val) => {
+    setItems((prev) => prev.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
   };
 
   const toRemove = items.filter((item) => item.checked && item.selectedId);
@@ -217,8 +221,8 @@ const OrderScanner = ({ isOpen, onClose }) => {
                         p={3}
                         opacity={item.matches.length === 0 ? 0.55 : 1}
                       >
-                        {/* Top row: checkbox + lot + status + qty badge */}
-                        <Flex align="center" gap={2} mb={1.5}>
+                        {/* Top row: checkbox + editable lot + status + editable qty */}
+                        <Flex align="center" gap={2} mb={2}>
                           <Checkbox
                             isChecked={isChecked}
                             isDisabled={item.matches.length === 0 || !item.selectedId}
@@ -227,16 +231,66 @@ const OrderScanner = ({ isOpen, onClose }) => {
                             flexShrink={0}
                           />
                           {statusIcon(item)}
-                          <Text fontSize="sm" fontWeight="bold" fontFamily="mono" flex={1} noOfLines={1}>
-                            {item.lot}
-                          </Text>
-                          <Badge colorScheme="gray" fontSize="xs">{item.quantity} bx</Badge>
+                          <Input
+                            size="xs"
+                            value={item.lot}
+                            onChange={(e) => updateItem(i, "lot", e.target.value)}
+                            fontFamily="mono"
+                            fontWeight="bold"
+                            flex={1}
+                            placeholder="Lot #"
+                            borderColor={isChecked ? "red.200" : "gray.200"}
+                          />
+                          <Flex align="center" gap={1} flexShrink={0}>
+                            <Input
+                              size="xs"
+                              value={item.quantity}
+                              onChange={(e) => updateItem(i, "quantity", e.target.value)}
+                              w="44px"
+                              textAlign="center"
+                              placeholder="Qty"
+                            />
+                            <Text fontSize="xs" color="gray.400">bx</Text>
+                          </Flex>
                         </Flex>
 
-                        {/* Order description */}
-                        <Text fontSize="xs" color="gray.500" mb={1.5} pl={6} noOfLines={2}>
-                          {item.description}
-                        </Text>
+                        {/* Editable description */}
+                        <Input
+                          size="xs"
+                          value={item.description || ""}
+                          onChange={(e) => updateItem(i, "description", e.target.value)}
+                          placeholder="Description"
+                          mb={1.5}
+                          ml={6}
+                          w="calc(100% - 1.5rem)"
+                          color="gray.600"
+                        />
+
+                        {/* Editable brand / packdate / location */}
+                        <Flex ml={6} gap={1.5} mb={1.5} flexWrap="wrap">
+                          <Input
+                            size="xs"
+                            value={item.brand || ""}
+                            onChange={(e) => updateItem(i, "brand", e.target.value)}
+                            placeholder="Brand"
+                            w="80px"
+                          />
+                          <Input
+                            size="xs"
+                            type="date"
+                            value={item.packdate || ""}
+                            onChange={(e) => updateItem(i, "packdate", e.target.value)}
+                            w="130px"
+                          />
+                          <Input
+                            size="xs"
+                            value={item.location || ""}
+                            onChange={(e) => updateItem(i, "location", e.target.value)}
+                            placeholder="Loc"
+                            w="60px"
+                            textTransform="uppercase"
+                          />
+                        </Flex>
 
                         {/* Match info */}
                         {item.matches.length === 0 && (

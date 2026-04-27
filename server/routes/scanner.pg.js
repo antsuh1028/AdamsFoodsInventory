@@ -337,16 +337,29 @@ router.post("/scanner-resolve", verifyToken, async (req, res) => {
 // ── Order Sheet OCR ───────────────────────────────────────────────────────────
 
 const ORDER_PROMPT = `
-You are parsing an Adams Foods outgoing order sheet (customer pick/ship document).
-The sheet has a column header "PL/CS/BX" on the left and a price column on the far right.
+You are parsing OCR text from an Adams Foods shipping document. Two formats are possible:
 
-For each line item extract:
-- lot: lot number in parentheses like "(26061-03)" → normalize to "XXXXX-XX" format
-- quantity: the PL/CS/BX count — this is the large bold integer on the LEFT side of the row (e.g. 14, 7, 25). It is NEVER a decimal. Do NOT use the price (right column, e.g. 3.99, 4.89).
-- description: the product name/description text
+FORMAT A — Outgoing pick/order sheet:
+  Has a "PL/CS/BX" column header. Lot numbers appear in parentheses like "(26061-03)".
+  quantity = the large bold integer on the LEFT (e.g. 14, 7, 25). Never a decimal or price.
 
-Return JSON only: { "items": [ { "lot": "...", "quantity": "...", "description": "..." }, ... ] }
-Only include items that have a lot number. No explanation, no markdown.
+FORMAT B — Bill of Lading (grid form):
+  Has labeled fields per row: LOCATION, BRAND, LOT#, EST#/PACK DATE, DESCRIPTION, QTY (PALLET), QTY (CASE).
+  lot = value in "LOT#" field (e.g. "26076-01").
+  quantity = numeric part before "C/S" in QTY (CASE), e.g. "25 C/S" → "25", "17 C/S" → "17".
+  packdate = the date after EST# (e.g. "03/05/26" → "2026-03-05"). ISO format YYYY-MM-DD or "".
+  brand = BRAND field value or "".
+  location = LOCATION field value or "".
+
+RULES:
+- Extract EVERY row as a separate item, even when rows share the same lot number.
+- Different pack dates (EST# dates) means different rows — do NOT merge or deduplicate them.
+- Normalize lot to "XXXXX-XX" format (e.g. "260 76-01" → "26076-01").
+- Only include rows that have a lot number.
+
+Return JSON only:
+{ "items": [ { "lot": "...", "quantity": "...", "description": "...", "brand": "...", "packdate": "...", "location": "..." }, ... ] }
+No explanation, no markdown.
 `.trim();
 
 router.post("/extract-order", verifyToken, upload.single("image"), async (req, res) => {

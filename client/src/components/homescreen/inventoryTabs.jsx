@@ -156,16 +156,16 @@ const InventoryLevelPanel = ({
                           >
                             <Flex justify="space-between" align="center">
                               <Flex align="center" gap={2} flex={1} minW={0}>
-                                <Checkbox
-                                  size="sm"
-                                  colorScheme="red"
-                                  isChecked={isChecked}
-                                  onChange={(e) => { e.stopPropagation(); if (item._id) onToggleSelect(item._id); }}
-                                  onClick={(e) => e.stopPropagation()}
-                                  opacity={isChecked ? 1 : 0.45}
-                                  _hover={{ opacity: 1 }}
-                                  flexShrink={0}
-                                />
+                                <Box flexShrink={0} onClick={(e) => e.stopPropagation()}>
+                                  <Checkbox
+                                    size="sm"
+                                    colorScheme="red"
+                                    isChecked={isChecked}
+                                    onChange={() => { if (item._id) onToggleSelect(item._id); }}
+                                    opacity={isChecked ? 1 : 0.45}
+                                    _hover={{ opacity: 1 }}
+                                  />
+                                </Box>
                                 <Text fontSize="sm" fontWeight="semibold" color={isChecked ? "red.400" : isSelected ? "blue.700" : "gray.700"} noOfLines={1}>
                                   {item.location}
                                 </Text>
@@ -298,16 +298,16 @@ const InventoryOtherPanel = ({
                             >
                               <Flex justify="space-between" align="center">
                                 <Flex align="center" gap={2} flex={1} minW={0}>
-                                  <Checkbox
-                                    size="sm"
-                                    colorScheme="red"
-                                    isChecked={isChecked}
-                                    onChange={(e) => { e.stopPropagation(); if (item._id) onToggleSelect(item._id); }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    opacity={isChecked ? 1 : 0.45}
-                                    _hover={{ opacity: 1 }}
-                                    flexShrink={0}
-                                  />
+                                  <Box flexShrink={0} onClick={(e) => e.stopPropagation()}>
+                                    <Checkbox
+                                      size="sm"
+                                      colorScheme="red"
+                                      isChecked={isChecked}
+                                      onChange={() => { if (item._id) onToggleSelect(item._id); }}
+                                      opacity={isChecked ? 1 : 0.45}
+                                      _hover={{ opacity: 1 }}
+                                    />
+                                  </Box>
                                   <Text fontSize="sm" fontWeight="semibold" color={isChecked ? "red.400" : isSelected ? "blue.700" : "gray.700"} noOfLines={1}>
                                     {item.location}
                                   </Text>
@@ -377,16 +377,16 @@ const NoblessePanel = ({ items, handleItemClick, selectedItem, selectedIds, onTo
                   >
                     <Flex justify="space-between" align="center">
                       <Flex align="center" gap={2} flex={1} minW={0}>
-                        <Checkbox
-                          size="sm"
-                          colorScheme="red"
-                          isChecked={isChecked}
-                          onChange={(e) => { e.stopPropagation(); if (item._id) onToggleSelect(item._id); }}
-                          onClick={(e) => e.stopPropagation()}
-                          opacity={isChecked ? 1 : 0.45}
-                          _hover={{ opacity: 1 }}
-                          flexShrink={0}
-                        />
+                        <Box flexShrink={0} onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            size="sm"
+                            colorScheme="red"
+                            isChecked={isChecked}
+                            onChange={() => { if (item._id) onToggleSelect(item._id); }}
+                            opacity={isChecked ? 1 : 0.45}
+                            _hover={{ opacity: 1 }}
+                          />
+                        </Box>
                         <Text fontSize="sm" fontWeight="semibold" color={isSelected ? "orange.700" : "gray.700"} noOfLines={1}>
                           {item.vendor || item.lot || "—"}
                         </Text>
