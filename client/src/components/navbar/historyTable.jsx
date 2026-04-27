@@ -226,7 +226,7 @@ const HistoryRow = ({ item, onSet }) => {
             </Text>
           )}
           <Text fontSize="xs" color="gray.400" textAlign="right">
-            {item.time}
+            {item.created_at ? new Date(item.created_at).toLocaleString() : item.time}
           </Text>
           <Text fontSize="xs" color="gray.300">
             {expanded ? "▲" : "▼"}
@@ -415,7 +415,7 @@ const HistorySpreadsheet = ({ items, onSet, hasMore, loadingMore, onLoadMore, to
 
                   {/* Time */}
                   <Td py={1.5} px={2} fontSize="xs" color="gray.500" whiteSpace="nowrap">
-                    {item.time}
+                    {item.created_at ? new Date(item.created_at).toLocaleString() : item.time}
                   </Td>
 
                   {/* Location */}
