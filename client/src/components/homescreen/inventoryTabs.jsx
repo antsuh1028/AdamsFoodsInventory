@@ -213,7 +213,7 @@ const InventoryOtherPanel = ({
   const scrollContainerRef = useRef(null);
 
   const otherItems = items.filter(
-    (item) => !["1", "2", "3"].includes(item.location[1])
+    (item) => !["1", "2", "3"].includes(item.location[1]) && item.location?.toUpperCase() !== "NOBLESSE TRADING"
   );
 
   const groupedItems = otherItems.reduce((groups, item) => {
@@ -344,6 +344,71 @@ const InventoryOtherPanel = ({
   );
 };
 
+const NoblessePanel = ({ items, handleItemClick, selectedItem, selectedIds, onToggleSelect }) => {
+  const scrollRef = useRef(null);
+  return (
+    <Flex ref={scrollRef} width="100%" height="100%" direction="column" overflowY="auto" px={3} py={2}>
+      {items.length === 0 ? (
+        <Text fontSize="sm" color="gray.300" mt={4} textAlign="center">No items at Noblesse Trading</Text>
+      ) : (
+        <>
+          <Box pl={1} pt={2} pb={1}>
+            <Text fontSize="xs" fontWeight="bold" color="orange.300" letterSpacing="wider" textTransform="uppercase">
+              Noblesse Trading · {items.length} item{items.length !== 1 ? "s" : ""}
+            </Text>
+          </Box>
+          <List spacing={1} width="100%">
+            {items.map((item, i) => {
+              const isSelected = selectedItem?._id === item._id;
+              const isChecked = !!(item._id && selectedIds.has(item._id));
+              const ageDays = getAgeDays(item.packdate, item.date_recvd);
+              const ageColor = getAgeColor(ageDays);
+              return (
+                <ListItem key={item._id || i} onClick={() => handleItemClick(item)}>
+                  <Box
+                    px={3} py={2}
+                    borderRadius="md"
+                    border="1px"
+                    borderColor={isChecked ? "red.100" : isSelected ? "orange.300" : "gray.200"}
+                    bg={isChecked ? "red.50" : isSelected ? "orange.50" : "white"}
+                    cursor="pointer"
+                    _hover={{ bg: isSelected ? "orange.100" : "gray.50", borderColor: "orange.200" }}
+                    transition="all 0.15s"
+                  >
+                    <Flex justify="space-between" align="center">
+                      <Flex align="center" gap={2} flex={1} minW={0}>
+                        <Checkbox
+                          size="sm"
+                          colorScheme="red"
+                          isChecked={isChecked}
+                          onChange={(e) => { e.stopPropagation(); if (item._id) onToggleSelect(item._id); }}
+                          onClick={(e) => e.stopPropagation()}
+                          opacity={isChecked ? 1 : 0.45}
+                          _hover={{ opacity: 1 }}
+                          flexShrink={0}
+                        />
+                        <Text fontSize="sm" fontWeight="semibold" color={isSelected ? "orange.700" : "gray.700"} noOfLines={1}>
+                          {item.vendor || item.lot || "—"}
+                        </Text>
+                      </Flex>
+                      <Flex align="center" gap={1.5} flexShrink={0}>
+                        <Box w="7px" h="7px" borderRadius="full" bg={ageColor ?? "gray.400"} title={ageDays !== null ? `${ageDays}d old` : undefined} />
+                        <Text fontSize="xs" color="gray.400">{item.quantity} bx</Text>
+                      </Flex>
+                    </Flex>
+                    <Text fontSize="xs" color="gray.500" noOfLines={1} mt={0.5}>{item.description}</Text>
+                    <Text fontSize="10px" color="gray.400" mt={0.5}>Lot: {item.lot} · {item.weight} lbs</Text>
+                  </Box>
+                </ListItem>
+              );
+            })}
+          </List>
+        </>
+      )}
+    </Flex>
+  );
+};
+
 const SEARCH_KEYS = ["location", "lot", "vendor", "brand", "species", "description"];
 
 const InventoryTabs = ({
@@ -360,6 +425,7 @@ const InventoryTabs = ({
 
   useEffect(() => {
     if (flashLocation && flashLocation.length >= 2) {
+      if (flashLocation.toUpperCase().startsWith("NOBLESSE")) { setTabIndex(4); return; }
       const level = parseInt(flashLocation[1]);
       if (level >= 1 && level <= 3) setTabIndex(level - 1);
       else setTabIndex(3);
@@ -446,6 +512,30 @@ const InventoryTabs = ({
           }}
         >
           Other
+        </Tab>
+        <Tab
+          fontWeight="semibold"
+          fontSize="sm"
+          _hover={{ bg: "orange.50" }}
+          _selected={{
+            color: "orange.600",
+            borderColor: "orange.500",
+            borderBottomColor: "white",
+          }}
+        >
+          To Noblesse
+        </Tab>
+        <Tab
+          fontWeight="semibold"
+          fontSize="sm"
+          _hover={{ bg: "green.50" }}
+          _selected={{
+            color: "green.600",
+            borderColor: "green.500",
+            borderBottomColor: "white",
+          }}
+        >
+          From Noblesse
         </Tab>
       </TabList>
 
@@ -546,6 +636,24 @@ const InventoryTabs = ({
           onToggleSelect={handleToggleSelect}
           onToggleGroup={handleToggleGroup}
         />
+
+        {/* To Noblesse */}
+        <TabPanel height="100%" p={0}>
+          <NoblessePanel
+            items={filteredItems.filter((i) => i.location?.toUpperCase() === "NOBLESSE TRADING")}
+            handleItemClick={handleItemClick}
+            selectedItem={selectedItem}
+            selectedIds={selectedIds}
+            onToggleSelect={handleToggleSelect}
+          />
+        </TabPanel>
+
+        {/* From Noblesse — placeholder */}
+        <TabPanel height="100%" p={0}>
+          <Flex height="100%" align="center" justify="center">
+            <Text fontSize="sm" color="gray.300">Coming soon</Text>
+          </Flex>
+        </TabPanel>
       </TabPanels>
     </Tabs>
   );
