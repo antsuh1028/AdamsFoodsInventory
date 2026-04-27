@@ -13,12 +13,21 @@ import {
   Box,
   Checkbox,
   Button,
+  Badge,
+  Spinner,
+  Collapse,
+  Divider,
   Input,
   InputGroup,
   InputLeftElement,
   InputRightElement,
 } from "@chakra-ui/react";
-import { SearchIcon, CloseIcon } from "@chakra-ui/icons";
+import { SearchIcon, CloseIcon, RepeatIcon, ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
+import axiosInstance from "../../utils/axiosInstance";
+import cache from "../../utils/apiCache";
+
+const ORDERS_TTL   = 2 * 60 * 1000;
+const DETAIL_TTL   = 5 * 60 * 1000;
 
 const getAgeDays = (packdate, date_recvd) => {
   const str = packdate || date_recvd;
@@ -422,6 +431,49 @@ const InventoryTabs = ({
   const [tabIndex, setTabIndex] = useState(0);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [search, setSearch] = useState("");
+  const [noblesseOrders, setNoblesseOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [expandedOrderId, setExpandedOrderId] = useState(null);
+  const [orderDetails, setOrderDetails] = useState({});
+  const [detailLoading, setDetailLoading] = useState(null);
+
+  const fetchNoblesseOrders = useCallback(async () => {
+    const hit = cache.get("prod-orders-pending");
+    if (hit) { setNoblesseOrders(hit); return; }
+    setOrdersLoading(true);
+    try {
+      const res = await axiosInstance.get("/production-orders?status=pending");
+      const orders = res.data.filter((o) => o.processorName === "Noblesse Trading");
+      cache.set("prod-orders-pending", orders, ORDERS_TTL);
+      setNoblesseOrders(orders);
+    } catch {
+      // silent — tab still shows inventory items
+    } finally {
+      setOrdersLoading(false);
+    }
+  }, []);
+
+  const toggleOrderExpand = useCallback(async (orderId) => {
+    if (expandedOrderId === orderId) { setExpandedOrderId(null); return; }
+    setExpandedOrderId(orderId);
+    const hit = cache.get(`prod-order-${orderId}`);
+    if (hit) { setOrderDetails((prev) => ({ ...prev, [orderId]: hit })); return; }
+    if (orderDetails[orderId]) return;
+    setDetailLoading(orderId);
+    try {
+      const res = await axiosInstance.get(`/production-orders/${orderId}`);
+      cache.set(`prod-order-${orderId}`, res.data, DETAIL_TTL);
+      setOrderDetails((prev) => ({ ...prev, [orderId]: res.data }));
+    } catch {
+      // leave detail empty — card still shows summary
+    } finally {
+      setDetailLoading(null);
+    }
+  }, [expandedOrderId, orderDetails]);
+
+  useEffect(() => {
+    if (tabIndex === 4) fetchNoblesseOrders();
+  }, [tabIndex, fetchNoblesseOrders]);
 
   useEffect(() => {
     if (flashLocation && flashLocation.length >= 2) {
@@ -646,7 +698,104 @@ const InventoryTabs = ({
         />
 
         {/* To Noblesse */}
-        <TabPanel height="100%" p={0}>
+        <TabPanel height="100%" p={0} overflowY="auto">
+          {/* Pending production orders */}
+          <Box px={3} pt={3} pb={2}>
+            <Flex align="center" justify="space-between" mb={2}>
+              <Text fontSize="xs" fontWeight="bold" color="orange.400" letterSpacing="wider" textTransform="uppercase">
+                Pending Orders
+              </Text>
+              <Button size="xs" variant="ghost" color="gray.400" _hover={{ color: "orange.500" }}
+                onClick={fetchNoblesseOrders} isDisabled={ordersLoading} p={1} minW="auto">
+                {ordersLoading ? <Spinner size="xs" /> : <RepeatIcon boxSize={3} />}
+              </Button>
+            </Flex>
+            {noblesseOrders.length === 0 && !ordersLoading ? (
+              <Text fontSize="xs" color="gray.300" textAlign="center" py={2}>No pending orders</Text>
+            ) : (
+              <Flex direction="column" gap={1.5}>
+                {noblesseOrders.map((order) => {
+                  const isExpanded = expandedOrderId === order.id;
+                  const detail = orderDetails[order.id];
+                  const isLoadingDetail = detailLoading === order.id;
+                  return (
+                    <Box
+                      key={order.id}
+                      borderRadius="md"
+                      border="1px"
+                      borderColor={isExpanded ? "orange.300" : "orange.100"}
+                      bg={isExpanded ? "orange.50" : "white"}
+                      overflow="hidden"
+                    >
+                      {/* Header row — clickable */}
+                      <Flex
+                        px={3} py={2}
+                        align="center"
+                        justify="space-between"
+                        cursor="pointer"
+                        onClick={() => toggleOrderExpand(order.id)}
+                        _hover={{ bg: "orange.50" }}
+                        transition="background 0.1s"
+                      >
+                        <Flex align="center" gap={1.5}>
+                          {isExpanded ? <ChevronDownIcon color="orange.400" /> : <ChevronRightIcon color="gray.400" />}
+                          <Text fontSize="sm" fontWeight="semibold" color={isExpanded ? "orange.700" : "gray.700"}>
+                            {order.sentDate}
+                          </Text>
+                        </Flex>
+                        <Flex align="center" gap={1.5}>
+                          {order.itemCount != null && (
+                            <Text fontSize="xs" color="gray.500">{order.itemCount} pallet{order.itemCount !== 1 ? "s" : ""}</Text>
+                          )}
+                          {order.totalWeight != null && (
+                            <Text fontSize="xs" color="gray.400">{Number(order.totalWeight).toFixed(0)} lb</Text>
+                          )}
+                          <Badge colorScheme="yellow" fontSize="2xs">pending</Badge>
+                        </Flex>
+                      </Flex>
+
+                      {/* Expanded detail */}
+                      <Collapse in={isExpanded} animateOpacity>
+                        <Divider borderColor="orange.100" />
+                        <Box px={3} py={2}>
+                          {isLoadingDetail ? (
+                            <Flex justify="center" py={2}><Spinner size="xs" color="orange.400" /></Flex>
+                          ) : detail?.items?.length > 0 ? (
+                            <Flex direction="column" gap={1.5}>
+                              {detail.items.map((item) => (
+                                <Box key={item.id} px={2} py={1.5} bg="white" borderRadius="sm" border="1px" borderColor="orange.100">
+                                  <Flex justify="space-between" align="baseline">
+                                    <Text fontSize="xs" fontWeight="semibold" color="gray.700" fontFamily="mono">
+                                      {item.location || "—"}
+                                    </Text>
+                                    <Text fontSize="xs" color="gray.500">
+                                      {parseFloat(item.weightSent).toFixed(1)} lb · {item.boxesSent?.length ?? 0} box{item.boxesSent?.length !== 1 ? "es" : ""}
+                                    </Text>
+                                  </Flex>
+                                  {(item.species || item.description) && (
+                                    <Text fontSize="10px" color="gray.400" noOfLines={1} mt={0.5}>
+                                      {[item.species, item.description].filter(Boolean).join(" — ")}
+                                    </Text>
+                                  )}
+                                  {item.lot && (
+                                    <Text fontSize="10px" color="gray.400">Lot: {item.lot}</Text>
+                                  )}
+                                </Box>
+                              ))}
+                            </Flex>
+                          ) : (
+                            <Text fontSize="xs" color="gray.400">No item details</Text>
+                          )}
+                        </Box>
+                      </Collapse>
+                    </Box>
+                  );
+                })}
+              </Flex>
+            )}
+          </Box>
+
+          {/* Inventory items at NOBLESSE TRADING location */}
           <NoblessePanel
             items={filteredItems.filter((i) => i.location?.toUpperCase() === "NOBLESSE TRADING")}
             handleItemClick={handleItemClick}

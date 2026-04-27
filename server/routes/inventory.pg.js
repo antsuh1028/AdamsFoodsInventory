@@ -147,6 +147,15 @@ router.post("/inventoryUpdate", verifyToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // Snapshot the item before changes so history shows both old and new state
+    const before = await client.query(
+      `SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`,
+      [currentItem._id, req.tenantId]
+    );
+    if (before.rows.length === 0) return res.status(404).json({ error: "No Items Found" });
+    await historyEntry(client, req.tenantId, before.rows[0], "Before Update", req.username);
+
     const upd = await client.query(
       `UPDATE inventory SET location=$1,lot=$2,vendor=$3,brand=$4,species=$5,description=$6,grade=$7,
        quantity=$8,weight=$9,packdate=$10,date_recvd=$11,est=$12,price=$13,type=$14
@@ -297,12 +306,18 @@ router.patch("/inventory/:id/field", verifyToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const before = await client.query(
+      `SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`,
+      [req.params.id, req.tenantId]
+    );
+    if (before.rows.length === 0) return res.status(404).json({ error: "Item not found" });
+    const oldVal = before.rows[0][col] ?? "";
     const upd = await client.query(
       `UPDATE inventory SET ${col} = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *`,
       [dbValue, req.params.id, req.tenantId]
     );
     if (upd.rows.length === 0) return res.status(404).json({ error: "Item not found" });
-    await historyEntry(client, req.tenantId, upd.rows[0], `Field Updated: ${field} → "${dbValue ?? ""}"`, req.username);
+    await historyEntry(client, req.tenantId, upd.rows[0], `Field Updated: ${field}: "${oldVal}" → "${dbValue ?? ""}"`, req.username);
     await client.query("COMMIT");
     res.json(fmt(upd.rows[0]));
   } catch (err) {

@@ -767,7 +767,7 @@ const DetailsPanel = ({
         </Collapse>
 
         {/* Send to Noblesse — only for CHILLING location */}
-        {item?.location?.toUpperCase() === "CHILLING" && (
+        {(item?.location?.toUpperCase() === "CHILLING" || item?.location?.toUpperCase() === "FLOOR") && (
           <>
             <Divider mb={3} />
             <Collapse in={noblesseOpen} animateOpacity>

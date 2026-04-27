@@ -7,8 +7,11 @@ import {
 } from "@chakra-ui/react";
 import { AddIcon, MinusIcon, ChevronDownIcon, ChevronRightIcon, RepeatIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
+import cache from "../../utils/apiCache";
 
-const PROCESSOR = "Noblesse Trading";
+const PROCESSOR  = "Noblesse Trading";
+const ORDERS_TTL = 2 * 60 * 1000;
+const DETAIL_TTL = 5 * 60 * 1000;
 const today = () => new Date().toISOString().split("T")[0];
 
 // Module-level cache: { [query]: { data, ts } }
@@ -355,10 +358,15 @@ const ProductionOrders = ({ isOpen, onClose }) => {
     }
   }, [toast]);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (force = false) => {
+    if (!force) {
+      const hit = cache.get("prod-orders");
+      if (hit) { setOrders(hit); return; }
+    }
     setLoadingOrders(true);
     try {
       const res = await axiosInstance.get("/production-orders");
+      cache.set("prod-orders", res.data, ORDERS_TTL);
       setOrders(res.data);
     } catch {
       toast({ title: "Failed to load orders", status: "error", duration: 3000 });
@@ -368,8 +376,11 @@ const ProductionOrders = ({ isOpen, onClose }) => {
   };
 
   const loadOrderDetail = async (orderId) => {
+    const hit = cache.get(`prod-order-${orderId}`);
+    if (hit) { setOrderDetails((prev) => ({ ...prev, [orderId]: hit })); return; }
     try {
       const res = await axiosInstance.get(`/production-orders/${orderId}`);
+      cache.set(`prod-order-${orderId}`, res.data, DETAIL_TTL);
       setOrderDetails((prev) => ({ ...prev, [orderId]: res.data }));
     } catch {
       toast({ title: "Failed to load order detail", status: "error", duration: 3000 });
@@ -430,7 +441,9 @@ const ProductionOrders = ({ isOpen, onClose }) => {
       setSelected({});
       setSentDate(today());
       setTabIndex(1);
-      fetchOrders();
+      cache.del("prod-orders");
+      cache.del("prod-orders-pending");
+      fetchOrders(true);
       invCache.clear();
       setInventory([]);
       setInvSearch("");
@@ -451,6 +464,7 @@ const ProductionOrders = ({ isOpen, onClose }) => {
       await axiosInstance.post(`/production-orders/${orderId}/returns`, body);
       toast({ title: "Return pallet added", status: "success", duration: 3000 });
       setActiveReturnId(null);
+      cache.del(`prod-order-${orderId}`);
       setOrderDetails((prev) => { const n = { ...prev }; delete n[orderId]; return n; });
       loadOrderDetail(orderId);
     } catch (e) {
@@ -465,8 +479,11 @@ const ProductionOrders = ({ isOpen, onClose }) => {
       const res = await axiosInstance.patch(`/production-orders/${orderId}/close`, {});
       toast({ title: `Order closed · Yield: ${res.data.yieldPct}%`, status: "success", duration: 4000 });
       setExpandedOrderId(null);
+      cache.del("prod-orders");
+      cache.del("prod-orders-pending");
+      cache.del(`prod-order-${orderId}`);
       setOrderDetails((prev) => { const n = { ...prev }; delete n[orderId]; return n; });
-      fetchOrders();
+      fetchOrders(true);
     } catch (e) {
       toast({ title: e.response?.data?.error || "Failed to close order", status: "error", duration: 4000 });
     }

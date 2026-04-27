@@ -9,6 +9,9 @@ import { DownloadIcon, ChevronLeftIcon, ChevronRightIcon } from "@chakra-ui/icon
 import * as XLSX from "xlsx";
 import { API_BASE_URL } from "../../config/api";
 import { useToast } from "@chakra-ui/react";
+import cache from "../../utils/apiCache";
+
+const SNAPS_TTL = 5 * 60 * 1000;
 
 const authFetch = (url, options = {}) => {
   const token = localStorage.getItem("token");
@@ -108,11 +111,19 @@ const ExportByType = ({ isOpen, onClose }) => {
     }
   }, [editCell]);
 
+  const getSnapshotsForType = async (type) => {
+    const hit = cache.get("snapshots");
+    if (hit) return hit.filter((s) => s.label === `Type:${type}`);
+    const r = await authFetch(`${API_BASE_URL}/inventorySnapshots`);
+    const all = await r.json();
+    cache.set("snapshots", all, SNAPS_TTL);
+    return all.filter((s) => s.label === `Type:${type}`);
+  };
+
   const loadSnapshots = () => {
     setSnapsLoading(true);
-    authFetch(`${API_BASE_URL}/inventorySnapshots`)
-      .then((r) => r.json())
-      .then((all) => setSnapshots(all.filter((s) => s.label === `Type:${activeType}`)))
+    getSnapshotsForType(activeType)
+      .then(setSnapshots)
       .catch(() => toast({ title: "Failed to load past exports", position: "top", status: "error", duration: 3000, isClosable: true }))
       .finally(() => setSnapsLoading(false));
   };
@@ -133,19 +144,20 @@ const ExportByType = ({ isOpen, onClose }) => {
     if (tabIndex === 1) {
       setSnapshots([]);
       setSnapsLoading(true);
-      authFetch(`${API_BASE_URL}/inventorySnapshots`)
-        .then((r) => r.json())
-        .then((all) => setSnapshots(all.filter((s) => s.label === `Type:${type}`)))
+      getSnapshotsForType(type)
+        .then(setSnapshots)
         .catch(() => {})
         .finally(() => setSnapsLoading(false));
     }
   };
 
   const handleLoadSnapshot = (meta) => {
+    const hit = cache.get(`snapshot-${meta.id}`);
+    if (hit) { setActiveSnap({ meta, data: hit }); return; }
     setSnapLoading(true);
     authFetch(`${API_BASE_URL}/inventorySnapshot/${meta.id}`)
       .then((r) => r.json())
-      .then((res) => setActiveSnap({ meta, data: res.snapshot }))
+      .then((res) => { cache.set(`snapshot-${meta.id}`, res.snapshot); setActiveSnap({ meta, data: res.snapshot }); })
       .catch(() => toast({ title: "Failed to load snapshot", position: "top", status: "error", duration: 3000, isClosable: true }))
       .finally(() => setSnapLoading(false));
   };
@@ -225,6 +237,7 @@ const ExportByType = ({ isOpen, onClose }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ snapshot: exportItems, label }),
       });
+      cache.del("snapshots");
     } catch (_) {
       // non-fatal
     }

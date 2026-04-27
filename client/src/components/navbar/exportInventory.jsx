@@ -9,6 +9,9 @@ import { DownloadIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon, CloseIcon,
 import * as XLSX from "xlsx";
 import { API_BASE_URL } from "../../config/api";
 import { FormContext } from "../../utils/homescreen/formContext";
+import cache from "../../utils/apiCache";
+
+const SNAPS_TTL = 5 * 60 * 1000;
 
 const authFetch = (url, options = {}) => {
   const token = localStorage.getItem("token");
@@ -194,10 +197,12 @@ const ExportInventory = ({ isOpen, onClose }) => {
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadSnapshots = () => {
+    const hit = cache.get("snapshots");
+    if (hit) { setSnapshots(hit); return; }
     setSnapsLoading(true);
     authFetch(`${API_BASE_URL}/inventorySnapshots`)
       .then((r) => r.json())
-      .then(setSnapshots)
+      .then((data) => { cache.set("snapshots", data, SNAPS_TTL); setSnapshots(data); })
       .catch(() => toast({ title: "Failed to load past exports", position: "top", status: "error", duration: 3000, isClosable: true }))
       .finally(() => setSnapsLoading(false));
   };
@@ -208,10 +213,12 @@ const ExportInventory = ({ isOpen, onClose }) => {
   };
 
   const handleLoadSnapshot = (meta) => {
+    const hit = cache.get(`snapshot-${meta.id}`);
+    if (hit) { setActiveSnap({ meta, data: hit }); return; }
     setSnapLoading(true);
     authFetch(`${API_BASE_URL}/inventorySnapshot/${meta.id}`)
       .then((r) => r.json())
-      .then((res) => setActiveSnap({ meta, data: res.snapshot }))
+      .then((res) => { cache.set(`snapshot-${meta.id}`, res.snapshot); setActiveSnap({ meta, data: res.snapshot }); })
       .catch(() => toast({ title: "Failed to load snapshot", position: "top", status: "error", duration: 3000, isClosable: true }))
       .finally(() => setSnapLoading(false));
   };
@@ -321,6 +328,7 @@ const ExportInventory = ({ isOpen, onClose }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ snapshot: exportItems, label: "Full Export" }),
       });
+      cache.del("snapshots");
     } catch (_) {
       // non-fatal
     }

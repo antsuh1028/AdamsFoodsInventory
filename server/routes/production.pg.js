@@ -4,6 +4,15 @@ const verifyToken = require("../middleware/verifyToken.pg");
 
 const toNum = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
 
+// Idempotent migration — add snapshot columns if not already present
+pool.query(`
+  ALTER TABLE production_order_items
+    ADD COLUMN IF NOT EXISTS location    TEXT,
+    ADD COLUMN IF NOT EXISTS lot         TEXT,
+    ADD COLUMN IF NOT EXISTS species     TEXT,
+    ADD COLUMN IF NOT EXISTS description TEXT
+`).catch((err) => console.error("production_order_items migration error:", err.message));
+
 const historyEntry = async (client, tenantId, item, change, username) => {
   await client.query(
     `INSERT INTO history (tenant_id, time, change, changed_by, location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est)
@@ -29,6 +38,8 @@ const fmtOrder = (row) => ({
   returnDate:    row.return_date   || null,
   yield:         row.yield         != null ? String(row.yield) : null,
   createdAt:     row.created_at,
+  itemCount:     row.item_count    != null ? Number(row.item_count)    : null,
+  totalWeight:   row.total_weight  != null ? Number(row.total_weight)  : null,
 });
 
 const fmtItem = (row) => ({
@@ -91,7 +102,7 @@ router.post("/production-orders", verifyToken, async (req, res) => {
 
       // Verify the inventory item belongs to this tenant and has enough weight
       const invRes = await client.query(
-        `SELECT id, weight, boxes FROM inventory WHERE id = $1 AND tenant_id = $2`,
+        `SELECT id, weight, boxes, location, lot, species, description FROM inventory WHERE id = $1 AND tenant_id = $2`,
         [inventoryId, req.tenantId]
       );
       if (!invRes.rows.length)
@@ -102,12 +113,14 @@ router.post("/production-orders", verifyToken, async (req, res) => {
       if (weightNum > currentWeight + 0.01)
         throw new Error(`weightSent (${weightNum}) exceeds available weight (${currentWeight}) for item ${inventoryId}`);
 
-      // Create the order item record
+      // Create the order item record — snapshot location/lot/species/description so they
+      // survive even if the inventory row is later deleted (e.g. all boxes sent out)
       await client.query(
         `INSERT INTO production_order_items
-           (production_order_id, inventory_id, weight_sent, boxes_sent)
-         VALUES ($1, $2, $3, $4::jsonb)`,
-        [order.id, inventoryId, weightNum, JSON.stringify(boxes)]
+           (production_order_id, inventory_id, weight_sent, boxes_sent, location, lot, species, description)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)`,
+        [order.id, inventoryId, weightNum, JSON.stringify(boxes),
+         inv.location || null, inv.lot || null, inv.species || null, inv.description || null]
       );
 
       // Remove boxes and weight from inventory
@@ -218,9 +231,14 @@ router.get("/production-orders", verifyToken, async (req, res) => {
   const { status } = req.query;
   try {
     const result = await pool.query(
-      `SELECT * FROM production_orders
-       WHERE tenant_id = $1 ${status ? "AND status = $2" : ""}
-       ORDER BY created_at DESC`,
+      `SELECT po.*,
+              COUNT(poi.id)               AS item_count,
+              COALESCE(SUM(poi.weight_sent), 0) AS total_weight
+       FROM production_orders po
+       LEFT JOIN production_order_items poi ON poi.production_order_id = po.id
+       WHERE po.tenant_id = $1 ${status ? "AND po.status = $2" : ""}
+       GROUP BY po.id
+       ORDER BY po.created_at DESC`,
       status ? [req.tenantId, status] : [req.tenantId]
     );
     res.json(result.rows.map(fmtOrder));
@@ -239,7 +257,11 @@ router.get("/production-orders/:id", verifyToken, async (req, res) => {
         [req.params.id, req.tenantId]
       ),
       pool.query(
-        `SELECT poi.*, i.location, i.lot, i.species, i.description
+        `SELECT poi.id, poi.production_order_id, poi.inventory_id, poi.weight_sent, poi.boxes_sent,
+                COALESCE(i.location,    poi.location)    AS location,
+                COALESCE(i.lot,         poi.lot)         AS lot,
+                COALESCE(i.species,     poi.species)     AS species,
+                COALESCE(i.description, poi.description) AS description
          FROM production_order_items poi
          LEFT JOIN inventory i ON i.id = poi.inventory_id
          WHERE poi.production_order_id = $1`,
