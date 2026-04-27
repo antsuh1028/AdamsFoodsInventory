@@ -344,9 +344,10 @@ const ExportInventory = ({ isOpen, onClose }) => {
     );
     // Append total weight row only if weight column is visible
     if (visibleCols.has("weight")) {
+      const emptyRow = cols.reduce((obj, col) => { obj[col.label] = ""; return obj; }, {});
       const totalRow = cols.reduce((obj, col) => { obj[col.label] = ""; return obj; }, {});
       totalRow["Weight"] = totalWeight(exportItems).toFixed(2);
-      rows.push({});
+      rows.push(emptyRow);
       rows.push(totalRow);
     }
 
@@ -363,9 +364,13 @@ const ExportInventory = ({ isOpen, onClose }) => {
     setDownloading(true);
     try {
       const date = new Date().toISOString().split("T")[0];
-      downloadExcel(items, `inventory_${date}.xlsx`);
+      const exportItems = search.trim() ? sortedItems : items;
+      downloadExcel(exportItems, `inventory_${date}.xlsx`);
       saveSnapshot(items);
-      toast({ title: "Downloaded", description: `${items.length} items`, position: "top", status: "success", duration: 2000, isClosable: true });
+      const desc = search.trim()
+        ? `${exportItems.length} filtered items (${items.length} total)`
+        : `${items.length} items`;
+      toast({ title: "Downloaded", description: desc, position: "top", status: "success", duration: 2000, isClosable: true });
       onClose();
     } catch (err) {
       toast({ title: "Export failed", description: err.message, position: "top", status: "error", duration: 3000, isClosable: true });
