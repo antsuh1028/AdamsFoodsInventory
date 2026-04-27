@@ -7,21 +7,12 @@ import {
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, CloseIcon } from "@chakra-ui/icons";
 import { API_BASE_URL } from "../../config/api";
 
-const PAGE_SIZE = 20;
-
 const authFetch = (url, options = {}) => {
   const token = localStorage.getItem("token");
   return fetch(url, { ...options, headers: { ...options.headers, Authorization: token || "" } });
 };
 
-const matchesSearch = (item, term) => {
-  const t = term.toLowerCase();
-  return (
-    (item.location    || "").toLowerCase().includes(t) ||
-    (item.description || "").toLowerCase().includes(t) ||
-    (item.lot         || "").toLowerCase().includes(t)
-  );
-};
+const PAGE_SIZE = 20;
 
 const ScanImageList = ({ isOpen }) => {
   const [allScans, setAllScans] = useState([]);
@@ -31,7 +22,7 @@ const ScanImageList = ({ isOpen }) => {
   const [search, setSearch] = useState("");
   const { isOpen: isImgOpen, onOpen: onImgOpen, onClose: onImgClose } = useDisclosure();
 
-  // Load all scans once when tab opens
+  // Load all scans once — server returns up to 500 in one shot
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -41,42 +32,42 @@ const ScanImageList = ({ isOpen }) => {
       .then((data) => {
         if (cancelled) return;
         setAllScans(Array.isArray(data.items) ? data.items : []);
-        console.log("Loaded scans:", data.items);
       })
       .catch(() => { if (!cancelled) setAllScans([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [isOpen]);
 
-  // Reset on tab open
   useEffect(() => {
     if (isOpen) { setPage(1); setSearch(""); }
   }, [isOpen]);
 
-  const handleSearchChange = (val) => {
-    setSearch(val);
-    setPage(1); // reset to first page on every search change
-  };
-
   const handleView = (item) => { setSelectedItem(item); onImgOpen(); };
   const handleClose = () => { setSelectedItem(null); onImgClose(); };
 
-  // Filter all loaded scans, then paginate the filtered result
-  const filtered = search.trim() ? allScans.filter((s) => matchesSearch(s, search.trim())) : allScans;
+  // Filter across ALL loaded scans, then slice for current page
+  const filtered = search.trim()
+    ? allScans.filter((s) =>
+        (s.location    || "").toLowerCase().includes(search.toLowerCase()) ||
+        (s.description || "").toLowerCase().includes(search.toLowerCase()) ||
+        (s.lot         || "").toLowerCase().includes(search.toLowerCase())
+      )
+    : allScans;
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <>
       <Box>
-        <InputGroup size="sm" mb={3}>
+        <InputGroup size="sm" mb={3} >
           <InputLeftElement pointerEvents="none">
             <SearchIcon color="gray.400" boxSize={3} />
           </InputLeftElement>
           <Input
             placeholder="Search location, description, lot…"
             value={search}
-            onChange={(e) => handleSearchChange(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             borderRadius="md"
             bg="gray.50"
             _focus={{ bg: "white", borderColor: "blue.300" }}
@@ -93,15 +84,15 @@ const ScanImageList = ({ isOpen }) => {
           <Flex justify="center" align="center" py={10}>
             <Spinner color="blue.400" />
           </Flex>
-        ) : filtered.length === 0 ? (
+        ) : visible.length === 0 ? (
           <Flex justify="center" align="center" py={10}>
             <Text fontSize="sm" color="gray.400">
-              {search ? `No scans matching "${search}".` : "No scan images yet."}
+              {search ? `No scans matching "${search}" on this page.` : "No scan images yet."}
             </Text>
           </Flex>
         ) : (
           <Flex direction="column" gap={2}>
-            {pageItems.map((item) => (
+            {visible.map((item) => (
               <Flex
                 key={item.id}
                 align="center"

@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
@@ -51,40 +51,40 @@ router.post("/upload-pdf", verifyToken, requireRole("admin"), upload.single("fil
 
 router.get("/list-pdfs", verifyToken, async (req, res) => {
   try {
-    await ensurePdfsTable();
-    const result = await pool.query(
-      `SELECT * FROM pdfs WHERE tenant_id = $1 ORDER BY created_at DESC`,
-      [req.tenantId]
-    );
-    res.json(result.rows);
+    const listRes = await s3Client.send(new ListObjectsV2Command({
+      Bucket: process.env.AWS_BUCKET_NAME,
+      Prefix: "pdfs/",
+    }));
+    const objects = listRes.Contents || [];
+    const pdfs = await Promise.all(objects.map(async (obj) => {
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: obj.Key }),
+        { expiresIn: 3600 }
+      );
+      const fileName = obj.Key.replace("pdfs/", "").replace(/^\d+-/, "");
+      return { _id: obj.Key, fileKey: obj.Key, fileName, fileUrl: signedUrl, uploadDate: obj.LastModified };
+    }));
+    pdfs.sort((a, b) => new Date(b.uploadDate) - new Date(a.uploadDate));
+    res.json(pdfs);
   } catch (err) {
+    console.error("list-pdfs error:", err);
     res.status(500).json({ error: "An error occurred while retrieving the PDFs" });
   }
 });
 
-router.get("/list-scans", verifyToken, requireRole("admin"), async (req, res) => {
-  const page = Math.max(1, parseInt(req.query.page) || 1);
-  const limit = 20;
-  const offset = (page - 1) * limit;
+router.get("/list-scans", verifyToken, requireRole("admin", "manager"), async (req, res) => {
   try {
-    const [items, countRes] = await Promise.all([
-      pool.query(
-        `SELECT id, scan_image_key, location, lot, species, description, date_recvd
-         FROM inventory
-         WHERE tenant_id = $1 AND scan_image_key IS NOT NULL AND scan_image_key != ''
-         ORDER BY created_at DESC
-         LIMIT $2 OFFSET $3`,
-        [req.tenantId, limit, offset]
-      ),
-      pool.query(
-        `SELECT COUNT(*) FROM inventory
-         WHERE tenant_id = $1 AND scan_image_key IS NOT NULL AND scan_image_key != ''`,
-        [req.tenantId]
-      ),
-    ]);
+    const { rows } = await pool.query(
+      `SELECT id, scan_image_key, location, lot, species, description, date_recvd
+       FROM inventory
+       WHERE tenant_id = $1 AND scan_image_key IS NOT NULL AND scan_image_key != ''
+       ORDER BY created_at DESC
+       LIMIT 500`,
+      [req.tenantId]
+    );
 
-    const total = parseInt(countRes.rows[0].count);
-    const itemsWithUrls = await Promise.all(items.rows.map(async (item) => {
+    const itemsWithUrls = await Promise.all(rows.map(async (item) => {
       const signedUrl = await getSignedUrl(
         s3Client,
         new GetObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: item.scan_image_key }),
@@ -93,7 +93,7 @@ router.get("/list-scans", verifyToken, requireRole("admin"), async (req, res) =>
       return { ...item, scanImageKey: item.scan_image_key, signedUrl };
     }));
 
-    res.json({ items: itemsWithUrls, total, page, pages: Math.ceil(total / limit) });
+    res.json({ items: itemsWithUrls, total: itemsWithUrls.length });
   } catch (err) {
     console.error("list-scans error:", err);
     res.status(500).json({ error: "Failed to retrieve scan images" });
@@ -125,15 +125,11 @@ router.get("/get-scan-image", verifyToken, async (req, res) => {
   }
 });
 
-router.delete("/delete-pdf/:id", verifyToken, async (req, res) => {
+router.delete("/delete-pdf/*", verifyToken, async (req, res) => {
+  const key = req.params[0];
+  if (!key || !key.startsWith("pdfs/")) return res.status(400).json({ error: "Invalid key" });
   try {
-    await ensurePdfsTable();
-    const result = await pool.query(
-      `DELETE FROM pdfs WHERE id = $1 AND tenant_id = $2 RETURNING *`,
-      [req.params.id, req.tenantId]
-    );
-    if (!result.rows.length) return res.status(404).json({ error: "PDF not found" });
-    await s3Client.send(new DeleteObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: result.rows[0].file_key }));
+    await s3Client.send(new DeleteObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key }));
     res.json({ message: "PDF deleted successfully" });
   } catch (error) {
     console.error("Delete PDF error:", error);
