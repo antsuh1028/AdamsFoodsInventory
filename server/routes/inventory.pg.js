@@ -39,7 +39,7 @@ const historyEntry = async (client, tenantId, item, change, username, oldData = 
     `INSERT INTO history (tenant_id, time, change, changed_by, location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, old_data)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
     [
-      tenantId, new Date().toLocaleString(), change, username || "",
+      tenantId, new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" }), change, username || "",
       item.location || "", item.lot || "", item.vendor || "", item.brand || "",
       item.species || "", item.description || "", item.grade || "",
       item.quantity || "", item.weight != null ? String(item.weight) : "",

@@ -14,7 +14,7 @@ router.post("/addHistory", verifyToken, requireRole("admin", "manager"), async (
       `INSERT INTO history (tenant_id, time, change, changed_by, location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
       [
-        req.tenantId, new Date().toLocaleString(), change, req.username || "",
+        req.tenantId, new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" }), change, req.username || "",
         location || "", lot || "", vendor || "", brand || "", species || "",
         description || "", grade || "", String(quantity || ""), String(weight || ""),
         packdate || "", date_recvd || "", est || "",
@@ -27,7 +27,7 @@ router.post("/addHistory", verifyToken, requireRole("admin", "manager"), async (
 });
 
 router.get("/getHistory", verifyToken, requireRole("admin", "manager"), async (req, res) => {
-  const LIMIT = 50;
+  const LIMIT = 100;
   const offset = Math.max(0, parseInt(req.query.offset) || 0);
   const search = req.query.search?.trim() || "";
 
