@@ -803,7 +803,9 @@ const InventoryTabs = ({
 
           {/* Inventory items at NOBLESSE TRADING location */}
           <NoblessePanel
-            items={filteredItems.filter((i) => i.location?.toUpperCase() === "NOBLESSE TRADING")}
+            items={filteredItems
+              .filter((i) => i.location?.toUpperCase() === "NOBLESSE TRADING")
+              .sort((a, b) => new Date(b.date_recvd) - new Date(a.date_recvd))}
             handleItemClick={handleItemClick}
             selectedItem={selectedItem}
             selectedIds={selectedIds}
@@ -814,7 +816,9 @@ const InventoryTabs = ({
         {/* From Noblesse — lot starts with N */}
         <TabPanel height="100%" p={0} overflowY="auto">
           <NoblessePanel
-            items={filteredItems.filter((i) => i.lot?.toUpperCase().startsWith("N"))}
+            items={filteredItems
+              .filter((i) => i.lot?.toUpperCase().startsWith("N"))
+              .sort((a, b) => new Date(b.date_recvd) - new Date(a.date_recvd))}
             handleItemClick={handleRowClick}
             selectedItem={selectedItem}
             selectedIds={selectedIds}
