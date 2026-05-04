@@ -170,8 +170,8 @@ const BoxEditor = ({ boxes, onChange }) => {
 };
 
 // ── Return pallet form (Step 3) ───────────────────────────────────────────────
-const ReturnForm = ({ orderId, onSubmit, onCancel, submitting }) => {
-  const [form, setForm] = useState({ location: "", lot: "", species: "", description: "", grade: "", brand: "", packdate: "", date_recvd: today() });
+const ReturnForm = ({ orderId, onSubmit, onCancel, submitting, species }) => {
+  const [form, setForm] = useState({ location: "", lot: "", description: "", grade: "", brand: "", packdate: "", date_recvd: today() });
   const [boxes, setBoxes] = useState([{ weight: "" }]);
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
@@ -183,7 +183,7 @@ const ReturnForm = ({ orderId, onSubmit, onCancel, submitting }) => {
 
   const handleSubmit = () => {
     const validBoxes = boxes.filter((b) => b.weight && !isNaN(parseFloat(b.weight)));
-    onSubmit(orderId, { ...form, boxes: validBoxes.map((b) => ({ weight: String(b.weight) })) });
+    onSubmit(orderId, { ...form, species, boxes: validBoxes.map((b) => ({ weight: String(b.weight) })) });
   };
 
   const field = (key, label, type = "text", transform) => (
@@ -200,7 +200,6 @@ const ReturnForm = ({ orderId, onSubmit, onCancel, submitting }) => {
       <SimpleGrid columns={2} gap={2} mb={3}>
         {field("location", "Location *", "text", (v) => v.toUpperCase())}
         {field("lot", "Lot # *")}
-        {field("species", "Species")}
         {field("description", "Description")}
         {field("grade", "Grade")}
         {field("brand", "Brand")}
@@ -288,6 +287,7 @@ const OrderRow = ({ order, detail, onToggle, isExpanded, onOpenReturn, activeRet
                       onSubmit={onSubmitReturn}
                       onCancel={onCancelReturn}
                       submitting={returningId === order.id}
+                      species={detail.items[0]?.species || ""}
                     />
                   ) : (
                     <Flex gap={2} mt={2}>

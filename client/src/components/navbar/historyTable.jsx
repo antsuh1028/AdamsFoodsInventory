@@ -30,12 +30,14 @@ import {
   InputGroup,
   InputLeftElement,
   InputRightElement,
+  useToast,
 } from "@chakra-ui/react";
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, CloseIcon } from "@chakra-ui/icons";
 import { useContext } from "react";
 import { FormContext } from "../../utils/homescreen/formContext";
 import printDetails from "../../utils/printDetails";
 import getHistory from "../../utils/navbar/getHistory";
+import { API_BASE_URL } from "../../config/api";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -131,9 +133,11 @@ const DiffField = ({ label, oldVal, newVal }) => {
   );
 };
 
-const HistoryRow = ({ item, onSet }) => {
+const HistoryRow = ({ item, onSet, onRestore }) => {
   const [expanded, setExpanded] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const fieldDiff = parseFieldUpdate(item.change);
+  const isRemoved = item.change?.toLowerCase() === "removed";
   const before = isBefore(item.change);
   const color = getBadgeColor(item.change);
   const label = getBadgeLabel(item.change);
@@ -312,6 +316,20 @@ const HistoryRow = ({ item, onSet }) => {
             <Button size="xs" variant="outline" onClick={() => printDetails(item)}>
               Print
             </Button>
+            {!before && isRemoved && (
+              <Button
+                size="xs"
+                colorScheme="green"
+                isLoading={restoring}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setRestoring(true);
+                  try { await onRestore(item); } finally { setRestoring(false); }
+                }}
+              >
+                Restore
+              </Button>
+            )}
             {!before && (
               <Button size="xs" colorScheme="blue" onClick={() => onSet(item)}>
                 Set
@@ -524,6 +542,7 @@ function ShowHistory({ isOpen, onClose }) {
   const [activeSearch, setActiveSearch] = useState("");
   const debounceRef = useRef(null);
   const { setFormData } = useContext(FormContext);
+  const toast = useToast();
 
   // Initial load / search change
   useEffect(() => {
@@ -569,6 +588,22 @@ function ShowHistory({ isOpen, onClose }) {
       })
       .catch(() => {})
       .finally(() => setLoadingMore(false));
+  };
+
+  const handleRestore = async (item) => {
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch(`${API_BASE_URL}/inventoryRestore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: token || "" },
+        body: JSON.stringify({ historyItem: item, force: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to restore");
+      toast({ title: "Item restored", description: `${item.location}${item.lot ? ` · Lot ${item.lot}` : ""}`, status: "success", position: "top", duration: 3000, isClosable: true });
+    } catch (err) {
+      toast({ title: "Restore failed", description: err.message, status: "error", position: "top", duration: 4000, isClosable: true });
+    }
   };
 
   const handleSet = (item) => {
@@ -702,7 +737,7 @@ function ShowHistory({ isOpen, onClose }) {
           ) : (
             <Flex direction="column" gap={2}>
               {pageItems.map((item, index) => (
-                <HistoryRow key={page * PAGE_SIZE + index} item={item} onSet={handleSet} />
+                <HistoryRow key={page * PAGE_SIZE + index} item={item} onSet={handleSet} onRestore={handleRestore} />
               ))}
               {page >= totalPages - 1 && hasMore && (
                 <Button

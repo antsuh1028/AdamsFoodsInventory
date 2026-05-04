@@ -158,6 +158,9 @@ const DetailsPanel = ({
   const [noblesseIndices, setNoblesseIndices] = useState([]);
   const [noblesseSentDate, setNoblesseSentDate] = useState(todayISO);
   const [noblesseSending, setNoblesseSending] = useState(false);
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [returnRows, setReturnRows] = useState([{ lot: "", location: "", weight: "", boxes: [], bCount: "", bWeight: "" }]);
+  const [returnSending, setReturnSending] = useState(false);
   const toast = useToast();
   const token = localStorage.getItem("token");
 
@@ -369,6 +372,76 @@ const DetailsPanel = ({
     }
   };
 
+  const emptyReturnRow = (lot = "") => ({ lot, location: "", description: item?.description || "", weight: "", boxes: [], bCount: "", bWeight: "" });
+
+  const updateReturnRow = (i, field, value) =>
+    setReturnRows((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
+
+  const addReturnRow = () =>
+    setReturnRows((prev) => [...prev, emptyReturnRow(item?.lot || "")]);
+
+  const removeReturnRow = (i) =>
+    setReturnRows((prev) => prev.filter((_, idx) => idx !== i));
+
+  const addBoxesToRow = (i) => {
+    setReturnRows((prev) => prev.map((r, idx) => {
+      if (idx !== i) return r;
+      const n = parseInt(r.bCount);
+      const w = parseFloat(r.bWeight);
+      if (!n || n <= 0 || !w || w <= 0) return r;
+      const newBoxes = [...r.boxes, ...Array.from({ length: n }, () => ({ weight: String(w) }))];
+      const totalWeight = newBoxes.reduce((s, b) => s + parseFloat(b.weight), 0).toFixed(2);
+      return { ...r, boxes: newBoxes, weight: totalWeight, bCount: "", bWeight: "" };
+    }));
+  };
+
+  const removeBoxFromRow = (rowIdx, boxIdx) => {
+    setReturnRows((prev) => prev.map((r, idx) => {
+      if (idx !== rowIdx) return r;
+      const newBoxes = r.boxes.filter((_, bi) => bi !== boxIdx);
+      const totalWeight = newBoxes.length > 0
+        ? newBoxes.reduce((s, b) => s + parseFloat(b.weight), 0).toFixed(2) : "";
+      return { ...r, boxes: newBoxes, weight: totalWeight };
+    }));
+  };
+
+  const handleConfirmReturn = async () => {
+    const validRows = returnRows.filter((r) => r.location && (r.weight || r.boxes.length > 0));
+    if (!validRows.length) return;
+    setReturnSending(true);
+    try {
+      for (const row of validRows) {
+        const res = await fetch(`${API_BASE_URL}/inventoryAdd`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: token || "" },
+          body: JSON.stringify({
+            inputs: {
+              location: row.location,
+              lot: row.lot || item.lot,
+              vendor: item.vendor,
+              brand: item.brand,
+              species: item.species,
+              description: row.description,
+              boxes: row.boxes,
+              weight: row.boxes.length ? undefined : row.weight,
+              type: "prc",
+              source_id: item._id,
+            },
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed");
+      }
+      toast({ title: `${validRows.length} item${validRows.length > 1 ? "s" : ""} returned`, status: "success", position: "top", duration: 3000, isClosable: true });
+      setReturnOpen(false);
+      setReturnRows([emptyReturnRow()]);
+    } catch (err) {
+      toast({ title: "Return failed", description: err.message, status: "error", position: "top", duration: 4000, isClosable: true });
+    } finally {
+      setReturnSending(false);
+    }
+  };
+
   const itemBoxes = item?.boxes ?? [];
 
   useEffect(() => {
@@ -377,6 +450,8 @@ const DetailsPanel = ({
     setNoblesseOpen(false);
     setNoblesseIndices([]);
     setNoblesseSentDate(todayISO());
+    setReturnOpen(false);
+    setReturnRows([{ lot: "", location: "", weight: "", boxes: [], bCount: "", bWeight: "" }]);
   }, [item?._id]);
 
   return (
@@ -769,7 +844,7 @@ const DetailsPanel = ({
         </Collapse>
 
         {/* Send to Noblesse — only for CHILLING location */}
-        {(item?.location?.toUpperCase() === "CHILLING" || item?.location?.toUpperCase() === "FLOOR") && (
+        {false && (item?.location?.toUpperCase() === "CHILLING" || item?.location?.toUpperCase() === "FLOOR") && (
           <>
             <Divider mb={3} />
             <Collapse in={noblesseOpen} animateOpacity>
@@ -853,6 +928,100 @@ const DetailsPanel = ({
               onClick={() => { setNoblesseOpen((v) => !v); setNoblesseIndices([]); }}
             >
               {noblesseOpen ? "Cancel" : "Send to Noblesse"}
+            </Button>
+          </>
+        )}
+
+        {/* Return from Noblesse — only when item is at Noblesse Trading */}
+        {false && item?.location?.toUpperCase() === "NOBLESSE TRADING" && (
+          <>
+            <Divider mb={3} />
+            <Collapse in={returnOpen} animateOpacity>
+              <Box bg="green.50" border="1px" borderColor="green.200" borderRadius="md" p={3} mb={2}>
+                <Text fontSize="xs" fontWeight="semibold" color="green.700" mb={2}>
+                  Return from Noblesse Trading
+                </Text>
+                <Flex direction="column" gap={2}>
+                  {returnRows.map((row, i) => (
+                    <Box key={i} bg="white" border="1px" borderColor="green.100" borderRadius="md" p={2}>
+                      {/* Lot + Location + remove */}
+                      <Flex gap={1.5} align="center" mb={1.5} flexWrap="wrap">
+                        <Input size="xs" placeholder="New Lot" value={row.lot} w="110px" borderRadius="md"
+                          onChange={(e) => updateReturnRow(i, "lot", e.target.value)} />
+                        <Input size="xs" placeholder="Location" value={row.location} w="80px" borderRadius="md"
+                          onChange={(e) => updateReturnRow(i, "location", e.target.value)} />
+                        {returnRows.length > 1 && (
+                          <Button size="xs" variant="ghost" colorScheme="red" minW="auto" px={1} ml="auto"
+                            onClick={() => removeReturnRow(i)}>×</Button>
+                        )}
+                      </Flex>
+                      {/* Description */}
+                      <Input size="xs" placeholder="Description" value={row.description} borderRadius="md" mb={1.5}
+                        onChange={(e) => updateReturnRow(i, "description", e.target.value)} />
+                      {/* Boxes chips */}
+                      {row.boxes.length > 0 && (
+                        <Flex flexWrap="wrap" gap={1} mb={1.5} align="center">
+                          {row.boxes.map((box, bi) => (
+                            <Flex key={bi} align="center" gap={0.5} px={1.5} py={0.5} bg="green.100" borderRadius="full" fontSize="xs" color="green.700">
+                              <Text>{parseFloat(box.weight).toFixed(2)} lb</Text>
+                              <Button size="xs" variant="ghost" colorScheme="red" minW="auto" px={0.5} h="auto" lineHeight="1"
+                                onClick={() => removeBoxFromRow(i, bi)}>×</Button>
+                            </Flex>
+                          ))}
+                          <Text fontSize="xs" color="green.600" ml={1}>= {row.weight} lb</Text>
+                        </Flex>
+                      )}
+                      {/* Bulk add boxes */}
+                      <Flex gap={1.5} align="center" flexWrap="wrap">
+                        <Input size="xs" placeholder="Count" value={row.bCount} w="58px" borderRadius="md" type="number"
+                          onChange={(e) => updateReturnRow(i, "bCount", e.target.value)} />
+                        <Text fontSize="xs" color="gray.400">×</Text>
+                        <Input size="xs" placeholder="lb each" value={row.bWeight} w="68px" borderRadius="md" type="number"
+                          onChange={(e) => updateReturnRow(i, "bWeight", e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") addBoxesToRow(i); }} />
+                        <Button size="xs" colorScheme="green" variant="outline" borderRadius="md"
+                          onClick={() => addBoxesToRow(i)}>Add boxes</Button>
+                        {!row.boxes.length && (
+                          <Input size="xs" placeholder="or total lb" value={row.weight} w="80px" borderRadius="md" type="number"
+                            onChange={(e) => updateReturnRow(i, "weight", e.target.value)} />
+                        )}
+                      </Flex>
+                    </Box>
+                  ))}
+                </Flex>
+                <Flex gap={2} mt={2} align="center">
+                  <Button size="xs" variant="ghost" colorScheme="green" onClick={addReturnRow}>+ Add row</Button>
+                  {returnRows.some((r) => r.location && (r.weight || r.boxes.length > 0)) && (
+                    <Text fontSize="xs" color="green.600">
+                      {returnRows.filter((r) => r.location && (r.weight || r.boxes.length > 0)).length} item(s) ·{" "}
+                      {returnRows.reduce((s, r) => s + parseFloat(r.weight || 0), 0).toFixed(1)} lb
+                    </Text>
+                  )}
+                </Flex>
+                <Flex gap={2} mt={3}>
+                  <Button
+                    size="xs"
+                    colorScheme="green"
+                    isLoading={returnSending}
+                    isDisabled={!returnRows.some((r) => r.location && (r.weight || r.boxes.length > 0))}
+                    onClick={handleConfirmReturn}
+                  >
+                    Confirm Return
+                  </Button>
+                </Flex>
+              </Box>
+            </Collapse>
+            <Button
+              size="xs"
+              colorScheme={returnOpen ? "gray" : "green"}
+              variant="outline"
+              mb={3}
+              onClick={() => {
+                if (!returnOpen) setReturnRows([emptyReturnRow(item?.lot || "")]);
+                setReturnOpen((v) => !v);
+              }}
+            >
+              {returnOpen ? "Cancel" : "Return from Noblesse"}
             </Button>
           </>
         )}

@@ -416,6 +416,8 @@ const Homescreen = () => {
                 onUpdate={handleUpdate}
                 onRemove={handleRemove}
                 onClear={handleClear}
+                formData={formData}
+                selectedItem={selectedItem}
               />
             </Flex>
           </Flex>

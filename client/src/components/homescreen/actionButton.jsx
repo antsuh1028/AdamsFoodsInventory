@@ -8,8 +8,17 @@ const ActionButtons = ({
   onRemove,
   onClear,
   loading,
+  formData = {},
+  selectedItem,
 }) => {
   const buttonSize = useBreakpointValue({ base: "sm", md: "md" });
+
+  const hasRequired = !!(
+    formData.location?.trim() &&
+    formData.lot?.trim() &&
+    formData.species?.trim()
+  );
+  const hasSelected = !!selectedItem;
 
   return (
     <Flex width="100%" justifyContent="center" py={2} px={1}>
@@ -17,7 +26,7 @@ const ActionButtons = ({
         <Button
           colorScheme="green"
           onClick={onAdd}
-          isDisabled={loading}
+          isDisabled={loading || !hasRequired}
           size={buttonSize}
           flex={{ base: "1 1 45%", sm: "0 0 auto" }}
         >
@@ -37,6 +46,7 @@ const ActionButtons = ({
           variant="outline"
           onClick={onUpdate}
           type="submit"
+          isDisabled={!hasRequired}
           size={buttonSize}
           flex={{ base: "1 1 45%", sm: "0 0 auto" }}
         >
@@ -46,6 +56,7 @@ const ActionButtons = ({
           colorScheme="orange"
           variant="outline"
           onClick={onRemove}
+          isDisabled={!hasSelected}
           size={buttonSize}
           flex={{ base: "1 1 45%", sm: "0 0 auto" }}
         >

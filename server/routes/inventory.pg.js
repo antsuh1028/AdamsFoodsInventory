@@ -52,7 +52,7 @@ const historyEntry = async (client, tenantId, item, change, username, oldData = 
 // ── Add ───────────────────────────────────────────────────────────────────────
 router.post("/inventoryAdd", verifyToken, async (req, res) => {
   const { inputs, force } = req.body;
-  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, type, scanImageKey, boxes } = inputs || {};
+  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, type, scanImageKey, boxes, source_id } = inputs || {};
 
   if (!location || !location.trim()) return res.status(400).json({ error: "Location field cannot be blank." });
   const locationUpper = location.toUpperCase();
@@ -76,12 +76,12 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
     const ins = await client.query(
       `INSERT INTO inventory
          (tenant_id, location, lot, vendor, brand, species, description, grade,
-          quantity, weight, packdate, date_recvd, est, price, scan_image_key, type, boxes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+          quantity, weight, packdate, date_recvd, est, price, scan_image_key, type, boxes, source_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
       [req.tenantId, locationUpper, lot||null, vendor||null, brand||null, species||null,
        description||null, grade||null, computedQty||null, toNum(computedWeight),
        packdate||null, date_recvd||null, est||null, toNum(price), scanImageKey||null,
-       type||null, JSON.stringify(parsedBoxes)]
+       type||null, JSON.stringify(parsedBoxes), source_id||null]
     );
     const item = ins.rows[0];
     const addLabel = req.body.source === "scanner" ? "Scanner Add" : "Added";
@@ -427,6 +427,48 @@ router.patch("/inventory/:id/box/bulk-add", verifyToken, async (req, res) => {
   } catch (err) {
     await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ── Restore ───────────────────────────────────────────────────────────────────
+router.post("/inventoryRestore", verifyToken, requireRole("admin", "manager"), async (req, res) => {
+  const { historyItem, force } = req.body;
+  const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est } = historyItem || {};
+
+  if (!location) return res.status(400).json({ error: "No location in history record" });
+  const locationUpper = location.toUpperCase();
+  if (!validLocations.includes(locationUpper)) return res.status(400).json({ error: "Location no longer exists" });
+
+  const client = await pool.connect();
+  try {
+    if (!force) {
+      const occ = await client.query(
+        `SELECT COUNT(*) FROM inventory WHERE tenant_id = $1 AND location = $2`,
+        [req.tenantId, locationUpper]
+      );
+      const count = parseInt(occ.rows[0].count);
+      if (count > 0) return res.status(409).json({ error: `${locationUpper} is currently occupied by ${count} item(s).`, code: "LOCATION_OCCUPIED", count });
+    }
+
+    await client.query("BEGIN");
+    const ins = await client.query(
+      `INSERT INTO inventory
+         (tenant_id, location, lot, vendor, brand, species, description, grade,
+          quantity, weight, packdate, date_recvd, est, boxes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      [req.tenantId, locationUpper, lot||null, vendor||null, brand||null, species||null,
+       description||null, grade||null, quantity||null, toNum(weight),
+       packdate||null, date_recvd||null, est||null, JSON.stringify([])]
+    );
+    await historyEntry(client, req.tenantId, ins.rows[0], "Restored", req.username);
+    await client.query("COMMIT");
+    res.status(201).json(fmt(ins.rows[0]));
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("inventoryRestore error:", err);
+    res.status(500).json({ error: "Failed to restore item" });
   } finally {
     client.release();
   }

@@ -229,6 +229,7 @@ router.post("/extract-form", verifyToken, upload.single("image"), async (req, re
       console.error("Scan image upload failed (non-fatal):", uploadErr.message);
     }
 
+    if (extracted.species) extracted.species = extracted.species.toUpperCase();
     res.json({ ...extracted, scanImageKey });
   } catch (error) {
     console.error("Extraction error:", error);
@@ -238,8 +239,9 @@ router.post("/extract-form", verifyToken, upload.single("image"), async (req, re
 
 router.post("/scanner-resolve", verifyToken, async (req, res) => {
   const { action, existingId, inputs } = req.body;
-  const { location, lot, vendor, brand, species, description, grade, quantity, weight,
+  const { location, lot, vendor, brand, species: rawSpecies, description, grade, quantity, weight,
           packdate, date_recvd, est, price, type, scanImageKey, boxes } = inputs || {};
+  const species = rawSpecies ? rawSpecies.toUpperCase() : rawSpecies;
 
   const parsedBoxes = Array.isArray(boxes) ? boxes.map((b) => ({ weight: String(b.weight ?? b) })) : [];
   const computedWeight = parsedBoxes.length > 0

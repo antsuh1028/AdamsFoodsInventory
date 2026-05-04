@@ -176,7 +176,7 @@ const InventoryLevelPanel = ({
                                   />
                                 </Box>
                                 <Text fontSize="sm" fontWeight="semibold" color={isChecked ? "red.400" : isSelected ? "blue.700" : "gray.700"} noOfLines={1}>
-                                  {item.location}
+                                  {item.vendor || item.lot || "—"}
                                 </Text>
                               </Flex>
                               <Flex align="center" gap={1.5} flexShrink={0}>
@@ -195,6 +195,9 @@ const InventoryLevelPanel = ({
                             </Flex>
                             <Text fontSize="xs" color="gray.500" noOfLines={1} mt={0.5}>
                               {item.description}
+                            </Text>
+                            <Text fontSize="10px" color="gray.400" mt={0.5}>
+                              Lot: {item.lot} · {item.weight} lbs
                             </Text>
                           </Box>
                         </ListItem>
@@ -318,7 +321,7 @@ const InventoryOtherPanel = ({
                                     />
                                   </Box>
                                   <Text fontSize="sm" fontWeight="semibold" color={isChecked ? "red.400" : isSelected ? "blue.700" : "gray.700"} noOfLines={1}>
-                                    {item.location}
+                                    {item.vendor || item.lot || "—"}
                                   </Text>
                                 </Flex>
                                 <Flex align="center" gap={1.5} flexShrink={0}>
@@ -337,6 +340,9 @@ const InventoryOtherPanel = ({
                               </Flex>
                               <Text fontSize="xs" color="gray.500" noOfLines={1} mt={0.5}>
                                 {item.description}
+                              </Text>
+                              <Text fontSize="10px" color="gray.400" mt={0.5}>
+                                Lot: {item.lot} · {item.weight} lbs
                               </Text>
                             </Box>
                           </ListItem>
@@ -805,11 +811,15 @@ const InventoryTabs = ({
           />
         </TabPanel>
 
-        {/* From Noblesse — placeholder */}
-        <TabPanel height="100%" p={0}>
-          <Flex height="100%" align="center" justify="center">
-            <Text fontSize="sm" color="gray.300">Coming soon</Text>
-          </Flex>
+        {/* From Noblesse — lot starts with N */}
+        <TabPanel height="100%" p={0} overflowY="auto">
+          <NoblessePanel
+            items={filteredItems.filter((i) => i.lot?.toUpperCase().startsWith("N"))}
+            handleItemClick={handleRowClick}
+            selectedItem={selectedItem}
+            selectedIds={selectedIds}
+            onToggleSelect={handleToggleSelect}
+          />
         </TabPanel>
       </TabPanels>
     </Tabs>
