@@ -348,7 +348,7 @@ const ProductionOrders = ({ isOpen, onClose }) => {
     }
     setLoadingInv(true);
     try {
-      const res = await axiosInstance.get(`/inventorySearch?q=${encodeURIComponent(q)}&type=raw`);
+      const res = await axiosInstance.get(`/inventorySearch?q=${encodeURIComponent(q)}`);
       invCache.set(key, { data: res.data, ts: Date.now() });
       setInventory(res.data);
     } catch {
