@@ -24,3 +24,9 @@ yarn-debug.log*
 yarn-error.log*
 coverage/
 .claude/settings.local.json
+server/tests/features.pg.test.js
+server/scripts/strip-adamsfood-brand.js
+server/routes/auth.pg.js
+scripts/smoke-test.js
+.claude/settings.local.json
+.claude/settings.local.json

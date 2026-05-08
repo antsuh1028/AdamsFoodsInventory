@@ -336,6 +336,7 @@ const ProductionOrders = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (!isOpen) return;
     if (tabIndex === 1) fetchOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, tabIndex]);
 
   const searchInventory = useCallback(async (q) => {

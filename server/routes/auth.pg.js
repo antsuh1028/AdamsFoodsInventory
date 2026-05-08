@@ -12,12 +12,13 @@ const loginLimiter = rateLimit({
 
 router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
+  const username = email?.toLowerCase().trim();
   try {
     const result = await pool.query(
       `SELECT u.*, t.id as tenant_id FROM users u
        JOIN tenants t ON t.id = u.tenant_id
-       WHERE u.username = $1`,
-      [email]
+       WHERE LOWER(u.username) = $1`,
+      [username]
     );
     const user = result.rows[0];
     if (!user) return res.status(401).json({ message: "Invalid credentials" });

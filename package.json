@@ -1,5 +1,7 @@
 {
   "scripts": {
-    "deploy": "ssh -i ~/Desktop/AdamsFoodsInventory/AdamsFoods.pem bitnami@34.209.235.176 bash ~/deploy.sh"
+    "deploy": "ssh -i C:/Users/DATWO/Downloads/AdamsFoods.pem admin@100.22.80.237 bash ~/deploy.sh",
+    "deploy:server": "ssh -i C:/Users/DATWO/Downloads/AdamsFoods.pem admin@100.22.80.237 \"cd ~/AdamsFoodsInventory && git pull origin main && cd server && npm install && pm2 restart adamsfoodsinventory\"",
+    "deploy:client": "cd client && npx react-scripts build && scp -i C:/Users/DATWO/Downloads/AdamsFoods.pem -o StrictHostKeyChecking=accept-new -r build/* admin@100.22.80.237:/var/www/adamsfood/client"
   }
 }

@@ -134,7 +134,7 @@ function UploadFile({ isOpen, onClose }) {
             const [location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est] = row;
             return axiosInstance
               .post("/inventoryAdd", {
-                inputs: { location: String(location).toUpperCase(), lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est },
+                inputs: { location: String(location).toUpperCase(), lot, vendor, brand, species: species ? String(species).toUpperCase() : species, description, grade, quantity, weight, packdate, date_recvd, est },
                 force: true,
               })
               .catch((err) => console.error("Error adding row:", err));

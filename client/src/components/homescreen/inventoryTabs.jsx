@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import PropTypes from "prop-types";
 import {
   Tabs,
@@ -197,7 +197,7 @@ const InventoryLevelPanel = ({
                               {item.description}
                             </Text>
                             <Text fontSize="10px" color="gray.400" mt={0.5}>
-                              Lot: {item.lot} · {item.weight} lbs
+                              {item.location} · Lot: {item.lot} · {item.weight} lbs
                             </Text>
                           </Box>
                         </ListItem>
@@ -342,7 +342,7 @@ const InventoryOtherPanel = ({
                                 {item.description}
                               </Text>
                               <Text fontSize="10px" color="gray.400" mt={0.5}>
-                                Lot: {item.lot} · {item.weight} lbs
+                                {item.location} · Lot: {item.lot} · {item.weight} lbs
                               </Text>
                             </Box>
                           </ListItem>
@@ -412,7 +412,7 @@ const NoblessePanel = ({ items, handleItemClick, selectedItem, selectedIds, onTo
                       </Flex>
                     </Flex>
                     <Text fontSize="xs" color="gray.500" noOfLines={1} mt={0.5}>{item.description}</Text>
-                    <Text fontSize="10px" color="gray.400" mt={0.5}>Lot: {item.lot} · {item.weight} lbs</Text>
+                    <Text fontSize="10px" color="gray.400" mt={0.5}>{item.location} · Lot: {item.lot} · {item.weight} lbs</Text>
                   </Box>
                 </ListItem>
               );

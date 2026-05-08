@@ -110,7 +110,7 @@ const FormScanner = ({ isOpen, onClose }) => {
       setIndividualWeights(iw || []);
       setScanImageKey(key || null);
       setIsTally(tally !== false);
-      setFields({ ...rest, type: rest.type || classifyType(rest.brand, rest.description) });
+      setFields({ ...rest, species: rest.species ? String(rest.species).toUpperCase() : rest.species, type: rest.type || classifyType(rest.brand, rest.description) });
       setStep("review");
     } catch (err) {
       toast({ title: "Extraction failed", description: err.message, status: "error", position: "top", duration: 3000, isClosable: true });
@@ -303,7 +303,7 @@ const FormScanner = ({ isOpen, onClose }) => {
                         borderRadius="lg"
                         type={type || "text"}
                         value={fields[key] || ""}
-                        onChange={(e) => setFields((prev) => ({ ...prev, [key]: e.target.value }))}
+                        onChange={(e) => setFields((prev) => ({ ...prev, [key]: key === "species" ? e.target.value.toUpperCase() : e.target.value }))}
                         bg={fields[key] ? "white" : "yellow.50"}
                         borderColor={fields[key] ? "gray.200" : "yellow.300"}
                       />

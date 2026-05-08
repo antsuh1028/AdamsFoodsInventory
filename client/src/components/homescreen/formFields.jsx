@@ -2,10 +2,10 @@ import React, { useState, useRef, useCallback } from "react";
 import { FormLabel, Input, Select, VStack, Box, Text, useBreakpointValue } from "@chakra-ui/react";
 
 export const SPECIES_OPTIONS = [
-  { value: "Beef", label: "Beef" },
-  { value: "Pork", label: "Pork" },
-  { value: "Chicken", label: "Chicken" },
-  { value: "Lamb", label: "Lamb" },
+  { value: "BEEF", label: "BEEF" },
+  { value: "PORK", label: "PORK" },
+  { value: "CHICKEN", label: "CHICKEN" },
+  { value: "LAMB", label: "LAMB" },
 ];
 
 export const TYPE_OPTIONS = [
