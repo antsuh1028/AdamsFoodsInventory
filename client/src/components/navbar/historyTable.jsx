@@ -30,6 +30,7 @@ import {
   InputGroup,
   InputLeftElement,
   InputRightElement,
+  Image,
   useToast,
 } from "@chakra-ui/react";
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, CloseIcon } from "@chakra-ui/icons";
@@ -38,6 +39,7 @@ import { FormContext } from "../../utils/homescreen/formContext";
 import printDetails from "../../utils/printDetails";
 import getHistory from "../../utils/navbar/getHistory";
 import { API_BASE_URL } from "../../config/api";
+import axiosInstance from "../../utils/axiosInstance";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -136,7 +138,16 @@ const DiffField = ({ label, oldVal, newVal }) => {
 const HistoryRow = ({ item, onSet, onRestore }) => {
   const [expanded, setExpanded] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [scanUrl, setScanUrl] = useState(null);
+  const [scanZoomed, setScanZoomed] = useState(false);
   const fieldDiff = parseFieldUpdate(item.change);
+
+  useEffect(() => {
+    if (!expanded || !item.scan_image_key || scanUrl) return;
+    axiosInstance.get(`/scan-url?key=${encodeURIComponent(item.scan_image_key)}`)
+      .then((res) => setScanUrl(res.data.url))
+      .catch(() => {});
+  }, [expanded, item.scan_image_key, scanUrl]);
   const isRemoved = item.change?.toLowerCase() === "removed";
   const before = isBefore(item.change);
   const color = getBadgeColor(item.change);
@@ -312,6 +323,32 @@ const HistoryRow = ({ item, onSet, onRestore }) => {
             </>
           )}
 
+          {item.scan_image_key && (
+            <Box mb={4}>
+              <Text fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="wide" fontWeight="medium" mb={2}>
+                Scan Image
+              </Text>
+              {scanUrl ? (
+                <Image
+                  src={scanUrl}
+                  maxH="160px"
+                  objectFit="contain"
+                  borderRadius="md"
+                  border="1px solid"
+                  borderColor="gray.200"
+                  cursor="zoom-in"
+                  onClick={() => setScanZoomed(true)}
+                  title="Click to enlarge"
+                />
+              ) : (
+                <Flex align="center" gap={2} h="40px">
+                  <Spinner size="xs" color="gray.400" />
+                  <Text fontSize="xs" color="gray.400">Loading scan…</Text>
+                </Flex>
+              )}
+            </Box>
+          )}
+
           <Flex gap={2} justify="flex-end" mt={4}>
             <Button size="xs" variant="outline" onClick={() => printDetails(item)}>
               Print
@@ -338,6 +375,18 @@ const HistoryRow = ({ item, onSet, onRestore }) => {
           </Flex>
         </Box>
       </Collapse>
+
+      {scanZoomed && scanUrl && (
+        <Modal isOpen onClose={() => setScanZoomed(false)} size="4xl" isCentered>
+          <ModalOverlay backdropFilter="blur(2px)" />
+          <ModalContent borderRadius="xl" bg="gray.900">
+            <ModalCloseButton color="white" />
+            <ModalBody p={3} display="flex" justifyContent="center" alignItems="center">
+              <Image src={scanUrl} maxH="85vh" maxW="100%" objectFit="contain" borderRadius="md" />
+            </ModalBody>
+          </ModalContent>
+        </Modal>
+      )}
     </Box>
   );
 };
@@ -536,7 +585,7 @@ function ShowHistory({ isOpen, onClose }) {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(0);
-  const [showBoxEvents, setShowBoxEvents] = useState(false);
+  const [changeFilter, setChangeFilter] = useState("all");
   const [viewMode, setViewMode] = useState("cards"); // "cards" | "table"
   const [searchInput, setSearchInput] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
@@ -544,13 +593,13 @@ function ShowHistory({ isOpen, onClose }) {
   const { setFormData } = useContext(FormContext);
   const toast = useToast();
 
-  // Initial load / search change
+  // Initial load / search or filter change
   useEffect(() => {
     if (!isOpen) return;
     setPage(0);
     setHistoryData([]);
     setLoading(true);
-    getHistory(0, activeSearch)
+    getHistory(0, activeSearch, changeFilter)
       .then(({ items, total, hasMore }) => {
         setHistoryData(items || []);
         setTotal(total || 0);
@@ -558,7 +607,7 @@ function ShowHistory({ isOpen, onClose }) {
       })
       .catch(() => setHistoryData([]))
       .finally(() => setLoading(false));
-  }, [isOpen, activeSearch]);
+  }, [isOpen, activeSearch, changeFilter]);
 
   // Debounce search input → activeSearch (min 2 chars, or empty to reset)
   const handleSearchChange = (val) => {
@@ -580,7 +629,7 @@ function ShowHistory({ isOpen, onClose }) {
 
   const handleLoadMore = () => {
     setLoadingMore(true);
-    getHistory(historyData.length, activeSearch)
+    getHistory(historyData.length, activeSearch, changeFilter)
       .then(({ items, total, hasMore }) => {
         setHistoryData((prev) => [...prev, ...(items || [])]);
         setTotal(total || 0);
@@ -624,7 +673,7 @@ function ShowHistory({ isOpen, onClose }) {
     onClose();
   };
 
-  const filteredData = showBoxEvents ? historyData : historyData.filter((h) => h.category !== "box");
+  const filteredData = historyData;
   const totalPages = Math.ceil(filteredData.length / PAGE_SIZE);
   const pageItems = filteredData.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
@@ -671,15 +720,27 @@ function ShowHistory({ isOpen, onClose }) {
             )}
 
             {!loading && (
-              <Button
-                size="xs"
-                variant={showBoxEvents ? "solid" : "outline"}
-                colorScheme="gray"
-                borderRadius="md"
-                onClick={() => { setShowBoxEvents((v) => !v); setPage(0); }}
-              >
-                {showBoxEvents ? "Hide box events" : "Show box events"}
-              </Button>
+              <Flex gap={1} flexWrap="wrap">
+                {[
+                  { key: "all",        label: "All",        color: "gray"   },
+                  { key: "added",      label: "Added",      color: "green"  },
+                  { key: "updated",    label: "Updated",    color: "blue"   },
+                  { key: "removed",    label: "Removed",    color: "red"    },
+                  { key: "production", label: "Production", color: "purple" },
+                  { key: "box",        label: "Box",        color: "gray"   },
+                ].map(({ key, label, color }) => (
+                  <Button
+                    key={key}
+                    size="xs"
+                    borderRadius="full"
+                    variant={changeFilter === key ? "solid" : "outline"}
+                    colorScheme={changeFilter === key ? color : "gray"}
+                    onClick={() => { setChangeFilter(key); setPage(0); }}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </Flex>
             )}
 
             {/* View toggle */}
@@ -722,7 +783,7 @@ function ShowHistory({ isOpen, onClose }) {
           ) : filteredData.length === 0 ? (
             <Flex justify="center" align="center" py={12}>
               <Text color="gray.400" fontSize="sm">
-                {historyData.length === 0 ? "No history yet." : "No pallet events yet."}
+                {changeFilter !== "all" ? `No "${changeFilter}" events found.` : activeSearch ? "No results." : "No history yet."}
               </Text>
             </Flex>
           ) : viewMode === "table" ? (

@@ -113,6 +113,21 @@ router.get("/get-pdf", verifyToken, async (req, res) => {
   }
 });
 
+router.get("/scan-url", verifyToken, async (req, res) => {
+  const key = req.query.key || "";
+  if (!key.startsWith("scans/")) return res.status(400).json({ error: "Invalid key" });
+  try {
+    const url = await getSignedUrl(
+      s3Client,
+      new GetObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key }),
+      { expiresIn: 3600 }
+    );
+    res.json({ url });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to generate scan URL" });
+  }
+});
+
 router.get("/get-scan-image", verifyToken, async (req, res) => {
   const key = req.query.key || "";
   if (!key.startsWith("scans/")) return res.status(400).json({ error: "Invalid key" });

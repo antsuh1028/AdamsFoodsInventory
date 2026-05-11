@@ -8,6 +8,7 @@ import {
 import { AddIcon, MinusIcon, ChevronDownIcon, ChevronRightIcon, RepeatIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import cache from "../../utils/apiCache";
+import FormScannerReturn from "./formScannerReturn";
 
 const PROCESSOR  = "Noblesse Trading";
 const ORDERS_TTL = 2 * 60 * 1000;
@@ -220,6 +221,9 @@ const ReturnForm = ({ orderId, onSubmit, onCancel, submitting, species }) => {
 // ── Order row (Orders tab) ────────────────────────────────────────────────────
 const OrderRow = ({ order, detail, onToggle, isExpanded, onOpenReturn, activeReturnId, onSubmitReturn, onCancelReturn, returningId, onCloseOrder }) => {
   const isPending = order.status === "pending";
+  const [expandedItemId, setExpandedItemId] = useState(null);
+
+  const toggleItem = (id) => setExpandedItemId((prev) => (prev === id ? null : id));
 
   return (
     <Box border="1px solid" borderColor="gray.100" borderRadius="md" mb={2}>
@@ -235,13 +239,18 @@ const OrderRow = ({ order, detail, onToggle, isExpanded, onOpenReturn, activeRet
         {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
         <Box flex={1}>
           <Text fontWeight="semibold" fontSize="sm">{order.processorName}</Text>
-          <Text fontSize="xs" color="gray.500">Sent {order.sentDate}</Text>
+          <Flex gap={2} align="center">
+            <Text fontSize="xs" color="gray.500">Sent {order.sentDate}</Text>
+            {order.itemCount != null && (
+              <Text fontSize="xs" color="gray.400">· {order.itemCount} pallet{order.itemCount !== 1 ? "s" : ""} · {parseFloat(order.totalWeight).toFixed(0)} lb</Text>
+            )}
+          </Flex>
         </Box>
         <Badge colorScheme={isPending ? "yellow" : "green"} fontSize="xs">
           {order.status}
         </Badge>
         {order.yield && (
-          <Badge  fontSize="xs">Yield {order.yield}%</Badge>
+          <Badge fontSize="xs">Yield {order.yield}%</Badge>
         )}
       </Flex>
 
@@ -255,11 +264,34 @@ const OrderRow = ({ order, detail, onToggle, isExpanded, onOpenReturn, activeRet
                 <Box mb={3}>
                   <Text fontSize="xs" fontWeight="semibold" color="gray.500" mb={1}>SENT</Text>
                   {detail.items.map((item) => (
-                    <Flex key={item._id} fontSize="xs" gap={3} py={1} borderBottom="1px solid" borderColor="gray.50">
-                      <Text color="gray.600">{item.location}</Text>
-                      <Text>{item.species} — {item.description}</Text>
-                      <Text ml="auto" fontWeight="medium">{parseFloat(item.weightSent).toFixed(1)} lb · {item.boxesSent.length} boxes</Text>
-                    </Flex>
+                    <Box key={item.id} borderBottom="1px solid" borderColor="gray.50">
+                      <Flex
+                        fontSize="xs"
+                        gap={3}
+                        py={1}
+                        cursor={item.boxesSent?.length > 0 ? "pointer" : "default"}
+                        _hover={item.boxesSent?.length > 0 ? { bg: "gray.50" } : {}}
+                        onClick={() => item.boxesSent?.length > 0 && toggleItem(item.id)}
+                        align="center"
+                      >
+                        {item.boxesSent?.length > 0 ? (
+                          expandedItemId === item.id ? <ChevronDownIcon color="gray.400" /> : <ChevronRightIcon color="gray.400" />
+                        ) : <Box w="12px" />}
+                        <Text color="gray.600" flexShrink={0}>{item.location}</Text>
+                        <Text color="blue.400" flexShrink={0}>{item.lot}</Text>
+                        <Text noOfLines={1}>{item.species} — {item.description}</Text>
+                        <Text ml="auto" fontWeight="medium" flexShrink={0}>{parseFloat(item.weightSent).toFixed(1)} lb · {item.boxesSent.length} boxes</Text>
+                      </Flex>
+                      <Collapse in={expandedItemId === item.id} animateOpacity>
+                        <SimpleGrid columns={6} gap={1} px={4} pb={2}>
+                          {item.boxesSent.map((box, idx) => (
+                            <Text key={idx} fontSize="xs" color="gray.500" textAlign="center" bg="gray.50" borderRadius="sm" py={0.5}>
+                              {parseFloat(box.weight).toFixed(1)}
+                            </Text>
+                          ))}
+                        </SimpleGrid>
+                      </Collapse>
+                    </Box>
                   ))}
                 </Box>
               )}
@@ -268,40 +300,36 @@ const OrderRow = ({ order, detail, onToggle, isExpanded, onOpenReturn, activeRet
                 <Box mb={3}>
                   <Text fontSize="xs" fontWeight="semibold" color="gray.500" mb={1}>RETURNED</Text>
                   {detail.returns.map((ret) => (
-                    <Flex key={ret.id} fontSize="xs" gap={3} py={1} borderBottom="1px solid" borderColor="gray.50">
-                      <Text color="gray.600">{ret.location}</Text>
-                      <Text>{ret.species} — {ret.description}</Text>
-                      <Text ml="auto" fontWeight="medium">
-                        {ret.weight ? `${parseFloat(ret.weight).toFixed(1)} lb` : "—"}
-                      </Text>
-                    </Flex>
+                    <Box key={ret.id} py={1} borderBottom="1px solid" borderColor="gray.50">
+                      <Flex fontSize="xs" gap={3} align="center">
+                        <Text color="gray.600" flexShrink={0}>{ret.location}</Text>
+                        <Text color="green.500" flexShrink={0}>{ret.lot}</Text>
+                        <Text noOfLines={1}>{ret.species} — {ret.description}</Text>
+                        <Text ml="auto" fontWeight="medium" flexShrink={0}>
+                          {ret.weight ? `${parseFloat(ret.weight).toFixed(1)} lb` : "—"}
+                        </Text>
+                      </Flex>
+                      {ret.sourceLots?.length > 0 && (
+                        <Text fontSize="xs" color="gray.400" pl={0} mt={0.5}>
+                          From: {ret.sourceLots.join(", ")}
+                        </Text>
+                      )}
+                    </Box>
                   ))}
                 </Box>
               )}
 
               {isPending && (
-                <>
-                  {activeReturnId === order.id ? (
-                    <ReturnForm
-                      orderId={order.id}
-                      onSubmit={onSubmitReturn}
-                      onCancel={onCancelReturn}
-                      submitting={returningId === order.id}
-                      species={detail.items[0]?.species || ""}
-                    />
-                  ) : (
-                    <Flex gap={2} mt={2}>
-                      <Button size="sm" colorScheme="blue" variant="outline" onClick={() => onOpenReturn(order.id)}>
-                        + Return Pallet
-                      </Button>
-                      {detail.returns.length > 0 && (
-                        <Button size="sm" colorScheme="green" onClick={() => onCloseOrder(order.id)}>
-                          Close Order
-                        </Button>
-                      )}
-                    </Flex>
+                <Flex gap={2} mt={2}>
+                  <Button size="sm" colorScheme="gray" variant="outline" onClick={() => onOpenReturn(order.id)}>
+                    + Return Pallet
+                  </Button>
+                  {detail.returns.length > 0 && (
+                    <Button size="sm" colorScheme="green" onClick={() => onCloseOrder(order.id)}>
+                      Close Order
+                    </Button>
                   )}
-                </>
+                </Flex>
               )}
             </>
           )}
@@ -332,6 +360,7 @@ const ProductionOrders = ({ isOpen, onClose }) => {
   const [orderDetails, setOrderDetails] = useState({});
   const [activeReturnId, setActiveReturnId] = useState(null);
   const [returningId, setReturningId] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -511,6 +540,7 @@ const ProductionOrders = ({ isOpen, onClose }) => {
   };
 
   return (
+    <>
     <Modal isOpen={isOpen} onClose={handleClose} isCentered size="xl">
       <ModalOverlay bg="blackAlpha.600" />
       <ModalContent maxH="85vh" borderRadius="xl" overflow="hidden">
@@ -595,12 +625,27 @@ const ProductionOrders = ({ isOpen, onClose }) => {
 
               {/* ── Tab 2: Orders ─────────────────────────────────────────── */}
               <TabPanel px={4} pb={4}>
+                <Flex gap={1} mb={3}>
+                  {["all", "pending", "returned"].map((f) => (
+                    <Button
+                      key={f}
+                      size="xs"
+                      borderRadius="full"
+                      variant={statusFilter === f ? "solid" : "outline"}
+                      colorScheme={f === "pending" ? "yellow" : f === "returned" ? "green" : "gray"}
+                      onClick={() => setStatusFilter(f)}
+                      textTransform="capitalize"
+                    >
+                      {f}
+                    </Button>
+                  ))}
+                </Flex>
                 {loadingOrders ? (
                   <Flex justify="center" py={6}><Spinner /></Flex>
-                ) : orders.length === 0 ? (
-                  <Text fontSize="sm" color="gray.400" textAlign="center" py={6}>No orders yet</Text>
+                ) : orders.filter((o) => statusFilter === "all" || o.status === statusFilter).length === 0 ? (
+                  <Text fontSize="sm" color="gray.400" textAlign="center" py={6}>No {statusFilter === "all" ? "" : statusFilter} orders</Text>
                 ) : (
-                  orders.map((order) => (
+                  orders.filter((o) => statusFilter === "all" || o.status === statusFilter).map((order) => (
                     <OrderRow
                       key={order.id}
                       order={order}
@@ -641,6 +686,15 @@ const ProductionOrders = ({ isOpen, onClose }) => {
         )}
       </ModalContent>
     </Modal>
+
+    <FormScannerReturn
+      isOpen={!!activeReturnId}
+      onClose={() => setActiveReturnId(null)}
+      orderId={activeReturnId}
+      onSubmit={submitReturn}
+      submitting={!!returningId}
+    />
+    </>
   );
 };
 

@@ -3,8 +3,9 @@ const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 
-// Auto-migrate: add old_data column if it doesn't exist
+// Auto-migrate
 pool.query(`ALTER TABLE history ADD COLUMN IF NOT EXISTS old_data JSONB`).catch(() => {});
+pool.query(`ALTER TABLE history ADD COLUMN IF NOT EXISTS scan_image_key TEXT`).catch(() => {});
 
 router.post("/addHistory", verifyToken, requireRole("admin", "manager"), async (req, res) => {
   const { change, location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est } = req.body;
@@ -26,10 +27,19 @@ router.post("/addHistory", verifyToken, requireRole("admin", "manager"), async (
   }
 });
 
+const CHANGE_FILTER_SQL = {
+  added:      `change IN ('Added', 'Scanner Add', 'Restored')`,
+  updated:    `(change ILIKE 'Field Updated%' OR change = 'Updated' OR LOWER(change) = 'before update')`,
+  removed:    `change ILIKE 'Removed%'`,
+  production: `(change ILIKE 'Sent to Processor%' OR change ILIKE 'Returned from Processor%' OR change ILIKE 'Production Order%')`,
+  box:        `change ILIKE '%box%'`,
+};
+
 router.get("/getHistory", verifyToken, requireRole("admin", "manager"), async (req, res) => {
   const LIMIT = 100;
   const offset = Math.max(0, parseInt(req.query.offset) || 0);
   const search = req.query.search?.trim() || "";
+  const changeFilter = req.query.changeFilter?.trim() || "";
 
   const SEARCH_COLS = ["location", "lot", "brand", "species", "description", "vendor", "change", "changed_by"];
 
@@ -41,6 +51,10 @@ router.get("/getHistory", verifyToken, requireRole("admin", "manager"), async (r
     const clause = SEARCH_COLS.map((col, i) => `${col} ILIKE $${i + 2}`).join(" OR ");
     where += ` AND (${clause})`;
     params = [req.tenantId, ...SEARCH_COLS.map(() => like)];
+  }
+
+  if (changeFilter && CHANGE_FILTER_SQL[changeFilter]) {
+    where += ` AND ${CHANGE_FILTER_SQL[changeFilter]}`;
   }
 
   const limitIdx = params.length + 1;

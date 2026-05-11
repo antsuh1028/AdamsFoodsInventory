@@ -4,7 +4,7 @@ const verifyToken = require("../middleware/verifyToken.pg");
 
 const toNum = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
 
-// Idempotent migration — add snapshot columns if not already present
+// Idempotent migrations
 pool.query(`
   ALTER TABLE production_order_items
     ADD COLUMN IF NOT EXISTS location    TEXT,
@@ -12,6 +12,11 @@ pool.query(`
     ADD COLUMN IF NOT EXISTS species     TEXT,
     ADD COLUMN IF NOT EXISTS description TEXT
 `).catch((err) => console.error("production_order_items migration error:", err.message));
+
+pool.query(`
+  ALTER TABLE production_order_returns
+    ADD COLUMN IF NOT EXISTS source_lots TEXT[]
+`).catch((err) => console.error("production_order_returns migration error:", err.message));
 
 const historyEntry = async (client, tenantId, item, change, username) => {
   await client.query(
@@ -64,6 +69,7 @@ const fmtReturn = (row) => ({
   species:     row.species     || null,
   description: row.description || null,
   weight:      row.weight      != null ? String(row.weight) : null,
+  sourceLots:  Array.isArray(row.source_lots) ? row.source_lots : [],
 });
 
 // ── Create Order (Step 2: send to processor) ──────────────────────────────────
@@ -316,13 +322,14 @@ router.post("/production-orders/:id/returns", verifyToken, async (req, res) => {
     const weight = parsedBoxes.length > 0 ? boxesWeight(parsedBoxes).toFixed(2) : toNum(req.body.weight);
     const quantity = String(parsedBoxes.length || "");
 
-    // Find the original raw inventory item via the order items to set source_id
+    // Find source_id (first sent item) and collect all original lots from this order
     const sourceRes = await client.query(
-      `SELECT inventory_id FROM production_order_items
-       WHERE production_order_id = $1 LIMIT 1`,
+      `SELECT inventory_id, lot FROM production_order_items
+       WHERE production_order_id = $1`,
       [order.id]
     );
     const sourceId = sourceRes.rows[0]?.inventory_id || null;
+    const sourceLots = [...new Set(sourceRes.rows.map((r) => r.lot).filter(Boolean))];
 
     // Create the new finished good inventory item
     const invRes = await client.query(
@@ -345,11 +352,11 @@ router.post("/production-orders/:id/returns", verifyToken, async (req, res) => {
     );
     const newItem = invRes.rows[0];
 
-    // Create the return record
+    // Create the return record with snapshotted source lots
     await client.query(
-      `INSERT INTO production_order_returns (production_order_id, inventory_id)
-       VALUES ($1, $2)`,
-      [order.id, newItem.id]
+      `INSERT INTO production_order_returns (production_order_id, inventory_id, source_lots)
+       VALUES ($1, $2, $3)`,
+      [order.id, newItem.id, sourceLots.length > 0 ? sourceLots : null]
     );
 
     await historyEntry(client, req.tenantId, newItem,

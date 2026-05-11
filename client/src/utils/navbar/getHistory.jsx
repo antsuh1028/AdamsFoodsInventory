@@ -1,8 +1,9 @@
 import axiosInstance from "../axiosInstance";
 
-function getHistory(offset = 0, search = "") {
+function getHistory(offset = 0, search = "", changeFilter = "") {
   const params = new URLSearchParams({ offset });
   if (search) params.set("search", search);
+  if (changeFilter && changeFilter !== "all") params.set("changeFilter", changeFilter);
   return axiosInstance
     .get(`/getHistory?${params}`)
     .then((result) => result.data)
