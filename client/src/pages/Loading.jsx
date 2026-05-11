@@ -7,7 +7,13 @@ const Loading = () => {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      navigate("/home");
+      try {
+        const token = localStorage.getItem("token");
+        const payload = token ? JSON.parse(atob(token.split(".")[1])) : null;
+        navigate(payload?.role === "noblesse" ? "/noblesse" : "/home");
+      } catch {
+        navigate("/home");
+      }
     }, 500);
 
     return () => clearTimeout(timer);

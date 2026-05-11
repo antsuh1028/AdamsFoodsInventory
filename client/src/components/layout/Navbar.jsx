@@ -92,6 +92,8 @@ const ShowDrawer = ({
           {isAdmin && (
             <>
               <Divider />
+              {navBtn("Noblesse Portal →", () => navigate("/noblesse"))}
+              <Divider />
               <Button
                 bg="white"
                 justifyContent="flex-start"
