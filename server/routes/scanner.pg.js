@@ -339,28 +339,35 @@ router.post("/scanner-resolve", verifyToken, async (req, res) => {
 // ── Order Sheet OCR ───────────────────────────────────────────────────────────
 
 const ORDER_PROMPT = `
-You are parsing OCR text from an Adams Foods shipping document. Two formats are possible:
+You are reading a photo of an Adams Foods order/pick sheet. The document has both printed text and handwritten annotations in pen.
 
-FORMAT A — Outgoing pick/order sheet:
-  Has a "PL/CS/BX" column header. Lot numbers appear in parentheses like "(26061-03)".
-  quantity = the large bold integer on the LEFT (e.g. 14, 7, 25). Never a decimal or price.
+THREE FORMATS are possible:
 
-FORMAT B — Bill of Lading (grid form):
-  Has labeled fields per row: LOCATION, BRAND, LOT#, EST#/PACK DATE, DESCRIPTION, QTY (PALLET), QTY (CASE).
-  lot = value in "LOT#" field (e.g. "26076-01").
-  quantity = numeric part before "C/S" in QTY (CASE), e.g. "25 C/S" → "25", "17 C/S" → "17".
-  packdate = the date after EST# (e.g. "03/05/26" → "2026-03-05"). ISO format YYYY-MM-DD or "".
-  brand = BRAND field value or "".
-  location = LOCATION field value or "".
+FORMAT A — Customer pick sheet (has "PL/CS/BX" column on the left):
+  - The left column shows either 0 (not pulled) or a handwritten number like 1, 2, 3 (cases pulled).
+  - SKIP rows where the left-side quantity is 0 — they were not pulled.
+  - ONLY extract rows where quantity > 0.
+  - Lot numbers are handwritten in pen next to the item, prefixed with # (e.g. "#26124-03", "# 26124-03"). Normalize to "XXXXX-XX".
+  - Lot numbers may also appear in parentheses like "(26061-03)".
+  - Individual weights may be handwritten below the item line (e.g. "60#", "50#", "2x30.0", "59.40", "50.02"). Capture as weightNotes string.
+  - quantity = the handwritten number on the far left (not 0).
+  - description = the printed product description line.
 
-RULES:
-- Extract EVERY row as a separate item, even when rows share the same lot number.
-- Different pack dates (EST# dates) means different rows — do NOT merge or deduplicate them.
-- Normalize lot to "XXXXX-XX" format (e.g. "260 76-01" → "26076-01").
+FORMAT B — Bill of Lading (grid with labeled fields per row):
+  - Fields: LOCATION, BRAND, LOT#, EST#/PACK DATE, DESCRIPTION, QTY (PALLET), QTY (CASE).
+  - lot = LOT# field. quantity = numeric before "C/S". packdate = date after EST# as YYYY-MM-DD or "".
+
+FORMAT C — Outgoing tally sheet (lot in parentheses, no PL/CS/BX column):
+  - quantity = large bold integer on the LEFT.
+  - lot = appears in parentheses like "(26061-03)".
+
+RULES for ALL formats:
+- Normalize lot to "XXXXX-XX" (e.g. "260 76-01" → "26076-01", "#26124 -03" → "26124-03").
+- Extract EVERY qualifying row as a separate item.
 - Only include rows that have a lot number.
 
 Return JSON only:
-{ "items": [ { "lot": "...", "quantity": "...", "description": "...", "brand": "...", "packdate": "...", "location": "..." }, ... ] }
+{ "items": [ { "lot": "...", "quantity": "...", "description": "...", "brand": "...", "packdate": "...", "location": "...", "weightNotes": "..." }, ... ] }
 No explanation, no markdown.
 `.trim();
 
@@ -373,16 +380,35 @@ router.post("/extract-order", verifyToken, upload.single("image"), async (req, r
       ? Buffer.from(await heicConvert({ buffer: req.file.buffer, format: "JPEG", quality: 0.9 }))
       : req.file.buffer;
 
-    const textractResponse = await textractClient.send(new DetectDocumentTextCommand({
-      Document: { Bytes: imageBuffer },
-    }));
-    const lineTexts = textractResponse.Blocks
-      .filter((b) => b.BlockType === "LINE")
-      .map((b) => b.Text || "");
+    // Run Textract for printed text + GPT-4o Vision for handwriting — combine both
+    const base64Image = imageBuffer.toString("base64");
+    const imageMime = isHeic ? "image/jpeg" : (mime || "image/jpeg");
+
+    let printedText = "";
+    try {
+      const textractResponse = await textractClient.send(new DetectDocumentTextCommand({
+        Document: { Bytes: imageBuffer },
+      }));
+      printedText = textractResponse.Blocks
+        .filter((b) => b.BlockType === "LINE")
+        .map((b) => b.Text || "")
+        .join("\n");
+    } catch (textractErr) {
+      console.warn("Textract failed (non-fatal):", textractErr.message);
+    }
 
     const gptResponse = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages: [{ role: "user", content: `${ORDER_PROMPT}\n\nOCR TEXT:\n${lineTexts.join("\n")}` }],
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `${ORDER_PROMPT}\n\nTEXTRACT (printed text only — use this for product descriptions and codes):\n${printedText}\n\nAlso look at the image directly for handwritten lot numbers, quantities, and weights.`,
+          },
+          { type: "image_url", image_url: { url: `data:${imageMime};base64,${base64Image}`, detail: "high" } },
+        ],
+      }],
       response_format: { type: "json_object" },
     });
 
