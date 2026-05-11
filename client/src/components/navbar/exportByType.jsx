@@ -166,11 +166,11 @@ const ExportByType = ({ isOpen, onClose }) => {
 
   const sortedItems = sortKey
     ? [...items].sort((a, b) => {
-        const av = String(a[sortKey] ?? "").toLowerCase();
-        const bv = String(b[sortKey] ?? "").toLowerCase();
-        const numA = parseFloat(av);
-        const numB = parseFloat(bv);
-        const isNumeric = !isNaN(numA) && !isNaN(numB);
+        const av = String(a[sortKey] ?? "");
+        const bv = String(b[sortKey] ?? "");
+        const numA = Number(av);
+        const numB = Number(bv);
+        const isNumeric = !isNaN(numA) && !isNaN(numB) && av.trim() !== "" && bv.trim() !== "";
         const cmp = isNumeric ? numA - numB : av.localeCompare(bv);
         return sortDir === "asc" ? cmp : -cmp;
       })
@@ -182,10 +182,10 @@ const ExportByType = ({ isOpen, onClose }) => {
   const snapSorted = activeSnap
     ? sortKey
       ? [...activeSnap.data].sort((a, b) => {
-          const av = String(a[sortKey] ?? "").toLowerCase();
-          const bv = String(b[sortKey] ?? "").toLowerCase();
-          const numA = parseFloat(av); const numB = parseFloat(bv);
-          const isNumeric = !isNaN(numA) && !isNaN(numB);
+          const av = String(a[sortKey] ?? "");
+          const bv = String(b[sortKey] ?? "");
+          const numA = Number(av); const numB = Number(bv);
+          const isNumeric = !isNaN(numA) && !isNaN(numB) && av.trim() !== "" && bv.trim() !== "";
           const cmp = isNumeric ? numA - numB : av.localeCompare(bv);
           return sortDir === "asc" ? cmp : -cmp;
         })
