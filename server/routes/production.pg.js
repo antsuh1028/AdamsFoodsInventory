@@ -269,7 +269,8 @@ router.get("/production-orders/:id", verifyToken, async (req, res) => {
                 COALESCE(i.location,    poi.location)    AS location,
                 COALESCE(i.lot,         poi.lot)         AS lot,
                 COALESCE(i.species,     poi.species)     AS species,
-                COALESCE(i.description, poi.description) AS description
+                COALESCE(i.description, poi.description) AS description,
+                COALESCE(i.brand,       poi.brand)       AS brand
          FROM production_order_items poi
          LEFT JOIN inventory i ON i.id = poi.inventory_id
          WHERE poi.production_order_id = $1`,
