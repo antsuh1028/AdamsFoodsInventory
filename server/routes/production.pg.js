@@ -10,13 +10,22 @@ pool.query(`
     ADD COLUMN IF NOT EXISTS location    TEXT,
     ADD COLUMN IF NOT EXISTS lot         TEXT,
     ADD COLUMN IF NOT EXISTS species     TEXT,
-    ADD COLUMN IF NOT EXISTS description TEXT
+    ADD COLUMN IF NOT EXISTS description TEXT,
+    ADD COLUMN IF NOT EXISTS brand       TEXT
 `).catch((err) => console.error("production_order_items migration error:", err.message));
 
 pool.query(`
   ALTER TABLE production_order_returns
     ADD COLUMN IF NOT EXISTS source_lots TEXT[]
 `).catch((err) => console.error("production_order_returns migration error:", err.message));
+
+pool.query(`
+  ALTER TABLE production_orders
+    DROP CONSTRAINT IF EXISTS production_orders_status_check;
+  ALTER TABLE production_orders
+    ADD CONSTRAINT production_orders_status_check
+      CHECK (status IN ('pending', 'returned', 'completed'));
+`).catch((err) => console.error("production_orders status constraint migration error:", err.message));
 
 const historyEntry = async (client, tenantId, item, change, username) => {
   await client.query(
@@ -57,6 +66,7 @@ const fmtItem = (row) => ({
   lot:         row.lot         || null,
   species:     row.species     || null,
   description: row.description || null,
+  brand:       row.brand       || null,
 });
 
 const fmtReturn = (row) => ({
@@ -108,7 +118,7 @@ router.post("/production-orders", verifyToken, async (req, res) => {
 
       // Verify the inventory item belongs to this tenant and has enough weight
       const invRes = await client.query(
-        `SELECT id, weight, boxes, location, lot, species, description FROM inventory WHERE id = $1 AND tenant_id = $2`,
+        `SELECT id, weight, boxes, location, lot, species, description, brand FROM inventory WHERE id = $1 AND tenant_id = $2`,
         [inventoryId, req.tenantId]
       );
       if (!invRes.rows.length)
@@ -123,10 +133,10 @@ router.post("/production-orders", verifyToken, async (req, res) => {
       // survive even if the inventory row is later deleted (e.g. all boxes sent out)
       await client.query(
         `INSERT INTO production_order_items
-           (production_order_id, inventory_id, weight_sent, boxes_sent, location, lot, species, description)
-         VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)`,
+           (production_order_id, inventory_id, weight_sent, boxes_sent, location, lot, species, description, brand)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)`,
         [order.id, inventoryId, weightNum, JSON.stringify(boxes),
-         inv.location || null, inv.lot || null, inv.species || null, inv.description || null]
+         inv.location || null, inv.lot || null, inv.species || null, inv.description || null, inv.brand || null]
       );
 
       // Remove boxes and weight from inventory
@@ -372,6 +382,24 @@ router.post("/production-orders/:id/returns", verifyToken, async (req, res) => {
     res.status(400).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// ── Toggle Order Status ───────────────────────────────────────────────────────
+router.patch("/production-orders/:id/status", verifyToken, async (req, res) => {
+  const { status } = req.body;
+  const VALID = ["pending", "completed"];
+  if (!VALID.includes(status)) return res.status(400).json({ error: "Invalid status" });
+  try {
+    const result = await pool.query(
+      `UPDATE production_orders SET status = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *`,
+      [status, req.params.id, req.tenantId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
+    res.json(fmtOrder(result.rows[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 
