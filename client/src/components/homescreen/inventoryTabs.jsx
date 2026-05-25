@@ -29,6 +29,32 @@ import cache from "../../utils/apiCache";
 const ORDERS_TTL   = 2 * 60 * 1000;
 const DETAIL_TTL   = 5 * 60 * 1000;
 
+const RANGE_OPTIONS = [
+  { label: "3d",  days: 3 },
+  { label: "7d",  days: 7 },
+  { label: "30d", days: 30 },
+  { label: "90d", days: 90 },
+  { label: "All", days: null },
+];
+
+// Counts business days (Mon–Fri), skipping weekends
+const daysAgo = (n) => {
+  const d = new Date();
+  let remaining = n;
+  while (remaining > 0) {
+    d.setDate(d.getDate() - 1);
+    if (d.getDay() !== 0 && d.getDay() !== 6) remaining--;
+  }
+  return d;
+};
+
+const parseMDY = (s) => {
+  if (!s) return null;
+  const parts = s.split("/");
+  if (parts.length < 3) return new Date(s);
+  return new Date(+parts[2], +parts[0] - 1, +parts[1]);
+};
+
 const getAgeDays = (packdate, date_recvd) => {
   const str = packdate || date_recvd;
   if (!str) return null;
@@ -443,6 +469,7 @@ const InventoryTabs = ({
   const [orderDetails, setOrderDetails] = useState({});
   const [detailLoading, setDetailLoading] = useState(null);
   const [togglingOrderId, setTogglingOrderId] = useState(null);
+  const [rangeDays, setRangeDays] = useState(30);
 
   const fetchNoblesseOrders = useCallback(async () => {
     const hit = cache.get("prod-orders-pending");
@@ -722,20 +749,48 @@ const InventoryTabs = ({
         <TabPanel height="100%" p={0} overflowY="auto">
           {/* Pending production orders */}
           <Box px={3} pt={3} pb={2}>
-            <Flex align="center" justify="space-between" mb={2}>
+            <Flex align="center" justify="space-between" mb={1.5}>
               <Text fontSize="xs" fontWeight="bold" color="orange.400" letterSpacing="wider" textTransform="uppercase">
                 Pending Orders
               </Text>
-              <Button size="xs" variant="ghost" color="gray.400" _hover={{ color: "orange.500" }}
-                onClick={fetchNoblesseOrders} isDisabled={ordersLoading} p={1} minW="auto">
-                {ordersLoading ? <Spinner size="xs" /> : <RepeatIcon boxSize={3} />}
-              </Button>
+              <Flex align="center" gap={1}>
+                {RANGE_OPTIONS.map((opt) => (
+                  <Button
+                    key={opt.label}
+                    size="xs"
+                    variant={rangeDays === opt.days ? "solid" : "ghost"}
+                    colorScheme={rangeDays === opt.days ? "orange" : "gray"}
+                    onClick={() => setRangeDays(opt.days)}
+                    px={2}
+                    minW="auto"
+                    fontSize="10px"
+                    h="18px"
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
+                <Button size="xs" variant="ghost" color="gray.400" _hover={{ color: "orange.500" }}
+                  onClick={fetchNoblesseOrders} isDisabled={ordersLoading} p={1} minW="auto">
+                  {ordersLoading ? <Spinner size="xs" /> : <RepeatIcon boxSize={3} />}
+                </Button>
+              </Flex>
             </Flex>
-            {noblesseOrders.length === 0 && !ordersLoading ? (
-              <Text fontSize="xs" color="gray.300" textAlign="center" py={2}>No pending orders</Text>
-            ) : (
-              <Flex direction="column" gap={1.5}>
-                {noblesseOrders.map((order) => {
+            {(() => {
+              const visibleOrders = noblesseOrders.filter((o) =>
+                rangeDays === null || (parseMDY(o.sentDate) >= daysAgo(rangeDays))
+              );
+              const hiddenCount = noblesseOrders.length - visibleOrders.length;
+              return (
+                <>
+                  {noblesseOrders.length === 0 && !ordersLoading ? (
+                    <Text fontSize="xs" color="gray.300" textAlign="center" py={2}>No pending orders</Text>
+                  ) : visibleOrders.length === 0 ? (
+                    <Text fontSize="xs" color="gray.300" textAlign="center" py={2}>
+                      No orders in last {rangeDays}d
+                    </Text>
+                  ) : (
+                    <Flex direction="column" gap={1.5}>
+                      {visibleOrders.map((order) => {
                   const isExpanded = expandedOrderId === order.id;
                   const detail = orderDetails[order.id];
                   const isLoadingDetail = detailLoading === order.id;
@@ -821,9 +876,17 @@ const InventoryTabs = ({
                       </Collapse>
                     </Box>
                   );
-                })}
-              </Flex>
-            )}
+                      })}
+                    </Flex>
+                  )}
+                  {hiddenCount > 0 && (
+                    <Text fontSize="10px" color="gray.400" textAlign="center" pt={1}>
+                      +{hiddenCount} older order{hiddenCount !== 1 ? "s" : ""} hidden — select All to see
+                    </Text>
+                  )}
+                </>
+              );
+            })()}
           </Box>
 
           {/* Inventory items at NOBLESSE TRADING location */}

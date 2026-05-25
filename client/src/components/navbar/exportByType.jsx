@@ -91,11 +91,13 @@ const ExportByType = ({ isOpen, onClose }) => {
     authFetch(`${API_BASE_URL}/inventoryAll`)
       .then((r) => r.json())
       .then((data) => {
-        const sorted = [...data].sort((a, b) => {
-          const levelDiff = getLevel(a.location) - getLevel(b.location);
-          if (levelDiff !== 0) return levelDiff;
-          return (a.location || "").localeCompare(b.location || "");
-        });
+        const sorted = [...data]
+          .filter((item) => (item.location || "").toUpperCase() !== "NOBLESSE TRADING")
+          .sort((a, b) => {
+            const levelDiff = getLevel(a.location) - getLevel(b.location);
+            if (levelDiff !== 0) return levelDiff;
+            return (a.location || "").localeCompare(b.location || "");
+          });
         setAllItems(sorted);
       })
       .catch(() => {
