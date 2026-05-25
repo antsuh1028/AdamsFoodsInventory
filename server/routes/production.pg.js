@@ -19,6 +19,14 @@ pool.query(`
     ADD COLUMN IF NOT EXISTS source_lots TEXT[]
 `).catch((err) => console.error("production_order_returns migration error:", err.message));
 
+pool.query(`
+  ALTER TABLE production_orders
+    DROP CONSTRAINT IF EXISTS production_orders_status_check;
+  ALTER TABLE production_orders
+    ADD CONSTRAINT production_orders_status_check
+      CHECK (status IN ('pending', 'returned', 'completed'));
+`).catch((err) => console.error("production_orders status constraint migration error:", err.message));
+
 const historyEntry = async (client, tenantId, item, change, username) => {
   await client.query(
     `INSERT INTO history (tenant_id, time, change, changed_by, location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est)
@@ -375,6 +383,24 @@ router.post("/production-orders/:id/returns", verifyToken, async (req, res) => {
     res.status(400).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// ── Toggle Order Status ───────────────────────────────────────────────────────
+router.patch("/production-orders/:id/status", verifyToken, async (req, res) => {
+  const { status } = req.body;
+  const VALID = ["pending", "completed"];
+  if (!VALID.includes(status)) return res.status(400).json({ error: "Invalid status" });
+  try {
+    const result = await pool.query(
+      `UPDATE production_orders SET status = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *`,
+      [status, req.params.id, req.tenantId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
+    res.json(fmtOrder(result.rows[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 

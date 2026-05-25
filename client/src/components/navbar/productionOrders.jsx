@@ -219,7 +219,7 @@ const ReturnForm = ({ orderId, onSubmit, onCancel, submitting, species }) => {
 };
 
 // ── Order row (Orders tab) ────────────────────────────────────────────────────
-const OrderRow = ({ order, detail, onToggle, isExpanded, onOpenReturn, activeReturnId, onSubmitReturn, onCancelReturn, returningId, onCloseOrder }) => {
+const OrderRow = ({ order, detail, onToggle, isExpanded, onOpenReturn, activeReturnId, onSubmitReturn, onCancelReturn, returningId, onCloseOrder, onToggleStatus, togglingId }) => {
   const isPending = order.status === "pending";
   const [expandedItemId, setExpandedItemId] = useState(null);
 
@@ -246,7 +246,7 @@ const OrderRow = ({ order, detail, onToggle, isExpanded, onOpenReturn, activeRet
             )}
           </Flex>
         </Box>
-        <Badge colorScheme={isPending ? "yellow" : "green"} fontSize="xs">
+        <Badge colorScheme={isPending ? "yellow" : order.status === "completed" ? "green" : "blue"} fontSize="xs">
           {order.status}
         </Badge>
         {order.yield && (
@@ -319,18 +319,26 @@ const OrderRow = ({ order, detail, onToggle, isExpanded, onOpenReturn, activeRet
                 </Box>
               )}
 
-              {isPending && (
-                <Flex gap={2} mt={2}>
+              <Flex gap={2} mt={2}>
+                {isPending && (
                   <Button size="sm" colorScheme="gray" variant="outline" onClick={() => onOpenReturn(order.id)}>
                     + Return Pallet
                   </Button>
-                  {detail.returns.length > 0 && (
-                    <Button size="sm" colorScheme="green" onClick={() => onCloseOrder(order.id)}>
-                      Close Order
-                    </Button>
-                  )}
-                </Flex>
-              )}
+                )}
+                {isPending && detail.returns.length > 0 && (
+                  <Button size="sm" colorScheme="green" onClick={() => onCloseOrder(order.id)}>
+                    Close Order
+                  </Button>
+                )}
+                <Button
+                  size="sm" variant="outline"
+                  colorScheme={isPending ? "green" : "yellow"}
+                  isLoading={togglingId === order.id}
+                  onClick={() => onToggleStatus(order.id, isPending ? "completed" : "pending")}
+                >
+                  {isPending ? "Mark Complete" : "Mark Pending"}
+                </Button>
+              </Flex>
             </>
           )}
         </Box>
@@ -361,6 +369,7 @@ const ProductionOrders = ({ isOpen, onClose }) => {
   const [activeReturnId, setActiveReturnId] = useState(null);
   const [returningId, setReturningId] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [togglingId, setTogglingId] = useState(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -501,6 +510,20 @@ const ProductionOrders = ({ isOpen, onClose }) => {
       toast({ title: e.response?.data?.error || "Failed to add return", status: "error", duration: 4000 });
     } finally {
       setReturningId(null);
+    }
+  };
+
+  const toggleStatus = async (orderId, status) => {
+    setTogglingId(orderId);
+    try {
+      const res = await axiosInstance.patch(`/production-orders/${orderId}/status`, { status });
+      setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: res.data.status } : o));
+      cache.del("prod-orders");
+      cache.del("prod-orders-pending");
+    } catch {
+      toast({ title: "Failed to update status", status: "error", duration: 3000 });
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -658,6 +681,8 @@ const ProductionOrders = ({ isOpen, onClose }) => {
                       onCancelReturn={() => setActiveReturnId(null)}
                       returningId={returningId}
                       onCloseOrder={closeOrder}
+                      onToggleStatus={toggleStatus}
+                      togglingId={togglingId}
                     />
                   ))
                 )}

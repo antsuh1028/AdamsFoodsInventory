@@ -442,6 +442,7 @@ const InventoryTabs = ({
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [orderDetails, setOrderDetails] = useState({});
   const [detailLoading, setDetailLoading] = useState(null);
+  const [togglingOrderId, setTogglingOrderId] = useState(null);
 
   const fetchNoblesseOrders = useCallback(async () => {
     const hit = cache.get("prod-orders-pending");
@@ -458,6 +459,20 @@ const InventoryTabs = ({
       setOrdersLoading(false);
     }
   }, []);
+
+  const toggleOrderStatus = async (orderId, status) => {
+    setTogglingOrderId(orderId);
+    try {
+      const res = await axiosInstance.patch(`/production-orders/${orderId}/status`, { status });
+      setNoblesseOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: res.data.status } : o));
+      cache.del("prod-orders");
+      cache.del("prod-orders-pending");
+    } catch {
+      // silent
+    } finally {
+      setTogglingOrderId(null);
+    }
+  };
 
   const toggleOrderExpand = useCallback(async (orderId) => {
     if (expandedOrderId === orderId) { setExpandedOrderId(null); return; }
@@ -756,7 +771,9 @@ const InventoryTabs = ({
                           {order.totalWeight != null && (
                             <Text fontSize="xs" color="gray.400">{Number(order.totalWeight).toFixed(0)} lb</Text>
                           )}
-                          <Badge colorScheme="yellow" fontSize="2xs">pending</Badge>
+                          <Badge colorScheme={order.status === "pending" ? "yellow" : "green"} fontSize="2xs">
+                            {order.status}
+                          </Badge>
                         </Flex>
                       </Flex>
 
@@ -792,6 +809,14 @@ const InventoryTabs = ({
                           ) : (
                             <Text fontSize="xs" color="gray.400">No item details</Text>
                           )}
+                          <Button
+                            mt={2} size="xs" variant="outline"
+                            colorScheme={order.status === "pending" ? "green" : "yellow"}
+                            isLoading={togglingOrderId === order.id}
+                            onClick={() => toggleOrderStatus(order.id, order.status === "pending" ? "completed" : "pending")}
+                          >
+                            {order.status === "pending" ? "Mark Complete" : "Mark Pending"}
+                          </Button>
                         </Box>
                       </Collapse>
                     </Box>
