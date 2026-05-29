@@ -77,6 +77,26 @@ pool.query(`
 `).catch((err) => console.error("noblesse_processing_order_items migration error:", err.message));
 
 pool.query(`
+  ALTER TABLE noblesse_processing_order_items ADD COLUMN IF NOT EXISTS nti_item_id INTEGER
+`).catch((err) => console.error("nti_item_id migration error:", err.message));
+
+pool.query(`
+  ALTER TABLE noblesse_processing_order_items ADD COLUMN IF NOT EXISTS cases_in INTEGER
+`).catch((err) => console.error("cases_in migration error:", err.message));
+
+pool.query(`
+  ALTER TABLE noblesse_processing_orders ADD COLUMN IF NOT EXISTS output_cases INTEGER
+`).catch((err) => console.error("output_cases migration error:", err.message));
+
+pool.query(`
+  ALTER TABLE nti_inventory ADD COLUMN IF NOT EXISTS grade VARCHAR(50)
+`).catch((err) => console.error("nti grade migration error:", err.message));
+
+pool.query(`
+  ALTER TABLE noblesse_processing_orders ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ
+`).catch((err) => console.error("completed_at migration error:", err.message));
+
+pool.query(`
   CREATE TABLE IF NOT EXISTS nti_inventory_history (
     id         SERIAL PRIMARY KEY,
     tenant_id  UUID NOT NULL REFERENCES tenants(id),
@@ -112,6 +132,7 @@ const fmtNtiItem = (row) => ({
   lot:          row.lot,
   description:  row.description,
   brand:        row.brand,
+  grade:        row.grade,
   species:      row.species,
   est:          row.est,
   packDate:     fmtDate(row.pack_date),
@@ -233,17 +254,18 @@ router.get("/nti-inventory", verifyToken, async (req, res) => {
 });
 
 router.post("/nti-inventory", verifyToken, async (req, res) => {
-  const { lot, description, brand, species, est, packDate, weight, qtyCases, qtyPallets, receivedDate, notes } = req.body;
+  const { lot, description, brand, grade, species, est, packDate, weight, qtyCases, qtyPallets, receivedDate, notes } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO nti_inventory (tenant_id, lot, description, brand, species, est, pack_date, weight, qty_cases, qty_pallets, received_date, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      `INSERT INTO nti_inventory (tenant_id, lot, description, brand, grade, species, est, pack_date, weight, qty_cases, qty_pallets, received_date, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
         req.tenantId,
         lot          || null,
         description  || null,
         brand        || null,
+        grade        || null,
         species      || null,
         est          || null,
         packDate     || null,
@@ -264,7 +286,7 @@ router.post("/nti-inventory", verifyToken, async (req, res) => {
 });
 
 router.put("/nti-inventory/:id", verifyToken, async (req, res) => {
-  const { lot, description, brand, species, est, packDate, weight, qtyCases, qtyPallets, receivedDate, notes } = req.body;
+  const { lot, description, brand, grade, species, est, packDate, weight, qtyCases, qtyPallets, receivedDate, notes } = req.body;
   try {
     const before = await pool.query(
       `SELECT * FROM nti_inventory WHERE id = $1 AND tenant_id = $2`,
@@ -272,14 +294,15 @@ router.put("/nti-inventory/:id", verifyToken, async (req, res) => {
     );
     const result = await pool.query(
       `UPDATE nti_inventory
-       SET lot=$1, description=$2, brand=$3, species=$4, est=$5, pack_date=$6,
-           weight=$7, qty_cases=$8, qty_pallets=$9, received_date=$10, notes=$11
-       WHERE id=$12 AND tenant_id=$13
+       SET lot=$1, description=$2, brand=$3, grade=$4, species=$5, est=$6, pack_date=$7,
+           weight=$8, qty_cases=$9, qty_pallets=$10, received_date=$11, notes=$12
+       WHERE id=$13 AND tenant_id=$14
        RETURNING *`,
       [
         lot          || null,
         description  || null,
         brand        || null,
+        grade        || null,
         species      || null,
         est          || null,
         packDate     || null,
@@ -387,18 +410,22 @@ const fmtProcOrder = (row, items = []) => ({
   id:           row.id,
   orderDate:    fmtDate(row.order_date),
   notes:        row.notes,
-  outputWeight: row.output_weight != null ? Number(row.output_weight) : null,
+  outputWeight: row.output_weight  != null ? Number(row.output_weight)  : null,
+  outputCases:  row.output_cases   != null ? Number(row.output_cases)   : null,
   status:       row.status,
   createdAt:    row.created_at,
+  completedAt:  row.completed_at   || null,
   items:        items.map((it) => ({
     id:          it.id,
     receiptId:   it.receipt_id,
+    ntiItemId:   it.nti_item_id || null,
     lot:         it.lot,
     description: it.description,
     brand:       it.brand,
     species:     it.species,
     grade:       it.grade,
     weightIn:    it.weight_in != null ? Number(it.weight_in) : null,
+    casesIn:     it.cases_in  != null ? Number(it.cases_in)  : null,
   })),
 });
 
@@ -441,29 +468,25 @@ router.post("/noblesse-proc-orders", verifyToken, async (req, res) => {
     for (const it of (items || [])) {
       const itRes = await client.query(
         `INSERT INTO noblesse_processing_order_items
-           (processing_order_id, receipt_id, lot, description, brand, species, grade, weight_in)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [order.id, it.receiptId || null, it.lot || null, it.description || null,
+           (processing_order_id, receipt_id, nti_item_id, lot, description, brand, species, grade, weight_in, cases_in)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        [order.id, it.receiptId || null, it.ntiItemId || null,
+         it.lot || null, it.description || null,
          it.brand || null, it.species || null, it.grade || null,
-         it.weightIn != null ? Number(it.weightIn) : null]
+         it.weightIn != null ? Number(it.weightIn) : null,
+         it.casesIn  != null ? Number(it.casesIn)  : null]
       );
       insertedItems.push(itRes.rows[0]);
     }
 
-    // Deduct each item's weight from its specific NTI inventory row (lot + description)
+    // Deduct each item's weight from its exact NTI inventory row by ID
     const deductions = [];
     for (const it of insertedItems) {
-      if (!it.lot || it.weight_in == null || Number(it.weight_in) <= 0) continue;
-      const hasDesc = it.description && it.description.trim().length > 0;
+      if (!it.nti_item_id || it.weight_in == null || Number(it.weight_in) <= 0) continue;
       await client.query(
-        hasDesc
-          ? `UPDATE nti_inventory SET weight = GREATEST(0, weight - $1)
-             WHERE tenant_id = $2 AND lot = $3 AND description = $4`
-          : `UPDATE nti_inventory SET weight = GREATEST(0, weight - $1)
-             WHERE tenant_id = $2 AND lot = $3`,
-        hasDesc
-          ? [Number(it.weight_in), req.tenantId, it.lot, it.description]
-          : [Number(it.weight_in), req.tenantId, it.lot]
+        `UPDATE nti_inventory SET weight = GREATEST(0, weight - $1)
+         WHERE id = $2 AND tenant_id = $3`,
+        [Number(it.weight_in), it.nti_item_id, req.tenantId]
       );
       deductions.push({ lot: it.lot, weightDeducted: Number(it.weight_in) });
     }
@@ -491,11 +514,17 @@ router.post("/noblesse-proc-orders", verifyToken, async (req, res) => {
 });
 
 router.patch("/noblesse-proc-orders/:id/output", verifyToken, async (req, res) => {
-  const { outputWeight } = req.body;
+  const { outputWeight, outputCases } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE noblesse_processing_orders SET output_weight = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *`,
-      [outputWeight != null ? Number(outputWeight) : null, req.params.id, req.tenantId]
+      `UPDATE noblesse_processing_orders
+       SET output_weight = $1, output_cases = $2
+       WHERE id = $3 AND tenant_id = $4 RETURNING *`,
+      [
+        outputWeight != null ? Number(outputWeight) : null,
+        outputCases  != null ? Number(outputCases)  : null,
+        req.params.id, req.tenantId,
+      ]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });
     const itemsRes = await pool.query(
@@ -514,7 +543,10 @@ router.patch("/noblesse-proc-orders/:id/status", verifyToken, async (req, res) =
   if (!["pending", "completed"].includes(status)) return res.status(400).json({ error: "Invalid status" });
   try {
     const result = await pool.query(
-      `UPDATE noblesse_processing_orders SET status = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *`,
+      `UPDATE noblesse_processing_orders
+       SET status = $1,
+           completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE NULL END
+       WHERE id = $2 AND tenant_id = $3 RETURNING *`,
       [status, req.params.id, req.tenantId]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });
