@@ -3,7 +3,7 @@ const { Client } = require("pg");
 const bcrypt = require("bcrypt");
 
 // Usage: node scripts/create-user.js <username> <password> [role]
-// role defaults to "user". Options: user | manager | admin
+// role defaults to "user". Options: user | manager | admin | noblesse
 
 async function run() {
   const [,, username, password, role = "user"] = process.argv;
@@ -13,7 +13,7 @@ async function run() {
     process.exit(1);
   }
 
-  const VALID_ROLES = ["user", "manager", "admin"];
+  const VALID_ROLES = ["user", "manager", "admin", "noblesse"];
   if (!VALID_ROLES.includes(role)) {
     console.error(`Invalid role "${role}". Must be one of: ${VALID_ROLES.join(", ")}`);
     process.exit(1);

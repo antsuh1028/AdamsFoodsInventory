@@ -30,5 +30,6 @@ app.use("/", require("./routes/snapshots.pg"));
 
 app.use("/", require("./routes/s3.pg"));
 app.use("/", require("./routes/production.pg"));
+app.use("/", require("./routes/noblesse.pg"));
 
 app.listen(3001, () => console.log("Server running on port 3001 [postgres]"));
