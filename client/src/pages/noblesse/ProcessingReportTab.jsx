@@ -55,10 +55,19 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
         outputWeight: partialOutputWeight !== "" ? partialOutputWeight : null,
         outputCases:  partialOutputCases  !== "" ? partialOutputCases  : null,
       });
-      onProcOrderUpdate(res.data);
+      onProcOrderUpdate(res.data.order);
+      if (res.data.newOrder) onProcOrderAdded(res.data.newOrder);
       setPartialOrderId(null);
       setPartialOutputWeight(""); setPartialOutputCases("");
-      toast({ title: "Marked as partially complete", status: "success", position: "top", duration: 2500, isClosable: true });
+      const remainLb = res.data.newOrder
+        ? res.data.newOrder.items.reduce((s, it) => s + (parseFloat(it.weightIn) || 0), 0)
+        : 0;
+      toast({
+        title: res.data.newOrder
+          ? `Partial complete — ${remainLb} lb kept as new pending order`
+          : "Marked as complete",
+        status: "success", position: "top", duration: 3000, isClosable: true,
+      });
     } catch {
       toast({ title: "Failed to save partial completion", status: "error", position: "top", duration: 3000, isClosable: true });
     } finally {
@@ -383,16 +392,30 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                     {[group.description, group.brand].filter(Boolean).join(" · ")}
                   </Text>
                 )}
-                <Text fontSize="sm" color="gray.500">
-                  Total In: {group.totalWeightIn.toFixed(1)} lb
-                  {group.totalCasesIn > 0 ? ` · ${group.totalCasesIn} cs` : ""}
-                </Text>
-                {group.totalWeightOut != null && (
-                  <Text fontSize="sm" color="gray.500">
-                    Total Out: {group.totalWeightOut.toFixed(1)} lb
-                    {group.totalCasesOut != null ? ` · ${group.totalCasesOut} cs` : ""}
-                  </Text>
-                )}
+                {/* Weight totals — prominent */}
+                <Flex align="baseline" gap={3} mt={1} flexWrap="wrap">
+                  <Flex align="baseline" gap={1}>
+                    <Text fontSize="2xl" fontWeight="bold" lineHeight={1}
+                      color={done ? "green.600" : "blue.600"}>
+                      {group.totalWeightIn.toFixed(1)}
+                    </Text>
+                    <Text fontSize="sm" color="gray.400">lb in</Text>
+                    {group.totalCasesIn > 0 && (
+                      <Text fontSize="sm" color="gray.400">· {group.totalCasesIn} cs</Text>
+                    )}
+                  </Flex>
+                  {group.totalWeightOut != null && (
+                    <Flex align="baseline" gap={1}>
+                      <Text fontSize="2xl" fontWeight="bold" lineHeight={1} color="gray.600">
+                        {group.totalWeightOut.toFixed(1)}
+                      </Text>
+                      <Text fontSize="sm" color="gray.400">lb out</Text>
+                      {group.totalCasesOut != null && (
+                        <Text fontSize="sm" color="gray.400">· {group.totalCasesOut} cs</Text>
+                      )}
+                    </Flex>
+                  )}
+                </Flex>
               </Box>
               <Flex align="center" gap={2} flexWrap="wrap">
                 {group.yieldPct != null && (
@@ -441,11 +464,18 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                           </Badge>
                         )}
                       </Flex>
-                      <Text fontSize="sm" color="gray.400">
-                        In: {orderWeightIn.toFixed(1)} lb
-                        {isPartial && <Text as="span" color="gray.300" ml={1}>(planned {plannedWeightIn.toFixed(1)} lb)</Text>}
-                        {orderCasesIn > 0 ? ` · ${orderCasesIn} cs` : ""}
-                      </Text>
+                      <Flex align="baseline" gap={1} flexWrap="wrap">
+                        <Text fontSize="xl" fontWeight="bold" lineHeight={1} color="gray.700">
+                          {orderWeightIn.toFixed(1)}
+                        </Text>
+                        <Text fontSize="sm" color="gray.400">lb</Text>
+                        {isPartial && (
+                          <Text fontSize="xs" color="gray.300">/ {plannedWeightIn.toFixed(1)} planned</Text>
+                        )}
+                        {orderCasesIn > 0 && (
+                          <Text fontSize="sm" color="gray.400">· {orderCasesIn} cs</Text>
+                        )}
+                      </Flex>
                     </Box>
                     <Flex align="center" gap={1} flexWrap="wrap">
                       <Text fontSize="sm" color="gray.400">Out:</Text>
@@ -638,10 +668,10 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
             <ModalCloseButton />
             <ModalBody>
               <Text fontSize="sm" color="gray.500" mb={4}>
-                Enter how much raw material was actually processed. The remainder will be returned to inventory.
+                Enter how much was actually processed. Any remainder becomes a new pending order.
               </Text>
               <Box overflowX="auto">
-                <Box as="table" width="100%" borderCollapse="collapse" fontSize="sm">
+                <Box as="table" width="100%" borderCollapse="collapse">
                   <thead>
                     <tr>
                       <Box as="th" textAlign="left" px={3} py={2} bg="gray.50"
@@ -649,47 +679,57 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                         fontSize="sm" fontWeight="semibold" color="gray.500">Item</Box>
                       <Box as="th" textAlign="right" px={3} py={2} bg="gray.50"
                         borderBottom="2px" borderColor="gray.200"
-                        fontSize="sm" fontWeight="semibold" color="gray.500" whiteSpace="nowrap">Planned (lb)</Box>
+                        fontSize="sm" fontWeight="semibold" color="gray.500" whiteSpace="nowrap">Planned</Box>
                       <Box as="th" textAlign="right" px={3} py={2} bg="gray.50"
                         borderBottom="2px" borderColor="gray.200"
-                        fontSize="sm" fontWeight="semibold" color="gray.500" whiteSpace="nowrap">Actual Used (lb)</Box>
+                        fontSize="sm" fontWeight="semibold" color="blue.600" whiteSpace="nowrap">Actual Used</Box>
                       <Box as="th" textAlign="right" px={3} py={2} bg="gray.50"
                         borderBottom="2px" borderColor="gray.200"
-                        fontSize="sm" fontWeight="semibold" color="orange.500" whiteSpace="nowrap">Returned</Box>
+                        fontSize="sm" fontWeight="semibold" color="orange.500" whiteSpace="nowrap">Remaining</Box>
                     </tr>
                   </thead>
                   <tbody>
                     {partialOrder.items.map((it) => {
-                      const actual   = parseFloat(partialActuals[it.id] ?? it.weightIn) || 0;
-                      const planned  = parseFloat(it.weightIn) || 0;
-                      const returned = Math.max(0, planned - actual);
+                      const actual    = parseFloat(partialActuals[it.id] ?? it.weightIn) || 0;
+                      const planned   = parseFloat(it.weightIn) || 0;
+                      const remaining = Math.max(0, planned - actual);
                       return (
                         <Box as="tr" key={it.id}>
                           <Box as="td" px={3} py={3} borderBottom="1px" borderColor="gray.100">
                             <Text fontWeight="medium" color="blue.700" fontSize="sm">{it.lot}</Text>
                             <Text color="gray.500" fontSize="sm">{it.description}</Text>
                           </Box>
-                          <Box as="td" px={3} py={3} textAlign="right" fontSize="sm"
-                            color="gray.500" borderBottom="1px" borderColor="gray.100">
-                            {planned.toFixed(1)}
+                          {/* Planned */}
+                          <Box as="td" px={3} py={3} textAlign="right" borderBottom="1px" borderColor="gray.100">
+                            <Text fontSize="xl" fontWeight="bold" color="gray.400" lineHeight={1}>
+                              {planned.toFixed(1)}
+                            </Text>
+                            <Text fontSize="xs" color="gray.300">lb</Text>
                           </Box>
-                          <Box as="td" px={3} py={3} textAlign="right"
-                            borderBottom="1px" borderColor="gray.100">
-                            <Flex justify="flex-end" align="center" gap={1}>
+                          {/* Actual used input */}
+                          <Box as="td" px={3} py={3} textAlign="right" borderBottom="1px" borderColor="gray.100">
+                            <Flex justify="flex-end" align="baseline" gap={1}>
                               <input
                                 type="number" min={0} max={it.weightIn} step="0.1"
                                 value={partialActuals[it.id] ?? ""}
                                 onChange={(e) => setPartialActuals((prev) => ({ ...prev, [it.id]: e.target.value }))}
-                                style={{ ...inStyle("90px"), textAlign: "right" }}
+                                style={{ ...inStyle("90px"), textAlign: "right", fontSize: "18px", fontWeight: "bold" }}
                               />
                               <Text fontSize="sm" color="gray.400">lb</Text>
                             </Flex>
                           </Box>
-                          <Box as="td" px={3} py={3} textAlign="right"
-                            borderBottom="1px" borderColor="gray.100">
-                            {returned > 0
-                              ? <Text fontSize="sm" color="orange.500" fontWeight="medium">+{returned.toFixed(1)} lb</Text>
-                              : <Text fontSize="sm" color="gray.300">—</Text>}
+                          {/* Remaining → new pending order */}
+                          <Box as="td" px={3} py={3} textAlign="right" borderBottom="1px" borderColor="gray.100">
+                            {remaining > 0 ? (
+                              <>
+                                <Text fontSize="xl" fontWeight="bold" color="orange.500" lineHeight={1}>
+                                  {remaining.toFixed(1)}
+                                </Text>
+                                <Text fontSize="xs" color="orange.300">lb pending</Text>
+                              </>
+                            ) : (
+                              <Text fontSize="sm" color="gray.300">—</Text>
+                            )}
                           </Box>
                         </Box>
                       );

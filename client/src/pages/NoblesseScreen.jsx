@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Box, Flex, Text, Spinner, Badge, IconButton, Tooltip,
+  Box, Flex, Text, Spinner, Badge, IconButton, Tooltip, Image,
   Tabs, TabList, TabPanels, Tab, TabPanel,
 } from "@chakra-ui/react";
 import { RepeatIcon, ArrowBackIcon } from "@chakra-ui/icons";
@@ -10,12 +10,14 @@ import getRole from "../utils/getRole";
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import { NtiInventoryTab } from "./noblesse/NtiInventoryTab";
 import { ProcessingReportTab } from "./noblesse/ProcessingReportTab";
+import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
 
 const NoblesseScreen = () => {
   const navigate = useNavigate();
   const isAdmin  = getRole() === "admin";
+  const canEdit  = true; // all roles permitted on this screen are trusted to edit
 
   const [pendingOrders, setPendingOrders] = useState([]);
   const [ntiInventory, setNtiInventory]   = useState([]);
@@ -97,10 +99,7 @@ const NoblesseScreen = () => {
                   colorScheme="gray" aria-label="Back" onClick={() => navigate("/home")} />
               </Tooltip>
             )}
-            <Box>
-              <Text fontSize="2xl" fontWeight="bold" color="gray.800">Noblesse Trading Inc</Text>
-              <Text fontSize="md" color="gray.500">Processor Portal</Text>
-            </Box>
+            <Image src={ntiLogo} alt="Noblesse Trading Inc" height="36px" objectFit="contain" />
           </Flex>
           <Flex align="center" gap={3}>
             {lastRefreshed && (
@@ -151,7 +150,7 @@ const NoblesseScreen = () => {
                   onReceiptUpdate={handleReceiptUpdate}
                   onReceiptDelete={handleReceiptDelete}
                   onInventoryPush={handleInventoryPush}
-                  isAdmin={isAdmin}
+                  isAdmin={canEdit}
                 />
               </TabPanel>
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
@@ -167,7 +166,7 @@ const NoblesseScreen = () => {
                   ntiInventory={ntiInventory} afItems={afItems}
                   procOrders={procOrders}
                   onAdd={handleNtiAdd} onUpdate={handleNtiUpdate} onDelete={handleNtiDelete}
-                  isAdmin={isAdmin}
+                  isAdmin={canEdit}
                 />
               </TabPanel>
             </TabPanels>

@@ -44,6 +44,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
   const [historyOpen, setHistoryOpen]         = useState(false);
   const [historyLoading, setHistoryLoading]   = useState(false);
   const [deletingId, setDeletingId]           = useState(null);
+  const [statusFilter, setStatusFilter]       = useState("all");
 
   const toggleExpand = (id) =>
     setExpandedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -67,27 +68,34 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
       })
       .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
-    const totalWeightIn    = events.reduce((s, e) => s + (parseFloat(e.actualWeightIn ?? e.weightIn) || 0), 0);
+    const completedEvents  = events.filter((e) => e.status === "completed");
+    const pendingEvents    = events.filter((e) => e.status === "pending");
+    // Processed weight = actual weight consumed by completed orders
+    const totalWeightIn    = completedEvents.reduce((s, e) => s + (parseFloat(e.actualWeightIn ?? e.weightIn) || 0), 0);
+    // Weight still committed to pending orders (deducted from inventory but not yet processed)
+    const pendingWeightIn  = pendingEvents.reduce((s, e) => s + (parseFloat(e.weightIn) || 0), 0);
     const allComplete      = events.length > 0 && events.every((e) => e.status === "completed");
-    const hasAllOut        = events.length > 0 && events.every((e) => e.outputWeight != null);
-    const totalOut         = hasAllOut ? events.reduce((s, e) => s + (parseFloat(e.outputWeight) || 0), 0) : null;
-    const hasSomeOutCases  = events.some((e) => e.outputCases != null);
-    const totalCasesOut    = hasSomeOutCases ? events.reduce((s, e) => s + (parseInt(e.outputCases) || 0), 0) : null;
+    const hasAllOut        = completedEvents.length > 0 && completedEvents.every((e) => e.outputWeight != null);
+    const totalOut         = hasAllOut ? completedEvents.reduce((s, e) => s + (parseFloat(e.outputWeight) || 0), 0) : null;
+    const hasSomeOutCases  = completedEvents.some((e) => e.outputCases != null);
+    const totalCasesOut    = hasSomeOutCases ? completedEvents.reduce((s, e) => s + (parseInt(e.outputCases) || 0), 0) : null;
     const noRemainingWt    = (parseFloat(item.weight) || 0) <= 0;
-    const fullyDone        = allComplete && events.length > 0 && noRemainingWt;
+    const fullyDone        = allComplete && events.length > 0 && noRemainingWt && pendingWeightIn === 0;
     const gainLoss         = fullyDone && totalOut != null ? totalOut - totalWeightIn : null;
     const yieldPct         = fullyDone && totalOut != null && totalWeightIn > 0
       ? (totalOut / totalWeightIn) * 100 : null;
 
-    return { item, events, totalCasesOut, totalWeightIn, totalOut, gainLoss, yieldPct,
+    return { item, events, totalCasesOut, totalWeightIn, pendingWeightIn, totalOut, gainLoss, yieldPct,
              status: fullyDone ? "Complete" : "Pending" };
   });
 
-  const sortedData = [...itemData].sort((a, b) => {
-    const av = String(a.item[sortCol] ?? "").toLowerCase();
-    const bv = String(b.item[sortCol] ?? "").toLowerCase();
-    return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-  });
+  const sortedData = [...itemData]
+    .filter((d) => statusFilter === "all" || d.status.toLowerCase() === statusFilter)
+    .sort((a, b) => {
+      const av = String(a.item[sortCol] ?? "").toLowerCase();
+      const bv = String(b.item[sortCol] ?? "").toLowerCase();
+      return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
 
   const fetchHistory = async () => {
     setHistoryLoading(true);
@@ -224,9 +232,38 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
   return (
     <Box>
       <Flex justify="space-between" align="center" mb={4} flexWrap="wrap" gap={2}>
-        <Text fontSize="sm" fontWeight="semibold" color="gray.600" textTransform="uppercase" letterSpacing="wide">
-          NTI Inventory
-        </Text>
+        <Flex align="center" gap={3}>
+          <Text fontSize="sm" fontWeight="semibold" color="gray.600" textTransform="uppercase" letterSpacing="wide">
+            NTI Inventory
+          </Text>
+          {/* Status filter */}
+          <Flex gap={1} bg="gray.100" borderRadius="md" p="2px">
+            {[
+              { key: "all",      label: "All",       count: itemData.length },
+              { key: "pending",  label: "Pending",   count: itemData.filter((d) => d.status === "Pending").length },
+              { key: "complete", label: "Complete",  count: itemData.filter((d) => d.status === "Complete").length },
+            ].map(({ key, label, count }) => {
+              const active = statusFilter === key;
+              return (
+                <Button key={key} size="xs" borderRadius="md"
+                  bg={active ? "white" : "transparent"}
+                  color={active ? "gray.700" : "gray.400"}
+                  boxShadow={active ? "sm" : "none"}
+                  fontWeight={active ? "semibold" : "normal"}
+                  _hover={{ bg: active ? "white" : "gray.200" }}
+                  onClick={() => setStatusFilter(key)}>
+                  {label}
+                  {count > 0 && (
+                    <Badge ml={1.5} borderRadius="full" fontSize="xs"
+                      colorScheme={key === "complete" ? "green" : key === "pending" ? "yellow" : "gray"}>
+                      {count}
+                    </Badge>
+                  )}
+                </Button>
+              );
+            })}
+          </Flex>
+        </Flex>
         {isAdmin && (
           <Button size="xs" variant="outline" colorScheme="gray" onClick={openHistory}>
             History
@@ -250,7 +287,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
               ))}
               <Th bg="gray.50" whiteSpace="nowrap"
                 borderLeft="2px solid" borderLeftColor="gray.200">Rem. Wt (lb)</Th>
-              <Th bg="gray.50" whiteSpace="nowrap">Total Proc Wt</Th>
+              <Th bg="gray.50" whiteSpace="nowrap">Processed Wt</Th>
               <Th bg="gray.50" whiteSpace="nowrap">Total Cases Out</Th>
               <Th bg="gray.50" whiteSpace="nowrap">Gain/Loss (lb)</Th>
               <Th bg="gray.50" whiteSpace="nowrap">Yield %</Th>
@@ -259,7 +296,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
             </tr>
           </thead>
           <tbody>
-            {sortedData.map(({ item, events, totalCasesOut, totalWeightIn, gainLoss, yieldPct, status }, i) => {
+            {sortedData.map(({ item, events, totalCasesOut, totalWeightIn, pendingWeightIn, gainLoss, yieldPct, status }, i) => {
               const isActive   = activeId === item.id;
               const isExpanded = expandedIds.has(item.id);
               const rawWeight  = (parseFloat(item.weight) || 0) + totalWeightIn;
@@ -342,10 +379,18 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
 
                     {/* Status */}
                     <Td bg="gray.50">
-                      <Badge colorScheme={status === "Complete" ? "green" : "gray"}
-                        variant="subtle" px={2} py={0.5} borderRadius="md" fontSize="xs">
-                        {status}
-                      </Badge>
+                      <Flex direction="column" gap={1} align="flex-start">
+                        <Badge colorScheme={status === "Complete" ? "green" : "gray"}
+                          variant="subtle" px={2} py={0.5} borderRadius="md" fontSize="xs">
+                          {status}
+                        </Badge>
+                        {pendingWeightIn > 0 && (
+                          <Badge colorScheme="orange" variant="subtle"
+                            px={2} py={0.5} borderRadius="md" fontSize="xs" whiteSpace="nowrap">
+                            {pendingWeightIn % 1 === 0 ? pendingWeightIn : pendingWeightIn.toFixed(1)} lb pending
+                          </Badge>
+                        )}
+                      </Flex>
                     </Td>
 
                     {/* Edit / Delete — admin only */}

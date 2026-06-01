@@ -650,8 +650,8 @@ router.patch("/noblesse-proc-orders/:id/output", verifyToken, async (req, res) =
   }
 });
 
-// Partial completion — records how much was actually processed and returns
-// the unprocessed portion to NTI inventory.
+// Partial completion — records how much was actually processed.
+// The unprocessed remainder becomes a new pending order; inventory stays deducted.
 router.patch("/noblesse-proc-orders/:id/partial-complete", verifyToken, async (req, res) => {
   const { items: itemUpdates, outputWeight, outputCases } = req.body; // items: [{ id, actualWeightIn }]
   if (!Array.isArray(itemUpdates) || itemUpdates.length === 0)
@@ -661,7 +661,8 @@ router.patch("/noblesse-proc-orders/:id/partial-complete", verifyToken, async (r
   try {
     await client.query("BEGIN");
 
-    const returns = []; // for history log after commit
+    const remainders = []; // items with leftover weight → new pending order
+
     for (const upd of itemUpdates) {
       const itemRes = await client.query(
         `SELECT * FROM noblesse_processing_order_items WHERE id = $1 AND processing_order_id = $2`,
@@ -670,24 +671,21 @@ router.patch("/noblesse-proc-orders/:id/partial-complete", verifyToken, async (r
       if (!itemRes.rows.length) continue;
       const item = itemRes.rows[0];
 
-      const planned  = Number(item.weight_in) || 0;
-      const actual   = Math.max(0, Math.min(planned, Number(upd.actualWeightIn) || 0));
-      const returned = planned - actual;
+      const planned   = Number(item.weight_in) || 0;
+      const actual    = Math.max(0, Math.min(planned, Number(upd.actualWeightIn) || 0));
+      const remainder = planned - actual;
 
       await client.query(
         `UPDATE noblesse_processing_order_items SET actual_weight_in = $1 WHERE id = $2`,
         [actual, item.id]
       );
 
-      if (returned > 0 && item.nti_item_id) {
-        await client.query(
-          `UPDATE nti_inventory SET weight = weight + $1 WHERE id = $2 AND tenant_id = $3`,
-          [returned, item.nti_item_id, req.tenantId]
-        );
-        returns.push({ lot: item.lot, ntiItemId: item.nti_item_id, planned, actual, returned });
+      if (remainder > 0) {
+        remainders.push({ ...item, weight_in: remainder });
       }
     }
 
+    // Mark original order completed
     const orderRes = await client.query(
       `UPDATE noblesse_processing_orders
        SET status = 'completed', completed_at = NOW(),
@@ -705,19 +703,38 @@ router.patch("/noblesse-proc-orders/:id/partial-complete", verifyToken, async (r
       [req.params.id]
     );
 
-    await client.query("COMMIT");
-
-    for (const r of returns) {
-      pool.query(
-        `INSERT INTO nti_inventory_history (tenant_id, action, item_id, lot, snapshot)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [req.tenantId, "returned", r.ntiItemId, r.lot,
-         JSON.stringify({ plannedWeight: r.planned, actualWeight: r.actual, returnedWeight: r.returned,
-                         processingOrderId: Number(req.params.id) })]
-      ).catch((err) => console.error("history log error:", err.message));
+    // Spin up a new pending order for any remainder (inventory already committed — no re-deduction)
+    let newOrder = null;
+    if (remainders.length > 0) {
+      const orig = orderRes.rows[0];
+      const newOrderRes = await client.query(
+        `INSERT INTO noblesse_processing_orders (tenant_id, order_date, notes, created_at)
+         VALUES ($1, $2, $3, NOW()) RETURNING *`,
+        [req.tenantId, orig.order_date,
+         `Remainder from PO #${req.params.id}${orig.notes ? ` — ${orig.notes}` : ""}`]
+      );
+      const newOrderRow = newOrderRes.rows[0];
+      const newItems = [];
+      for (const rem of remainders) {
+        const newItemRes = await client.query(
+          `INSERT INTO noblesse_processing_order_items
+             (processing_order_id, receipt_id, nti_item_id, lot, description, brand, species, grade, weight_in, cases_in)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+          [newOrderRow.id, rem.receipt_id, rem.nti_item_id,
+           rem.lot, rem.description, rem.brand, rem.species, rem.grade,
+           rem.weight_in, rem.cases_in || null]
+        );
+        newItems.push(newItemRes.rows[0]);
+      }
+      newOrder = fmtProcOrder(newOrderRow, newItems);
     }
 
-    res.json(fmtProcOrder(orderRes.rows[0], updatedItems.rows));
+    await client.query("COMMIT");
+
+    res.json({
+      order:    fmtProcOrder(orderRes.rows[0], updatedItems.rows),
+      newOrder,
+    });
   } catch (err) {
     await client.query("ROLLBACK");
     console.error(err);
@@ -735,24 +752,13 @@ router.patch("/noblesse-proc-orders/:id/status", verifyToken, async (req, res) =
   try {
     await client.query("BEGIN");
 
-    // Reverting to pending: undo any partial completion (re-deduct actual weight, clear it)
+    // Reverting to pending: clear actual_weight_in. Inventory stays as-is —
+    // remainder was spun into a new pending order, not returned to inventory.
     if (status === "pending") {
-      const itemsSnap = await client.query(
-        `SELECT * FROM noblesse_processing_order_items WHERE processing_order_id = $1`,
+      await client.query(
+        `UPDATE noblesse_processing_order_items SET actual_weight_in = NULL WHERE processing_order_id = $1`,
         [req.params.id]
       );
-      for (const item of itemsSnap.rows) {
-        if (item.actual_weight_in != null && item.nti_item_id) {
-          await client.query(
-            `UPDATE nti_inventory SET weight = GREATEST(0, weight - $1) WHERE id = $2 AND tenant_id = $3`,
-            [Number(item.actual_weight_in), item.nti_item_id, req.tenantId]
-          );
-          await client.query(
-            `UPDATE noblesse_processing_order_items SET actual_weight_in = NULL WHERE id = $1`,
-            [item.id]
-          );
-        }
-      }
     }
 
     const result = await client.query(

@@ -14,11 +14,13 @@ import {
   AlertIcon,
   Divider,
   Link,
+  Image,
 } from "@chakra-ui/react";
 import { EmailIcon, LockIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API_BASE_URL } from "../config/api";
+import ntiLogo from "../assets/nti.jpg";
 
 const NoblesseLogin = () => {
   const [email, setEmail]       = useState("");
@@ -28,7 +30,6 @@ const NoblesseLogin = () => {
   const [loading, setLoading]   = useState(false);
   const navigate = useNavigate();
 
-  // Redirect already-authenticated users
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -67,28 +68,29 @@ const NoblesseLogin = () => {
       overflow="hidden"
       bg="gray.900"
     >
-      {/* Subtle background accent */}
+      {/* Subtle red glow top-right */}
       <Box
         position="absolute"
-        top="-20%"
-        right="-10%"
-        width="500px"
-        height="500px"
+        top="-15%"
+        right="-5%"
+        width="480px"
+        height="480px"
         borderRadius="full"
-        bg="teal.900"
-        opacity={0.4}
-        filter="blur(80px)"
+        bg="red.900"
+        opacity={0.35}
+        filter="blur(90px)"
         pointerEvents="none"
       />
+      {/* Subtle gray glow bottom-left */}
       <Box
         position="absolute"
-        bottom="-15%"
-        left="-10%"
+        bottom="-20%"
+        left="-8%"
         width="400px"
         height="400px"
         borderRadius="full"
-        bg="blue.900"
-        opacity={0.3}
+        bg="gray.700"
+        opacity={0.25}
         filter="blur(80px)"
         pointerEvents="none"
       />
@@ -105,15 +107,13 @@ const NoblesseLogin = () => {
         spacing={6}
         width={{ base: "90vw", sm: "420px" }}
       >
-        {/* Branding */}
-        <Box textAlign="center">
-          <Text fontSize="xl" fontWeight="800" color="teal.600" letterSpacing="tight">
-            NOBLESSE TRADING INC
-          </Text>
-          <Text fontSize="xs" color="gray.400" fontWeight="500" letterSpacing="widest" mt={0.5}>
-            PROCESSOR PORTAL
-          </Text>
-        </Box>
+        {/* Logo */}
+        <Image
+          src={ntiLogo}
+          alt="Noblesse Trading Inc"
+          height="42px"
+          objectFit="contain"
+        />
 
         <Divider />
 
@@ -146,8 +146,8 @@ const NoblesseLogin = () => {
                 value={email}
                 required
                 borderColor="gray.300"
-                _hover={{ borderColor: "teal.400" }}
-                _focus={{ borderColor: "teal.500", boxShadow: "0 0 0 1px #319795" }}
+                _hover={{ borderColor: "red.300" }}
+                _focus={{ borderColor: "red.700", boxShadow: "0 0 0 1px #9B2C2C" }}
               />
             </InputGroup>
 
@@ -163,8 +163,8 @@ const NoblesseLogin = () => {
                 value={password}
                 required
                 borderColor="gray.300"
-                _hover={{ borderColor: "teal.400" }}
-                _focus={{ borderColor: "teal.500", boxShadow: "0 0 0 1px #319795" }}
+                _hover={{ borderColor: "red.300" }}
+                _focus={{ borderColor: "red.700", boxShadow: "0 0 0 1px #9B2C2C" }}
               />
               <InputRightElement width="4rem">
                 <Button
@@ -181,12 +181,15 @@ const NoblesseLogin = () => {
 
             <Button
               type="submit"
-              colorScheme="teal"
               size="md"
               width="100%"
               mt={2}
               isLoading={loading}
               loadingText="Signing in..."
+              bg="red.800"
+              color="white"
+              _hover={{ bg: "red.700" }}
+              _active={{ bg: "red.900" }}
             >
               Sign in
             </Button>
@@ -195,7 +198,7 @@ const NoblesseLogin = () => {
 
         <Text fontSize="xs" color="gray.400" textAlign="center">
           Adams Foods staff?{" "}
-          <Link color="teal.500" href="/" fontWeight="500">
+          <Link color="red.700" href="/" fontWeight="500">
             Sign in here
           </Link>
         </Text>
