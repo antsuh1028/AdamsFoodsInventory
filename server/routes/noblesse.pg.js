@@ -653,7 +653,7 @@ router.patch("/noblesse-proc-orders/:id/output", verifyToken, async (req, res) =
 // Partial completion — records how much was actually processed and returns
 // the unprocessed portion to NTI inventory.
 router.patch("/noblesse-proc-orders/:id/partial-complete", verifyToken, async (req, res) => {
-  const { items: itemUpdates } = req.body; // [{ id, actualWeightIn }]
+  const { items: itemUpdates, outputWeight, outputCases } = req.body; // items: [{ id, actualWeightIn }]
   if (!Array.isArray(itemUpdates) || itemUpdates.length === 0)
     return res.status(400).json({ error: "items array required" });
 
@@ -690,9 +690,13 @@ router.patch("/noblesse-proc-orders/:id/partial-complete", verifyToken, async (r
 
     const orderRes = await client.query(
       `UPDATE noblesse_processing_orders
-       SET status = 'completed', completed_at = NOW()
+       SET status = 'completed', completed_at = NOW(),
+           output_weight = COALESCE($3, output_weight),
+           output_cases  = COALESCE($4, output_cases)
        WHERE id = $1 AND tenant_id = $2 RETURNING *`,
-      [req.params.id, req.tenantId]
+      [req.params.id, req.tenantId,
+       outputWeight != null ? Number(outputWeight) : null,
+       outputCases  != null ? Number(outputCases)  : null]
     );
     if (!orderRes.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Not found" }); }
 

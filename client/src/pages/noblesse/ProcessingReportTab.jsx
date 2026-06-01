@@ -25,9 +25,11 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
   const [outputCasesDraft, setOutputCasesDraft]   = useState("");
   const [savingOutput, setSavingOutput] = useState(false);
 
-  const [partialOrderId, setPartialOrderId]     = useState(null);
-  const [partialActuals, setPartialActuals]     = useState({});
-  const [partialSubmitting, setPartialSubmitting] = useState(false);
+  const [partialOrderId, setPartialOrderId]         = useState(null);
+  const [partialActuals, setPartialActuals]         = useState({});
+  const [partialOutputWeight, setPartialOutputWeight] = useState("");
+  const [partialOutputCases, setPartialOutputCases]   = useState("");
+  const [partialSubmitting, setPartialSubmitting]   = useState(false);
 
   const partialOrder = partialOrderId != null ? procOrders.find((o) => o.id === partialOrderId) : null;
 
@@ -35,6 +37,8 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
     const actuals = {};
     order.items.forEach((it) => { actuals[it.id] = String(it.weightIn ?? ""); });
     setPartialActuals(actuals);
+    setPartialOutputWeight(order.outputWeight != null ? String(order.outputWeight) : "");
+    setPartialOutputCases(order.outputCases   != null ? String(order.outputCases)  : "");
     setPartialOrderId(order.id);
   };
 
@@ -46,9 +50,14 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
         id: it.id,
         actualWeightIn: parseFloat(partialActuals[it.id] ?? it.weightIn) || 0,
       }));
-      const res = await axiosInstance.patch(`/noblesse-proc-orders/${partialOrder.id}/partial-complete`, { items });
+      const res = await axiosInstance.patch(`/noblesse-proc-orders/${partialOrder.id}/partial-complete`, {
+        items,
+        outputWeight: partialOutputWeight !== "" ? partialOutputWeight : null,
+        outputCases:  partialOutputCases  !== "" ? partialOutputCases  : null,
+      });
       onProcOrderUpdate(res.data);
       setPartialOrderId(null);
+      setPartialOutputWeight(""); setPartialOutputCases("");
       toast({ title: "Marked as partially complete", status: "success", position: "top", duration: 2500, isClosable: true });
     } catch {
       toast({ title: "Failed to save partial completion", status: "error", position: "top", duration: 3000, isClosable: true });
@@ -105,7 +114,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
 
   const editingOrder         = editingOutputId != null ? procOrders.find((o) => o.id === editingOutputId) : null;
   const editingOrderWeightIn = editingOrder
-    ? editingOrder.items.reduce((s, it) => s + (parseFloat(it.weightIn) || 0), 0)
+    ? editingOrder.items.reduce((s, it) => s + (parseFloat(it.actualWeightIn ?? it.weightIn) || 0), 0)
     : null;
 
   const outputWeightNum   = parseFloat(outputWeightDraft);
@@ -687,6 +696,33 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                     })}
                   </tbody>
                 </Box>
+              </Box>
+              {/* Output section */}
+              <Box mt={5} pt={4} borderTop="1px" borderColor="gray.200">
+                <Text fontSize="sm" fontWeight="semibold" color="gray.600" mb={3}>Output from this run</Text>
+                <Flex gap={4} align="flex-end" flexWrap="wrap">
+                  <Box>
+                    <Text fontSize="sm" color="gray.500" mb="3px">Weight Out (lb)</Text>
+                    <input
+                      type="number" min={0} step="0.1"
+                      value={partialOutputWeight}
+                      onChange={(e) => setPartialOutputWeight(e.target.value)}
+                      placeholder="0"
+                      style={inStyle("110px")}
+                    />
+                  </Box>
+                  <Box>
+                    <Text fontSize="sm" color="gray.500" mb="3px">Cases Out</Text>
+                    <input
+                      type="number" min={0}
+                      value={partialOutputCases}
+                      onChange={(e) => setPartialOutputCases(e.target.value)}
+                      placeholder="0"
+                      style={inStyle("80px")}
+                    />
+                  </Box>
+                  <Text fontSize="sm" color="gray.400" pb="6px">(optional — can be entered later)</Text>
+                </Flex>
               </Box>
             </ModalBody>
             <ModalFooter gap={2}>
