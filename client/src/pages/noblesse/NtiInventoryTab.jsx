@@ -43,6 +43,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
   const [history, setHistory]           = useState([]);
   const [historyOpen, setHistoryOpen]         = useState(false);
   const [historyLoading, setHistoryLoading]   = useState(false);
+  const [deletingId, setDeletingId]           = useState(null);
 
   const toggleExpand = (id) =>
     setExpandedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -53,19 +54,20 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
       .map((o) => {
         const oi = o.items.find((it) => it.ntiItemId === item.id);
         return {
-          date:         o.orderDate,
-          status:       o.status,
-          casesIn:      oi?.casesIn  != null ? Number(oi.casesIn)  : null,
-          weightIn:     oi?.weightIn != null ? Number(oi.weightIn) : null,
-          outputWeight: o.outputWeight,
-          outputCases:  o.outputCases,
-          createdAt:    o.createdAt,
-          completedAt:  o.completedAt,
+          date:           o.orderDate,
+          status:         o.status,
+          casesIn:        oi?.casesIn        != null ? Number(oi.casesIn)        : null,
+          weightIn:       oi?.weightIn       != null ? Number(oi.weightIn)       : null,
+          actualWeightIn: oi?.actualWeightIn != null ? Number(oi.actualWeightIn) : null,
+          outputWeight:   o.outputWeight,
+          outputCases:    o.outputCases,
+          createdAt:      o.createdAt,
+          completedAt:    o.completedAt,
         };
       })
       .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
-    const totalWeightIn    = events.reduce((s, e) => s + (parseFloat(e.weightIn) || 0), 0);
+    const totalWeightIn    = events.reduce((s, e) => s + (parseFloat(e.actualWeightIn ?? e.weightIn) || 0), 0);
     const allComplete      = events.length > 0 && events.every((e) => e.status === "completed");
     const hasAllOut        = events.length > 0 && events.every((e) => e.outputWeight != null);
     const totalOut         = hasAllOut ? events.reduce((s, e) => s + (parseFloat(e.outputWeight) || 0), 0) : null;
@@ -171,13 +173,23 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
   };
 
   const handleDelete = async (id) => {
+    if (deletingId === id) return;
+    setDeletingId(id);
     try {
       await axiosInstance.delete(`/nti-inventory/${id}`);
       onDelete(id);
       if (activeId === id) setActiveId(null);
       if (historyOpen) fetchHistory();
-    } catch {
-      toast({ title: "Failed to delete", status: "error", position: "top", duration: 3000, isClosable: true });
+    } catch (err) {
+      if (err.response?.status === 404) {
+        // Already deleted on the server — clean up UI silently
+        onDelete(id);
+        if (activeId === id) setActiveId(null);
+      } else {
+        toast({ title: "Failed to delete", status: "error", position: "top", duration: 3000, isClosable: true });
+      }
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -212,7 +224,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
   return (
     <Box>
       <Flex justify="space-between" align="center" mb={4} flexWrap="wrap" gap={2}>
-        <Text fontSize="xs" fontWeight="semibold" color="gray.600" textTransform="uppercase" letterSpacing="wide">
+        <Text fontSize="sm" fontWeight="semibold" color="gray.600" textTransform="uppercase" letterSpacing="wide">
           NTI Inventory
         </Text>
         {isAdmin && (
@@ -231,7 +243,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                 <Th key={c.key} cursor="pointer" userSelect="none" onClick={() => handleSort(c.key)}
                   _hover={{ bg: "gray.100" }} whiteSpace="nowrap">
                   {c.label}{" "}
-                  <Text as="span" color={sortCol === c.key ? "blue.500" : "gray.300"} fontSize="10px">
+                  <Text as="span" color={sortCol === c.key ? "blue.500" : "gray.300"} fontSize="xs">
                     {sortCol === c.key ? (sortDir === "asc" ? "▲" : "▼") : "⇅"}
                   </Text>
                 </Th>
@@ -350,6 +362,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                           ) : (
                             <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red" aria-label="Delete"
                               opacity={0} _groupHover={{ opacity: 1 }}
+                              isLoading={deletingId === item.id}
                               onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} />
                           )}
                         </Flex>
@@ -363,11 +376,11 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                       <Box as="td" colSpan={TOTAL_COLS}
                         bg="gray.50" px={8} py={3}
                         borderBottom="2px solid" borderBottomColor="gray.200">
-                        <Box as="table" borderCollapse="collapse" fontSize="xs">
+                        <Box as="table" borderCollapse="collapse" fontSize="sm">
                           <thead>
                             <tr>
                               <Th>Date</Th>
-                              <Th>Wt In (lb)</Th>
+                              <Th>Wt Used (lb)</Th>
                               <Th>Wt Out (lb)</Th>
                               <Th>Cases Out</Th>
                               <Th>Started</Th>
@@ -376,11 +389,23 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                             </tr>
                           </thead>
                           <tbody>
-                            {events.map((ev, ei) => (
+                            {events.map((ev, ei) => {
+                              const isPartialEv = ev.actualWeightIn != null && ev.actualWeightIn !== ev.weightIn;
+                              return (
                               <Box as="tr" key={ei} bg={ei % 2 === 0 ? "white" : "gray.50"}>
                                 <Td whiteSpace="nowrap">{ev.date ? fmtDate(ev.date) : "—"}</Td>
-                                <Td fontWeight="medium">
-                                  {ev.weightIn != null ? `${ev.weightIn} lb` : "—"}
+                                <Td fontWeight="medium" whiteSpace="nowrap">
+                                  {ev.actualWeightIn != null
+                                    ? <>
+                                        {ev.actualWeightIn} lb
+                                        {isPartialEv && (
+                                          <Text as="span" color="gray.400" fontWeight="normal" ml={1}
+                                            fontSize="xs">
+                                            /{ev.weightIn} planned
+                                          </Text>
+                                        )}
+                                      </>
+                                    : ev.weightIn != null ? `${ev.weightIn} lb` : "—"}
                                 </Td>
                                 <Td
                                   color={ev.outputWeight != null ? "gray.800" : "gray.300"}
@@ -399,12 +424,13 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                                 <Td>
                                   <Badge
                                     colorScheme={ev.status === "completed" ? "green" : "yellow"}
-                                    variant="subtle" fontSize="2xs" textTransform="capitalize">
+                                    variant="subtle" fontSize="xs" textTransform="capitalize">
                                     {ev.status}
                                   </Badge>
                                 </Td>
                               </Box>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </Box>
                       </Box>
@@ -479,7 +505,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                     {history.map((h, i) => {
                       const snap   = h.snapshot || {};
                       const before = snap.before || {};
-                      const ACTION_COLOR = { added: "green", updated: "blue", deleted: "red", processed: "orange" };
+                      const ACTION_COLOR = { added: "green", updated: "blue", deleted: "red", processed: "orange", received: "teal", returned: "purple" };
                       const color  = ACTION_COLOR[h.action] || "gray";
                       const changedFields = h.action === "updated"
                         ? LEFT_COLS.filter((c) => String(snap[c.key] ?? "") !== String(before[c.key] ?? ""))
@@ -487,13 +513,15 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                         : [];
                       return (
                         <Box as="tr" key={h.id} bg={i % 2 === 0 ? "white" : "gray.50"}>
-                          <Td fontSize="xs" color="gray.500" whiteSpace="nowrap">{fmtDate(h.createdAt)}</Td>
-                          <Td><Badge colorScheme={color} fontSize="2xs" textTransform="capitalize">{h.action}</Badge></Td>
+                          <Td fontSize="sm" color="gray.500" whiteSpace="nowrap">{fmtDate(h.createdAt)}</Td>
+                          <Td><Badge colorScheme={color} fontSize="xs" textTransform="capitalize">{h.action}</Badge></Td>
                           <Td fontWeight="medium" color="blue.700">{h.lot || "—"}</Td>
-                          <Td fontSize="xs" color="gray.600" whiteSpace="normal">
+                          <Td fontSize="sm" color="gray.600" whiteSpace="normal">
                             {h.action === "added"     && (`${snap.description || ""} ${snap.brand || ""}`.trim() || "—")}
                             {h.action === "deleted"   && (`${snap.description || ""} ${snap.brand || ""}`.trim() || "—")}
+                            {h.action === "received"  && `From receipt #${snap.sourceReceiptId} — ${`${snap.description || ""} ${snap.brand || ""}`.trim() || "—"}`}
                             {h.action === "processed" && `−${snap.weightDeducted} lb (processing order #${snap.processingOrderId})`}
+                            {h.action === "returned"  && `+${snap.returnedWeight} lb returned — processed ${snap.actualWeight}/${snap.plannedWeight} lb (PO #${snap.processingOrderId})`}
                             {h.action === "updated"   && (
                               changedFields.length > 0
                                 ? changedFields.join(" · ")

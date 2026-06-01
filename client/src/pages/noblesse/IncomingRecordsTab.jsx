@@ -1,28 +1,100 @@
 import React, { useState } from "react";
-import { Box, Flex, Text, Button, IconButton, useToast } from "@chakra-ui/react";
-import { AddIcon, DeleteIcon, CheckIcon, CloseIcon } from "@chakra-ui/icons";
+import {
+  Box, Flex, Text, Button, IconButton, useToast, Badge,
+  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton,
+} from "@chakra-ui/react";
+import { CheckIcon, CloseIcon, DeleteIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
-import { fmtDate, today, cellInputStyle, Th, Td } from "./shared";
+import { fmtDate, today, cellInputStyle } from "./shared";
 
 export const RECEIPT_LINE_COLS = [
-  { key: "lot",           label: "Lot No.",          w: "90px",  type: "text", placeholder: "N26124-01" },
-  { key: "vendorNo",      label: "Vendor No.",        w: "75px",  type: "text", placeholder: "" },
-  { key: "vendorInvoice", label: "Vendor Invoice #",  w: "100px", type: "text", placeholder: "" },
-  { key: "brand",         label: "Brand",             w: "85px",  type: "text", placeholder: "IBP" },
-  { key: "species",       label: "Species",           w: "65px",  type: "text", placeholder: "Beef" },
-  { key: "description",   label: "Description",       w: "140px", type: "text", placeholder: "Brisket" },
-  { key: "grade",         label: "Grade",             w: "55px",  type: "text", placeholder: "CH" },
-  { key: "weight",        label: "WT (#)",            w: "70px",  type: "text", placeholder: "1842" },
-  { key: "qty",           label: "QTY (C.S.)",        w: "65px",  type: "text", placeholder: "24" },
-  { key: "packDate",      label: "Pack Date",         w: "125px", type: "date", placeholder: "" },
-  { key: "temp",          label: "Temp (°F)",         w: "65px",  type: "text", placeholder: "27" },
-  { key: "estNo",         label: "EST No.",           w: "65px",  type: "text", placeholder: "9268" },
+  { key: "lot",         label: "Lot No.",     w: "110px", type: "text", placeholder: "N26124-01" },
+  { key: "brand",       label: "Brand",       w: "95px",  type: "text", placeholder: "IBP" },
+  { key: "species",     label: "Species",     w: "80px",  type: "text", placeholder: "Beef" },
+  { key: "description", label: "Description", w: "160px", type: "text", placeholder: "Brisket" },
+  { key: "grade",       label: "Grade",       w: "70px",  type: "text", placeholder: "CH" },
+  { key: "weight",      label: "WT (#)",      w: "85px",  type: "text", placeholder: "1842" },
+  { key: "qty",         label: "QTY (C.S.)",  w: "80px",  type: "text", placeholder: "24" },
+  { key: "packDate",    label: "Pack Date",   w: "135px", type: "date", placeholder: "" },
+  { key: "temp",        label: "Temp (°F)",   w: "80px",  type: "text", placeholder: "27" },
+  { key: "estNo",       label: "EST No.",     w: "80px",  type: "text", placeholder: "9268" },
 ];
 
 export const emptyLine = () => ({
-  lot: "", vendorNo: "", vendorInvoice: "", brand: "", species: "", description: "",
+  lot: "", brand: "", species: "", description: "",
   grade: "", weight: "", qty: "", packDate: "", temp: "", estNo: "",
 });
+
+// Input style for Excel grid cells — no border, fills cell
+const xlInput = {
+  display: "block", width: "100%", border: "none", outline: "none",
+  padding: "7px 10px", fontSize: "16px", fontFamily: "inherit",
+  background: "transparent", boxSizing: "border-box",
+};
+
+// Input style for header fields (Date, BOL, Driver)
+const hdInput = (w) => ({
+  border: "1px solid #CBD5E0", borderRadius: "4px",
+  padding: "6px 10px", fontSize: "15px", fontFamily: "inherit",
+  outline: "none", background: "white",
+  width: w || "auto",
+});
+
+// Excel-style column header
+const XlTh = ({ children, w, center, ...props }) => (
+  <Box
+    as="th"
+    px={2} py="7px"
+    bg="gray.100"
+    border="1px solid" borderColor="gray.400"
+    fontSize="sm" fontWeight="bold" color="gray.600"
+    textTransform="uppercase" letterSpacing="wide"
+    whiteSpace="nowrap" textAlign={center ? "center" : "left"}
+    style={w ? { minWidth: w } : {}}
+    {...props}
+  >
+    {children}
+  </Box>
+);
+
+// Excel-style data cell — when isInput, focus turns border blue
+const XlTd = ({ children, isInput, center, ...props }) => (
+  <Box
+    as="td"
+    p={isInput ? 0 : "7px 10px"}
+    border="1px solid" borderColor="gray.300"
+    fontSize="md" color="gray.800"
+    whiteSpace="nowrap" verticalAlign="middle"
+    textAlign={center ? "center" : undefined}
+    sx={isInput ? { "&:focus-within": { outline: "2px solid #3182CE", outlineOffset: "-1px", zIndex: 1, position: "relative" } } : undefined}
+    {...props}
+  >
+    {children}
+  </Box>
+);
+
+// Row number cell
+const XlRowNum = ({ n }) => (
+  <Box
+    as="td"
+    px={2} py="7px"
+    bg="gray.50" border="1px solid" borderColor="gray.300"
+    fontSize="sm" color="gray.400" textAlign="center"
+    userSelect="none" style={{ minWidth: "32px" }}
+  >
+    {n}
+  </Box>
+);
+
+const cellValue = (col, l) => {
+  const v = l[col.key];
+  if (col.key === "weight")   return v ? `${v} lb` : "—";
+  if (col.key === "temp")     return v ? `${v}°F`  : "—";
+  if (col.key === "packDate") return fmtDate(v);
+  return v || "—";
+};
+
+// ── Inspection section (unchanged) ────────────────────────────────────────────
 
 const INSPECTION_CHECKS = [
   { key: "truckStructure",    label: "Truck/trailer structure conditions" },
@@ -69,7 +141,7 @@ const InspectionSection = ({ receipt, isAdmin, onReceiptUpdate }) => {
   return (
     <Box borderTop="1px" borderColor="gray.200" bg="gray.50" px={4} py={3}>
       <Flex align="center" justify="space-between" mb={expanded ? 3 : 0}>
-        <Text fontSize="xs" fontWeight="semibold" color="gray.500" textTransform="uppercase" letterSpacing="wide">
+        <Text fontSize="sm" fontWeight="semibold" color="gray.500" textTransform="uppercase" letterSpacing="wide">
           Vehicle Inspection
         </Text>
         {isAdmin && !expanded && (
@@ -122,80 +194,325 @@ const InspectionSection = ({ receipt, isAdmin, onReceiptUpdate }) => {
       ) : hasData ? (
         <Flex gap={4} align="center" flexWrap="wrap">
           {anyBad
-            ? <Box as="span" fontSize="xs" color="red.600" fontWeight="semibold">Issues noted</Box>
-            : <Box as="span" fontSize="xs" color="green.600" fontWeight="semibold">All acceptable</Box>
+            ? <Box as="span" fontSize="sm" color="red.600" fontWeight="semibold">Issues noted</Box>
+            : <Box as="span" fontSize="sm" color="green.600" fontWeight="semibold">All acceptable</Box>
           }
           {INSPECTION_CHECKS.filter((c) => insp[c.key] === "unacceptable").map((c) => (
-            <Text key={c.key} fontSize="xs" color="red.600">⚠ {c.label}</Text>
+            <Text key={c.key} fontSize="sm" color="red.600">⚠ {c.label}</Text>
           ))}
-          {insp.truckTemp  && <Text fontSize="xs" color="gray.600">Temp: {insp.truckTemp}°F</Text>}
-          {insp.verifiedBy && <Text fontSize="xs" color="gray.600">Verified by: {insp.verifiedBy}</Text>}
+          {insp.truckTemp  && <Text fontSize="sm" color="gray.600">Temp: {insp.truckTemp}°F</Text>}
+          {insp.verifiedBy && <Text fontSize="sm" color="gray.600">Verified by: {insp.verifiedBy}</Text>}
         </Flex>
       ) : (
-        <Text fontSize="xs" color="gray.300" fontStyle="italic">Not completed</Text>
+        <Text fontSize="sm" color="gray.300" fontStyle="italic">Not completed</Text>
       )}
     </Box>
   );
 };
 
-const DailyReceiptCard = ({ receipt, onReceiptUpdate, isAdmin }) => (
-  <Box border="1px" borderColor="gray.200" borderRadius="lg" mb={5} overflow="hidden" boxShadow="sm">
-    <Box bg="gray.50" px={4} py={3} borderBottom="1px" borderColor="gray.200">
-      <Text fontSize="9px" fontWeight="bold" textTransform="uppercase" letterSpacing="widest" color="gray.400" mb={1}>
-        Daily Incoming Product Record
-      </Text>
-      <Flex gap={4} align="center" flexWrap="wrap">
-        <Text fontSize="sm" fontWeight="semibold" color="gray.800">
-          {fmtDate(receipt.shipmentDate) || "No date"}
-        </Text>
-        {receipt.bolNumber && <Text fontSize="xs" color="gray.500">BOL # {receipt.bolNumber}</Text>}
-        {receipt.driver    && <Text fontSize="xs" color="gray.500">Driver: {receipt.driver}</Text>}
-      </Flex>
-    </Box>
+// ── Editable receipt card ──────────────────────────────────────────────────────
 
-    <Box overflowX="auto">
-      <Box as="table" width="100%" borderCollapse="collapse">
-        <thead>
-          <tr>{RECEIPT_LINE_COLS.map((c) => <Th key={c.key}>{c.label}</Th>)}</tr>
-        </thead>
-        <tbody>
-          {receipt.lines.length === 0 ? (
-            <Box as="tr">
-              <Box as="td" colSpan={RECEIPT_LINE_COLS.length} px={3} py={3}>
-                <Text fontSize="xs" color="gray.300" fontStyle="italic">No line items recorded.</Text>
+const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInventoryPush, isAdmin }) => {
+  const toast = useToast();
+  const [editing, setEditing]         = useState(false);
+  const [deleting, setDeleting]       = useState(false);
+  const [draftDate, setDraftDate]     = useState("");
+  const [draftBol, setDraftBol]       = useState("");
+  const [draftDriver, setDraftDriver] = useState("");
+  const [draftLines, setDraftLines]   = useState([]);
+  const [saving, setSaving]           = useState(false);
+  const [pushOpen, setPushOpen]       = useState(false);
+  const [pushing, setPushing]         = useState(false);
+
+  const pushLines = (receipt.lines || []).filter((l) => l.lot || l.description || l.brand);
+
+  const handlePushToInventory = async () => {
+    setPushing(true);
+    try {
+      const res = await axiosInstance.post(`/noblesse-receipts/${receipt.id}/push-to-inventory`);
+      onReceiptUpdate(res.data.receipt);
+      onInventoryPush(res.data.items);
+      setPushOpen(false);
+      toast({ title: `${res.data.items.length} item(s) added to inventory`, status: "success", position: "top", duration: 3000, isClosable: true });
+    } catch (err) {
+      const msg = err.response?.data?.error || "Failed to push to inventory";
+      toast({ title: msg, status: "error", position: "top", duration: 3000, isClosable: true });
+    } finally {
+      setPushing(false);
+    }
+  };
+
+  const startEdit = () => {
+    setDraftDate(receipt.shipmentDate || "");
+    setDraftBol(receipt.bolNumber || "");
+    setDraftDriver(receipt.driver || "");
+    setDraftLines(receipt.lines.length > 0 ? receipt.lines.map((l) => ({ ...l })) : [emptyLine()]);
+    setEditing(true);
+  };
+
+  const cancelEdit = () => setEditing(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await axiosInstance.delete(`/noblesse-receipts/${receipt.id}`);
+      onReceiptDelete(receipt.id);
+    } catch {
+      toast({ title: "Failed to delete", status: "error", position: "top", duration: 3000, isClosable: true });
+      setDeleting(false);
+    }
+  };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      const res = await axiosInstance.patch(`/noblesse-receipts/${receipt.id}`, {
+        shipmentDate: draftDate   || null,
+        bolNumber:    draftBol    || null,
+        driver:       draftDriver || null,
+        lines:        draftLines,
+      });
+      onReceiptUpdate(res.data);
+      setEditing(false);
+    } catch {
+      toast({ title: "Failed to save", status: "error", position: "top", duration: 3000, isClosable: true });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateLine = (i, field, val) =>
+    setDraftLines((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: val } : l));
+  const addLine    = () => setDraftLines((prev) => [...prev, emptyLine()]);
+  const removeLine = (i) => setDraftLines((prev) => prev.filter((_, idx) => idx !== i));
+
+  const handleCellKey = (e, rowIdx) => {
+    if (e.key === "Enter") { e.preventDefault(); if (rowIdx === draftLines.length - 1) addLine(); }
+  };
+
+  const NCOLS = RECEIPT_LINE_COLS.length + 2; // row# + cols + delete
+
+  return (
+    <Box border="1px" borderColor={editing ? "blue.300" : "gray.200"}
+      borderRadius="lg" mb={5} overflow="hidden" boxShadow="sm">
+
+      {/* Card header */}
+      <Box bg={editing ? "blue.50" : "gray.50"} px={4} py={3}
+        borderBottom="1px" borderColor={editing ? "blue.200" : "gray.200"}>
+        <Text fontSize="sm" fontWeight="bold" textTransform="uppercase"
+          letterSpacing="widest" color="gray.400" mb={2}>
+          Daily Incoming Product Record
+        </Text>
+
+        {editing ? (
+          <Flex gap={4} align="flex-end" flexWrap="wrap">
+            <Box>
+              <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Date</Text>
+              {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
+              <input type="date" value={draftDate} onChange={(e) => setDraftDate(e.target.value)}
+                style={hdInput("140px")} autoFocus />
+            </Box>
+            <Box>
+              <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">BOL #</Text>
+              <input value={draftBol} onChange={(e) => setDraftBol(e.target.value)}
+                style={hdInput("90px")} placeholder="BOL #" />
+            </Box>
+            <Box>
+              <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Driver</Text>
+              <input value={draftDriver} onChange={(e) => setDraftDriver(e.target.value)}
+                style={hdInput("160px")} placeholder="Name" />
+            </Box>
+            <Flex gap={1} ml="auto" align="flex-end">
+              <IconButton icon={<CheckIcon />} size="sm" colorScheme="blue" aria-label="Save"
+                isLoading={saving} onClick={saveEdit} />
+              <IconButton icon={<CloseIcon />} size="sm" variant="ghost" colorScheme="gray"
+                aria-label="Cancel" onClick={cancelEdit} />
+            </Flex>
+          </Flex>
+        ) : (
+          <Flex align="center" justify="space-between" flexWrap="wrap" gap={2}>
+            <Flex gap={4} align="center" flexWrap="wrap">
+              <Text fontSize="xl" fontWeight="semibold" color="gray.800">
+                {fmtDate(receipt.shipmentDate) || "No date"}
+              </Text>
+              {receipt.bolNumber && <Text fontSize="md" color="gray.500">BOL # {receipt.bolNumber}</Text>}
+              {receipt.driver    && <Text fontSize="md" color="gray.500">Driver: {receipt.driver}</Text>}
+              {receipt.createdAt && (
+                <Text fontSize="sm" color="gray.400">Logged: {fmtDate(receipt.createdAt)}</Text>
+              )}
+              {receipt.inventoryPushed && (
+                <Badge colorScheme="green" variant="subtle" fontSize="sm" px={2} py={0.5} borderRadius="md">
+                  In Inventory
+                </Badge>
+              )}
+            </Flex>
+            {isAdmin && (
+              <Flex gap={1} align="center">
+                {!receipt.inventoryPushed && pushLines.length > 0 && (
+                  <Button size="xs" colorScheme="teal" variant="outline"
+                    onClick={() => setPushOpen(true)}>
+                    Add to Inventory
+                  </Button>
+                )}
+                <Button size="xs" variant="ghost" colorScheme="gray" onClick={startEdit}>Edit</Button>
+                <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
+                  aria-label="Delete record" isLoading={deleting} onClick={handleDelete} />
+              </Flex>
+            )}
+          </Flex>
+        )}
+      </Box>
+
+      {/* Table */}
+      <Box overflowX="auto">
+        <Box as="table" borderCollapse="collapse" style={{ minWidth: "100%" }}>
+          <thead>
+            <tr>
+              {editing && <XlTh center w="32px">#</XlTh>}
+              {RECEIPT_LINE_COLS.map((c) =>
+                editing ? (
+                  <XlTh key={c.key} w={c.w}>{c.label}</XlTh>
+                ) : (
+                  <Box key={c.key} as="th" px={3} py="9px"
+                    bg="gray.50" border="1px solid" borderColor="gray.200"
+                    fontSize="md" fontWeight="semibold" color="gray.500"
+                    textTransform="uppercase" letterSpacing="wide"
+                    whiteSpace="nowrap" textAlign="left"
+                    style={{ minWidth: c.w }}>
+                    {c.label}
+                  </Box>
+                )
+              )}
+              {editing && <XlTh w="36px" />}
+            </tr>
+          </thead>
+          <tbody>
+            {editing ? (
+              <>
+                {draftLines.map((line, i) => (
+                  <Box as="tr" key={i}>
+                    <XlRowNum n={i + 1} />
+                    {RECEIPT_LINE_COLS.map((col) => (
+                      <XlTd key={col.key} isInput>
+                        <input
+                          type={col.type}
+                          value={line[col.key] || ""}
+                          onChange={(e) => updateLine(i, col.key, e.target.value)}
+                          placeholder={col.placeholder}
+                          onKeyDown={(e) => handleCellKey(e, i)}
+                          style={xlInput}
+                        />
+                      </XlTd>
+                    ))}
+                    <XlTd center>
+                      <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
+                        aria-label="Remove" isDisabled={draftLines.length === 1}
+                        onClick={() => removeLine(i)} />
+                    </XlTd>
+                  </Box>
+                ))}
+                <Box as="tr" cursor="cell" onClick={addLine} _hover={{ bg: "blue.50" }}>
+                  <Box as="td" colSpan={NCOLS}
+                    border="1px solid" borderColor="gray.200" px={3} py="9px">
+                    <Text fontSize="sm" color="gray.400" fontStyle="italic">+ add row</Text>
+                  </Box>
+                </Box>
+              </>
+            ) : receipt.lines.length === 0 ? (
+              <Box as="tr">
+                <Box as="td" colSpan={RECEIPT_LINE_COLS.length}
+                  border="1px solid" borderColor="gray.100" px={3} py={3}>
+                  <Text fontSize="sm" color="gray.300" fontStyle="italic">No line items recorded.</Text>
+                </Box>
+              </Box>
+            ) : (
+              receipt.lines.map((l, j) => (
+                <Box as="tr" key={j} bg={j % 2 === 0 ? "white" : "gray.50"}>
+                  {RECEIPT_LINE_COLS.map((col, ci) => (
+                    <Box key={col.key} as="td" px={3} py="9px"
+                      border="1px solid" borderColor="gray.100"
+                      fontSize="md" whiteSpace="nowrap"
+                      fontWeight={ci === 0 ? "medium" : "normal"}
+                      color={ci === 0 ? "blue.700" : "gray.700"}>
+                      {cellValue(col, l)}
+                    </Box>
+                  ))}
+                </Box>
+              ))
+            )}
+          </tbody>
+        </Box>
+      </Box>
+
+      <InspectionSection receipt={receipt} isAdmin={isAdmin} onReceiptUpdate={onReceiptUpdate} />
+
+      {/* Push to inventory confirmation modal */}
+      <Modal isOpen={pushOpen} onClose={() => setPushOpen(false)} size="2xl">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader fontSize="md" pb={1}>Add to NTI Inventory</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Text fontSize="sm" color="gray.500" mb={3}>
+              The following {pushLines.length} line(s) from this receipt will each become a new row in NTI Inventory.
+              Received date will be set to <strong>{fmtDate(receipt.shipmentDate) || "—"}</strong>.
+            </Text>
+            <Box overflowX="auto">
+              <Box as="table" borderCollapse="collapse" width="100%" fontSize="sm">
+                <thead>
+                  <tr>
+                    {["Lot", "Brand", "Species", "Description", "Grade", "Weight", "Cases"].map((h) => (
+                      <Box key={h} as="th" px={3} py="7px"
+                        bg="gray.100" border="1px solid" borderColor="gray.300"
+                        fontSize="sm" fontWeight="bold" color="gray.500"
+                        textTransform="uppercase" letterSpacing="wide" whiteSpace="nowrap" textAlign="left">
+                        {h}
+                      </Box>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pushLines.map((l, i) => (
+                    <Box as="tr" key={i} bg={i % 2 === 0 ? "white" : "gray.50"}>
+                      {[l.lot, l.brand, l.species, l.description, l.grade,
+                        l.weight ? `${l.weight} lb` : "—",
+                        l.qty    || "—"
+                      ].map((v, ci) => (
+                        <Box key={ci} as="td" px={3} py="7px"
+                          border="1px solid" borderColor="gray.200"
+                          color={v === "—" ? "gray.300" : "gray.700"}
+                          fontWeight={ci === 0 ? "medium" : "normal"}
+                          whiteSpace="nowrap">
+                          {v || "—"}
+                        </Box>
+                      ))}
+                    </Box>
+                  ))}
+                </tbody>
               </Box>
             </Box>
-          ) : receipt.lines.map((l, j) => (
-            <Box as="tr" key={j} bg={j % 2 === 0 ? "white" : "gray.50"}>
-              <Td color="blue.700" fontWeight="medium">{l.lot || "—"}</Td>
-              <Td>{l.vendorNo      || "—"}</Td>
-              <Td>{l.vendorInvoice || "—"}</Td>
-              <Td>{l.brand        || "—"}</Td>
-              <Td>{l.species      || "—"}</Td>
-              <Td>{l.description  || "—"}</Td>
-              <Td>{l.grade        || "—"}</Td>
-              <Td>{l.weight       ? `${l.weight} lb` : "—"}</Td>
-              <Td>{l.qty          || "—"}</Td>
-              <Td>{fmtDate(l.packDate)}</Td>
-              <Td>{l.temp         ? `${l.temp}°F` : "—"}</Td>
-              <Td>{l.estNo        || "—"}</Td>
-            </Box>
-          ))}
-        </tbody>
-      </Box>
+          </ModalBody>
+          <ModalFooter gap={2}>
+            <Button size="sm" variant="ghost" onClick={() => setPushOpen(false)}>Cancel</Button>
+            <Button size="sm" colorScheme="teal" isLoading={pushing} onClick={handlePushToInventory}>
+              Confirm — Add {pushLines.length} Item(s)
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
+  );
+};
 
-    <InspectionSection receipt={receipt} isAdmin={isAdmin} onReceiptUpdate={onReceiptUpdate} />
-  </Box>
-);
+// ── New record form — Excel-like entry ─────────────────────────────────────────
 
 const NewReceiptForm = ({ onReceiptAdded }) => {
   const toast = useToast();
-  const [open, setOpen]           = useState(false);
-  const [newDate, setNewDate]     = useState(today());
-  const [newBol, setNewBol]       = useState("");
-  const [newDriver, setNewDriver] = useState("");
-  const [newLines, setNewLines]   = useState([emptyLine()]);
+  const [open, setOpen]             = useState(false);
+  const [newDate, setNewDate]       = useState(today());
+  const [newBol, setNewBol]         = useState("");
+  const [newDriver, setNewDriver]   = useState("");
+  const [newLines, setNewLines]     = useState([emptyLine()]);
   const [submitting, setSubmitting] = useState(false);
 
   const updateLine = (i, field, val) =>
@@ -225,78 +542,95 @@ const NewReceiptForm = ({ onReceiptAdded }) => {
     }
   };
 
-  const inStyle = (w) => ({ ...cellInputStyle, width: w });
-  const COLS = RECEIPT_LINE_COLS.length + 1;
+  const handleCellKey = (e, rowIdx) => {
+    if (e.key === "Enter") { e.preventDefault(); if (rowIdx === newLines.length - 1) addLine(); }
+  };
+
+  const NCOLS = RECEIPT_LINE_COLS.length + 2;
 
   if (!open) {
     return (
-      <Box border="2px dashed" borderColor="gray.200" borderRadius="lg" mb={5} px={4} py={3}
+      <Box border="2px dashed" borderColor="gray.200" borderRadius="md" mb={5} px={4} py={3}
         cursor="pointer" _hover={{ borderColor: "blue.200", bg: "blue.50" }}
         onClick={() => setOpen(true)}>
-        <Text fontSize="xs" color="gray.300" fontStyle="italic">+ new daily record</Text>
+        <Text fontSize="sm" color="gray.400" fontStyle="italic">+ new daily record</Text>
       </Box>
     );
   }
 
   return (
-    <Box border="2px" borderColor="blue.300" borderRadius="lg" mb={5} overflow="hidden">
-      <Box bg="blue.50" px={4} py={3} borderBottom="2px" borderColor="blue.300">
-        <Text fontSize="9px" fontWeight="bold" textTransform="uppercase" letterSpacing="widest" color="blue.400" mb={2}>
+    <Box border="1px solid" borderColor="gray.300" borderRadius="md" mb={5} overflow="hidden" boxShadow="sm">
+
+      {/* Header strip */}
+      <Box bg="gray.50" px={4} py={3} borderBottom="1px solid" borderBottomColor="gray.300">
+        <Text fontSize="sm" fontWeight="bold" textTransform="uppercase"
+          letterSpacing="widest" color="gray.400" mb={2}>
           New Daily Incoming Product Record
         </Text>
         <Flex gap={4} align="flex-end" flexWrap="wrap">
           <Box>
-            <Text fontSize="10px" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Date</Text>
+            <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Date</Text>
             {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
             <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)}
-              style={inStyle("140px")} autoFocus />
+              style={hdInput("140px")} autoFocus />
           </Box>
           <Box>
-            <Text fontSize="10px" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">BOL #</Text>
+            <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">BOL #</Text>
             <input placeholder="e.g. 8289" value={newBol} onChange={(e) => setNewBol(e.target.value)}
-              style={inStyle("90px")} />
+              style={hdInput("90px")} />
           </Box>
           <Box>
-            <Text fontSize="10px" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Driver</Text>
+            <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Driver</Text>
             <input placeholder="Name" value={newDriver} onChange={(e) => setNewDriver(e.target.value)}
-              style={inStyle("140px")} />
+              style={hdInput("160px")} />
           </Box>
           <Flex gap={1} ml="auto">
-            <IconButton icon={<CheckIcon />} size="xs" colorScheme="blue" aria-label="Save"
+            <IconButton icon={<CheckIcon />} size="sm" colorScheme="blue" aria-label="Save"
               isLoading={submitting} onClick={submit} />
-            <IconButton icon={<CloseIcon />} size="xs" variant="ghost" colorScheme="gray" aria-label="Cancel"
-              onClick={cancel} />
+            <IconButton icon={<CloseIcon />} size="sm" variant="ghost" colorScheme="gray"
+              aria-label="Cancel" onClick={cancel} />
           </Flex>
         </Flex>
       </Box>
 
+      {/* Excel grid */}
       <Box overflowX="auto">
-        <Box as="table" width="100%" borderCollapse="collapse">
+        <Box as="table" borderCollapse="collapse" style={{ minWidth: "100%" }}>
           <thead>
             <tr>
-              {RECEIPT_LINE_COLS.map((c) => <Th key={c.key}>{c.label}</Th>)}
-              <Th w="32px" />
+              <XlTh center w="32px">#</XlTh>
+              {RECEIPT_LINE_COLS.map((c) => <XlTh key={c.key} w={c.w}>{c.label}</XlTh>)}
+              <XlTh w="36px" />
             </tr>
           </thead>
           <tbody>
             {newLines.map((line, i) => (
-              <Box as="tr" key={i} bg="blue.50">
+              <Box as="tr" key={i}>
+                <XlRowNum n={i + 1} />
                 {RECEIPT_LINE_COLS.map((col) => (
-                  <Td key={col.key} px={1}>
-                    <input type={col.type} value={line[col.key]}
+                  <XlTd key={col.key} isInput>
+                    <input
+                      type={col.type}
+                      value={line[col.key]}
                       onChange={(e) => updateLine(i, col.key, e.target.value)}
-                      placeholder={col.placeholder} style={inStyle(col.w)} />
-                  </Td>
+                      placeholder={col.placeholder}
+                      onKeyDown={(e) => handleCellKey(e, i)}
+                      style={xlInput}
+                    />
+                  </XlTd>
                 ))}
-                <Td px={1}>
+                <XlTd center>
                   <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
-                    aria-label="Remove" isDisabled={newLines.length === 1} onClick={() => removeLine(i)} />
-                </Td>
+                    aria-label="Remove" isDisabled={newLines.length === 1}
+                    onClick={() => removeLine(i)} />
+                </XlTd>
               </Box>
             ))}
-            <Box as="tr" bg="blue.50" cursor="cell" onClick={addLine} _hover={{ bg: "blue.100" }}>
-              <Box as="td" colSpan={COLS} px={3} py={1} borderBottom="2px" borderColor="blue.200">
-                <Text fontSize="xs" color="blue.300" fontStyle="italic">+ add line</Text>
+            {/* Add-row tap target */}
+            <Box as="tr" cursor="cell" onClick={addLine} _hover={{ bg: "blue.50" }}>
+              <Box as="td" colSpan={NCOLS}
+                border="1px solid" borderColor="gray.200" px={3} py="9px">
+                <Text fontSize="sm" color="gray.400" fontStyle="italic">+ add row</Text>
               </Box>
             </Box>
           </tbody>
@@ -306,17 +640,203 @@ const NewReceiptForm = ({ onReceiptAdded }) => {
   );
 };
 
-export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, isAdmin }) => (
-  <Box>
-    <Text fontSize="xs" fontWeight="semibold" color="gray.600" textTransform="uppercase" letterSpacing="wide" mb={4}>
-      Daily Records
-    </Text>
-    {isAdmin && <NewReceiptForm onReceiptAdded={onReceiptAdded} />}
-    {receipts.length === 0 && !isAdmin && (
-      <Text fontSize="sm" color="gray.400">No records logged yet.</Text>
-    )}
-    {receipts.map((r) => (
-      <DailyReceiptCard key={r.id} receipt={r} onReceiptUpdate={onReceiptUpdate} isAdmin={isAdmin} />
-    ))}
-  </Box>
-);
+// ── Flat table view ────────────────────────────────────────────────────────────
+
+const TABLE_COLS = [
+  { key: "shipmentDate", label: "Date",        w: "105px" },
+  { key: "lot",          label: "Lot No.",      w: "110px" },
+  { key: "brand",        label: "Brand",        w: "80px"  },
+  { key: "species",      label: "Species",      w: "75px"  },
+  { key: "description",  label: "Description",  w: "160px" },
+  { key: "grade",        label: "Grade",        w: "65px"  },
+  { key: "weight",       label: "WT (lb)",      w: "80px"  },
+  { key: "qty",          label: "Cases",        w: "60px"  },
+  { key: "packDate",     label: "Pack Date",    w: "105px" },
+  { key: "temp",         label: "Temp (°F)",    w: "75px"  },
+  { key: "estNo",        label: "EST No.",      w: "75px"  },
+  { key: "_status",      label: "In Inventory", w: "90px"  },
+];
+
+const AllLinesTable = ({ receipts }) => {
+  // Flatten all lines from all receipts, sorted newest date first
+  const rows = [...receipts]
+    .sort((a, b) => (b.shipmentDate || "").localeCompare(a.shipmentDate || ""))
+    .flatMap((r) => {
+      if (r.lines.length === 0) {
+        return [{ shipmentDate: r.shipmentDate, inventoryPushed: r.inventoryPushed, _empty: true }];
+      }
+      return r.lines.map((l) => ({ ...l, shipmentDate: r.shipmentDate, inventoryPushed: r.inventoryPushed }));
+    });
+
+  if (rows.length === 0) {
+    return <Text fontSize="md" color="gray.400">No records logged yet.</Text>;
+  }
+
+  const cellVal = (row, col) => {
+    if (col.key === "_status") return null; // rendered separately
+    if (col.key === "shipmentDate") return fmtDate(row.shipmentDate) || "—";
+    if (col.key === "weight")   return row.weight   ? `${row.weight} lb` : "—";
+    if (col.key === "temp")     return row.temp     ? `${row.temp}°F`    : "—";
+    if (col.key === "packDate") return fmtDate(row.packDate) || "—";
+    const v = row[col.key];
+    return v || "—";
+  };
+
+  return (
+    <Box overflowX="auto">
+      <Box as="table" borderCollapse="collapse" width="100%" fontSize="sm">
+        <thead>
+          <tr>
+            {TABLE_COLS.map((c) => (
+              <Box key={c.key} as="th"
+                px={3} py="8px"
+                bg="gray.100" border="1px solid" borderColor="gray.300"
+                fontSize="sm" fontWeight="bold" color="gray.500"
+                textTransform="uppercase" letterSpacing="wide"
+                whiteSpace="nowrap" textAlign="left"
+                style={{ minWidth: c.w }}>
+                {c.label}
+              </Box>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <Box as="tr" key={i} bg={i % 2 === 0 ? "white" : "gray.50"}>
+              {TABLE_COLS.map((col, ci) => (
+                <Box key={col.key} as="td"
+                  px={3} py="8px"
+                  border="1px solid" borderColor="gray.100"
+                  fontSize="md" whiteSpace="nowrap"
+                  fontWeight={ci === 0 ? "semibold" : "normal"}
+                  color={
+                    col.key === "_status" ? undefined
+                    : ci === 0 ? "gray.700"
+                    : row._empty || cellVal(row, col) === "—" ? "gray.300"
+                    : "gray.700"
+                  }>
+                  {col.key === "_status" ? (
+                    row.inventoryPushed
+                      ? <Badge colorScheme="green" variant="subtle" fontSize="sm" px={2} py={0.5} borderRadius="md">Yes</Badge>
+                      : <Text as="span" color="gray.300" fontSize="sm">—</Text>
+                  ) : (
+                    cellVal(row, col)
+                  )}
+                </Box>
+              ))}
+            </Box>
+          ))}
+        </tbody>
+      </Box>
+    </Box>
+  );
+};
+
+// ── Tab root ───────────────────────────────────────────────────────────────────
+
+const DAYS_PER_PAGE = 5;
+
+export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, onReceiptDelete, onInventoryPush, isAdmin }) => {
+  const [page, setPage]         = useState(0);
+  const [viewMode, setViewMode] = useState("cards"); // "cards" | "table"
+
+  // Unique shipment dates sorted newest-first
+  const allDates = [...new Set(receipts.map((r) => r.shipmentDate).filter(Boolean))]
+    .sort((a, b) => b.localeCompare(a));
+
+  const totalPages  = Math.max(1, Math.ceil(allDates.length / DAYS_PER_PAGE));
+  const pageDateSet = new Set(allDates.slice(page * DAYS_PER_PAGE, (page + 1) * DAYS_PER_PAGE));
+
+  // Receipts visible on this page; undated receipts appear on page 0 only
+  const visible = receipts.filter((r) =>
+    r.shipmentDate ? pageDateSet.has(r.shipmentDate) : page === 0
+  );
+
+  const handleReceiptAdded = (r) => { onReceiptAdded(r); setPage(0); };
+
+  // Segmented control style helpers
+  const segBtn = (active) => ({
+    size: "xs",
+    variant: "ghost",
+    colorScheme: active ? "blue" : "gray",
+    bg: active ? "blue.50" : "transparent",
+    border: "1px solid",
+    borderColor: active ? "blue.300" : "gray.200",
+    borderRadius: "none",
+  });
+
+  return (
+    <Box>
+      <Flex justify="space-between" align="center" mb={4}>
+        <Text fontSize="sm" fontWeight="semibold" color="gray.600"
+          textTransform="uppercase" letterSpacing="wide">
+          Daily Records
+        </Text>
+        <Flex align="center" gap={3}>
+          {/* View toggle */}
+          <Flex>
+            <Button {...segBtn(viewMode === "cards")}
+              borderRightWidth={0} borderLeftRadius="md"
+              onClick={() => setViewMode("cards")}>
+              Cards
+            </Button>
+            <Button {...segBtn(viewMode === "table")}
+              borderRightRadius="md"
+              onClick={() => setViewMode("table")}>
+              Table
+            </Button>
+          </Flex>
+
+          {/* Pagination controls — cards mode only */}
+          {viewMode === "cards" && totalPages > 1 && (
+            <Flex align="center" gap={2}>
+              <Button size="xs" variant="ghost" colorScheme="gray"
+                isDisabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                ← Newer
+              </Button>
+              <Text fontSize="sm" color="gray.400">{page + 1} / {totalPages}</Text>
+              <Button size="xs" variant="ghost" colorScheme="gray"
+                isDisabled={page === totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+                Older →
+              </Button>
+            </Flex>
+          )}
+        </Flex>
+      </Flex>
+
+      {viewMode === "table" ? (
+        <AllLinesTable receipts={receipts} />
+      ) : (
+        <>
+          {isAdmin && page === 0 && <NewReceiptForm onReceiptAdded={handleReceiptAdded} />}
+
+          {visible.length === 0 && !isAdmin && (
+            <Text fontSize="md" color="gray.400">No records logged yet.</Text>
+          )}
+
+          {visible.map((r) => (
+            <DailyReceiptCard key={r.id} receipt={r}
+              onReceiptUpdate={onReceiptUpdate}
+              onReceiptDelete={onReceiptDelete}
+              onInventoryPush={onInventoryPush}
+              isAdmin={isAdmin} />
+          ))}
+
+          {totalPages > 1 && (
+            <Flex justify="center" gap={2} mt={4}>
+              <Button size="xs" variant="ghost" colorScheme="gray"
+                isDisabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                ← Newer
+              </Button>
+              <Text fontSize="sm" color="gray.400" alignSelf="center">{page + 1} / {totalPages}</Text>
+              <Button size="xs" variant="ghost" colorScheme="gray"
+                isDisabled={page === totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+                Older →
+              </Button>
+            </Flex>
+          )}
+        </>
+      )}
+    </Box>
+  );
+};

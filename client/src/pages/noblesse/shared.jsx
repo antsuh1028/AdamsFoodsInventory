@@ -20,7 +20,7 @@ export const fmtDate = (val) => {
 };
 
 export const cellInputStyle = {
-  width: "100%", fontSize: "12px", padding: "2px 5px",
+  width: "100%", fontSize: "14px", padding: "3px 6px",
   border: "1px solid #A0AEC0", borderRadius: "3px",
   outline: "none", background: "white", fontFamily: "inherit",
 };
@@ -28,7 +28,7 @@ export const cellInputStyle = {
 export const Th = ({ children, ...props }) => (
   <Box
     as="th" px={3} py={2} textAlign="left"
-    fontSize="xs" fontWeight="semibold" color="gray.500"
+    fontSize="sm" fontWeight="semibold" color="gray.500"
     textTransform="uppercase" letterSpacing="wide"
     bg="gray.50" borderBottom="2px" borderColor="gray.200"
     whiteSpace="nowrap" {...props}
@@ -40,7 +40,7 @@ export const Th = ({ children, ...props }) => (
 export const Td = ({ children, ...props }) => (
   <Box
     as="td" px={3} py={2}
-    fontSize="sm" color="gray.700"
+    fontSize="md" color="gray.700"
     borderBottom="1px" borderColor="gray.100"
     whiteSpace="nowrap" {...props}
   >

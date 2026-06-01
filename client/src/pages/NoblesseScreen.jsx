@@ -7,7 +7,6 @@ import { RepeatIcon, ArrowBackIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
-import { PendingOrdersTab } from "./noblesse/PendingOrdersTab";
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import { NtiInventoryTab } from "./noblesse/NtiInventoryTab";
 import { ProcessingReportTab } from "./noblesse/ProcessingReportTab";
@@ -61,6 +60,8 @@ const NoblesseScreen = () => {
 
   const handleReceiptAdded  = (r) => setReceipts((prev) => [r, ...prev]);
   const handleReceiptUpdate = (r) => setReceipts((prev) => prev.map((x) => x.id === r.id ? r : x));
+  const handleReceiptDelete = (id) => setReceipts((prev) => prev.filter((x) => x.id !== id));
+  const handleInventoryPush = (items) => setNtiInventory((prev) => [...items, ...prev]);
 
   const handleProcOrderAdded = async (o) => {
     setProcOrders((prev) => [o, ...prev]);
@@ -97,13 +98,13 @@ const NoblesseScreen = () => {
               </Tooltip>
             )}
             <Box>
-              <Text fontSize="xl" fontWeight="bold" color="gray.800">Noblesse Trading Inc</Text>
-              <Text fontSize="sm" color="gray.500">Processor Portal</Text>
+              <Text fontSize="2xl" fontWeight="bold" color="gray.800">Noblesse Trading Inc</Text>
+              <Text fontSize="md" color="gray.500">Processor Portal</Text>
             </Box>
           </Flex>
           <Flex align="center" gap={3}>
             {lastRefreshed && (
-              <Text fontSize="xs" color="gray.400">
+              <Text fontSize="sm" color="gray.400">
                 Updated {lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </Text>
             )}
@@ -122,10 +123,6 @@ const NoblesseScreen = () => {
         <Tabs colorScheme="blue" variant="line" size="sm"
           display="flex" flexDirection="column" flex={1} overflow="hidden">
           <TabList mb={3} gap={2} flexWrap="wrap" flexShrink={0}>
-            <Tab>
-              Pending Orders
-              {ntiInventory.length > 0 && <Badge ml={2} colorScheme="blue" borderRadius="full">{ntiInventory.length}</Badge>}
-            </Tab>
             <Tab>
               Incoming Records
               {receipts.length > 0 && <Badge ml={2} colorScheme="blue" borderRadius="full">{receipts.length}</Badge>}
@@ -148,13 +145,12 @@ const NoblesseScreen = () => {
             flex={1} overflow="hidden" display="flex" flexDirection="column">
             <TabPanels flex={1} overflow="hidden">
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
-                <PendingOrdersTab ntiInventory={ntiInventory} />
-              </TabPanel>
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
                 <IncomingRecordsTab
                   receipts={receipts}
                   onReceiptAdded={handleReceiptAdded}
                   onReceiptUpdate={handleReceiptUpdate}
+                  onReceiptDelete={handleReceiptDelete}
+                  onInventoryPush={handleInventoryPush}
                   isAdmin={isAdmin}
                 />
               </TabPanel>

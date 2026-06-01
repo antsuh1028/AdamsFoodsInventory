@@ -1,5 +1,8 @@
 import React, { useState } from "react";
-import { Box, Flex, Text, Button, IconButton, Badge, useToast } from "@chakra-ui/react";
+import {
+  Box, Flex, Text, Button, IconButton, Badge, useToast,
+  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton,
+} from "@chakra-ui/react";
 import { CheckIcon, CloseIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, cellInputStyle, Th, Td } from "./shared";
@@ -22,6 +25,38 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
   const [outputCasesDraft, setOutputCasesDraft]   = useState("");
   const [savingOutput, setSavingOutput] = useState(false);
 
+  const [partialOrderId, setPartialOrderId]     = useState(null);
+  const [partialActuals, setPartialActuals]     = useState({});
+  const [partialSubmitting, setPartialSubmitting] = useState(false);
+
+  const partialOrder = partialOrderId != null ? procOrders.find((o) => o.id === partialOrderId) : null;
+
+  const openPartial = (order) => {
+    const actuals = {};
+    order.items.forEach((it) => { actuals[it.id] = String(it.weightIn ?? ""); });
+    setPartialActuals(actuals);
+    setPartialOrderId(order.id);
+  };
+
+  const submitPartial = async () => {
+    if (!partialOrder) return;
+    setPartialSubmitting(true);
+    try {
+      const items = partialOrder.items.map((it) => ({
+        id: it.id,
+        actualWeightIn: parseFloat(partialActuals[it.id] ?? it.weightIn) || 0,
+      }));
+      const res = await axiosInstance.patch(`/noblesse-proc-orders/${partialOrder.id}/partial-complete`, { items });
+      onProcOrderUpdate(res.data);
+      setPartialOrderId(null);
+      toast({ title: "Marked as partially complete", status: "success", position: "top", duration: 2500, isClosable: true });
+    } catch {
+      toast({ title: "Failed to save partial completion", status: "error", position: "top", duration: 3000, isClosable: true });
+    } finally {
+      setPartialSubmitting(false);
+    }
+  };
+
   const pending   = procOrders.filter((o) => o.status === "pending");
   const completed = procOrders.filter((o) => o.status === "completed");
   const shown     = view === "pending" ? pending : completed;
@@ -37,7 +72,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
       map.get(lot).push(order);
     }
     return Array.from(map.entries()).map(([lot, orders]) => {
-      const totalWeightIn  = orders.reduce((s, o) => s + o.items.reduce((ss, it) => ss + (parseFloat(it.weightIn) || 0), 0), 0);
+      const totalWeightIn  = orders.reduce((s, o) => s + o.items.reduce((ss, it) => ss + (parseFloat(it.actualWeightIn ?? it.weightIn) || 0), 0), 0);
       const totalCasesIn   = orders.reduce((s, o) => s + o.items.reduce((ss, it) => ss + (parseInt(it.casesIn)  || 0), 0), 0);
       const allComplete    = orders.every((o) => o.status === "completed");
       const hasAllOutput   = orders.every((o) => o.outputWeight != null);
@@ -192,7 +227,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                 onClick={() => setView(v)}>
                 {v.charAt(0).toUpperCase() + v.slice(1)}
                 {count > 0 && (
-                  <Badge ml={1.5} colorScheme={v === "completed" ? "green" : "gray"} borderRadius="full" fontSize="2xs">
+                  <Badge ml={1.5} colorScheme={v === "completed" ? "green" : "gray"} borderRadius="full" fontSize="sm">
                     {count}
                   </Badge>
                 )}
@@ -221,23 +256,23 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
           <Box border="2px dashed" borderColor="gray.200" borderRadius="lg" mb={4} px={4} py={3}
             cursor="pointer" _hover={{ borderColor: "blue.200", bg: "blue.50" }}
             onClick={() => setCreatingOrder(true)}>
-            <Text fontSize="xs" color="gray.300" fontStyle="italic">+ new processing order</Text>
+            <Text fontSize="sm" color="gray.300" fontStyle="italic">+ new processing order</Text>
           </Box>
         ) : (
           <Box border="2px" borderColor="blue.300" borderRadius="lg" mb={4}>
             <Box bg="blue.50" px={4} py={3} borderBottom="2px" borderColor="blue.300" borderTopRadius="lg">
-              <Text fontSize="xs" fontWeight="semibold" color="blue.600" textTransform="uppercase" letterSpacing="wide" mb={2}>
+              <Text fontSize="sm" fontWeight="semibold" color="blue.600" textTransform="uppercase" letterSpacing="wide" mb={2}>
                 New Processing Order
               </Text>
               <Flex gap={4} align="flex-end" flexWrap="wrap">
                 <Box>
-                  <Text fontSize="10px" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Date</Text>
+                  <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Date</Text>
                   {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
                   <input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)}
                     style={inStyle("140px")} autoFocus />
                 </Box>
                 <Box>
-                  <Text fontSize="10px" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Notes</Text>
+                  <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Notes</Text>
                   <input placeholder="Optional" value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)}
                     style={inStyle("200px")} />
                 </Box>
@@ -252,11 +287,11 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
 
             <Box px={4} py={3}>
               {availableItems.length === 0 ? (
-                <Text fontSize="xs" color="gray.400">No inventory available to process.</Text>
+                <Text fontSize="sm" color="gray.400">No inventory available to process.</Text>
               ) : (
                 <Flex gap={4} align="flex-end" flexWrap="wrap">
                   <Box flex={1} minW="200px" position="relative">
-                    <Text fontSize="10px" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Item</Text>
+                    <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Item</Text>
                     <input
                       value={dropdownOpen
                         ? searchQuery
@@ -274,9 +309,9 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                         bg="white" border="1px solid" borderColor="gray.200"
                         borderRadius="md" boxShadow="md" maxH="220px" overflowY="auto" mt="2px">
                         {filteredItems.length === 0 ? (
-                          <Box px={3} py={2}><Text fontSize="xs" color="gray.400">No matches.</Text></Box>
+                          <Box px={3} py={2}><Text fontSize="sm" color="gray.400">No matches.</Text></Box>
                         ) : filteredItems.map((item) => (
-                          <Box key={item.id} px={3} py={2} fontSize="xs" cursor="pointer"
+                          <Box key={item.id} px={3} py={2} fontSize="sm" cursor="pointer"
                             bg={String(item.id) === selectedItemId ? "blue.50" : "white"}
                             _hover={{ bg: "blue.50" }}
                             onMouseDown={() => selectItem(item)}>
@@ -291,17 +326,17 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                     )}
                   </Box>
                   <Box>
-                    <Text fontSize="10px" color={weightError ? "red.500" : "gray.500"} mb="2px"
+                    <Text fontSize="sm" color={weightError ? "red.500" : "gray.500"} mb="2px"
                       textTransform="uppercase" letterSpacing="wide">Weight (lb)</Text>
                     <input type="number" value={weightIn} onChange={(e) => setWeightIn(e.target.value)}
                       style={{ ...inStyle("90px"), ...(weightError ? { borderColor: "#E53E3E", outline: "none" } : {}) }}
                       placeholder="0" />
                     {weightError && (
-                      <Text fontSize="10px" color="red.500" mt="2px">{weightError}</Text>
+                      <Text fontSize="sm" color="red.500" mt="2px">{weightError}</Text>
                     )}
                   </Box>
                   <Box>
-                    <Text fontSize="10px" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Cases</Text>
+                    <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Cases</Text>
                     <input type="number" value={casesIn} onChange={(e) => setCasesIn(e.target.value)}
                       style={inStyle("70px")} placeholder="0" />
                   </Box>
@@ -314,7 +349,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
 
       {/* Empty state */}
       {shown.length === 0 && (
-        <Text fontSize="sm" color="gray.400">
+        <Text fontSize="md" color="gray.400">
           {view === "pending" ? "No pending processing orders." : "No completed processing orders."}
         </Text>
       )}
@@ -331,20 +366,20 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
               justify="space-between" align="center" flexWrap="wrap" gap={2}
               borderBottom="1px" borderColor={done ? "green.100" : "gray.100"}>
               <Box>
-                <Text fontSize="sm" fontWeight="bold" color={done ? "green.700" : "blue.700"}>
+                <Text fontSize="md" fontWeight="bold" color={done ? "green.700" : "blue.700"}>
                   {group.lot || "No lot #"}
                 </Text>
                 {(group.description || group.brand) && (
-                  <Text fontSize="xs" color="gray.500">
+                  <Text fontSize="sm" color="gray.500">
                     {[group.description, group.brand].filter(Boolean).join(" · ")}
                   </Text>
                 )}
-                <Text fontSize="xs" color="gray.500">
+                <Text fontSize="sm" color="gray.500">
                   Total In: {group.totalWeightIn.toFixed(1)} lb
                   {group.totalCasesIn > 0 ? ` · ${group.totalCasesIn} cs` : ""}
                 </Text>
                 {group.totalWeightOut != null && (
-                  <Text fontSize="xs" color="gray.500">
+                  <Text fontSize="sm" color="gray.500">
                     Total Out: {group.totalWeightOut.toFixed(1)} lb
                     {group.totalCasesOut != null ? ` · ${group.totalCasesOut} cs` : ""}
                   </Text>
@@ -367,9 +402,11 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
 
             {/* Individual orders */}
             {group.orders.map((order, idx) => {
-              const orderWeightIn   = order.items.reduce((s, it) => s + (parseFloat(it.weightIn) || 0), 0);
+              const orderWeightIn   = order.items.reduce((s, it) => s + (parseFloat(it.actualWeightIn ?? it.weightIn) || 0), 0);
+              const plannedWeightIn = order.items.reduce((s, it) => s + (parseFloat(it.weightIn) || 0), 0);
               const orderCasesIn    = order.items.reduce((s, it) => s + (parseInt(it.casesIn)  || 0), 0);
               const isEditingOutput = editingOutputId === order.id;
+              const isPartial       = order.items.some((it) => it.actualWeightIn != null);
               const outParts        = [
                 order.outputWeight != null ? `${order.outputWeight} lb` : null,
                 order.outputCases  != null ? `${order.outputCases} cs`  : null,
@@ -382,18 +419,27 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                   bg={idx % 2 === 0 ? "white" : "gray.50"}>
                   <Flex align="center" justify="space-between" flexWrap="wrap" gap={2}>
                     <Box>
-                      <Text fontSize="xs" fontWeight="medium" color="gray.700">
-                        {fmtDate(order.orderDate) || "No date"}
-                        {group.orders.length > 1 && (
-                          <Text as="span" color="gray.400" ml={2} fontWeight="normal">order {idx + 1}</Text>
+                      <Flex align="center" gap={2}>
+                        <Text fontSize="sm" fontWeight="medium" color="gray.700">
+                          {fmtDate(order.orderDate) || "No date"}
+                          {group.orders.length > 1 && (
+                            <Text as="span" color="gray.400" ml={2} fontWeight="normal">order {idx + 1}</Text>
+                          )}
+                        </Text>
+                        {isPartial && (
+                          <Badge colorScheme="orange" variant="subtle" fontSize="sm" px={2} borderRadius="md">
+                            Partial
+                          </Badge>
                         )}
-                      </Text>
-                      <Text fontSize="xs" color="gray.400">
-                        In: {orderWeightIn.toFixed(1)} lb{orderCasesIn > 0 ? ` · ${orderCasesIn} cs` : ""}
+                      </Flex>
+                      <Text fontSize="sm" color="gray.400">
+                        In: {orderWeightIn.toFixed(1)} lb
+                        {isPartial && <Text as="span" color="gray.300" ml={1}>(planned {plannedWeightIn.toFixed(1)} lb)</Text>}
+                        {orderCasesIn > 0 ? ` · ${orderCasesIn} cs` : ""}
                       </Text>
                     </Box>
                     <Flex align="center" gap={1} flexWrap="wrap">
-                      <Text fontSize="xs" color="gray.400">Out:</Text>
+                      <Text fontSize="sm" color="gray.400">Out:</Text>
                       {isEditingOutput ? (
                         <>
                           <Box>
@@ -404,33 +450,41 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                               style={{ ...inStyle("80px"), ...(outputWeightError ? { borderColor: "#E53E3E" } : {}) }}
                               placeholder="weight" autoFocus />
                             {outputWeightError && (
-                              <Text fontSize="10px" color="red.500" mt="2px">{outputWeightError}</Text>
+                              <Text fontSize="sm" color="red.500" mt="2px">{outputWeightError}</Text>
                             )}
                           </Box>
-                          <Text fontSize="xs" color="gray.400">lb</Text>
+                          <Text fontSize="sm" color="gray.400">lb</Text>
                           <input type="number" value={outputCasesDraft}
                             onChange={(e) => setOutputCasesDraft(e.target.value)}
                             onKeyDown={(e) => { if (e.key === "Enter" && !outputHasError) saveOutput(order); if (e.key === "Escape") cancelOutput(); }}
                             style={{ ...inStyle("60px"), ...(outputCasesError ? { borderColor: "#E53E3E" } : {}) }}
                             placeholder="cases" />
-                          <Text fontSize="xs" color="gray.400">cs</Text>
+                          <Text fontSize="sm" color="gray.400">cs</Text>
                           <IconButton icon={<CheckIcon />} size="xs" colorScheme="blue" aria-label="Save"
                             isLoading={savingOutput} isDisabled={outputHasError} onClick={() => saveOutput(order)} />
                           <IconButton icon={<CloseIcon />} size="xs" variant="ghost" colorScheme="gray"
                             aria-label="Cancel" onClick={cancelOutput} />
                         </>
                       ) : (
-                        <Text fontSize="xs" cursor="pointer"
-                          color={outParts.length > 0 ? "gray.700" : "gray.300"}
-                          fontStyle={outParts.length > 0 ? "normal" : "italic"}
-                          onClick={() => startEditOutput(order)}>
-                          {outParts.length > 0 ? outParts.join(" · ") : "click to enter"}
-                        </Text>
+                        <>
+                          <Text fontSize="sm" cursor="pointer"
+                            color={outParts.length > 0 ? "gray.700" : "gray.300"}
+                            fontStyle={outParts.length > 0 ? "normal" : "italic"}
+                            onClick={() => startEditOutput(order)}>
+                            {outParts.length > 0 ? outParts.join(" · ") : "click to enter"}
+                          </Text>
+                          {order.status === "pending" && !isPartial && (
+                            <Button size="xs" variant="outline" colorScheme="orange"
+                              ml={2} onClick={() => openPartial(order)}>
+                              Partial
+                            </Button>
+                          )}
+                        </>
                       )}
                     </Flex>
                   </Flex>
                   {order.notes && (
-                    <Text fontSize="xs" color="gray.400" mt={1}>{order.notes}</Text>
+                    <Text fontSize="sm" color="gray.400" mt={1}>{order.notes}</Text>
                   )}
                 </Box>
               );
@@ -442,7 +496,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
       {/* ── Sheet view ── */}
       {shown.length > 0 && displayMode === "sheet" && (
         <Box overflowX="auto">
-          <Box as="table" width="100%" borderCollapse="collapse" fontSize="sm">
+          <Box as="table" width="100%" borderCollapse="collapse" fontSize="md">
             <thead>
               <tr>
                 <Th>Date</Th>
@@ -465,7 +519,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                   <React.Fragment key={group.lot}>
                     {/* Lot group header row */}
                     <Box as="tr" bg={done ? "green.50" : "blue.50"}>
-                      <Td fontWeight="semibold" color="gray.500" fontSize="xs">
+                      <Td fontWeight="semibold" color="gray.500" fontSize="sm">
                         {group.orders.length > 1 ? `${group.orders.length} orders` : ""}
                       </Td>
                       <Td fontWeight="bold" color={done ? "green.700" : "blue.700"}>
@@ -483,7 +537,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                       </Td>
                       <Td>
                         {group.yieldPct != null
-                          ? <Badge colorScheme="green" fontSize="xs">{group.yieldPct.toFixed(1)}%</Badge>
+                          ? <Badge colorScheme="green" fontSize="sm">{group.yieldPct.toFixed(1)}%</Badge>
                           : <Text as="span" color="gray.300">—</Text>}
                       </Td>
                       <Td />
@@ -499,7 +553,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
 
                     {/* Individual order rows */}
                     {group.orders.map((order, idx) => {
-                      const orderWeightIn   = order.items.reduce((s, it) => s + (parseFloat(it.weightIn) || 0), 0);
+                      const orderWeightIn   = order.items.reduce((s, it) => s + (parseFloat(it.actualWeightIn ?? it.weightIn) || 0), 0);
                       const orderCasesIn    = order.items.reduce((s, it) => s + (parseInt(it.casesIn)  || 0), 0);
                       const isEditingOutput = editingOutputId === order.id;
 
@@ -507,14 +561,14 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                         <Box as="tr" key={order.id}
                           bg={idx % 2 === 0 ? "white" : "gray.50"}
                           _hover={{ bg: "blue.50" }}>
-                          <Td fontSize="xs" color="gray.500" whiteSpace="nowrap" pl="24px">
+                          <Td fontSize="sm" color="gray.500" whiteSpace="nowrap" pl="24px">
                             {fmtDate(order.orderDate) || "—"}
                           </Td>
-                          <Td color="gray.300" fontSize="xs">↳</Td>
+                          <Td color="gray.300" fontSize="sm">↳</Td>
                           <Td />
                           <Td />
-                          <Td fontSize="xs" color="gray.600">{orderWeightIn > 0 ? orderWeightIn.toFixed(1) : "—"}</Td>
-                          <Td fontSize="xs" color="gray.600">{orderCasesIn > 0 ? orderCasesIn : "—"}</Td>
+                          <Td fontSize="sm" color="gray.600">{orderWeightIn > 0 ? orderWeightIn.toFixed(1) : "—"}</Td>
+                          <Td fontSize="sm" color="gray.600">{orderCasesIn > 0 ? orderCasesIn : "—"}</Td>
                           <Td>
                             {isEditingOutput ? (
                               <input type="number" value={outputWeightDraft}
@@ -523,7 +577,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                                 // eslint-disable-next-line jsx-a11y/no-autofocus
                                 style={{ ...inStyle("80px"), ...(outputWeightError ? { borderColor: "#E53E3E" } : {}) }} autoFocus />
                             ) : (
-                              <Text fontSize="xs" cursor="pointer"
+                              <Text fontSize="sm" cursor="pointer"
                                 color={order.outputWeight != null ? "gray.700" : "gray.300"}
                                 fontStyle={order.outputWeight != null ? "normal" : "italic"}
                                 onClick={() => startEditOutput(order)}>
@@ -544,7 +598,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                                   aria-label="Cancel" onClick={cancelOutput} />
                               </Flex>
                             ) : (
-                              <Text fontSize="xs" cursor="pointer"
+                              <Text fontSize="sm" cursor="pointer"
                                 color={order.outputCases != null ? "gray.700" : "gray.300"}
                                 fontStyle={order.outputCases != null ? "normal" : "italic"}
                                 onClick={() => startEditOutput(order)}>
@@ -553,7 +607,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                             )}
                           </Td>
                           <Td />
-                          <Td fontSize="xs" color="gray.400">{order.notes || "—"}</Td>
+                          <Td fontSize="sm" color="gray.400">{order.notes || "—"}</Td>
                           <Td />
                         </Box>
                       );
@@ -564,6 +618,85 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
             </tbody>
           </Box>
         </Box>
+      )}
+
+      {/* ── Partial completion modal ── */}
+      {partialOrder && (
+        <Modal isOpen={!!partialOrderId} onClose={() => setPartialOrderId(null)} size="lg">
+          <ModalOverlay />
+          <ModalContent>
+            <ModalHeader fontSize="md" pb={1}>Partial Completion</ModalHeader>
+            <ModalCloseButton />
+            <ModalBody>
+              <Text fontSize="sm" color="gray.500" mb={4}>
+                Enter how much raw material was actually processed. The remainder will be returned to inventory.
+              </Text>
+              <Box overflowX="auto">
+                <Box as="table" width="100%" borderCollapse="collapse" fontSize="sm">
+                  <thead>
+                    <tr>
+                      <Box as="th" textAlign="left" px={3} py={2} bg="gray.50"
+                        borderBottom="2px" borderColor="gray.200"
+                        fontSize="sm" fontWeight="semibold" color="gray.500">Item</Box>
+                      <Box as="th" textAlign="right" px={3} py={2} bg="gray.50"
+                        borderBottom="2px" borderColor="gray.200"
+                        fontSize="sm" fontWeight="semibold" color="gray.500" whiteSpace="nowrap">Planned (lb)</Box>
+                      <Box as="th" textAlign="right" px={3} py={2} bg="gray.50"
+                        borderBottom="2px" borderColor="gray.200"
+                        fontSize="sm" fontWeight="semibold" color="gray.500" whiteSpace="nowrap">Actual Used (lb)</Box>
+                      <Box as="th" textAlign="right" px={3} py={2} bg="gray.50"
+                        borderBottom="2px" borderColor="gray.200"
+                        fontSize="sm" fontWeight="semibold" color="orange.500" whiteSpace="nowrap">Returned</Box>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {partialOrder.items.map((it) => {
+                      const actual   = parseFloat(partialActuals[it.id] ?? it.weightIn) || 0;
+                      const planned  = parseFloat(it.weightIn) || 0;
+                      const returned = Math.max(0, planned - actual);
+                      return (
+                        <Box as="tr" key={it.id}>
+                          <Box as="td" px={3} py={3} borderBottom="1px" borderColor="gray.100">
+                            <Text fontWeight="medium" color="blue.700" fontSize="sm">{it.lot}</Text>
+                            <Text color="gray.500" fontSize="sm">{it.description}</Text>
+                          </Box>
+                          <Box as="td" px={3} py={3} textAlign="right" fontSize="sm"
+                            color="gray.500" borderBottom="1px" borderColor="gray.100">
+                            {planned.toFixed(1)}
+                          </Box>
+                          <Box as="td" px={3} py={3} textAlign="right"
+                            borderBottom="1px" borderColor="gray.100">
+                            <Flex justify="flex-end" align="center" gap={1}>
+                              <input
+                                type="number" min={0} max={it.weightIn} step="0.1"
+                                value={partialActuals[it.id] ?? ""}
+                                onChange={(e) => setPartialActuals((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                                style={{ ...inStyle("90px"), textAlign: "right" }}
+                              />
+                              <Text fontSize="sm" color="gray.400">lb</Text>
+                            </Flex>
+                          </Box>
+                          <Box as="td" px={3} py={3} textAlign="right"
+                            borderBottom="1px" borderColor="gray.100">
+                            {returned > 0
+                              ? <Text fontSize="sm" color="orange.500" fontWeight="medium">+{returned.toFixed(1)} lb</Text>
+                              : <Text fontSize="sm" color="gray.300">—</Text>}
+                          </Box>
+                        </Box>
+                      );
+                    })}
+                  </tbody>
+                </Box>
+              </Box>
+            </ModalBody>
+            <ModalFooter gap={2}>
+              <Button size="sm" variant="ghost" onClick={() => setPartialOrderId(null)}>Cancel</Button>
+              <Button size="sm" colorScheme="orange" isLoading={partialSubmitting} onClick={submitPartial}>
+                Confirm — Mark Partial Complete
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
       )}
     </Box>
   );
