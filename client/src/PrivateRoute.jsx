@@ -202,7 +202,10 @@ const decodeToken = (token) => {
 const PrivateRoute = ({ children, allowedRoles }) => {
   const token = localStorage.getItem("token");
 
-  if (!token) return <Navigate to="/" />;
+  if (!token) {
+    const isNoblessePath = window.location.pathname.startsWith("/noblesse");
+    return <Navigate to={isNoblessePath ? "/noblesse-login" : "/"} />;
+  }
 
   const payload = decodeToken(token);
 
