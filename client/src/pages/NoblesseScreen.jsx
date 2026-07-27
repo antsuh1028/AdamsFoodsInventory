@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Box, Flex, Text, Spinner, Badge, IconButton, Tooltip, Image,
+  Box, Flex, Text, Spinner, Badge, IconButton, Tooltip, Image, Button,
   Tabs, TabList, TabPanels, Tab, TabPanel,
 } from "@chakra-ui/react";
 import { RepeatIcon, ArrowBackIcon } from "@chakra-ui/icons";
@@ -75,6 +75,7 @@ const NoblesseScreen = () => {
     }
   };
   const handleProcOrderUpdate = (o) => setProcOrders((prev) => prev.map((x) => x.id === o.id ? o : x));
+  const handleProcOrderDelete = (id) => setProcOrders((prev) => prev.filter((x) => x.id !== id));
 
   const handleNtiAdd    = (item) => setNtiInventory((prev) => [item, ...prev]);
   const handleNtiUpdate = (item) => setNtiInventory((prev) => prev.map((x) => x.id === item.id ? item : x));
@@ -114,6 +115,10 @@ const NoblesseScreen = () => {
                 aria-label="Refresh" onClick={() => fetchData(true)} isDisabled={refreshing}
               />
             </Tooltip>
+            <Button size="sm" variant="ghost" colorScheme="red"
+              onClick={() => { localStorage.removeItem("token"); navigate("/noblesse-login"); }}>
+              Log out
+            </Button>
           </Flex>
         </Flex>
       </Box>
@@ -151,6 +156,7 @@ const NoblesseScreen = () => {
                   onReceiptDelete={handleReceiptDelete}
                   onInventoryPush={handleInventoryPush}
                   isAdmin={canEdit}
+                  canDelete={isAdmin}
                 />
               </TabPanel>
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
@@ -159,6 +165,8 @@ const NoblesseScreen = () => {
                   procOrders={procOrders}
                   onProcOrderAdded={handleProcOrderAdded}
                   onProcOrderUpdate={handleProcOrderUpdate}
+                  onProcOrderDelete={handleProcOrderDelete}
+                  canDelete={isAdmin}
                 />
               </TabPanel>
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
@@ -167,6 +175,7 @@ const NoblesseScreen = () => {
                   procOrders={procOrders}
                   onAdd={handleNtiAdd} onUpdate={handleNtiUpdate} onDelete={handleNtiDelete}
                   isAdmin={canEdit}
+                  canDelete={isAdmin}
                 />
               </TabPanel>
             </TabPanels>

@@ -1,7 +1,7 @@
 {
   "scripts": {
-    "deploy": "ssh -i C:/Users/DATWO/Downloads/AdamsFoods.pem admin@100.22.80.237 bash ~/deploy.sh",
+    "deploy": "npm run deploy:server && npm run deploy:client",
     "deploy:server": "ssh -i C:/Users/DATWO/Downloads/AdamsFoods.pem admin@100.22.80.237 \"cd ~/AdamsFoodsInventory && git pull origin master && cd server && npm install && pm2 restart adamsfoodsinventory\"",
-    "deploy:client": "cd client && npx react-scripts build && scp -i C:/Users/DATWO/Downloads/AdamsFoods.pem -o StrictHostKeyChecking=accept-new -r build/* admin@100.22.80.237:/var/www/adamsfood/client"
+    "deploy:client": "cd client && npx react-scripts build && scp -i C:/Users/DATWO/Downloads/AdamsFoods.pem -o StrictHostKeyChecking=accept-new -r build/* admin@100.22.80.237:/var/www/adamsfood/client && ssh -i C:/Users/DATWO/Downloads/AdamsFoods.pem admin@100.22.80.237 \"chmod -R 755 /var/www/adamsfood/client\""
   }
 }

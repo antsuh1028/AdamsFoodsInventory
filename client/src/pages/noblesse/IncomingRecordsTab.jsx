@@ -212,7 +212,7 @@ const InspectionSection = ({ receipt, isAdmin, onReceiptUpdate }) => {
 
 // ── Editable receipt card ──────────────────────────────────────────────────────
 
-const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInventoryPush, isAdmin }) => {
+const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInventoryPush, isAdmin, canDelete = false }) => {
   const toast = useToast();
   const [editing, setEditing]         = useState(false);
   const [deleting, setDeleting]       = useState(false);
@@ -355,8 +355,10 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
                   </Button>
                 )}
                 <Button size="xs" variant="ghost" colorScheme="gray" onClick={startEdit}>Edit</Button>
-                <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
-                  aria-label="Delete record" isLoading={deleting} onClick={handleDelete} />
+                {canDelete && (
+                  <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
+                    aria-label="Delete record" isLoading={deleting} onClick={handleDelete} />
+                )}
               </Flex>
             )}
           </Flex>
@@ -736,7 +738,7 @@ const AllLinesTable = ({ receipts }) => {
 
 const DAYS_PER_PAGE = 5;
 
-export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, onReceiptDelete, onInventoryPush, isAdmin }) => {
+export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, onReceiptDelete, onInventoryPush, isAdmin, canDelete = false }) => {
   const [page, setPage]         = useState(0);
   const [viewMode, setViewMode] = useState("cards"); // "cards" | "table"
 
@@ -819,7 +821,8 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
               onReceiptUpdate={onReceiptUpdate}
               onReceiptDelete={onReceiptDelete}
               onInventoryPush={onInventoryPush}
-              isAdmin={isAdmin} />
+              isAdmin={isAdmin}
+              canDelete={canDelete} />
           ))}
 
           {totalPages > 1 && (

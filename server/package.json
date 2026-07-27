@@ -28,13 +28,13 @@
     "openai": "^6.33.0",
     "pg": "^8.20.0",
     "read-excel-file": "^5.8.5",
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.3"
   },
   "jest": {
     "testEnvironment": "node"
   },
   "devDependencies": {
-    "jest": "^30.3.0",
+    "jest": "^25.0.0",
     "supertest": "^7.2.2"
   }
 }

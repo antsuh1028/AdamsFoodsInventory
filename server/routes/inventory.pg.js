@@ -372,6 +372,59 @@ router.patch("/inventory/:id/box/remove", verifyToken, async (req, res) => {
   }
 });
 
+// ── Box Bulk Remove ───────────────────────────────────────────────────────────
+router.patch("/inventory/:id/box/bulk-remove", verifyToken, async (req, res) => {
+  const { indices } = req.body;
+  if (!indices || !Array.isArray(indices) || indices.length === 0) return res.status(400).json({ error: "indices array is required" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+    if (itemRes.rows.length === 0) return res.status(404).json({ error: "Item not found" });
+
+    const boxes = Array.isArray(itemRes.rows[0].boxes) ? itemRes.rows[0].boxes : [];
+
+    // Validate indices
+    for (const idx of indices) {
+      if (typeof idx !== "number" || idx < 0 || idx >= boxes.length) {
+        return res.status(400).json({ error: `Invalid index: ${idx}` });
+      }
+    }
+
+    // Get removed boxes info for history
+    const sortedIndices = [...new Set(indices)].sort((a, b) => b - a); // Unique and descending to remove from end first
+    const removedBoxes = sortedIndices.map(i => boxes[i]);
+    const removedWeight = boxesWeight(removedBoxes);
+
+    // Remove boxes by filtering out selected indices
+    const remaining = boxes.filter((_, i) => !indices.includes(i));
+    const newTotal = boxesWeight(remaining);
+
+    if (remaining.length === 0) {
+      await historyEntry(client, req.tenantId, itemRes.rows[0],
+        `${sortedIndices.length} box(es) removed (${removedWeight} lb) — last box(es), item deleted`, req.username);
+      await client.query(`DELETE FROM inventory WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+      await client.query("COMMIT");
+      return res.json({ deleted: true });
+    }
+
+    const upd = await client.query(
+      `UPDATE inventory SET boxes = $1::jsonb, weight = $2, quantity = $3 WHERE id = $4 AND tenant_id = $5 RETURNING *`,
+      [JSON.stringify(remaining), toNum(newTotal), String(remaining.length), req.params.id, req.tenantId]
+    );
+    await historyEntry(client, req.tenantId, upd.rows[0],
+      `${sortedIndices.length} box(es) removed (${removedWeight} lb) — ${remaining.length} box(es) remaining, ${newTotal} lb total`, req.username);
+    await client.query("COMMIT");
+    res.json({ ...fmt(upd.rows[0]), removed: removedBoxes });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // ── Box Add ───────────────────────────────────────────────────────────────────
 router.patch("/inventory/:id/box/add", verifyToken, async (req, res) => {
   const { weight } = req.body;

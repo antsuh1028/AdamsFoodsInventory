@@ -31,7 +31,7 @@ const emptyNtiItem = () => ({
   packDate: "", weight: "", qtyCases: "", qtyPallets: "", receivedDate: today(), notes: "",
 });
 
-export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd, onUpdate, onDelete, isAdmin }) => {
+export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd, onUpdate, onDelete, isAdmin, canDelete = false }) => {
   const toast = useToast();
   const [activeId, setActiveId]         = useState(null);
   const [selectedId, setSelectedId]     = useState(null);
@@ -405,10 +405,12 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                                 onClick={(e) => { e.stopPropagation(); cancel(item.id); }} />
                             </>
                           ) : (
-                            <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red" aria-label="Delete"
-                              opacity={0} _groupHover={{ opacity: 1 }}
-                              isLoading={deletingId === item.id}
-                              onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} />
+                            canDelete ? (
+                              <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red" aria-label="Delete"
+                                opacity={0} _groupHover={{ opacity: 1 }}
+                                isLoading={deletingId === item.id}
+                                onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} />
+                            ) : null
                           )}
                         </Flex>
                       )}
@@ -541,6 +543,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                   <thead>
                     <tr>
                       <Th>Time</Th>
+                      <Th>By</Th>
                       <Th>Action</Th>
                       <Th>Lot #</Th>
                       <Th>Details</Th>
@@ -559,6 +562,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                       return (
                         <Box as="tr" key={h.id} bg={i % 2 === 0 ? "white" : "gray.50"}>
                           <Td fontSize="sm" color="gray.500" whiteSpace="nowrap">{fmtDate(h.createdAt)}</Td>
+                          <Td fontSize="sm" color="gray.500" whiteSpace="nowrap">{h.performedBy || "—"}</Td>
                           <Td><Badge colorScheme={color} fontSize="xs" textTransform="capitalize">{h.action}</Badge></Td>
                           <Td fontWeight="medium" color="blue.700">{h.lot || "—"}</Td>
                           <Td fontSize="sm" color="gray.600" whiteSpace="normal">

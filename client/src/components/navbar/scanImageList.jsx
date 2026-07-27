@@ -13,6 +13,9 @@ const authFetch = (url, options = {}) => {
 };
 
 const PAGE_SIZE = 20;
+// Signed URLs expire in 1 hour; cache for 55 min so we always have valid URLs
+const CACHE_TTL_MS = 55 * 60 * 1000;
+let scanCache = { data: null, timestamp: 0 };
 
 const ScanImageList = ({ isOpen }) => {
   const [allScans, setAllScans] = useState([]);
@@ -22,16 +25,24 @@ const ScanImageList = ({ isOpen }) => {
   const [search, setSearch] = useState("");
   const { isOpen: isImgOpen, onOpen: onImgOpen, onClose: onImgClose } = useDisclosure();
 
-  // Load all scans once — server returns up to 500 in one shot
+  // Load all scans once — server returns up to 500 in one shot.
+  // Results are cached in memory for 55 min (just under S3 signed URL expiry).
   useEffect(() => {
     if (!isOpen) return;
+    const now = Date.now();
+    if (scanCache.data && now - scanCache.timestamp < CACHE_TTL_MS) {
+      setAllScans(scanCache.data);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     authFetch(`${API_BASE_URL}/list-scans`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
-        setAllScans(Array.isArray(data.items) ? data.items : []);
+        const items = Array.isArray(data.items) ? data.items : [];
+        scanCache = { data: items, timestamp: Date.now() };
+        setAllScans(items);
       })
       .catch(() => { if (!cancelled) setAllScans([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -117,6 +128,11 @@ const ScanImageList = ({ isOpen }) => {
                   </Text>
                   <Text fontSize="xs" color="gray.400" noOfLines={1}>
                     {[item.species, item.description].filter(Boolean).join(" · ")}
+                    {item.created_at && (
+                      <Text as="span" ml={1}>
+                        · {new Date(item.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                      </Text>
+                    )}
                   </Text>
                 </Box>
                 <Badge colorScheme="blue" fontSize="xs" variant="subtle">View</Badge>
@@ -146,7 +162,12 @@ const ScanImageList = ({ isOpen }) => {
         <ModalOverlay bg="blackAlpha.600" />
         <ModalContent borderRadius="xl" maxH="90vh">
           <ModalHeader borderBottom="1px" borderColor="gray.100" py={3} fontSize="sm" fontWeight="semibold">
-            {selectedItem?.location} {selectedItem?.lot ? `— Lot ${selectedItem.lot}` : ""}
+            <Text>{selectedItem?.location} {selectedItem?.lot ? `— Lot ${selectedItem.lot}` : ""}</Text>
+            {selectedItem?.created_at && (
+              <Text fontSize="xs" fontWeight="normal" color="gray.400" mt={0.5}>
+                Scanned {new Date(selectedItem.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+              </Text>
+            )}
           </ModalHeader>
           <ModalCloseButton top={3} />
           <ModalBody p={4} overflowY="auto">

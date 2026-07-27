@@ -3,11 +3,11 @@ import {
   Box, Flex, Text, Button, IconButton, Badge, useToast,
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton,
 } from "@chakra-ui/react";
-import { CheckIcon, CloseIcon } from "@chakra-ui/icons";
+import { CheckIcon, CloseIcon, DeleteIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, cellInputStyle, Th, Td } from "./shared";
 
-export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrderAdded, onProcOrderUpdate }) => {
+export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrderAdded, onProcOrderUpdate, onProcOrderDelete, canDelete = false }) => {
   const toast = useToast();
   const [view, setView]                 = useState("pending");
   const [displayMode, setDisplayMode]   = useState("card");
@@ -24,6 +24,11 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
   const [outputWeightDraft, setOutputWeightDraft] = useState("");
   const [outputCasesDraft, setOutputCasesDraft]   = useState("");
   const [savingOutput, setSavingOutput] = useState(false);
+
+  const [deletingOrderId, setDeletingOrderId] = useState(null);
+  const [editingMemoId, setEditingMemoId] = useState(null);
+  const [memoDraft, setMemoDraft]         = useState("");
+  const [savingMemo, setSavingMemo]       = useState(false);
 
   const [partialOrderId, setPartialOrderId]         = useState(null);
   const [partialActuals, setPartialActuals]         = useState({});
@@ -108,18 +113,21 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
     });
   })();
 
-  const availableItems  = ntiInventory.filter((n) => n.weight > 0);
+  const availableItems  = ntiInventory;
   const selectedNtiItem = availableItems.find((n) => String(n.id) === String(selectedItemId)) || null;
 
   const weightNum   = parseFloat(weightIn);
   const maxWeight   = parseFloat(selectedNtiItem?.weight) || 0;
-  const weightError = weightIn !== "" && (
-    isNaN(weightNum) || weightNum <= 0
-      ? "Must be greater than 0"
-      : selectedNtiItem && weightNum > maxWeight
-        ? `Only ${maxWeight} lb available`
-        : null
-  );
+  const selectedItemZeroWeight = selectedNtiItem != null && (selectedNtiItem.weight == null || selectedNtiItem.weight <= 0);
+  const weightError = selectedItemZeroWeight
+    ? "This item has 0 lb remaining — it is fully committed to another order"
+    : weightIn !== "" && (
+        isNaN(weightNum) || weightNum <= 0
+          ? "Must be greater than 0"
+          : selectedNtiItem && selectedNtiItem.weight != null && weightNum > maxWeight
+            ? `Only ${maxWeight} lb available`
+            : null
+      );
 
   const editingOrder         = editingOutputId != null ? procOrders.find((o) => o.id === editingOutputId) : null;
   const editingOrderWeightIn = editingOrder
@@ -219,6 +227,32 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
 
   const cancelOutput = () => {
     setEditingOutputId(null); setOutputWeightDraft(""); setOutputCasesDraft("");
+  };
+
+  const deleteOrder = async (order) => {
+    setDeletingOrderId(order.id);
+    try {
+      await axiosInstance.delete(`/noblesse-proc-orders/${order.id}`);
+      onProcOrderDelete(order.id);
+      toast({ title: "Processing order deleted", status: "success", position: "top", duration: 2000, isClosable: true });
+    } catch {
+      toast({ title: "Failed to delete order", status: "error", position: "top", duration: 3000, isClosable: true });
+    } finally {
+      setDeletingOrderId(null);
+    }
+  };
+
+  const saveMemo = async (order) => {
+    setSavingMemo(true);
+    try {
+      const res = await axiosInstance.patch(`/noblesse-proc-orders/${order.id}/notes`, { notes: memoDraft });
+      onProcOrderUpdate(res.data);
+      setEditingMemoId(null);
+    } catch {
+      toast({ title: "Failed to save memo", status: "error", position: "top", duration: 3000, isClosable: true });
+    } finally {
+      setSavingMemo(false);
+    }
   };
 
   const startEditOutput = (order) => {
@@ -328,30 +362,43 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                         borderRadius="md" boxShadow="md" maxH="220px" overflowY="auto" mt="2px">
                         {filteredItems.length === 0 ? (
                           <Box px={3} py={2}><Text fontSize="sm" color="gray.400">No matches.</Text></Box>
-                        ) : filteredItems.map((item) => (
-                          <Box key={item.id} px={3} py={2} fontSize="sm" cursor="pointer"
-                            bg={String(item.id) === selectedItemId ? "blue.50" : "white"}
-                            _hover={{ bg: "blue.50" }}
-                            onMouseDown={() => selectItem(item)}>
-                            <Text fontWeight="medium" color="blue.700">{item.lot}</Text>
-                            <Text color="gray.600">
-                              {[item.description, item.brand].filter(Boolean).join(" · ")}
-                              <Text as="span" color="gray.400" ml={2}>{item.weight} lb avail.</Text>
-                            </Text>
-                          </Box>
-                        ))}
+                        ) : filteredItems.map((item) => {
+                          const noWeight = item.weight == null || item.weight <= 0;
+                          return (
+                            <Box key={item.id} px={3} py={2} fontSize="sm" cursor="pointer"
+                              bg={String(item.id) === selectedItemId ? "blue.50" : "white"}
+                              _hover={{ bg: "blue.50" }}
+                              onMouseDown={() => selectItem(item)}>
+                              <Flex align="center" gap={2}>
+                                <Text fontWeight="medium" color={noWeight ? "gray.400" : "blue.700"}>{item.lot}</Text>
+                                {noWeight && <Text fontSize="xs" color="orange.500" fontWeight="semibold">0 lb</Text>}
+                              </Flex>
+                              <Text color="gray.500" fontSize="xs">
+                                {[item.description, item.brand].filter(Boolean).join(" · ")}
+                                {!noWeight && <Text as="span" color="gray.400" ml={2}>{item.weight} lb avail.</Text>}
+                              </Text>
+                            </Box>
+                          );
+                        })}
                       </Box>
                     )}
                   </Box>
                   <Box>
                     <Text fontSize="sm" color={weightError ? "red.500" : "gray.500"} mb="2px"
                       textTransform="uppercase" letterSpacing="wide">Weight (lb)</Text>
+                      {selectedItemZeroWeight ? (
+                      <Box mt={2} p={2} py={1} bg="orange.50" border="1px" borderColor="orange.300" borderRadius="md" mb={2}>
+                        <Text fontSize="sm" color="orange.700" fontWeight="semibold" >
+                          Weight is 0
+                        </Text>
+                      </Box>
+                    ) : weightError && (
+                      <Text fontSize="sm" color="red.500" mt="2px">{weightError}</Text>
+                    )}
                     <input type="number" value={weightIn} onChange={(e) => setWeightIn(e.target.value)}
                       style={{ ...inStyle("90px"), ...(weightError ? { borderColor: "#E53E3E", outline: "none" } : {}) }}
                       placeholder="0" />
-                    {weightError && (
-                      <Text fontSize="sm" color="red.500" mt="2px">{weightError}</Text>
-                    )}
+                    
                   </Box>
                   <Box>
                     <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Cases</Text>
@@ -518,12 +565,40 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                               Partial
                             </Button>
                           )}
+                          {canDelete && (
+                            <IconButton icon={<DeleteIcon />} size="xs" variant="ghost"
+                              colorScheme="red" aria-label="Delete order" ml={1}
+                              isLoading={deletingOrderId === order.id}
+                              onClick={() => deleteOrder(order)} />
+                          )}
                         </>
                       )}
                     </Flex>
                   </Flex>
-                  {order.notes && (
-                    <Text fontSize="sm" color="gray.400" mt={1}>{order.notes}</Text>
+                  {/* Memo — click to edit */}
+                  {editingMemoId === order.id ? (
+                    <Flex align="center" gap={1} mt={1}>
+                      {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
+                      <input
+                        value={memoDraft}
+                        onChange={(e) => setMemoDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") saveMemo(order); if (e.key === "Escape") setEditingMemoId(null); }}
+                        placeholder="Add memo..."
+                        style={{ ...inStyle("240px"), flex: 1 }}
+                        autoFocus
+                      />
+                      <IconButton icon={<CheckIcon />} size="xs" colorScheme="blue" aria-label="Save memo"
+                        isLoading={savingMemo} onClick={() => saveMemo(order)} />
+                      <IconButton icon={<CloseIcon />} size="xs" variant="ghost" colorScheme="gray"
+                        aria-label="Cancel" onClick={() => setEditingMemoId(null)} />
+                    </Flex>
+                  ) : (
+                    <Text fontSize="sm" mt={1} cursor="pointer"
+                      color={order.notes ? "gray.500" : "gray.300"}
+                      fontStyle={order.notes ? "normal" : "italic"}
+                      onClick={() => { setEditingMemoId(order.id); setMemoDraft(order.notes || ""); }}>
+                      {order.notes || "Add memo..."}
+                    </Text>
                   )}
                 </Box>
               );
@@ -646,7 +721,32 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                             )}
                           </Td>
                           <Td />
-                          <Td fontSize="sm" color="gray.400">{order.notes || "—"}</Td>
+                          <Td>
+                            {editingMemoId === order.id ? (
+                              <Flex align="center" gap={1}>
+                                {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
+                                <input
+                                  value={memoDraft}
+                                  onChange={(e) => setMemoDraft(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === "Enter") saveMemo(order); if (e.key === "Escape") setEditingMemoId(null); }}
+                                  placeholder="Add memo..."
+                                  style={{ ...inStyle("180px") }}
+                                  autoFocus
+                                />
+                                <IconButton icon={<CheckIcon />} size="xs" colorScheme="blue" aria-label="Save memo"
+                                  isLoading={savingMemo} onClick={() => saveMemo(order)} />
+                                <IconButton icon={<CloseIcon />} size="xs" variant="ghost" colorScheme="gray"
+                                  aria-label="Cancel" onClick={() => setEditingMemoId(null)} />
+                              </Flex>
+                            ) : (
+                              <Text fontSize="sm" cursor="pointer"
+                                color={order.notes ? "gray.500" : "gray.300"}
+                                fontStyle={order.notes ? "normal" : "italic"}
+                                onClick={() => { setEditingMemoId(order.id); setMemoDraft(order.notes || ""); }}>
+                                {order.notes || "Add memo..."}
+                              </Text>
+                            )}
+                          </Td>
                           <Td />
                         </Box>
                       );

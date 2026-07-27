@@ -116,6 +116,10 @@ pool.query(`
   )
 `).catch((err) => console.error("nti_inventory_history migration error:", err.message));
 
+pool.query(`
+  ALTER TABLE nti_inventory_history ADD COLUMN IF NOT EXISTS performed_by TEXT
+`).catch((err) => console.error("nti_inventory_history performed_by migration error:", err.message));
+
 // ── Formatters ────────────────────────────────────────────────────────────────
 
 const fmtReceipt = (row) => ({
@@ -153,12 +157,14 @@ const fmtNtiItem = (row) => ({
   createdAt:    row.created_at,
 });
 
-const logNtiHistory = (tenantId, action, item, extra = {}) =>
-  pool.query(
-    `INSERT INTO nti_inventory_history (tenant_id, action, item_id, lot, snapshot)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [tenantId, action, item.id || null, item.lot || null, JSON.stringify({ ...item, ...extra })]
+const logNtiHistory = (tenantId, action, item, extra = {}, performedBy = null) => {
+  if ((item.lot || "").toUpperCase() === "TEST") return Promise.resolve();
+  return pool.query(
+    `INSERT INTO nti_inventory_history (tenant_id, action, item_id, lot, snapshot, performed_by)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [tenantId, action, item.id || null, item.lot || null, JSON.stringify({ ...item, ...extra }), performedBy]
   ).catch((err) => console.error("nti history log error:", err.message));
+};
 
 // ── Receipts ──────────────────────────────────────────────────────────────────
 
@@ -280,7 +286,7 @@ router.post("/noblesse-receipts/:id/push-to-inventory", verifyToken, async (req,
     await client.query("COMMIT");
 
     for (const item of insertedItems) {
-      logNtiHistory(req.tenantId, "received", fmtNtiItem(item), { sourceReceiptId: Number(req.params.id) });
+      logNtiHistory(req.tenantId, "received", fmtNtiItem(item), { sourceReceiptId: Number(req.params.id) }, req.username);
     }
 
     res.json({
@@ -383,7 +389,7 @@ router.post("/nti-inventory", verifyToken, async (req, res) => {
       ]
     );
     const item = fmtNtiItem(result.rows[0]);
-    logNtiHistory(req.tenantId, "added", item);
+    logNtiHistory(req.tenantId, "added", item, {}, req.username);
     res.json(item);
   } catch (err) {
     console.error(err);
@@ -424,7 +430,7 @@ router.put("/nti-inventory/:id", verifyToken, async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });
     const after = fmtNtiItem(result.rows[0]);
     const beforeFmt = before.rows.length ? fmtNtiItem(before.rows[0]) : null;
-    logNtiHistory(req.tenantId, "updated", after, { before: beforeFmt });
+    logNtiHistory(req.tenantId, "updated", after, { before: beforeFmt }, req.username);
     res.json(after);
   } catch (err) {
     console.error(err);
@@ -445,7 +451,7 @@ router.delete("/nti-inventory/:id", verifyToken, async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });
     // Wrap separately so a formatting/log error can't cause a 500 after a successful delete
     try {
-      if (snap.rows.length) logNtiHistory(req.tenantId, "deleted", fmtNtiItem(snap.rows[0]));
+      if (snap.rows.length) logNtiHistory(req.tenantId, "deleted", fmtNtiItem(snap.rows[0]), {}, req.username);
     } catch (e) {
       console.error("history log error (delete):", e.message);
     }
@@ -461,7 +467,7 @@ router.delete("/nti-inventory/:id", verifyToken, async (req, res) => {
 router.get("/nti-inventory-history", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, action, item_id, lot, snapshot, created_at
+      `SELECT id, action, item_id, lot, snapshot, performed_by, created_at
        FROM nti_inventory_history
        WHERE tenant_id = $1
        ORDER BY created_at DESC
@@ -469,12 +475,13 @@ router.get("/nti-inventory-history", verifyToken, async (req, res) => {
       [req.tenantId]
     );
     res.json(result.rows.map((r) => ({
-      id:        r.id,
-      action:    r.action,
-      itemId:    r.item_id,
-      lot:       r.lot,
-      snapshot:  r.snapshot,
-      createdAt: r.created_at,
+      id:          r.id,
+      action:      r.action,
+      itemId:      r.item_id,
+      lot:         r.lot,
+      snapshot:    r.snapshot,
+      performedBy: r.performed_by,
+      createdAt:   r.created_at,
     })));
   } catch (err) {
     console.error(err);
@@ -608,10 +615,10 @@ router.post("/noblesse-proc-orders", verifyToken, async (req, res) => {
     // Log deductions to history after commit (fire-and-forget)
     for (const { lot, weightDeducted } of deductions) {
       pool.query(
-        `INSERT INTO nti_inventory_history (tenant_id, action, item_id, lot, snapshot)
-         VALUES ($1, $2, $3, $4, $5)`,
+        `INSERT INTO nti_inventory_history (tenant_id, action, item_id, lot, snapshot, performed_by)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [req.tenantId, "processed", null, lot,
-         JSON.stringify({ weightDeducted, processingOrderId: order.id })]
+         JSON.stringify({ weightDeducted, processingOrderId: order.id }), req.username]
       ).catch((err) => console.error("nti history log error:", err.message));
     }
 
@@ -622,6 +629,66 @@ router.post("/noblesse-proc-orders", verifyToken, async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+router.delete("/noblesse-proc-orders/:id", verifyToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Restore inventory weight for any items that were deducted
+    const itemsRes = await client.query(
+      `SELECT * FROM noblesse_processing_order_items WHERE processing_order_id = $1`,
+      [req.params.id]
+    );
+    for (const item of itemsRes.rows) {
+      if (item.nti_item_id && item.weight_in != null) {
+        const restored = item.actual_weight_in != null
+          ? Number(item.weight_in) - Number(item.actual_weight_in) // only unprocessed portion remains committed
+          : Number(item.weight_in);
+        if (restored > 0) {
+          await client.query(
+            `UPDATE nti_inventory SET weight = weight + $1 WHERE id = $2 AND tenant_id = $3`,
+            [restored, item.nti_item_id, req.tenantId]
+          );
+        }
+      }
+    }
+
+    const result = await client.query(
+      `DELETE FROM noblesse_processing_orders WHERE id = $1 AND tenant_id = $2 RETURNING id`,
+      [req.params.id, req.tenantId]
+    );
+    if (!result.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Not found" }); }
+
+    await client.query("COMMIT");
+    res.json({ deleted: result.rows[0].id });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+router.patch("/noblesse-proc-orders/:id/notes", verifyToken, async (req, res) => {
+  const { notes } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE noblesse_processing_orders SET notes = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *`,
+      [notes || null, req.params.id, req.tenantId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
+    const itemsRes = await pool.query(
+      `SELECT * FROM noblesse_processing_order_items WHERE processing_order_id = $1 ORDER BY id`,
+      [req.params.id]
+    );
+    res.json(fmtProcOrder(result.rows[0], itemsRes.rows));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 

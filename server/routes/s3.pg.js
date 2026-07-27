@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require("@aws-sdk/client-s3");
+const { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
@@ -22,6 +22,28 @@ async function ensurePdfsTable() {
     )
   `);
   tableReady = true;
+}
+
+// Tenant ownership checks — S3 keys are global, so every read/delete must be
+// validated against the tenant's own records before touching the bucket.
+async function tenantOwnsPdf(tenantId, key) {
+  await ensurePdfsTable();
+  const { rows } = await pool.query(
+    `SELECT 1 FROM pdfs WHERE tenant_id = $1 AND file_key = $2 LIMIT 1`,
+    [tenantId, key]
+  );
+  return rows.length > 0;
+}
+
+async function tenantOwnsScan(tenantId, key) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM inventory WHERE tenant_id = $1 AND scan_image_key = $2
+     UNION ALL
+     SELECT 1 FROM history WHERE tenant_id = $1 AND scan_image_key = $2
+     LIMIT 1`,
+    [tenantId, key]
+  );
+  return rows.length > 0;
 }
 
 router.post("/upload-pdf", verifyToken, requireRole("admin"), upload.single("file"), async (req, res) => {
@@ -51,21 +73,27 @@ router.post("/upload-pdf", verifyToken, requireRole("admin"), upload.single("fil
 
 router.get("/list-pdfs", verifyToken, async (req, res) => {
   try {
-    const listRes = await s3Client.send(new ListObjectsV2Command({
-      Bucket: process.env.AWS_BUCKET_NAME,
-      Prefix: "pdfs/",
-    }));
-    const objects = listRes.Contents || [];
-    const pdfs = await Promise.all(objects.map(async (obj) => {
+    await ensurePdfsTable();
+    const { rows } = await pool.query(
+      `SELECT file_name, file_key, upload_date, created_at
+       FROM pdfs WHERE tenant_id = $1
+       ORDER BY created_at DESC`,
+      [req.tenantId]
+    );
+    const pdfs = await Promise.all(rows.map(async (row) => {
       const signedUrl = await getSignedUrl(
         s3Client,
-        new GetObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: obj.Key }),
+        new GetObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: row.file_key }),
         { expiresIn: 3600 }
       );
-      const fileName = obj.Key.replace("pdfs/", "").replace(/^\d+-/, "");
-      return { _id: obj.Key, fileKey: obj.Key, fileName, fileUrl: signedUrl, uploadDate: obj.LastModified };
+      return {
+        _id: row.file_key,
+        fileKey: row.file_key,
+        fileName: row.file_name,
+        fileUrl: signedUrl,
+        uploadDate: row.upload_date || row.created_at,
+      };
     }));
-    pdfs.sort((a, b) => new Date(b.uploadDate) - new Date(a.uploadDate));
     res.json(pdfs);
   } catch (err) {
     console.error("list-pdfs error:", err);
@@ -76,7 +104,7 @@ router.get("/list-pdfs", verifyToken, async (req, res) => {
 router.get("/list-scans", verifyToken, requireRole("admin", "manager"), async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, scan_image_key, location, lot, species, description, date_recvd
+      `SELECT id, scan_image_key, location, lot, species, description, date_recvd, created_at
        FROM inventory
        WHERE tenant_id = $1 AND scan_image_key IS NOT NULL AND scan_image_key != ''
        ORDER BY created_at DESC
@@ -104,12 +132,13 @@ router.get("/get-pdf", verifyToken, async (req, res) => {
   const key = req.query.key || "";
   if (!key.startsWith("pdfs/")) return res.status(400).json({ error: "Invalid key" });
   try {
+    if (!(await tenantOwnsPdf(req.tenantId, key))) return res.status(404).json({ error: "Not found" });
     const { Body, ContentType } = await s3Client.send(new GetObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key }));
     res.setHeader("Content-Type", ContentType);
     Body.pipe(res);
   } catch (error) {
     console.error("get-pdf error:", error);
-    res.status(500).json({ error: error.message || "Error fetching PDF" });
+    res.status(500).json({ error: "Error fetching PDF" });
   }
 });
 
@@ -117,6 +146,7 @@ router.get("/scan-url", verifyToken, async (req, res) => {
   const key = req.query.key || "";
   if (!key.startsWith("scans/")) return res.status(400).json({ error: "Invalid key" });
   try {
+    if (!(await tenantOwnsScan(req.tenantId, key))) return res.status(404).json({ error: "Not found" });
     const url = await getSignedUrl(
       s3Client,
       new GetObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key }),
@@ -132,19 +162,23 @@ router.get("/get-scan-image", verifyToken, async (req, res) => {
   const key = req.query.key || "";
   if (!key.startsWith("scans/")) return res.status(400).json({ error: "Invalid key" });
   try {
+    if (!(await tenantOwnsScan(req.tenantId, key))) return res.status(404).json({ error: "Not found" });
     const { Body, ContentType } = await s3Client.send(new GetObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key }));
     res.setHeader("Content-Type", ContentType || "image/jpeg");
     Body.pipe(res);
   } catch (error) {
-    res.status(500).json({ error: error.message || "Error fetching image" });
+    console.error("get-scan-image error:", error);
+    res.status(500).json({ error: "Error fetching image" });
   }
 });
 
-router.delete("/delete-pdf/*", verifyToken, async (req, res) => {
+router.delete("/delete-pdf/*", verifyToken, requireRole("admin"), async (req, res) => {
   const key = req.params[0];
   if (!key || !key.startsWith("pdfs/")) return res.status(400).json({ error: "Invalid key" });
   try {
+    if (!(await tenantOwnsPdf(req.tenantId, key))) return res.status(404).json({ error: "Not found" });
     await s3Client.send(new DeleteObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key }));
+    await pool.query(`DELETE FROM pdfs WHERE tenant_id = $1 AND file_key = $2`, [req.tenantId, key]);
     res.json({ message: "PDF deleted successfully" });
   } catch (error) {
     console.error("Delete PDF error:", error);

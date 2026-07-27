@@ -30,3 +30,5 @@ server/routes/auth.pg.js
 scripts/smoke-test.js
 .claude/settings.local.json
 .claude/settings.local.json
+server/scripts
+server/tests

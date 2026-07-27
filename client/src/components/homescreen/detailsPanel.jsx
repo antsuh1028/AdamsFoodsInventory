@@ -148,7 +148,8 @@ const DetailsPanel = ({
   const [newBoxWeight, setNewBoxWeight] = useState("");
   const [boxLoading, setBoxLoading] = useState(null);
   const [boxesExpanded, setBoxesExpanded] = useState(false);
-  const [lastRemovedBox, setLastRemovedBox] = useState(null);
+  const [selectedBoxes, setSelectedBoxes] = useState([]);
+  const [lastRemovedBoxes, setLastRemovedBoxes] = useState(null);
   const [pendingEdit, setPendingEdit] = useState(null); // { field, label, oldValue, newValue }
   const [saving, setSaving] = useState(false);
   const [prodExpanded, setProdExpanded] = useState(false);
@@ -234,7 +235,7 @@ const DetailsPanel = ({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
       onItemUpdate(data);
-      setLastRemovedBox({ weight: removedWeight });
+      setLastRemovedBoxes({ boxes: [{ weight: removedWeight }] });
     } catch (err) {
       toast({
         title: "Failed to remove box",
@@ -249,18 +250,67 @@ const DetailsPanel = ({
     }
   };
 
-  const handleUndoRemove = async () => {
-    if (!lastRemovedBox) return;
-    setBoxLoading("add");
+  const handleBatchRemoveBoxes = async () => {
+    if (selectedBoxes.length === 0) return;
+    setBoxLoading("batch");
     try {
+      const removedBoxes = selectedBoxes.map(i => item.boxes[i]);
       const res = await authPatch(
-        `${API_BASE_URL}/inventory/${item._id}/box/add`,
-        { weight: lastRemovedBox.weight },
+        `${API_BASE_URL}/inventory/${item._id}/box/bulk-remove`,
+        { indices: selectedBoxes },
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
       onItemUpdate(data);
-      setLastRemovedBox(null);
+      setLastRemovedBoxes({ boxes: removedBoxes });
+      setSelectedBoxes([]);
+      toast({
+        title: "Boxes removed",
+        description: `Successfully removed ${removedBoxes.length} box(es)`,
+        status: "success",
+        position: "top",
+        duration: 2000,
+        isClosable: true,
+      });
+    } catch (err) {
+      toast({
+        title: "Failed to remove boxes",
+        description: err.message,
+        status: "error",
+        position: "top",
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setBoxLoading(null);
+    }
+  };
+
+  const handleUndoRemove = async () => {
+    if (!lastRemovedBoxes || !lastRemovedBoxes.boxes || lastRemovedBoxes.boxes.length === 0) return;
+    setBoxLoading("undo");
+    try {
+      const boxes = lastRemovedBoxes.boxes;
+      const totalWeight = boxes.reduce((s, b) => s + parseFloat(b.weight || 0), 0);
+
+      if (boxes.length === 1) {
+        const res = await authPatch(
+          `${API_BASE_URL}/inventory/${item._id}/box/add`,
+          { weight: boxes[0].weight },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed");
+        onItemUpdate(data);
+      } else {
+        const res = await authPatch(
+          `${API_BASE_URL}/inventory/${item._id}/box/bulk-add`,
+          { count: boxes.length, weight: boxes[0].weight },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed");
+        onItemUpdate(data);
+      }
+      setLastRemovedBoxes(null);
     } catch (err) {
       toast({
         title: "Failed to undo",
@@ -452,6 +502,8 @@ const DetailsPanel = ({
     setNoblesseSentDate(todayISO());
     setReturnOpen(false);
     setReturnRows([{ lot: "", location: "", weight: "", boxes: [], bCount: "", bWeight: "" }]);
+    setSelectedBoxes([]);
+    setLastRemovedBoxes(null);
   }, [item?._id]);
 
   return (
@@ -665,7 +717,8 @@ const DetailsPanel = ({
                 setBoxesExpanded((v) => !v);
                 setAddingBox(false);
                 setNewBoxWeight("");
-                setLastRemovedBox(null);
+                setLastRemovedBoxes(null);
+                setSelectedBoxes([]);
               }}
             >
               {boxesExpanded
@@ -675,43 +728,104 @@ const DetailsPanel = ({
             <Collapse in={boxesExpanded} animateOpacity>
               <Box>
                 {itemBoxes.length > 0 ? (
-                  <Flex flexWrap="wrap" gap={1.5} mb={2}>
-                    {itemBoxes.map((box, i) => (
-                      <Flex
-                        key={i}
-                        align="center"
-                        gap={1}
-                        px={2}
-                        py={0.5}
-                        bg="gray.100"
-                        borderRadius="full"
-                        fontSize="xs"
-                        color="gray.600"
+                  <>
+                    <Flex gap={2} mb={2} align="center" flexWrap="wrap">
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        colorScheme="blue"
+                        onClick={() => setSelectedBoxes(itemBoxes.map((_, i) => i))}
                       >
-                        <Text>{parseFloat(box.weight).toFixed(2)} lb</Text>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          colorScheme="red"
-                          minW="auto"
-                          px={0.5}
-                          h="auto"
-                          lineHeight="1"
-                          isLoading={boxLoading === i}
-                          onClick={() => handleRemoveBox(i)}
-                          _hover={{ color: "red.500" }}
-                        >
-                          ×
-                        </Button>
-                      </Flex>
-                    ))}
-                  </Flex>
+                        Select All
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        colorScheme="gray"
+                        onClick={() => setSelectedBoxes([])}
+                      >
+                        Clear
+                      </Button>
+                      {selectedBoxes.length > 0 && (
+                        <>
+                          <Text fontSize="xs" color="blue.600" fontWeight="medium">
+                            {selectedBoxes.length} selected
+                          </Text>
+                          <Button
+                            size="xs"
+                            colorScheme="red"
+                            variant="solid"
+                            isLoading={boxLoading === "batch"}
+                            onClick={handleBatchRemoveBoxes}
+                          >
+                            Delete Selected
+                          </Button>
+                        </>
+                      )}
+                    </Flex>
+                    <Flex flexWrap="wrap" gap={1.5} mb={2}>
+                      {itemBoxes.map((box, i) => {
+                        const isSelected = selectedBoxes.includes(i);
+                        return (
+                          <Flex
+                            key={i}
+                            align="center"
+                            gap={1}
+                            px={2}
+                            py={0.5}
+                            bg={isSelected ? "blue.100" : "gray.100"}
+                            border="1px"
+                            borderColor={isSelected ? "blue.300" : "transparent"}
+                            borderRadius="full"
+                            fontSize="xs"
+                            color={isSelected ? "blue.700" : "gray.600"}
+                            cursor="pointer"
+                            fontWeight={isSelected ? "semibold" : "normal"}
+                            onClick={() => {
+                              setSelectedBoxes((prev) =>
+                                prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
+                              );
+                            }}
+                            _hover={{ borderColor: isSelected ? "blue.400" : "gray.300", bg: isSelected ? "blue.100" : "gray.50" }}
+                            transition="all 0.1s"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}}
+                              style={{ cursor: "pointer" }}
+                            />
+                            <Text>{parseFloat(box.weight).toFixed(2)} lb</Text>
+                            {selectedBoxes.length === 0 && (
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                colorScheme="red"
+                                minW="auto"
+                                px={0.5}
+                                h="auto"
+                                lineHeight="1"
+                                isLoading={boxLoading === i}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveBox(i);
+                                }}
+                                _hover={{ color: "red.500" }}
+                              >
+                                ×
+                              </Button>
+                            )}
+                          </Flex>
+                        );
+                      })}
+                    </Flex>
+                  </>
                 ) : (
                   <Text fontSize="xs" color="gray.400" mb={2}>
                     No boxes recorded
                   </Text>
                 )}
-                {lastRemovedBox && (
+                {lastRemovedBoxes && lastRemovedBoxes.boxes && lastRemovedBoxes.boxes.length > 0 && (
                   <Flex
                     align="center"
                     gap={2}
@@ -724,14 +838,14 @@ const DetailsPanel = ({
                     borderColor="orange.200"
                   >
                     <Text fontSize="xs" color="orange.700">
-                      Removed {parseFloat(lastRemovedBox.weight).toFixed(2)} lb
+                      Removed {lastRemovedBoxes.boxes.length} box(es) ({lastRemovedBoxes.boxes.reduce((s, b) => s + parseFloat(b.weight || 0), 0).toFixed(2)} lb)
                     </Text>
                     <Button
                       size="xs"
                       colorScheme="orange"
                       variant="solid"
                       borderRadius="md"
-                      isLoading={boxLoading === "add"}
+                      isLoading={boxLoading === "undo"}
                       onClick={handleUndoRemove}
                     >
                       Undo
@@ -742,7 +856,7 @@ const DetailsPanel = ({
                       colorScheme="gray"
                       minW="auto"
                       px={1}
-                      onClick={() => setLastRemovedBox(null)}
+                      onClick={() => setLastRemovedBoxes(null)}
                     >
                       ✕
                     </Button>

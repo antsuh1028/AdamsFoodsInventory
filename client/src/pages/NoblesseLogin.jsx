@@ -196,15 +196,11 @@ const NoblesseLogin = () => {
           </Stack>
         </form>
 
-        <Text fontSize="xs" color="gray.400" textAlign="center">
-          Adams Foods staff?{" "}
-          <Link color="red.700" href="/" fontWeight="500">
-            Sign in here
-          </Link>
-        </Text>
+        
       </VStack>
     </Flex>
   );
 };
 
 export default NoblesseLogin;
+ 
