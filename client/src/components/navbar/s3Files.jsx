@@ -8,12 +8,6 @@ import {
   InputGroup,
   InputLeftElement,
   useToast,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalCloseButton,
-  ModalBody,
   useDisclosure,
   Spinner,
   Icon,
@@ -27,6 +21,7 @@ import {
 } from "@chakra-ui/react";
 import { DownloadIcon, ViewIcon, DeleteIcon, SearchIcon } from "@chakra-ui/icons";
 import { API_BASE_URL } from "../../config/api";
+import FloatingWindow from "../FloatingWindow";
 
 const authFetch = (url, options = {}) => {
   const token = localStorage.getItem("token");
@@ -223,28 +218,21 @@ const S3FileList = ({ isOpen, onRefresh }) => {
       </Box>
 
       {/* PDF Viewer Modal */}
-      <Modal
+      <FloatingWindow
         isOpen={isPdfOpen}
         onClose={() => { if (selectedFile) URL.revokeObjectURL(selectedFile); setSelectedFile(null); onPdfClose(); }}
-        size="5xl"
+        title="PDF Viewer"
+        width={1180}
+        bodyProps={{ p: 0, height: "90vh" }}
       >
-        <ModalOverlay bg="blackAlpha.600" />
-        <ModalContent h="90vh" borderRadius="xl" overflow="hidden">
-          <ModalHeader borderBottom="1px" borderColor="gray.100" py={3} fontSize="md" fontWeight="semibold">
-            PDF Viewer
-          </ModalHeader>
-          <ModalCloseButton top={3} />
-          <ModalBody p={0}>
-            {selectedFile && (
-              <iframe
-                src={selectedFile}
-                style={{ width: "100%", height: "100%", border: "none" }}
-                title="PDF Viewer"
-              />
-            )}
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+        {selectedFile && (
+          <iframe
+            src={selectedFile}
+            style={{ width: "100%", height: "100%", border: "none" }}
+            title="PDF Viewer"
+          />
+        )}
+      </FloatingWindow>
 
       {/* Delete Confirm Dialog */}
       <AlertDialog isOpen={isDeleteOpen} leastDestructiveRef={cancelDeleteRef} onClose={onDeleteClose} isCentered>

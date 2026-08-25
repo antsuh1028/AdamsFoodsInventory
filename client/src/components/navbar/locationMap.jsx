@@ -1,11 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
   AlertDialog,
   AlertDialogOverlay,
   AlertDialogContent,
@@ -26,6 +20,7 @@ import {
   useBreakpointValue,
   useToast,
 } from "@chakra-ui/react";
+import FloatingWindow from "../FloatingWindow";
 import {
   DndContext,
   DragOverlay,
@@ -574,54 +569,55 @@ function ShowMap({ isOpen, onClose, highlightLocation }) {
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={handleModalClose} size="xl">
-        <ModalOverlay bg="blackAlpha.600" />
-        <ModalContent maxW="90vw" height="90vh" borderRadius="xl" overflow="hidden">
-          <ModalHeader borderBottom="1px" borderColor="gray.100" py={3} fontSize="lg" fontWeight="semibold">
-            <Flex align="center" justify="space-between" pr={8}>
-              <Flex align="center" gap={2}>
-                Freezer Map
-                {highlightLocation && (
-                  <Text as="span" fontSize="sm" fontWeight="normal" color="orange.500">
-                    — Locating {highlightLocation}
-                  </Text>
-                )}
-              </Flex>
-
-              {/* Move mode toggle — desktop only */}
-              {isDesktop && (
-                <Flex gap={1} bg="gray.100" borderRadius="lg" p={0.5}>
-                  <Button
-                    size="xs"
-                    borderRadius="md"
-                    bg={!moveMode ? "white" : "transparent"}
-                    color={!moveMode ? "gray.700" : "gray.400"}
-                    boxShadow={!moveMode ? "sm" : "none"}
-                    fontWeight={!moveMode ? "semibold" : "normal"}
-                    onClick={() => { setMoveMode(false); setPopoverInfo([]); }}
-                    _hover={{}}
-                  >
-                    Inspect
-                  </Button>
-                  <Button
-                    size="xs"
-                    borderRadius="md"
-                    bg={moveMode ? "white" : "transparent"}
-                    color={moveMode ? "blue.600" : "gray.400"}
-                    boxShadow={moveMode ? "sm" : "none"}
-                    fontWeight={moveMode ? "semibold" : "normal"}
-                    onClick={() => { setMoveMode(true); setPopoverInfo([]); }}
-                    _hover={{}}
-                  >
-                    Move
-                  </Button>
-                </Flex>
+      <FloatingWindow
+        isOpen={isOpen}
+        onClose={handleModalClose}
+        width={1100}
+        height={760}
+        bodyProps={{ display: "flex", flexDirection: "column", overflowY: "auto", p: 4 }}
+        title={
+          <Flex align="center" justify="space-between" width="100%">
+            <Flex align="center" gap={2}>
+              Freezer Map
+              {highlightLocation && (
+                <Text as="span" fontSize="sm" fontWeight="normal" color="orange.500">
+                  — Locating {highlightLocation}
+                </Text>
               )}
             </Flex>
-          </ModalHeader>
-          <ModalCloseButton top={3} />
 
-          <ModalBody display="flex" flexDirection="column" overflowY="auto" p={4}>
+            {/* Move mode toggle — desktop only */}
+            {isDesktop && (
+              <Flex gap={1} bg="gray.100" borderRadius="lg" p={0.5}>
+                <Button
+                  size="xs"
+                  borderRadius="md"
+                  bg={!moveMode ? "white" : "transparent"}
+                  color={!moveMode ? "gray.700" : "gray.400"}
+                  boxShadow={!moveMode ? "sm" : "none"}
+                  fontWeight={!moveMode ? "semibold" : "normal"}
+                  onClick={() => { setMoveMode(false); setPopoverInfo([]); }}
+                  _hover={{}}
+                >
+                  Inspect
+                </Button>
+                <Button
+                  size="xs"
+                  borderRadius="md"
+                  bg={moveMode ? "white" : "transparent"}
+                  color={moveMode ? "blue.600" : "gray.400"}
+                  boxShadow={moveMode ? "sm" : "none"}
+                  fontWeight={moveMode ? "semibold" : "normal"}
+                  onClick={() => { setMoveMode(true); setPopoverInfo([]); }}
+                  _hover={{}}
+                >
+                  Move
+                </Button>
+              </Flex>
+            )}
+          </Flex>
+        }
+      >
             <Legend showHighlight={!!highlightLocation} moveMode={moveMode} />
 
             <DndContext
@@ -719,9 +715,7 @@ function ShowMap({ isOpen, onClose, highlightLocation }) {
               onClose={handleClosePopover}
               onModalClose={handleModalClose}
             />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+      </FloatingWindow>
 
       {/* ── Move confirmation / picker ─────────────────────────────────────── */}
       <AlertDialog

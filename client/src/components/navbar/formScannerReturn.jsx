@@ -1,10 +1,10 @@
 import { useState, useRef } from "react";
 import {
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
   Button, Flex, Box, Text, Input, FormControl, FormLabel, SimpleGrid, Spinner, Image, Badge,
   Collapse, useToast, useDisclosure,
 } from "@chakra-ui/react";
 import { API_BASE_URL } from "../../config/api";
+import FloatingWindow from "../FloatingWindow";
 
 const FIELDS = [
   { key: "location",   label: "Location" },
@@ -120,18 +120,41 @@ const FormScannerReturn = ({ isOpen, onClose, orderId, onSubmit, submitting }) =
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={handleClose} size="2xl" scrollBehavior="inside" blockScrollOnMount={false}>
-      <ModalOverlay backdropFilter="blur(2px)" />
-      <ModalContent borderRadius="xl" sx={{ maxHeight: { base: "85dvh", md: "90dvh" } }} mx={{ base: 2, md: "auto" }}>
-        <ModalHeader borderBottom="1px" borderColor="gray.100" py={3} fontSize="md" fontWeight="semibold" bg="gray.50" borderTopRadius="xl">
-          <Flex align="center" gap={2}>
-            Return Pallet
-            <Badge colorScheme="gray" fontSize="xs">OCR</Badge>
-          </Flex>
-        </ModalHeader>
-        <ModalCloseButton top={3} />
-
-        <ModalBody py={5} overflowY="auto" sx={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
+    <FloatingWindow
+      isOpen={isOpen}
+      onClose={handleClose}
+      width={800}
+      title={
+        <Flex align="center" gap={2}>
+          Return Pallet
+          <Badge colorScheme="gray" fontSize="xs">OCR</Badge>
+        </Flex>
+      }
+      bodyProps={{ py: 5, sx: { WebkitOverflowScrolling: "touch", touchAction: "pan-y" } }}
+      footer={
+        step === "upload" ? (
+          <>
+            <Button variant="ghost" onClick={handleClose} size="sm">Cancel</Button>
+            <Button
+              colorScheme="gray"
+              size="sm"
+              onClick={handleExtract}
+              isDisabled={!imageFile || extracting}
+              leftIcon={extracting ? <Spinner size="xs" /> : undefined}
+            >
+              {extracting ? "Extracting..." : "Extract Fields"}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setStep("upload")}>Back</Button>
+            <Button colorScheme="green" size="sm" onClick={handleSubmit} isLoading={submitting}>
+              Add Return
+            </Button>
+          </>
+        )
+      }
+    >
           {step === "upload" && (
             <Flex direction="column" gap={4} align="center">
               <Box
@@ -288,43 +311,17 @@ const FormScannerReturn = ({ isOpen, onClose, orderId, onSubmit, submitting }) =
               </Box>
             </Flex>
           )}
-        </ModalBody>
+    </FloatingWindow>
 
-        <ModalFooter borderTop="1px" borderColor="gray.100" gap={2} bg="gray.50" borderBottomRadius="xl">
-          {step === "upload" ? (
-            <>
-              <Button variant="ghost" onClick={handleClose} size="sm">Cancel</Button>
-              <Button
-                colorScheme="gray"
-                size="sm"
-                onClick={handleExtract}
-                isDisabled={!imageFile || extracting}
-                leftIcon={extracting ? <Spinner size="xs" /> : undefined}
-              >
-                {extracting ? "Extracting..." : "Extract Fields"}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="ghost" size="sm" onClick={() => setStep("upload")}>Back</Button>
-              <Button colorScheme="green" size="sm" onClick={handleSubmit} isLoading={submitting}>
-                Add Return
-              </Button>
-            </>
-          )}
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
-
-    <Modal isOpen={isImageOpen} onClose={onImageClose} size="4xl" isCentered>
-      <ModalOverlay backdropFilter="blur(2px)" />
-      <ModalContent borderRadius="xl" bg="gray.900">
-        <ModalCloseButton color="white" />
-        <ModalBody p={3} display="flex" justifyContent="center" alignItems="center">
-          <Image src={imagePreview} maxH="85vh" maxW="100%" objectFit="contain" borderRadius="md" />
-        </ModalBody>
-      </ModalContent>
-    </Modal>
+    <FloatingWindow
+      isOpen={isImageOpen}
+      onClose={onImageClose}
+      dark
+      width={1024}
+      bodyProps={{ p: 3, display: "flex", justifyContent: "center", alignItems: "center" }}
+    >
+      <Image src={imagePreview} maxH="85vh" maxW="100%" objectFit="contain" borderRadius="md" />
+    </FloatingWindow>
     </>
   );
 };

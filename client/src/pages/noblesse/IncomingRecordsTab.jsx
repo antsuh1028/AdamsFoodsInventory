@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 import {
   Box, Flex, Text, Button, IconButton, useToast, Badge,
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton,
 } from "@chakra-ui/react";
 import { CheckIcon, CloseIcon, DeleteIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, cellInputStyle } from "./shared";
+import FloatingWindow from "../../components/FloatingWindow";
 
 export const RECEIPT_LINE_COLS = [
   { key: "lot",         label: "Lot No.",     w: "110px", type: "text", placeholder: "N26124-01" },
@@ -449,12 +449,18 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
       <InspectionSection receipt={receipt} isAdmin={isAdmin} onReceiptUpdate={onReceiptUpdate} />
 
       {/* Push to inventory confirmation modal */}
-      <Modal isOpen={pushOpen} onClose={() => setPushOpen(false)} size="2xl">
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader fontSize="md" pb={1}>Add to NTI Inventory</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
+      <FloatingWindow
+        isOpen={pushOpen}
+        onClose={() => setPushOpen(false)}
+        title="Add to NTI Inventory"
+        width={800}
+        footer={<>
+          <Button size="sm" variant="ghost" onClick={() => setPushOpen(false)}>Cancel</Button>
+          <Button size="sm" colorScheme="teal" isLoading={pushing} onClick={handlePushToInventory}>
+            Confirm — Add {pushLines.length} Item(s)
+          </Button>
+        </>}
+      >
             <Text fontSize="sm" color="gray.500" mb={3}>
               The following {pushLines.length} line(s) from this receipt will each become a new row in NTI Inventory.
               Received date will be set to <strong>{fmtDate(receipt.shipmentDate) || "—"}</strong>.
@@ -493,15 +499,7 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
                 </tbody>
               </Box>
             </Box>
-          </ModalBody>
-          <ModalFooter gap={2}>
-            <Button size="sm" variant="ghost" onClick={() => setPushOpen(false)}>Cancel</Button>
-            <Button size="sm" colorScheme="teal" isLoading={pushing} onClick={handlePushToInventory}>
-              Confirm — Add {pushLines.length} Item(s)
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      </FloatingWindow>
     </Box>
   );
 };

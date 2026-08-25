@@ -1,11 +1,5 @@
 import { useState } from "react";
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
   Tabs,
   TabList,
   Tab,
@@ -15,6 +9,7 @@ import {
   Flex,
   Text,
 } from "@chakra-ui/react";
+import FloatingWindow from "../FloatingWindow";
 import S3Uploader from "../../utils/navbar/S3Uploader";
 import S3FileList from "./s3Files";
 import ScanImageList from "./scanImageList";
@@ -34,46 +29,44 @@ function IncomingOrders({ isOpen, onClose }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} isCentered>
-      <ModalOverlay bg="blackAlpha.600" />
-      <ModalContent maxW="560px" maxH="80vh" borderRadius="xl" overflow="hidden">
-        <ModalHeader borderBottom="1px" borderColor="gray.100" py={3}>
-          <Flex align="center" gap={2}>
-            <Text fontSize="md" fontWeight="semibold">Incoming Product Records</Text>
-            <Badge colorScheme="red" fontSize="xs">PDF</Badge>
-          </Flex>
-        </ModalHeader>
-        <ModalCloseButton top={3} onClick={handleClose} />
+    <FloatingWindow
+      isOpen={isOpen}
+      onClose={handleClose}
+      width={560}
+      title={
+        <Flex align="center" gap={2}>
+          <Text fontSize="md" fontWeight="semibold">Incoming Product Records</Text>
+          <Badge colorScheme="red" fontSize="xs">PDF</Badge>
+        </Flex>
+      }
+      bodyProps={{ p: 0, overflowY: "auto" }}
+    >
+      <Tabs index={tabIndex} onChange={setTabIndex} colorScheme="blue">
+        <TabList px={4} pt={2} borderBottom="2px" borderColor="gray.100">
+          <Tab fontSize="sm" fontWeight="semibold" _selected={{ color: "blue.600", borderColor: "blue.500" }}>
+            Files
+          </Tab>
+          <Tab fontSize="sm" fontWeight="semibold" _selected={{ color: "blue.600", borderColor: "blue.500" }}>
+            Upload
+          </Tab>
+          <Tab fontSize="sm" fontWeight="semibold" _selected={{ color: "blue.600", borderColor: "blue.500" }}>
+            Scans
+          </Tab>
+        </TabList>
 
-        <ModalBody p={0} overflowY="auto">
-          <Tabs index={tabIndex} onChange={setTabIndex} colorScheme="blue">
-            <TabList px={4} pt={2} borderBottom="2px" borderColor="gray.100">
-              <Tab fontSize="sm" fontWeight="semibold" _selected={{ color: "blue.600", borderColor: "blue.500" }}>
-                Files
-              </Tab>
-              <Tab fontSize="sm" fontWeight="semibold" _selected={{ color: "blue.600", borderColor: "blue.500" }}>
-                Upload
-              </Tab>
-              <Tab fontSize="sm" fontWeight="semibold" _selected={{ color: "blue.600", borderColor: "blue.500" }}>
-                Scans
-              </Tab>
-            </TabList>
-
-            <TabPanels>
-              <TabPanel px={4} py={4}>
-                <S3FileList isOpen={isOpen} key={refreshKey} />
-              </TabPanel>
-              <TabPanel px={4} py={4}>
-                <S3Uploader onUploadSuccess={handleUploadSuccess} />
-              </TabPanel>
-              <TabPanel px={4} py={4}>
-                <ScanImageList isOpen={isOpen && tabIndex === 2} />
-              </TabPanel>
-            </TabPanels>
-          </Tabs>
-        </ModalBody>
-      </ModalContent>
-    </Modal>
+        <TabPanels>
+          <TabPanel px={4} py={4}>
+            <S3FileList isOpen={isOpen} key={refreshKey} />
+          </TabPanel>
+          <TabPanel px={4} py={4}>
+            <S3Uploader onUploadSuccess={handleUploadSuccess} />
+          </TabPanel>
+          <TabPanel px={4} py={4}>
+            <ScanImageList isOpen={isOpen && tabIndex === 2} />
+          </TabPanel>
+        </TabPanels>
+      </Tabs>
+    </FloatingWindow>
   );
 }
 

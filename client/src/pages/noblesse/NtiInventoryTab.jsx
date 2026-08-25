@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 import {
   Box, Flex, Text, Button, IconButton, Spinner, useToast, Badge,
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton,
 } from "@chakra-ui/react";
 import { CheckIcon, CloseIcon, DeleteIcon, ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, cellInputStyle, Th, Td } from "./shared";
+import FloatingWindow from "../../components/FloatingWindow";
 
 const fmtTime = (ts) => {
   if (!ts) return null;
@@ -520,19 +520,19 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
       </Box>
 
       {/* History modal */}
-      <Modal isOpen={historyOpen} onClose={() => setHistoryOpen(false)} size="4xl" scrollBehavior="inside">
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader fontSize="md" pb={2}>
-            <Flex align="center" gap={3}>
-              <Text>NTI Inventory — Change History</Text>
-              <Button size="xs" variant="ghost" colorScheme="gray" onClick={fetchHistory} isLoading={historyLoading}>
-                Refresh
-              </Button>
-            </Flex>
-          </ModalHeader>
-          <ModalCloseButton />
-          <ModalBody pb={6}>
+      <FloatingWindow
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        title={
+          <Flex align="center" gap={3}>
+            <Text>NTI Inventory — Change History</Text>
+            <Button size="xs" variant="ghost" colorScheme="gray" onClick={fetchHistory} isLoading={historyLoading}>
+              Refresh
+            </Button>
+          </Flex>
+        }
+        width={1024}
+      >
             {historyLoading && history.length === 0 ? (
               <Flex justify="center" py={8}><Spinner color="blue.500" /></Flex>
             ) : history.length === 0 ? (
@@ -584,9 +584,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                 </Box>
               </Box>
             )}
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+      </FloatingWindow>
     </Box>
   );
 };

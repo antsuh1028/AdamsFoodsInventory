@@ -2,13 +2,6 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Box,
   Button,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  ModalCloseButton,
   Text,
   Flex,
   Badge,
@@ -40,6 +33,7 @@ import printDetails from "../../utils/printDetails";
 import getHistory from "../../utils/navbar/getHistory";
 import { API_BASE_URL } from "../../config/api";
 import axiosInstance from "../../utils/axiosInstance";
+import FloatingWindow from "../FloatingWindow";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -377,15 +371,15 @@ const HistoryRow = ({ item, onSet, onRestore }) => {
       </Collapse>
 
       {scanZoomed && scanUrl && (
-        <Modal isOpen onClose={() => setScanZoomed(false)} size="4xl" isCentered>
-          <ModalOverlay backdropFilter="blur(2px)" />
-          <ModalContent borderRadius="xl" bg="gray.900">
-            <ModalCloseButton color="white" />
-            <ModalBody p={3} display="flex" justifyContent="center" alignItems="center">
-              <Image src={scanUrl} maxH="85vh" maxW="100%" objectFit="contain" borderRadius="md" />
-            </ModalBody>
-          </ModalContent>
-        </Modal>
+        <FloatingWindow
+          isOpen
+          onClose={() => setScanZoomed(false)}
+          dark
+          width={1024}
+          bodyProps={{ p: 3, display: "flex", justifyContent: "center", alignItems: "center" }}
+        >
+          <Image src={scanUrl} maxH="85vh" maxW="100%" objectFit="contain" borderRadius="md" />
+        </FloatingWindow>
       )}
     </Box>
   );
@@ -574,7 +568,7 @@ const HistorySpreadsheet = ({ items, onSet, hasMore, loadingMore, onLoadMore, to
   );
 };
 
-// ── Modal ─────────────────────────────────────────────────────────────────────
+// ── Floating window ─────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 10;
 
@@ -678,104 +672,129 @@ function ShowHistory({ isOpen, onClose }) {
   const pageItems = filteredData.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
 
+  const footerContent = viewMode === "cards" && totalPages > 1 ? (
+    <Flex align="center" gap={2} justify="center" width="100%">
+      <IconButton
+        icon={<ChevronLeftIcon />}
+        size="xs"
+        variant="outline"
+        borderRadius="md"
+        isDisabled={page === 0}
+        onClick={() => setPage((p) => p - 1)}
+        aria-label="Previous page"
+      />
+      <Text fontSize="xs" color="gray.500" minW="100px" textAlign="center">
+        {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filteredData.length)} of {filteredData.length}
+      </Text>
+      <IconButton
+        icon={<ChevronRightIcon />}
+        size="xs"
+        variant="outline"
+        borderRadius="md"
+        isDisabled={page >= totalPages - 1}
+        onClick={() => setPage((p) => p + 1)}
+        aria-label="Next page"
+      />
+    </Flex>
+  ) : undefined;
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="xl">
-      <ModalOverlay bg="blackAlpha.600" />
-      <ModalContent
-        maxW={viewMode === "table" ? "min(98vw, 1200px)" : "780px"}
-        maxH="90vh"
-        borderRadius="xl"
-        overflow="hidden"
-        transition="max-width 0.2s"
-      >
-        <ModalHeader borderBottom="1px" borderColor="gray.100" py={3}>
-          <Flex align="center" gap={3} flexWrap="wrap">
-            <Text fontSize="lg" fontWeight="semibold" flexShrink={0}>History Log</Text>
+    <FloatingWindow
+      isOpen={isOpen}
+      onClose={onClose}
+      width={viewMode === "table" ? 1200 : 720}
+      bodyProps={{
+        px: viewMode === "table" ? 0 : 4,
+        py: viewMode === "table" ? 0 : 4,
+        overflowY: "auto",
+      }}
+      footer={footerContent}
+      title={
+        <Flex align="center" gap={3} flexWrap="wrap">
+          <Text fontSize="lg" fontWeight="semibold" flexShrink={0}>History Log</Text>
 
-            {/* Search */}
-            <InputGroup size="xs" maxW="200px">
-              <InputLeftElement pointerEvents="none">
-                <SearchIcon color="gray.400" boxSize={3} />
-              </InputLeftElement>
-              <Input
-                placeholder="Search anything…"
-                value={searchInput}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                borderRadius="md"
-                bg="gray.50"
-                _focus={{ bg: "white", borderColor: "blue.300" }}
-                pr={searchInput ? 7 : undefined}
-              />
-              {searchInput && (
-                <InputRightElement cursor="pointer" onClick={clearSearch}>
-                  <CloseIcon boxSize={2} color="gray.400" />
-                </InputRightElement>
-              )}
-            </InputGroup>
-
-            {!loading && (
-              <Badge colorScheme={activeSearch ? "blue" : "gray"} fontSize="xs" flexShrink={0}>
-                {historyData.length} of {total}
-              </Badge>
+          {/* Search */}
+          <InputGroup size="xs" maxW="200px">
+            <InputLeftElement pointerEvents="none">
+              <SearchIcon color="gray.400" boxSize={3} />
+            </InputLeftElement>
+            <Input
+              placeholder="Search anything…"
+              value={searchInput}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              borderRadius="md"
+              bg="gray.50"
+              _focus={{ bg: "white", borderColor: "blue.300" }}
+              pr={searchInput ? 7 : undefined}
+            />
+            {searchInput && (
+              <InputRightElement cursor="pointer" onClick={clearSearch}>
+                <CloseIcon boxSize={2} color="gray.400" />
+              </InputRightElement>
             )}
+          </InputGroup>
 
-            {!loading && (
-              <Flex gap={1} flexWrap="wrap">
-                {[
-                  { key: "all",        label: "All",        color: "gray"   },
-                  { key: "added",      label: "Added",      color: "green"  },
-                  { key: "updated",    label: "Updated",    color: "blue"   },
-                  { key: "removed",    label: "Removed",    color: "red"    },
-                  { key: "production", label: "Production", color: "purple" },
-                  { key: "box",        label: "Box",        color: "gray"   },
-                ].map(({ key, label, color }) => (
-                  <Button
-                    key={key}
-                    size="xs"
-                    borderRadius="full"
-                    variant={changeFilter === key ? "solid" : "outline"}
-                    colorScheme={changeFilter === key ? color : "gray"}
-                    onClick={() => { setChangeFilter(key); setPage(0); }}
-                  >
-                    {label}
-                  </Button>
-                ))}
-              </Flex>
-            )}
+          {!loading && (
+            <Badge colorScheme={activeSearch ? "blue" : "gray"} fontSize="xs" flexShrink={0}>
+              {historyData.length} of {total}
+            </Badge>
+          )}
 
-            {/* View toggle */}
-            {!loading && filteredData.length > 0 && (
-              <HStack spacing={0} border="1px" borderColor="gray.200" borderRadius="md" overflow="hidden" flexShrink={0}>
+          {!loading && (
+            <Flex gap={1} flexWrap="wrap">
+              {[
+                { key: "all",        label: "All",        color: "gray"   },
+                { key: "added",      label: "Added",      color: "green"  },
+                { key: "updated",    label: "Updated",    color: "blue"   },
+                { key: "removed",    label: "Removed",    color: "red"    },
+                { key: "production", label: "Production", color: "purple" },
+                { key: "box",        label: "Box",        color: "gray"   },
+              ].map(({ key, label, color }) => (
                 <Button
+                  key={key}
                   size="xs"
-                  variant={viewMode === "cards" ? "solid" : "ghost"}
-                  colorScheme={viewMode === "cards" ? "blue" : "gray"}
-                  borderRadius={0}
-                  px={3}
-                  onClick={() => setViewMode("cards")}
-                  title="Card view"
+                  borderRadius="full"
+                  variant={changeFilter === key ? "solid" : "outline"}
+                  colorScheme={changeFilter === key ? color : "gray"}
+                  onClick={() => { setChangeFilter(key); setPage(0); }}
                 >
-                  ☰ Cards
+                  {label}
                 </Button>
-                <Box w="1px" bg="gray.200" />
-                <Button
-                  size="xs"
-                  variant={viewMode === "table" ? "solid" : "ghost"}
-                  colorScheme={viewMode === "table" ? "blue" : "gray"}
-                  borderRadius={0}
-                  px={3}
-                  onClick={() => setViewMode("table")}
-                  title="Spreadsheet view"
-                >
-                  ⊞ Table
-                </Button>
-              </HStack>
-            )}
-          </Flex>
-        </ModalHeader>
-        <ModalCloseButton top={3} />
+              ))}
+            </Flex>
+          )}
 
-        <ModalBody overflowY="auto" p={viewMode === "table" ? 0 : 4}>
+          {/* View toggle */}
+          {!loading && filteredData.length > 0 && (
+            <HStack spacing={0} border="1px" borderColor="gray.200" borderRadius="md" overflow="hidden" flexShrink={0}>
+              <Button
+                size="xs"
+                variant={viewMode === "cards" ? "solid" : "ghost"}
+                colorScheme={viewMode === "cards" ? "blue" : "gray"}
+                borderRadius={0}
+                px={3}
+                onClick={() => setViewMode("cards")}
+                title="Card view"
+              >
+                ☰ Cards
+              </Button>
+              <Box w="1px" bg="gray.200" />
+              <Button
+                size="xs"
+                variant={viewMode === "table" ? "solid" : "ghost"}
+                colorScheme={viewMode === "table" ? "blue" : "gray"}
+                borderRadius={0}
+                px={3}
+                onClick={() => setViewMode("table")}
+                title="Spreadsheet view"
+              >
+                ⊞ Table
+              </Button>
+            </HStack>
+          )}
+        </Flex>
+      }
+    >
           {loading ? (
             <Flex justify="center" align="center" py={12}>
               <Spinner color="blue.400" />
@@ -814,37 +833,7 @@ function ShowHistory({ isOpen, onClose }) {
               )}
             </Flex>
           )}
-        </ModalBody>
-
-        {viewMode === "cards" && totalPages > 1 && (
-          <ModalFooter borderTop="1px" borderColor="gray.100" py={3} justifyContent="center">
-            <Flex align="center" gap={2}>
-              <IconButton
-                icon={<ChevronLeftIcon />}
-                size="xs"
-                variant="outline"
-                borderRadius="md"
-                isDisabled={page === 0}
-                onClick={() => setPage((p) => p - 1)}
-                aria-label="Previous page"
-              />
-              <Text fontSize="xs" color="gray.500" minW="100px" textAlign="center">
-                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filteredData.length)} of {filteredData.length}
-              </Text>
-              <IconButton
-                icon={<ChevronRightIcon />}
-                size="xs"
-                variant="outline"
-                borderRadius="md"
-                isDisabled={page >= totalPages - 1}
-                onClick={() => setPage((p) => p + 1)}
-                aria-label="Next page"
-              />
-            </Flex>
-          </ModalFooter>
-        )}
-      </ModalContent>
-    </Modal>
+    </FloatingWindow>
   );
 }
 

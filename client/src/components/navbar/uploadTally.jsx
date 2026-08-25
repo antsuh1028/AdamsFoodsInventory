@@ -4,17 +4,11 @@ import {
   Box,
   Text,
   Button,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalFooter,
-  ModalBody,
-  ModalCloseButton,
   FormControl,
 } from "@chakra-ui/react";
 import { useState } from "react";
 import readXlsxFile from "read-excel-file";
+import FloatingWindow from "../FloatingWindow";
 
 
 const getBoxes = (rows) => {
@@ -81,36 +75,34 @@ function UploadTally({ isOpen, onClose }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="lg">
-      <ModalOverlay />
-      <ModalContent>
-        <ModalHeader>Upload Tally Sheet</ModalHeader>
-        <ModalCloseButton />
-        <ModalBody>
-          <FormControl>
-            <Box width="90%" padding="4">
-              <Text textAlign="center" fontSize="small">
-                - File must be Adams E-Tally -
-              </Text>
-              <Input
-                type="file"
-                marginTop="20px"
-                accept=".xlsx, .xls"
-                onChange={handleFileChange}
-              />
-            </Box>
-          </FormControl>
-        </ModalBody>
-        <ModalFooter>
-          <Button colorScheme="blue" mr={3} onClick={handleUpload}>
-            Upload
-          </Button>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+    <FloatingWindow
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Upload Tally Sheet"
+      width={620}
+      footer={<>
+        <Button colorScheme="blue" mr={3} onClick={handleUpload}>
+          Upload
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </>}
+    >
+      <FormControl>
+        <Box width="90%" padding="4">
+          <Text textAlign="center" fontSize="small">
+            - File must be Adams E-Tally -
+          </Text>
+          <Input
+            type="file"
+            marginTop="20px"
+            accept=".xlsx, .xls"
+            onChange={handleFileChange}
+          />
+        </Box>
+      </FormControl>
+    </FloatingWindow>
   );
 }
 

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useContext } from "react";
 import {
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
   Button, Text, Flex, Box, useToast, Spinner, Table, Thead, Tbody, Tr, Th, Td,
   TableContainer, Badge, IconButton, Input, InputGroup, InputLeftElement, InputRightElement,
   Tabs, TabList, TabPanels, Tab, TabPanel, Wrap, WrapItem,
@@ -10,6 +9,7 @@ import * as XLSX from "xlsx";
 import { API_BASE_URL } from "../../config/api";
 import { FormContext } from "../../utils/homescreen/formContext";
 import cache from "../../utils/apiCache";
+import FloatingWindow from "../FloatingWindow";
 
 const SNAPS_TTL = 5 * 60 * 1000;
 
@@ -393,57 +393,109 @@ const ExportInventory = ({ isOpen, onClose }) => {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size={isFullscreen ? "full" : "5xl"} scrollBehavior="inside">
-      <ModalOverlay backdropFilter="blur(2px)" />
-      <ModalContent borderRadius={isFullscreen ? "none" : "xl"} maxH={isFullscreen ? "100vh" : "85vh"}>
-        <ModalHeader fontSize="md" fontWeight="semibold" pb={1} borderBottom="1px" borderColor="gray.100">
-          <Flex align="center" gap={3} flexWrap="wrap">
-            Export Inventory
-            {tabIndex === 0 && !loading && items.length > 0 && (
-              <Badge colorScheme="gray" fontSize="xs" px={2} py={1} borderRadius="md">
-                {search.trim() ? `${filteredItems.length} of ${items.length}` : `${items.length} item${items.length !== 1 ? "s" : ""}`}
-              </Badge>
-            )}
-            {tabIndex === 0 && !loading && items.length > 0 && (
-              <InputGroup size="xs" maxW="200px">
-                <InputLeftElement pointerEvents="none">
-                  <SearchIcon color="gray.400" />
-                </InputLeftElement>
-                <Input
-                  placeholder="Search..."
-                  value={search}
-                  onChange={(e) => handleSearch(e.target.value)}
-                  borderRadius="md"
-                  bg="gray.50"
-                  _focus={{ bg: "white", borderColor: "blue.300" }}
-                />
-                {search && (
-                  <InputRightElement cursor="pointer" onClick={() => handleSearch("")}>
-                    <CloseIcon boxSize={2} color="gray.400" />
-                  </InputRightElement>
-                )}
-              </InputGroup>
-            )}
-            {tabIndex === 1 && activeSnap && (
-              <Badge colorScheme="blue" fontSize="xs" px={2} py={1} borderRadius="md">
-                {activeSnap.data.length} items · {fmtDate(activeSnap.meta.created_at)}
-              </Badge>
+    <FloatingWindow
+      isOpen={isOpen}
+      onClose={onClose}
+      title={
+        <Flex align="center" gap={3} flexWrap="wrap">
+          Export Inventory
+          {tabIndex === 0 && !loading && items.length > 0 && (
+            <Badge colorScheme="gray" fontSize="xs" px={2} py={1} borderRadius="md">
+              {search.trim() ? `${filteredItems.length} of ${items.length}` : `${items.length} item${items.length !== 1 ? "s" : ""}`}
+            </Badge>
+          )}
+          {tabIndex === 0 && !loading && items.length > 0 && (
+            <InputGroup size="xs" maxW="200px">
+              <InputLeftElement pointerEvents="none">
+                <SearchIcon color="gray.400" />
+              </InputLeftElement>
+              <Input
+                placeholder="Search..."
+                value={search}
+                onChange={(e) => handleSearch(e.target.value)}
+                borderRadius="md"
+                bg="gray.50"
+                _focus={{ bg: "white", borderColor: "blue.300" }}
+              />
+              {search && (
+                <InputRightElement cursor="pointer" onClick={() => handleSearch("")}>
+                  <CloseIcon boxSize={2} color="gray.400" />
+                </InputRightElement>
+              )}
+            </InputGroup>
+          )}
+          {tabIndex === 1 && activeSnap && (
+            <Badge colorScheme="blue" fontSize="xs" px={2} py={1} borderRadius="md">
+              {activeSnap.data.length} items · {fmtDate(activeSnap.meta.created_at)}
+            </Badge>
+          )}
+        </Flex>
+      }
+      isFullScreen={isFullscreen}
+      onToggleFullScreen={() => setIsFullscreen((v) => !v)}
+      width={1180}
+      bodyProps={{ p: 0 }}
+      footer={
+        <Flex justify="space-between" width="100%">
+          {tabIndex === 0 ? (
+            totalPages > 1 ? (
+              <Flex align="center" gap={2}>
+                <IconButton icon={<ChevronLeftIcon />} size="xs" variant="outline" borderRadius="md" isDisabled={page === 0} onClick={() => setPage((p) => p - 1)} aria-label="Previous page" />
+                <Text fontSize="xs" color="gray.500" minW="80px" textAlign="center">
+                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedItems.length)} of {sortedItems.length}
+                </Text>
+                <IconButton icon={<ChevronRightIcon />} size="xs" variant="outline" borderRadius="md" isDisabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)} aria-label="Next page" />
+              </Flex>
+            ) : <Box />
+          ) : (
+            activeSnap && snapTotalPages > 1 ? (
+              <Flex align="center" gap={2}>
+                <IconButton icon={<ChevronLeftIcon />} size="xs" variant="outline" borderRadius="md" isDisabled={page === 0} onClick={() => setPage((p) => p - 1)} aria-label="Previous page" />
+                <Text fontSize="xs" color="gray.500" minW="80px" textAlign="center">
+                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, activeSnap.data.length)} of {activeSnap.data.length}
+                </Text>
+                <IconButton icon={<ChevronRightIcon />} size="xs" variant="outline" borderRadius="md" isDisabled={page >= snapTotalPages - 1} onClick={() => setPage((p) => p + 1)} aria-label="Next page" />
+              </Flex>
+            ) : <Box />
+          )}
+
+          {!loading && items.length > 0 && (
+            <Text fontSize="xs" color="gray.500" fontWeight="medium">
+              Total weight: <Text as="span" color="gray.700" fontWeight="semibold">
+                {(tabIndex === 0 ? totalWeight(sortedItems) : activeSnap ? totalWeight(activeSnap.data) : 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} lbs
+              </Text>
+            </Text>
+          )}
+
+          <Flex gap={3}>
+            <Button variant="outline" borderRadius="lg" onClick={onClose} size="sm">Cancel</Button>
+            {tabIndex === 0 ? (
+              <Button
+                colorScheme="green"
+                borderRadius="lg"
+                size="sm"
+                leftIcon={downloading ? <Spinner size="xs" /> : <DownloadIcon />}
+                onClick={handleDownload}
+                isDisabled={loading || downloading || items.length === 0}
+              >
+                {downloading ? "Downloading..." : "Download Excel"}
+              </Button>
+            ) : (
+              <Button
+                colorScheme="blue"
+                borderRadius="lg"
+                size="sm"
+                leftIcon={<DownloadIcon />}
+                onClick={handleDownloadSnapshot}
+                isDisabled={!activeSnap}
+              >
+                Download Snapshot
+              </Button>
             )}
           </Flex>
-        </ModalHeader>
-        <ModalCloseButton top={2} right={2} />
-        <IconButton
-          icon={<Text fontSize="md">{isFullscreen ? "⊡" : "⊞"}</Text>}
-          size="sm"
-          variant="ghost"
-          position="absolute"
-          top={2}
-          right={10}
-          aria-label="Toggle fullscreen"
-          onClick={() => setIsFullscreen((v) => !v)}
-        />
-
-        <ModalBody p={0}>
+        </Flex>
+      }
+    >
           <Tabs index={tabIndex} onChange={handleTabChange} variant="line" size="sm">
             <TabList px={4} borderBottom="1px" borderColor="gray.100">
               <Tab fontSize="xs" fontWeight="medium">Current</Tab>
@@ -591,68 +643,7 @@ const ExportInventory = ({ isOpen, onClose }) => {
               </TabPanel>
             </TabPanels>
           </Tabs>
-        </ModalBody>
-
-        <ModalFooter borderTop="1px" borderColor="gray.100" gap={3} justifyContent="space-between">
-          {tabIndex === 0 ? (
-            totalPages > 1 ? (
-              <Flex align="center" gap={2}>
-                <IconButton icon={<ChevronLeftIcon />} size="xs" variant="outline" borderRadius="md" isDisabled={page === 0} onClick={() => setPage((p) => p - 1)} aria-label="Previous page" />
-                <Text fontSize="xs" color="gray.500" minW="80px" textAlign="center">
-                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedItems.length)} of {sortedItems.length}
-                </Text>
-                <IconButton icon={<ChevronRightIcon />} size="xs" variant="outline" borderRadius="md" isDisabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)} aria-label="Next page" />
-              </Flex>
-            ) : <Box />
-          ) : (
-            activeSnap && snapTotalPages > 1 ? (
-              <Flex align="center" gap={2}>
-                <IconButton icon={<ChevronLeftIcon />} size="xs" variant="outline" borderRadius="md" isDisabled={page === 0} onClick={() => setPage((p) => p - 1)} aria-label="Previous page" />
-                <Text fontSize="xs" color="gray.500" minW="80px" textAlign="center">
-                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, activeSnap.data.length)} of {activeSnap.data.length}
-                </Text>
-                <IconButton icon={<ChevronRightIcon />} size="xs" variant="outline" borderRadius="md" isDisabled={page >= snapTotalPages - 1} onClick={() => setPage((p) => p + 1)} aria-label="Next page" />
-              </Flex>
-            ) : <Box />
-          )}
-
-          {!loading && items.length > 0 && (
-            <Text fontSize="xs" color="gray.500" fontWeight="medium">
-              Total weight: <Text as="span" color="gray.700" fontWeight="semibold">
-                {(tabIndex === 0 ? totalWeight(sortedItems) : activeSnap ? totalWeight(activeSnap.data) : 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} lbs
-              </Text>
-            </Text>
-          )}
-
-          <Flex gap={3}>
-            <Button variant="outline" borderRadius="lg" onClick={onClose} size="sm">Cancel</Button>
-            {tabIndex === 0 ? (
-              <Button
-                colorScheme="green"
-                borderRadius="lg"
-                size="sm"
-                leftIcon={downloading ? <Spinner size="xs" /> : <DownloadIcon />}
-                onClick={handleDownload}
-                isDisabled={loading || downloading || items.length === 0}
-              >
-                {downloading ? "Downloading..." : "Download Excel"}
-              </Button>
-            ) : (
-              <Button
-                colorScheme="blue"
-                borderRadius="lg"
-                size="sm"
-                leftIcon={<DownloadIcon />}
-                onClick={handleDownloadSnapshot}
-                isDisabled={!activeSnap}
-              >
-                Download Snapshot
-              </Button>
-            )}
-          </Flex>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+    </FloatingWindow>
   );
 };
 

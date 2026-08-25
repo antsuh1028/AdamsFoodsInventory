@@ -1,6 +1,5 @@
 import { useState, useRef } from "react";
 import {
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
   Button, Flex, Box, Text, Image, Badge, Spinner, Checkbox, Input,
   AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogBody, AlertDialogFooter,
   useToast, useDisclosure,
@@ -8,6 +7,7 @@ import {
 import { WarningIcon, CheckCircleIcon, InfoIcon } from "@chakra-ui/icons";
 import { API_BASE_URL } from "../../config/api";
 import axiosInstance from "../../utils/axiosInstance";
+import FloatingWindow from "../FloatingWindow";
 
 const OrderScanner = ({ isOpen, onClose }) => {
   const [step, setStep] = useState("upload");
@@ -115,23 +115,49 @@ const OrderScanner = ({ isOpen, onClose }) => {
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={handleClose} size="2xl" scrollBehavior="inside" blockScrollOnMount={false}>
-        <ModalOverlay backdropFilter="blur(2px)" />
-        <ModalContent
-          borderRadius="xl"
-          sx={{ maxHeight: { base: "90dvh", md: "90dvh" } }}
-          mx={{ base: 2, md: "auto" }}
-        >
-          <ModalHeader borderBottom="1px" borderColor="gray.100" py={3} fontSize="md" fontWeight="semibold">
-            <Flex align="center" gap={2} flexWrap="wrap">
-              Scan Order Sheet
-              <Badge colorScheme="red" fontSize="xs">Bulk Remove</Badge>
-              <Badge colorScheme="blue" fontSize="xs">OCR</Badge>
-            </Flex>
-          </ModalHeader>
-          <ModalCloseButton top={3} />
-
-          <ModalBody py={4} px={{ base: 3, md: 5 }} overflowY="auto" sx={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
+      <FloatingWindow
+        isOpen={isOpen}
+        onClose={handleClose}
+        width={800}
+        title={
+          <Flex align="center" gap={2} flexWrap="wrap">
+            Scan Order Sheet
+            <Badge colorScheme="red" fontSize="xs">Bulk Remove</Badge>
+            <Badge colorScheme="blue" fontSize="xs">OCR</Badge>
+          </Flex>
+        }
+        bodyProps={{ py: 4, px: { base: 3, md: 5 }, sx: { WebkitOverflowScrolling: "touch", touchAction: "pan-y" } }}
+        footer={step === "upload" ? (
+          <>
+            <Button variant="ghost" onClick={handleClose} size="sm">Cancel</Button>
+            <Button
+              colorScheme="red"
+              size="sm"
+              onClick={handleExtract}
+              isDisabled={!imageFile || extracting}
+              leftIcon={extracting ? <Spinner size="xs" /> : undefined}
+            >
+              {extracting ? "Extracting..." : "Extract Order"}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setStep("upload")}>Back</Button>
+            <Text fontSize="xs" color="gray.400" flex={1}>
+              {toRemove.length} selected
+            </Text>
+            <Button
+              colorScheme="red"
+              size="sm"
+              onClick={onConfirmOpen}
+              isDisabled={toRemove.length === 0}
+              isLoading={removing}
+            >
+              Remove {toRemove.length > 0 ? toRemove.length : ""} from Inventory
+            </Button>
+          </>
+        )}
+      >
             {/* ── Upload step ── */}
             {step === "upload" && (
               <Flex direction="column" gap={4} align="center">
@@ -346,53 +372,18 @@ const OrderScanner = ({ isOpen, onClose }) => {
                 </Flex>
               </Flex>
             )}
-          </ModalBody>
-
-          <ModalFooter borderTop="1px" borderColor="gray.100" gap={2} flexWrap="wrap">
-            {step === "upload" ? (
-              <>
-                <Button variant="ghost" onClick={handleClose} size="sm">Cancel</Button>
-                <Button
-                  colorScheme="red"
-                  size="sm"
-                  onClick={handleExtract}
-                  isDisabled={!imageFile || extracting}
-                  leftIcon={extracting ? <Spinner size="xs" /> : undefined}
-                >
-                  {extracting ? "Extracting..." : "Extract Order"}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button variant="ghost" size="sm" onClick={() => setStep("upload")}>Back</Button>
-                <Text fontSize="xs" color="gray.400" flex={1}>
-                  {toRemove.length} selected
-                </Text>
-                <Button
-                  colorScheme="red"
-                  size="sm"
-                  onClick={onConfirmOpen}
-                  isDisabled={toRemove.length === 0}
-                  isLoading={removing}
-                >
-                  Remove {toRemove.length > 0 ? toRemove.length : ""} from Inventory
-                </Button>
-              </>
-            )}
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      </FloatingWindow>
 
       {/* Full image preview */}
-      <Modal isOpen={isImageOpen} onClose={onImageClose} size="4xl" isCentered>
-        <ModalOverlay backdropFilter="blur(2px)" />
-        <ModalContent borderRadius="xl" bg="gray.900" mx={2}>
-          <ModalCloseButton color="white" />
-          <ModalBody p={3} display="flex" justifyContent="center" alignItems="center">
-            <Image src={imagePreview} maxH="85vh" maxW="100%" objectFit="contain" borderRadius="md" />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+      <FloatingWindow
+        isOpen={isImageOpen}
+        onClose={onImageClose}
+        width={1024}
+        dark
+        bodyProps={{ p: 3, display: "flex", justifyContent: "center", alignItems: "center" }}
+      >
+        <Image src={imagePreview} maxH="85vh" maxW="100%" objectFit="contain" borderRadius="md" />
+      </FloatingWindow>
 
       {/* Confirm removal */}
       <AlertDialog isOpen={isConfirmOpen} leastDestructiveRef={cancelRef} onClose={onConfirmClose} isCentered>

@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import {
-  Box, Flex, Text, Image, Spinner, Modal, ModalOverlay, ModalContent,
-  ModalHeader, ModalCloseButton, ModalBody, useDisclosure, Badge, Button, HStack,
+  Box, Flex, Text, Image, Spinner, useDisclosure, Badge, Button, HStack,
   Input, InputGroup, InputLeftElement, InputRightElement,
 } from "@chakra-ui/react";
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, CloseIcon } from "@chakra-ui/icons";
 import { API_BASE_URL } from "../../config/api";
+import FloatingWindow from "../FloatingWindow";
 
 const authFetch = (url, options = {}) => {
   const token = localStorage.getItem("token");
@@ -158,25 +158,26 @@ const ScanImageList = ({ isOpen }) => {
         )}
       </Box>
 
-      <Modal isOpen={isImgOpen} onClose={handleClose} size="2xl" isCentered>
-        <ModalOverlay bg="blackAlpha.600" />
-        <ModalContent borderRadius="xl" maxH="90vh">
-          <ModalHeader borderBottom="1px" borderColor="gray.100" py={3} fontSize="sm" fontWeight="semibold">
+      <FloatingWindow
+        isOpen={isImgOpen}
+        onClose={handleClose}
+        width={800}
+        bodyProps={{ p: 4, overflowY: "auto" }}
+        title={
+          <Flex direction="column">
             <Text>{selectedItem?.location} {selectedItem?.lot ? `— Lot ${selectedItem.lot}` : ""}</Text>
             {selectedItem?.created_at && (
               <Text fontSize="xs" fontWeight="normal" color="gray.400" mt={0.5}>
                 Scanned {new Date(selectedItem.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
               </Text>
             )}
-          </ModalHeader>
-          <ModalCloseButton top={3} />
-          <ModalBody p={4} overflowY="auto">
-            {selectedItem?.signedUrl && (
-              <Image src={selectedItem.signedUrl} w="100%" objectFit="contain" borderRadius="lg" />
-            )}
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+          </Flex>
+        }
+      >
+        {selectedItem?.signedUrl && (
+          <Image src={selectedItem.signedUrl} w="100%" objectFit="contain" borderRadius="lg" />
+        )}
+      </FloatingWindow>
     </>
   );
 };

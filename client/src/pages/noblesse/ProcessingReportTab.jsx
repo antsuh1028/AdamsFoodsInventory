@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 import {
   Box, Flex, Text, Button, IconButton, Badge, useToast,
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton,
 } from "@chakra-ui/react";
 import { CheckIcon, CloseIcon, DeleteIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, cellInputStyle, Th, Td } from "./shared";
+import FloatingWindow from "../../components/FloatingWindow";
 
 export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrderAdded, onProcOrderUpdate, onProcOrderDelete, canDelete = false }) => {
   const toast = useToast();
@@ -761,12 +761,18 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
 
       {/* ── Partial completion modal ── */}
       {partialOrder && (
-        <Modal isOpen={!!partialOrderId} onClose={() => setPartialOrderId(null)} size="lg">
-          <ModalOverlay />
-          <ModalContent>
-            <ModalHeader fontSize="md" pb={1}>Partial Completion</ModalHeader>
-            <ModalCloseButton />
-            <ModalBody>
+        <FloatingWindow
+          isOpen={!!partialOrderId}
+          onClose={() => setPartialOrderId(null)}
+          title="Partial Completion"
+          width={620}
+          footer={<>
+            <Button size="sm" variant="ghost" onClick={() => setPartialOrderId(null)}>Cancel</Button>
+            <Button size="sm" colorScheme="orange" isLoading={partialSubmitting} onClick={submitPartial}>
+              Confirm — Mark Partial Complete
+            </Button>
+          </>}
+        >
               <Text fontSize="sm" color="gray.500" mb={4}>
                 Enter how much was actually processed. Any remainder becomes a new pending order.
               </Text>
@@ -864,15 +870,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                   <Text fontSize="sm" color="gray.400" pb="6px">(optional — can be entered later)</Text>
                 </Flex>
               </Box>
-            </ModalBody>
-            <ModalFooter gap={2}>
-              <Button size="sm" variant="ghost" onClick={() => setPartialOrderId(null)}>Cancel</Button>
-              <Button size="sm" colorScheme="orange" isLoading={partialSubmitting} onClick={submitPartial}>
-                Confirm — Mark Partial Complete
-              </Button>
-            </ModalFooter>
-          </ModalContent>
-        </Modal>
+        </FloatingWindow>
       )}
     </Box>
   );

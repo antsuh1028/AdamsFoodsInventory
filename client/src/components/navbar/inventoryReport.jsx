@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import {
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody,
   Box, Text, Flex, Spinner, SimpleGrid, Divider, Button, Badge, IconButton,
 } from "@chakra-ui/react";
 import { ChevronLeftIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { API_BASE_URL } from "../../config/api";
+import FloatingWindow from "../FloatingWindow";
 
 const authFetch = (url, options = {}) => {
   const token = localStorage.getItem("token");
@@ -184,15 +184,13 @@ const InventoryReport = ({ isOpen, onClose }) => {
     : null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="3xl" scrollBehavior="inside">
-      <ModalOverlay backdropFilter="blur(2px)" />
-      <ModalContent borderRadius="xl" maxH="85vh">
-        <ModalHeader borderBottom="1px" borderColor="gray.100" py={3} fontSize="md" fontWeight="semibold">
-          Inventory Report
-        </ModalHeader>
-        <ModalCloseButton top={3} />
-
-        <ModalBody py={5} px={5}>
+    <FloatingWindow
+      isOpen={isOpen}
+      onClose={onClose}
+      width={900}
+      title="Inventory Report"
+      bodyProps={{ py: 5, px: 5 }}
+    >
           {loading ? (
             <Flex justify="center" align="center" py={16}><Spinner color="blue.400" /></Flex>
           ) : !stats || stats.error || stats.totalItems === undefined ? (
@@ -240,9 +238,7 @@ const InventoryReport = ({ isOpen, onClose }) => {
 
             </Flex>
           )}
-        </ModalBody>
-      </ModalContent>
-    </Modal>
+    </FloatingWindow>
   );
 };
 

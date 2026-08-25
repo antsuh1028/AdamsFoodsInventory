@@ -2,13 +2,6 @@ import { useState, useRef } from "react";
 import {
   Box,
   Button,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalFooter,
-  ModalBody,
-  ModalCloseButton,
   Text,
   Flex,
   Icon,
@@ -18,6 +11,7 @@ import {
 } from "@chakra-ui/react";
 import readXlsxFile from "read-excel-file";
 import axiosInstance from "../../utils/axiosInstance";
+import FloatingWindow from "../FloatingWindow";
 
 const VALID_TYPES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -168,42 +162,56 @@ function UploadFile({ isOpen, onClose }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} isCentered>
-      <ModalOverlay bg="blackAlpha.600" />
-      <ModalContent borderRadius="xl" overflow="hidden" maxW="440px">
-        <ModalHeader borderBottom="1px" borderColor="gray.100" py={3} fontSize="md" fontWeight="semibold">
-          <Flex align="center" gap={2}>
-            Import Inventory File
-            <Tooltip
-              label="Upload a completed 'Incoming Product Form.xlsx' to automatically add all items from that form into the inventory."
-              placement="right"
-              hasArrow
-              borderRadius="md"
+    <FloatingWindow
+      isOpen={isOpen}
+      onClose={handleClose}
+      width={440}
+      title={
+        <Flex align="center" gap={2}>
+          Import Inventory File
+          <Tooltip
+            label="Upload a completed 'Incoming Product Form.xlsx' to automatically add all items from that form into the inventory."
+            placement="right"
+            hasArrow
+            borderRadius="md"
+            fontSize="xs"
+            maxW="220px"
+          >
+            <Flex
+              align="center"
+              justify="center"
+              w={5}
+              h={5}
+              borderRadius="full"
+              border="1.5px solid"
+              borderColor="gray.300"
+              color="gray.400"
               fontSize="xs"
-              maxW="220px"
+              fontWeight="bold"
+              cursor="default"
+              flexShrink={0}
             >
-              <Flex
-                align="center"
-                justify="center"
-                w={5}
-                h={5}
-                borderRadius="full"
-                border="1.5px solid"
-                borderColor="gray.300"
-                color="gray.400"
-                fontSize="xs"
-                fontWeight="bold"
-                cursor="default"
-                flexShrink={0}
-              >
-                ?
-              </Flex>
-            </Tooltip>
-          </Flex>
-        </ModalHeader>
-        <ModalCloseButton top={3} />
-
-        <ModalBody py={6} px={6}>
+              ?
+            </Flex>
+          </Tooltip>
+        </Flex>
+      }
+      bodyProps={{ py: 6, px: 6 }}
+      footer={<>
+        <Button variant="ghost" size="sm" onClick={handleClose} isDisabled={uploading}>
+          Cancel
+        </Button>
+        <Button
+          colorScheme="blue"
+          size="sm"
+          onClick={handleUpload}
+          isDisabled={!selectedFile || uploading}
+          leftIcon={uploading ? <Spinner size="xs" /> : undefined}
+        >
+          {uploading ? "Importing…" : "Import"}
+        </Button>
+      </>}
+    >
           {/* Drop zone */}
           <Box
             border="2px dashed"
@@ -271,24 +279,7 @@ function UploadFile({ isOpen, onClose }) {
               {error}
             </Text>
           )}
-        </ModalBody>
-
-        <ModalFooter borderTop="1px" borderColor="gray.100" gap={2} py={3}>
-          <Button variant="ghost" size="sm" onClick={handleClose} isDisabled={uploading}>
-            Cancel
-          </Button>
-          <Button
-            colorScheme="blue"
-            size="sm"
-            onClick={handleUpload}
-            isDisabled={!selectedFile || uploading}
-            leftIcon={uploading ? <Spinner size="xs" /> : undefined}
-          >
-            {uploading ? "Importing…" : "Import"}
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+    </FloatingWindow>
   );
 }
 

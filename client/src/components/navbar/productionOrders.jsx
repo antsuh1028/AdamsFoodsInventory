@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
   Tabs, TabList, Tab, TabPanels, TabPanel,
   Box, Flex, Text, Badge, Button, Checkbox, Input, FormControl, FormLabel,
   Spinner, Divider, Collapse, SimpleGrid, Image, IconButton, useToast,
@@ -9,6 +8,7 @@ import { AddIcon, MinusIcon, ChevronDownIcon, ChevronRightIcon, RepeatIcon } fro
 import axiosInstance from "../../utils/axiosInstance";
 import cache from "../../utils/apiCache";
 import FormScannerReturn from "./formScannerReturn";
+import FloatingWindow from "../FloatingWindow";
 
 const PROCESSOR  = "Noblesse Trading";
 const ORDERS_TTL = 2 * 60 * 1000;
@@ -564,18 +564,34 @@ const ProductionOrders = ({ isOpen, onClose }) => {
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={handleClose} isCentered size="xl">
-      <ModalOverlay bg="blackAlpha.600" />
-      <ModalContent maxH="85vh" borderRadius="xl" overflow="hidden">
-        <ModalHeader borderBottom="1px" borderColor="gray.100" py={3}>
-          <Flex align="center" gap={2}>
-            <Text fontSize="md" fontWeight="semibold">Production Orders</Text>
-            <Badge colorScheme="orange" fontSize="xs">Noblesse Trading</Badge>
-          </Flex>
-        </ModalHeader>
-        <ModalCloseButton top={3} onClick={handleClose} />
-
-        <ModalBody p={0} overflowY="auto">
+    <FloatingWindow
+      isOpen={isOpen}
+      onClose={handleClose}
+      width={720}
+      title={
+        <Flex align="center" gap={2}>
+          <Text fontSize="md" fontWeight="semibold">Production Orders</Text>
+          <Badge colorScheme="orange" fontSize="xs">Noblesse Trading</Badge>
+        </Flex>
+      }
+      bodyProps={{ p: 0 }}
+      footer={tabIndex === 0 ? (
+        <Flex align="center" gap={4} w="100%">
+          <Text fontSize="sm" color="gray.600">
+            {Object.values(selected).reduce((s, arr) => s + arr.length, 0)} boxes · {totalWeight.toFixed(1)} lb selected
+          </Text>
+          <Button
+            ml="auto"
+            colorScheme="blue"
+            size="sm"
+            isLoading={submittingOrder}
+            onClick={submitOrder}
+          >
+            Send to Noblesse
+          </Button>
+        </Flex>
+      ) : undefined}
+    >
           <Tabs index={tabIndex} onChange={setTabIndex} colorScheme="blue">
             <TabList px={4} pt={2} borderBottom="2px" borderColor="gray.100">
               <Tab fontSize="sm" fontWeight="semibold" _selected={{ color: "blue.600", borderColor: "blue.500" }}>
@@ -689,28 +705,7 @@ const ProductionOrders = ({ isOpen, onClose }) => {
               </TabPanel>
             </TabPanels>
           </Tabs>
-        </ModalBody>
-
-        {tabIndex === 0 && (
-          <ModalFooter borderTop="1px" borderColor="gray.100" py={3}>
-            <Flex align="center" gap={4} w="100%">
-              <Text fontSize="sm" color="gray.600">
-                {Object.values(selected).reduce((s, arr) => s + arr.length, 0)} boxes · {totalWeight.toFixed(1)} lb selected
-              </Text>
-              <Button
-                ml="auto"
-                colorScheme="blue"
-                size="sm"
-                isLoading={submittingOrder}
-                onClick={submitOrder}
-              >
-                Send to Noblesse
-              </Button>
-            </Flex>
-          </ModalFooter>
-        )}
-      </ModalContent>
-    </Modal>
+    </FloatingWindow>
 
     <FormScannerReturn
       isOpen={!!activeReturnId}

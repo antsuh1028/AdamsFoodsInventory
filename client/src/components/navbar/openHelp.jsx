@@ -4,13 +4,6 @@ import {
   Text,
   Button,
   ButtonGroup,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalFooter,
-  ModalBody,
-  ModalCloseButton,
   Tabs,
   TabList,
   TabPanels,
@@ -22,6 +15,7 @@ import {
   ListItem,
   Badge,
 } from "@chakra-ui/react";
+import FloatingWindow from "../FloatingWindow";
 
 const features = [
   {
@@ -336,52 +330,48 @@ function OpenHelp({ isOpen, onClose }) {
   const visible = features.filter((f) => f.roles.includes(role));
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="4xl" scrollBehavior="inside">
-      <ModalOverlay />
-      <ModalContent maxH="85vh">
-        <ModalHeader>
-          <HStack justify="space-between" pr={8}>
-            <Text>Help & Manual</Text>
-            <ButtonGroup size="sm" isAttached variant="outline">
-              <Button
-                onClick={() => setLang("en")}
-                colorScheme={lang === "en" ? "blue" : "gray"}
-                variant={lang === "en" ? "solid" : "outline"}
-              >
-                English
-              </Button>
-              <Button
-                onClick={() => setLang("ko")}
-                colorScheme={lang === "ko" ? "green" : "gray"}
-                variant={lang === "ko" ? "solid" : "outline"}
-              >
-                한국어
-              </Button>
-            </ButtonGroup>
-          </HStack>
-        </ModalHeader>
-        <ModalCloseButton />
-        <ModalBody pb={4}>
-          <Tabs variant="enclosed" isLazy>
-            <TabList flexWrap="wrap" borderBottom="none">
-              {visible.map((f) => (
-                <Tab key={f.tab} whiteSpace="nowrap" fontSize="sm">{f.tab}</Tab>
-              ))}
-            </TabList>
-            <TabPanels>
-              {visible.map((f) => (
-                <TabPanel key={f.tab} pt={4}>
-                  <FeaturePanel en={f.en} ko={f.ko} lang={lang} />
-                </TabPanel>
-              ))}
-            </TabPanels>
-          </Tabs>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="ghost" onClick={onClose}>Close</Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+    <FloatingWindow
+      isOpen={isOpen}
+      onClose={onClose}
+      width={1024}
+      title={
+        <HStack justify="space-between" pr={8}>
+          <Text>Help & Manual</Text>
+          <ButtonGroup size="sm" isAttached variant="outline">
+            <Button
+              onClick={() => setLang("en")}
+              colorScheme={lang === "en" ? "blue" : "gray"}
+              variant={lang === "en" ? "solid" : "outline"}
+            >
+              English
+            </Button>
+            <Button
+              onClick={() => setLang("ko")}
+              colorScheme={lang === "ko" ? "green" : "gray"}
+              variant={lang === "ko" ? "solid" : "outline"}
+            >
+              한국어
+            </Button>
+          </ButtonGroup>
+        </HStack>
+      }
+      footer={<Button variant="ghost" onClick={onClose}>Close</Button>}
+    >
+      <Tabs variant="enclosed" isLazy>
+        <TabList flexWrap="wrap" borderBottom="none">
+          {visible.map((f) => (
+            <Tab key={f.tab} whiteSpace="nowrap" fontSize="sm">{f.tab}</Tab>
+          ))}
+        </TabList>
+        <TabPanels>
+          {visible.map((f) => (
+            <TabPanel key={f.tab} pt={4}>
+              <FeaturePanel en={f.en} ko={f.ko} lang={lang} />
+            </TabPanel>
+          ))}
+        </TabPanels>
+      </Tabs>
+    </FloatingWindow>
   );
 }
 
