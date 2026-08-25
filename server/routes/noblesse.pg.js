@@ -120,6 +120,42 @@ pool.query(`
   ALTER TABLE nti_inventory_history ADD COLUMN IF NOT EXISTS performed_by TEXT
 `).catch((err) => console.error("nti_inventory_history performed_by migration error:", err.message));
 
+pool.query(`
+  CREATE TABLE IF NOT EXISTS noblesse_registration_forms (
+    id                       SERIAL PRIMARY KEY,
+    tenant_id                UUID NOT NULL REFERENCES tenants(id),
+    lot_number               TEXT,
+    form_date                DATE,
+    date_received            DATE,
+    time_received            TEXT,
+    vendor_lot               TEXT,
+    vendor                   TEXT,
+    product_description      TEXT,
+    processing_type          TEXT,
+    spec                     TEXT,
+    brand                    TEXT,
+    est_number               TEXT,
+    grade                    TEXT,
+    due_date                 DATE,
+    predicted_yield          NUMERIC,
+    manifest_bl_attached     BOOLEAN NOT NULL DEFAULT FALSE,
+    process_report_attached  BOOLEAN NOT NULL DEFAULT FALSE,
+    original_weight          NUMERIC,
+    total_quantity           TEXT,
+    processing_date_1        DATE,
+    processed_weight_1       NUMERIC,
+    processing_date_2        DATE,
+    processed_weight_2       NUMERIC,
+    actual_yield             NUMERIC,
+    temp                     TEXT,
+    remarks                  TEXT,
+    checked_by               TEXT,
+    status                   TEXT NOT NULL DEFAULT 'in_progress',
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+`).catch((err) => console.error("noblesse_registration_forms migration error:", err.message));
+
 // ── Formatters ────────────────────────────────────────────────────────────────
 
 const fmtReceipt = (row) => ({
@@ -139,6 +175,39 @@ const fmtReceipt = (row) => ({
 });
 
 const fmtDate = (d) => d instanceof Date ? d.toISOString().slice(0, 10) : (d || null);
+
+const fmtRegistrationForm = (row) => ({
+  id:                     row.id,
+  lotNumber:              row.lot_number,
+  formDate:               fmtDate(row.form_date),
+  dateReceived:           fmtDate(row.date_received),
+  timeReceived:           row.time_received,
+  vendorLot:              row.vendor_lot,
+  vendor:                 row.vendor,
+  productDescription:     row.product_description,
+  processingType:         row.processing_type,
+  spec:                   row.spec,
+  brand:                  row.brand,
+  estNumber:              row.est_number,
+  grade:                  row.grade,
+  dueDate:                fmtDate(row.due_date),
+  predictedYield:         row.predicted_yield      != null ? Number(row.predicted_yield)      : null,
+  manifestBlAttached:     !!row.manifest_bl_attached,
+  processReportAttached:  !!row.process_report_attached,
+  originalWeight:         row.original_weight      != null ? Number(row.original_weight)      : null,
+  totalQuantity:          row.total_quantity,
+  processingDate1:        fmtDate(row.processing_date_1),
+  processedWeight1:       row.processed_weight_1   != null ? Number(row.processed_weight_1)   : null,
+  processingDate2:        fmtDate(row.processing_date_2),
+  processedWeight2:       row.processed_weight_2   != null ? Number(row.processed_weight_2)   : null,
+  actualYield:            row.actual_yield         != null ? Number(row.actual_yield)         : null,
+  temp:                   row.temp,
+  remarks:                row.remarks,
+  checkedBy:              row.checked_by,
+  status:                 row.status,
+  createdAt:              row.created_at,
+  updatedAt:              row.updated_at,
+});
 
 const fmtNtiItem = (row) => ({
   id:           row.id,
@@ -849,6 +918,137 @@ router.patch("/noblesse-proc-orders/:id/status", verifyToken, async (req, res) =
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// ── Registration Forms ──────────────────────────────────────────────────────
+
+const regFormValues = (body) => [
+  body.lotNumber           || null,
+  body.formDate            || null,
+  body.dateReceived        || null,
+  body.timeReceived        || null,
+  body.vendorLot           || null,
+  body.vendor              || null,
+  body.productDescription  || null,
+  body.processingType      || null,
+  body.spec                || null,
+  body.brand               || null,
+  body.estNumber           || null,
+  body.grade               || null,
+  body.dueDate             || null,
+  body.predictedYield      != null && body.predictedYield !== "" ? Number(body.predictedYield) : null,
+  !!body.manifestBlAttached,
+  !!body.processReportAttached,
+  body.originalWeight      != null && body.originalWeight !== "" ? Number(body.originalWeight) : null,
+  body.totalQuantity       || null,
+  body.processingDate1     || null,
+  body.processedWeight1    != null && body.processedWeight1 !== "" ? Number(body.processedWeight1) : null,
+  body.processingDate2     || null,
+  body.processedWeight2    != null && body.processedWeight2 !== "" ? Number(body.processedWeight2) : null,
+  body.actualYield         != null && body.actualYield !== "" ? Number(body.actualYield) : null,
+  body.temp                || null,
+  body.remarks             || null,
+  body.checkedBy           || null,
+];
+
+router.get("/noblesse-registration-forms", verifyToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM noblesse_registration_forms WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 200`,
+      [req.tenantId]
+    );
+    res.json(result.rows.map(fmtRegistrationForm));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/noblesse-registration-forms/:id", verifyToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2`,
+      [req.params.id, req.tenantId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
+    res.json(fmtRegistrationForm(result.rows[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/noblesse-registration-forms", verifyToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `INSERT INTO noblesse_registration_forms
+         (tenant_id, lot_number, form_date, date_received, time_received, vendor_lot, vendor,
+          product_description, processing_type, spec, brand, est_number, grade,
+          due_date, predicted_yield, manifest_bl_attached, process_report_attached,
+          original_weight, total_quantity, processing_date_1, processed_weight_1,
+          processing_date_2, processed_weight_2, actual_yield, temp, remarks, checked_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+       RETURNING *`,
+      [req.tenantId, ...regFormValues(req.body)]
+    );
+    res.json(fmtRegistrationForm(result.rows[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE noblesse_registration_forms
+       SET lot_number = $1, form_date = $2, date_received = $3, time_received = $4, vendor_lot = $5, vendor = $6,
+           product_description = $7, processing_type = $8, spec = $9, brand = $10, est_number = $11, grade = $12,
+           due_date = $13, predicted_yield = $14, manifest_bl_attached = $15, process_report_attached = $16,
+           original_weight = $17, total_quantity = $18, processing_date_1 = $19, processed_weight_1 = $20,
+           processing_date_2 = $21, processed_weight_2 = $22, actual_yield = $23, temp = $24, remarks = $25,
+           checked_by = $26, updated_at = NOW()
+       WHERE id = $27 AND tenant_id = $28
+       RETURNING *`,
+      [...regFormValues(req.body), req.params.id, req.tenantId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
+    res.json(fmtRegistrationForm(result.rows[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/noblesse-registration-forms/:id/status", verifyToken, async (req, res) => {
+  const { status } = req.body;
+  const VALID = ["in_progress", "completed"];
+  if (!VALID.includes(status)) return res.status(400).json({ error: "Invalid status" });
+  try {
+    const result = await pool.query(
+      `UPDATE noblesse_registration_forms SET status = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3 RETURNING *`,
+      [status, req.params.id, req.tenantId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
+    res.json(fmtRegistrationForm(result.rows[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/noblesse-registration-forms/:id", verifyToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2 RETURNING id`,
+      [req.params.id, req.tenantId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
+    res.json({ deleted: result.rows[0].id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 

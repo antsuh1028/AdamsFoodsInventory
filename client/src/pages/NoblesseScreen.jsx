@@ -3,13 +3,14 @@ import {
   Box, Flex, Text, Spinner, Badge, IconButton, Tooltip, Image, Button,
   Tabs, TabList, TabPanels, Tab, TabPanel,
 } from "@chakra-ui/react";
-import { RepeatIcon, ArrowBackIcon } from "@chakra-ui/icons";
+import { RepeatIcon, ArrowBackIcon, WarningIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import { NtiInventoryTab } from "./noblesse/NtiInventoryTab";
 import { ProcessingReportTab } from "./noblesse/ProcessingReportTab";
+import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
 import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -27,10 +28,23 @@ const NoblesseScreen = () => {
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(null);
-  const intervalRef = useRef(null);
+  const [error, setError]                 = useState(null);
+  const intervalRef  = useRef(null);
+  const fetchDataRef = useRef(null); // always points at the latest fetchData, so the interval never closes over a stale one
+
+  const stopAutoRefresh = () => {
+    clearInterval(intervalRef.current);
+    intervalRef.current = null;
+  };
+
+  const startAutoRefresh = () => {
+    if (intervalRef.current) return; // already running
+    intervalRef.current = setInterval(() => fetchDataRef.current?.(), REFRESH_INTERVAL_MS);
+  };
 
   const fetchData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
+    let backendReachable = false;
     try {
       const [ordersRes, ntiInvRes, receiptsRes, afItemsRes] = await Promise.all([
         axiosInstance.get("/production-orders?status=pending"),
@@ -43,21 +57,39 @@ const NoblesseScreen = () => {
       setReceipts(receiptsRes.data || []);
       setAfItems(afItemsRes.data || []);
       setLastRefreshed(new Date());
+      setError(null);
+      backendReachable = true;
     } catch (err) {
       console.error(err);
+      setError(err.response?.data?.error || err.message || "Failed to load Noblesse data");
+      // Stop polling — retrying on a fixed interval against a failing backend
+      // just spams the same error, so leave it to the manual Refresh button.
+      stopAutoRefresh();
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-    axiosInstance.get("/noblesse-proc-orders")
-      .then((res) => setProcOrders(res.data || []))
-      .catch((err) => console.error("proc-orders fetch:", err.message));
+
+    // Skip this entirely once we already know the backend is unreachable —
+    // no point firing another request that's just going to fail the same way.
+    if (!backendReachable) return;
+
+    try {
+      const res = await axiosInstance.get("/noblesse-proc-orders");
+      setProcOrders(res.data || []);
+      startAutoRefresh(); // (re)arm only once every endpoint in this cycle has succeeded
+    } catch (err) {
+      console.error("proc-orders fetch:", err.message);
+      setError(err.response?.data?.error || err.message || "Failed to load processing orders");
+      stopAutoRefresh();
+    }
   }, []);
+
+  fetchDataRef.current = fetchData;
 
   useEffect(() => {
     fetchData();
-    intervalRef.current = setInterval(() => fetchData(), REFRESH_INTERVAL_MS);
-    return () => clearInterval(intervalRef.current);
+    return () => stopAutoRefresh();
   }, [fetchData]);
 
   const handleReceiptAdded  = (r) => setReceipts((prev) => [r, ...prev]);
@@ -123,6 +155,25 @@ const NoblesseScreen = () => {
         </Flex>
       </Box>
 
+      {error && (
+        <Flex align="center" justify="space-between" bg="red.50" borderBottom="1px" borderColor="red.200"
+          px={6} py={2} flexShrink={0}>
+          <Flex align="center" gap={2}>
+            <WarningIcon color="red.400" boxSize={3.5} />
+            <Text fontSize="sm" color="red.600">
+              {lastRefreshed
+                ? <>Couldn't refresh ({error}). Auto-refresh paused — showing data from{" "}
+                    {lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</>
+                : <>Couldn't load Noblesse Trading data ({error}). Auto-refresh paused — Registration Forms below still work independently.</>
+              }
+            </Text>
+          </Flex>
+          <Button size="xs" colorScheme="red" variant="outline" onClick={() => fetchData(true)} isLoading={refreshing}>
+            Retry
+          </Button>
+        </Flex>
+      )}
+
       <Flex flex={1} overflow="hidden" direction="column" p={4} gap={0}>
         <Tabs colorScheme="blue" variant="line" size="sm"
           display="flex" flexDirection="column" flex={1} overflow="hidden">
@@ -143,6 +194,7 @@ const NoblesseScreen = () => {
               NTI Inventory
               {ntiInventory.length > 0 && <Badge ml={2} colorScheme="green" borderRadius="full">{ntiInventory.length}</Badge>}
             </Tab>
+            <Tab>Registration Forms</Tab>
           </TabList>
 
           <Box bg="white" borderRadius="lg" boxShadow="sm" border="1px" borderColor="gray.200"
@@ -177,6 +229,9 @@ const NoblesseScreen = () => {
                   isAdmin={canEdit}
                   canDelete={isAdmin}
                 />
+              </TabPanel>
+              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
+                <RegistrationFormTab isAdmin={canEdit} canDelete={isAdmin} />
               </TabPanel>
             </TabPanels>
           </Box>
