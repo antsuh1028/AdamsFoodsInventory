@@ -1001,6 +1001,7 @@ router.post("/noblesse-registration-forms", verifyToken, async (req, res) => {
 
 router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) => {
   try {
+    const status = req.body.status && ["in_progress", "completed"].includes(req.body.status) ? req.body.status : null;
     const result = await pool.query(
       `UPDATE noblesse_registration_forms
        SET lot_number = $1, form_date = $2, date_received = $3, time_received = $4, vendor_lot = $5, vendor = $6,
@@ -1008,10 +1009,10 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
            due_date = $13, predicted_yield = $14, manifest_bl_attached = $15, process_report_attached = $16,
            original_weight = $17, total_quantity = $18, processing_date_1 = $19, processed_weight_1 = $20,
            processing_date_2 = $21, processed_weight_2 = $22, actual_yield = $23, temp = $24, remarks = $25,
-           checked_by = $26, updated_at = NOW()
-       WHERE id = $27 AND tenant_id = $28
+           checked_by = $26, status = $27, updated_at = NOW()
+       WHERE id = $28 AND tenant_id = $29
        RETURNING *`,
-      [...regFormValues(req.body), req.params.id, req.tenantId]
+      [...regFormValues(req.body), status, req.params.id, req.tenantId]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });
     res.json(fmtRegistrationForm(result.rows[0]));
