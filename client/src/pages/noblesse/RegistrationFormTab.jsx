@@ -143,14 +143,26 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             {Array.isArray(draft.processingDates) && draft.processingDates.map((pd, idx) => (
               <React.Fragment key={idx}>
                 <SheetField label={`(${idx + 1}) Processing Date`}>
+                  <Input
+                    {...sheetInputProps}
+                    type="date"
+                    value={pd.date || ""}
+                    onChange={(e) => {
+                      const newDates = [...draft.processingDates];
+                      newDates[idx].date = e.target.value;
+                      setDraft({ ...draft, processingDates: newDates });
+                    }}
+                  />
+                </SheetField>
+                <SheetField label="Processed Weight (lbs)">
                   <Flex gap={1} align="center">
                     <Input
                       {...sheetInputProps}
-                      type="date"
-                      value={pd.date || ""}
+                      type="number"
+                      value={pd.weight || ""}
                       onChange={(e) => {
                         const newDates = [...draft.processingDates];
-                        newDates[idx].date = e.target.value;
+                        newDates[idx].weight = e.target.value;
                         setDraft({ ...draft, processingDates: newDates });
                       }}
                       flex={1}
@@ -187,18 +199,6 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       </Button>
                     )}
                   </Flex>
-                </SheetField>
-                <SheetField label="Processed Weight (lbs)">
-                  <Input
-                    {...sheetInputProps}
-                    type="number"
-                    value={pd.weight || ""}
-                    onChange={(e) => {
-                      const newDates = [...draft.processingDates];
-                      newDates[idx].weight = e.target.value;
-                      setDraft({ ...draft, processingDates: newDates });
-                    }}
-                  />
                 </SheetField>
               </React.Fragment>
             ))}
