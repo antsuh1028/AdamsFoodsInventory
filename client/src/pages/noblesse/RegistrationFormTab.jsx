@@ -167,6 +167,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
   const [loading, setLoading] = useState(true);
   const [draft, setDraft]     = useState(null);
   const [saving, setSaving]   = useState(false);
+  const [statusFilter, setStatusFilter] = useState("in_progress");
 
   const fetchForms = useCallback(async () => {
     try {
@@ -218,17 +219,41 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
     return <Flex justify="center" py={10}><Spinner size="lg" color="blue.500" /></Flex>;
   }
 
+  const filteredForms = forms.filter((f) => !statusFilter || f.status === statusFilter);
+
   return (
     <Box>
       <Flex justify="space-between" align="center" mb={4}>
-        <Text fontSize="sm" fontWeight="semibold" color="gray.600" textTransform="uppercase" letterSpacing="wide">
-          Registration Forms
-        </Text>
+        <Flex align="center" gap={3} flex={1}>
+          <Text fontSize="sm" fontWeight="semibold" color="gray.600" textTransform="uppercase" letterSpacing="wide">
+            Registration Forms
+          </Text>
+          <Flex gap={1}>
+            <Button
+              size="xs"
+              variant={statusFilter === "in_progress" ? "solid" : "outline"}
+              colorScheme={statusFilter === "in_progress" ? "blue" : "gray"}
+              onClick={() => setStatusFilter("in_progress")}
+            >
+              In Progress
+            </Button>
+            <Button
+              size="xs"
+              variant={statusFilter === "completed" ? "solid" : "outline"}
+              colorScheme={statusFilter === "completed" ? "green" : "gray"}
+              onClick={() => setStatusFilter("completed")}
+            >
+              Completed
+            </Button>
+          </Flex>
+        </Flex>
         {isAdmin && <Button size="xs" colorScheme="blue" onClick={openNew}>+ New Registration Form</Button>}
       </Flex>
 
-      {forms.length === 0 ? (
-        <Text fontSize="sm" color="gray.400">No registration forms saved yet.</Text>
+      {filteredForms.length === 0 ? (
+        <Text fontSize="sm" color="gray.400">
+          {forms.length === 0 ? "No registration forms saved yet." : `No ${statusFilter} registration forms.`}
+        </Text>
       ) : (
         <Box as="table" width="100%" borderCollapse="collapse">
           <thead>
@@ -242,7 +267,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
             </tr>
           </thead>
           <tbody>
-            {forms.map((f, i) => (
+            {filteredForms.map((f, i) => (
               <Box as="tr" key={f.id} bg={i % 2 === 0 ? "white" : "gray.50"}>
                 <Td fontWeight="medium" color="blue.700">{f.lotNumber || "—"}</Td>
                 <Td>{f.vendor || "—"}</Td>
