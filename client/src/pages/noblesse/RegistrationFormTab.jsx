@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   Box, Flex, Text, Button, IconButton, Badge, Spinner, useToast, Image,
-  Grid, GridItem, Input, Textarea, Select, Checkbox,
+  Grid, GridItem, Input, Textarea, Select, Checkbox, Menu, MenuButton, MenuList, MenuItem,
 } from "@chakra-ui/react";
-import { DeleteIcon } from "@chakra-ui/icons";
+import { DeleteIcon, ChevronDownIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, Th, Td } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
@@ -215,6 +215,20 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
     }
   };
 
+  const updateStatus = async (id, newStatus) => {
+    try {
+      const res = await axiosInstance.patch(`/noblesse-registration-forms/${id}`, { status: newStatus });
+      setForms((prev) => prev.map((f) => (f.id === id ? res.data : f)));
+      toast({
+        status: "success",
+        title: `Status changed to ${newStatus === "completed" ? "Completed" : "In Progress"}`,
+        duration: 2000,
+      });
+    } catch (err) {
+      toast({ status: "error", title: "Failed to update status", description: err.message, duration: 3000 });
+    }
+  };
+
   if (loading) {
     return <Flex justify="center" py={10}><Spinner size="lg" color="blue.500" /></Flex>;
   }
@@ -229,6 +243,14 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
             Registration Forms
           </Text>
           <Flex gap={1}>
+            <Button
+              size="xs"
+              variant={statusFilter === null ? "solid" : "outline"}
+              colorScheme={statusFilter === null ? "purple" : "gray"}
+              onClick={() => setStatusFilter(null)}
+            >
+              All
+            </Button>
             <Button
               size="xs"
               variant={statusFilter === "in_progress" ? "solid" : "outline"}
@@ -252,7 +274,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
 
       {filteredForms.length === 0 ? (
         <Text fontSize="sm" color="gray.400">
-          {forms.length === 0 ? "No registration forms saved yet." : `No ${statusFilter} registration forms.`}
+          {forms.length === 0 ? "No registration forms saved yet." : statusFilter ? `No ${statusFilter === "in_progress" ? "in progress" : "completed"} registration forms.` : "No registration forms."}
         </Text>
       ) : (
         <Box as="table" width="100%" borderCollapse="collapse">
@@ -274,9 +296,37 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
                 <Td>{f.productDescription || "—"}</Td>
                 <Td>{fmtDate(f.dateReceived)}</Td>
                 <Td>
-                  <Badge colorScheme={statusColor(f.status)} borderRadius="full" px={2}>
-                    {f.status === "completed" ? "Completed" : "In Progress"}
-                  </Badge>
+                  <Menu>
+                    <MenuButton
+                      as={Badge}
+                      colorScheme={statusColor(f.status)}
+                      borderRadius="full"
+                      px={2}
+                      cursor="pointer"
+                      _hover={{ opacity: 0.8 }}
+                    >
+                      <Flex align="center" gap={1}>
+                        <Text fontSize="xs">{f.status === "completed" ? "Completed" : "In Progress"}</Text>
+                        <ChevronDownIcon boxSize={3} />
+                      </Flex>
+                    </MenuButton>
+                    <MenuList minW="120px">
+                      <MenuItem
+                        onClick={() => updateStatus(f.id, "in_progress")}
+                        isDisabled={f.status === "in_progress"}
+                        fontSize="sm"
+                      >
+                        In Progress
+                      </MenuItem>
+                      <MenuItem
+                        onClick={() => updateStatus(f.id, "completed")}
+                        isDisabled={f.status === "completed"}
+                        fontSize="sm"
+                      >
+                        Completed
+                      </MenuItem>
+                    </MenuList>
+                  </Menu>
                 </Td>
                 <Td>
                   <Flex gap={2}>
