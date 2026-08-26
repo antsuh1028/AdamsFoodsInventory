@@ -156,6 +156,10 @@ pool.query(`
   )
 `).catch((err) => console.error("noblesse_registration_forms migration error:", err.message));
 
+pool.query(`
+  ALTER TABLE noblesse_registration_forms ADD COLUMN IF NOT EXISTS processing_dates JSONB
+`).catch((err) => console.error("processing_dates JSONB migration error:", err.message));
+
 // ── Formatters ────────────────────────────────────────────────────────────────
 
 const fmtReceipt = (row) => ({
@@ -176,38 +180,60 @@ const fmtReceipt = (row) => ({
 
 const fmtDate = (d) => d instanceof Date ? d.toISOString().slice(0, 10) : (d || null);
 
-const fmtRegistrationForm = (row) => ({
-  id:                     row.id,
-  lotNumber:              row.lot_number,
-  formDate:               fmtDate(row.form_date),
-  dateReceived:           fmtDate(row.date_received),
-  timeReceived:           row.time_received,
-  vendorLot:              row.vendor_lot,
-  vendor:                 row.vendor,
-  productDescription:     row.product_description,
-  processingType:         row.processing_type,
-  spec:                   row.spec,
-  brand:                  row.brand,
-  estNumber:              row.est_number,
-  grade:                  row.grade,
-  dueDate:                fmtDate(row.due_date),
-  predictedYield:         row.predicted_yield      != null ? Number(row.predicted_yield)      : null,
-  manifestBlAttached:     !!row.manifest_bl_attached,
-  processReportAttached:  !!row.process_report_attached,
-  originalWeight:         row.original_weight      != null ? Number(row.original_weight)      : null,
-  totalQuantity:          row.total_quantity,
-  processingDate1:        fmtDate(row.processing_date_1),
-  processedWeight1:       row.processed_weight_1   != null ? Number(row.processed_weight_1)   : null,
-  processingDate2:        fmtDate(row.processing_date_2),
-  processedWeight2:       row.processed_weight_2   != null ? Number(row.processed_weight_2)   : null,
-  actualYield:            row.actual_yield         != null ? Number(row.actual_yield)         : null,
-  temp:                   row.temp,
-  remarks:                row.remarks,
-  checkedBy:              row.checked_by,
-  status:                 row.status,
-  createdAt:              row.created_at,
-  updatedAt:              row.updated_at,
-});
+const fmtRegistrationForm = (row) => {
+  // Handle processingDates: use JSON column if available, otherwise build from legacy columns
+  let processingDates = [];
+  if (row.processing_dates && Array.isArray(row.processing_dates)) {
+    processingDates = row.processing_dates.map(pd => ({
+      date: fmtDate(pd.date),
+      weight: pd.weight != null ? Number(pd.weight) : null
+    }));
+  } else {
+    // Fallback to legacy columns for existing data
+    if (row.processing_date_1 || row.processed_weight_1) {
+      processingDates.push({
+        date: fmtDate(row.processing_date_1),
+        weight: row.processed_weight_1 != null ? Number(row.processed_weight_1) : null
+      });
+    }
+    if (row.processing_date_2 || row.processed_weight_2) {
+      processingDates.push({
+        date: fmtDate(row.processing_date_2),
+        weight: row.processed_weight_2 != null ? Number(row.processed_weight_2) : null
+      });
+    }
+  }
+
+  return {
+    id:                     row.id,
+    lotNumber:              row.lot_number,
+    formDate:               fmtDate(row.form_date),
+    dateReceived:           fmtDate(row.date_received),
+    timeReceived:           row.time_received,
+    vendorLot:              row.vendor_lot,
+    vendor:                 row.vendor,
+    productDescription:     row.product_description,
+    processingType:         row.processing_type,
+    spec:                   row.spec,
+    brand:                  row.brand,
+    estNumber:              row.est_number,
+    grade:                  row.grade,
+    dueDate:                fmtDate(row.due_date),
+    predictedYield:         row.predicted_yield      != null ? Number(row.predicted_yield)      : null,
+    manifestBlAttached:     !!row.manifest_bl_attached,
+    processReportAttached:  !!row.process_report_attached,
+    originalWeight:         row.original_weight      != null ? Number(row.original_weight)      : null,
+    totalQuantity:          row.total_quantity,
+    processingDates:        processingDates,
+    actualYield:            row.actual_yield         != null ? Number(row.actual_yield)         : null,
+    temp:                   row.temp,
+    remarks:                row.remarks,
+    checkedBy:              row.checked_by,
+    status:                 row.status,
+    createdAt:              row.created_at,
+    updatedAt:              row.updated_at,
+  };
+};
 
 const fmtNtiItem = (row) => ({
   id:           row.id,
@@ -923,34 +949,38 @@ router.patch("/noblesse-proc-orders/:id/status", verifyToken, async (req, res) =
 
 // ── Registration Forms ──────────────────────────────────────────────────────
 
-const regFormValues = (body) => [
-  body.lotNumber           || null,
-  body.formDate            || null,
-  body.dateReceived        || null,
-  body.timeReceived        || null,
-  body.vendorLot           || null,
-  body.vendor              || null,
-  body.productDescription  || null,
-  body.processingType      || null,
-  body.spec                || null,
-  body.brand               || null,
-  body.estNumber           || null,
-  body.grade               || null,
-  body.dueDate             || null,
-  body.predictedYield      != null && body.predictedYield !== "" ? Number(body.predictedYield) : null,
-  !!body.manifestBlAttached,
-  !!body.processReportAttached,
-  body.originalWeight      != null && body.originalWeight !== "" ? Number(body.originalWeight) : null,
-  body.totalQuantity       || null,
-  body.processingDate1     || null,
-  body.processedWeight1    != null && body.processedWeight1 !== "" ? Number(body.processedWeight1) : null,
-  body.processingDate2     || null,
-  body.processedWeight2    != null && body.processedWeight2 !== "" ? Number(body.processedWeight2) : null,
-  body.actualYield         != null && body.actualYield !== "" ? Number(body.actualYield) : null,
-  body.temp                || null,
-  body.remarks             || null,
-  body.checkedBy           || null,
-];
+const regFormValues = (body) => {
+  // Handle processingDates: convert array to JSON for storage
+  const processingDatesJSON = body.processingDates && Array.isArray(body.processingDates)
+    ? JSON.stringify(body.processingDates.filter(pd => pd.date || pd.weight))
+    : null;
+
+  return [
+    body.lotNumber           || null,
+    body.formDate            || null,
+    body.dateReceived        || null,
+    body.timeReceived        || null,
+    body.vendorLot           || null,
+    body.vendor              || null,
+    body.productDescription  || null,
+    body.processingType      || null,
+    body.spec                || null,
+    body.brand               || null,
+    body.estNumber           || null,
+    body.grade               || null,
+    body.dueDate             || null,
+    body.predictedYield      != null && body.predictedYield !== "" ? Number(body.predictedYield) : null,
+    !!body.manifestBlAttached,
+    !!body.processReportAttached,
+    body.originalWeight      != null && body.originalWeight !== "" ? Number(body.originalWeight) : null,
+    body.totalQuantity       || null,
+    processingDatesJSON,
+    body.actualYield         != null && body.actualYield !== "" ? Number(body.actualYield) : null,
+    body.temp                || null,
+    body.remarks             || null,
+    body.checkedBy           || null,
+  ];
+};
 
 router.get("/noblesse-registration-forms", verifyToken, async (req, res) => {
   try {
@@ -986,9 +1016,8 @@ router.post("/noblesse-registration-forms", verifyToken, async (req, res) => {
          (tenant_id, lot_number, form_date, date_received, time_received, vendor_lot, vendor,
           product_description, processing_type, spec, brand, est_number, grade,
           due_date, predicted_yield, manifest_bl_attached, process_report_attached,
-          original_weight, total_quantity, processing_date_1, processed_weight_1,
-          processing_date_2, processed_weight_2, actual_yield, temp, remarks, checked_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+          original_weight, total_quantity, processing_dates, actual_yield, temp, remarks, checked_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
        RETURNING *`,
       [req.tenantId, ...regFormValues(req.body)]
     );
@@ -1007,10 +1036,9 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
        SET lot_number = $1, form_date = $2, date_received = $3, time_received = $4, vendor_lot = $5, vendor = $6,
            product_description = $7, processing_type = $8, spec = $9, brand = $10, est_number = $11, grade = $12,
            due_date = $13, predicted_yield = $14, manifest_bl_attached = $15, process_report_attached = $16,
-           original_weight = $17, total_quantity = $18, processing_date_1 = $19, processed_weight_1 = $20,
-           processing_date_2 = $21, processed_weight_2 = $22, actual_yield = $23, temp = $24, remarks = $25,
-           checked_by = $26, status = $27, updated_at = NOW()
-       WHERE id = $28 AND tenant_id = $29
+           original_weight = $17, total_quantity = $18, processing_dates = $19, actual_yield = $20, temp = $21, remarks = $22,
+           checked_by = $23, status = $24, updated_at = NOW()
+       WHERE id = $25 AND tenant_id = $26
        RETURNING *`,
       [...regFormValues(req.body), status, req.params.id, req.tenantId]
     );
