@@ -217,7 +217,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
 
   const updateStatus = async (id, newStatus) => {
     try {
-      const res = await axiosInstance.patch(`/noblesse-registration-forms/${id}`, { status: newStatus });
+      const res = await axiosInstance.patch(`/noblesse-registration-forms/${id}/status`, { status: newStatus });
       setForms((prev) => prev.map((f) => (f.id === id ? res.data : f)));
       toast({
         status: "success",
