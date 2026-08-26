@@ -18,8 +18,10 @@ const emptyDraft = () => ({
   dueDate: "", predictedYield: "",
   manifestBlAttached: false, processReportAttached: false,
   originalWeight: "", totalQuantity: "",
-  processingDate1: "", processedWeight1: "",
-  processingDate2: "", processedWeight2: "",
+  processingDates: [
+    { date: "", weight: "" },
+    { date: "", weight: "" },
+  ],
   actualYield: "", temp: "", remarks: "", checkedBy: "",
   status: "in_progress",
 });
@@ -34,8 +36,10 @@ const sampleDraft = () => ({
   dueDate: today(), predictedYield: "92",
   manifestBlAttached: true, processReportAttached: false,
   originalWeight: "1842", totalQuantity: "24",
-  processingDate1: today(), processedWeight1: "1695",
-  processingDate2: "", processedWeight2: "",
+  processingDates: [
+    { date: today(), weight: "1695" },
+    { date: "", weight: "" },
+  ],
   actualYield: "92.0", temp: "27",
   remarks: "Sample record for print preview — no backend data behind this.",
   checkedBy: "J. Rivera",
@@ -135,10 +139,67 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             <SectionBar>Processing &amp; Yield</SectionBar>
             <SheetField label="Original Weight (lbs)"><Input {...sheetInputProps} type="number" value={draft.originalWeight} onChange={set("originalWeight")} /></SheetField>
             <SheetField label="Total Quantity (c/s)"><Input {...sheetInputProps} value={draft.totalQuantity} onChange={set("totalQuantity")} /></SheetField>
-            <SheetField label="(1) Processing Date"><Input {...sheetInputProps} type="date" value={draft.processingDate1} onChange={set("processingDate1")} /></SheetField>
-            <SheetField label="Processed Weight (lbs)"><Input {...sheetInputProps} type="number" value={draft.processedWeight1} onChange={set("processedWeight1")} /></SheetField>
-            <SheetField label="(2) Processing Date"><Input {...sheetInputProps} type="date" value={draft.processingDate2} onChange={set("processingDate2")} /></SheetField>
-            <SheetField label="Processed Weight (lbs)"><Input {...sheetInputProps} type="number" value={draft.processedWeight2} onChange={set("processedWeight2")} /></SheetField>
+
+            {draft.processingDates && draft.processingDates.map((pd, idx) => (
+              <React.Fragment key={idx}>
+                <SheetField label={`(${idx + 1}) Processing Date`}>
+                  <Flex gap={1} align="center">
+                    <Input
+                      {...sheetInputProps}
+                      type="date"
+                      value={pd.date}
+                      onChange={(e) => {
+                        const newDates = [...draft.processingDates];
+                        newDates[idx].date = e.target.value;
+                        setDraft({ ...draft, processingDates: newDates });
+                      }}
+                      flex={1}
+                    />
+                    {idx >= 2 && (
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        colorScheme="red"
+                        minW="auto"
+                        px={1}
+                        onClick={() => {
+                          const newDates = draft.processingDates.filter((_, i) => i !== idx);
+                          setDraft({ ...draft, processingDates: newDates });
+                        }}
+                      >
+                        ×
+                      </Button>
+                    )}
+                  </Flex>
+                </SheetField>
+                <SheetField label="Processed Weight (lbs)">
+                  <Input
+                    {...sheetInputProps}
+                    type="number"
+                    value={pd.weight}
+                    onChange={(e) => {
+                      const newDates = [...draft.processingDates];
+                      newDates[idx].weight = e.target.value;
+                      setDraft({ ...draft, processingDates: newDates });
+                    }}
+                  />
+                </SheetField>
+              </React.Fragment>
+            ))}
+
+            <GridItem colSpan={2}>
+              <Button
+                size="xs"
+                variant="outline"
+                colorScheme="blue"
+                onClick={() => {
+                  setDraft({ ...draft, processingDates: [...draft.processingDates, { date: "", weight: "" }] });
+                }}
+              >
+                + Add Processing Date
+              </Button>
+            </GridItem>
+
             <SheetField label="Actual Yield (%)"><Input {...sheetInputProps} type="number" value={draft.actualYield} onChange={set("actualYield")} /></SheetField>
             <SheetField label="Temp"><Input {...sheetInputProps} value={draft.temp} onChange={set("temp")} /></SheetField>
 
@@ -183,18 +244,66 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
   useEffect(() => { fetchForms(); }, [fetchForms]);
 
   const openNew  = () => setDraft(emptyDraft());
-  const openEdit = (form) => setDraft({ ...emptyDraft(), ...form });
+  const openEdit = (form) => {
+    const draft = { ...emptyDraft(), ...form };
+    // Convert backend format to array format
+    if (!draft.processingDates) {
+      const dates = [];
+      for (let i = 1; i <= 10; i++) {
+        if (draft[`processingDate${i}`] || draft[`processedWeight${i}`]) {
+          dates.push({ date: draft[`processingDate${i}`] || "", weight: draft[`processedWeight${i}`] || "" });
+        }
+      }
+      if (dates.length === 0) dates.push({ date: "", weight: "" }, { date: "", weight: "" });
+      draft.processingDates = dates;
+    }
+    setDraft(draft);
+  };
   const close    = () => setDraft(null);
 
   const save = async () => {
     setSaving(true);
     try {
+      // Convert processingDates array to backend format
+      const payload = { ...draft };
+      if (payload.processingDates) {
+        payload.processingDates.forEach((pd, idx) => {
+          payload[`processingDate${idx + 1}`] = pd.date;
+          payload[`processedWeight${idx + 1}`] = pd.weight;
+        });
+        delete payload.processingDates;
+      }
+
       if (draft.id) {
-        const res = await axiosInstance.patch(`/noblesse-registration-forms/${draft.id}`, draft);
-        setForms((prev) => prev.map((f) => (f.id === res.data.id ? res.data : f)));
+        const res = await axiosInstance.patch(`/noblesse-registration-forms/${draft.id}`, payload);
+        // Convert response back to array format for display
+        const resData = res.data;
+        if (!resData.processingDates) {
+          const dates = [];
+          for (let i = 1; i <= 10; i++) {
+            if (resData[`processingDate${i}`] || resData[`processedWeight${i}`]) {
+              dates.push({ date: resData[`processingDate${i}`] || "", weight: resData[`processedWeight${i}`] || "" });
+            }
+          }
+          if (dates.length === 0) dates.push({ date: "", weight: "" }, { date: "", weight: "" });
+          resData.processingDates = dates;
+        }
+        setForms((prev) => prev.map((f) => (f.id === res.data.id ? resData : f)));
       } else {
-        const res = await axiosInstance.post("/noblesse-registration-forms", draft);
-        setForms((prev) => [res.data, ...prev]);
+        const res = await axiosInstance.post("/noblesse-registration-forms", payload);
+        // Convert response back to array format for display
+        const resData = res.data;
+        if (!resData.processingDates) {
+          const dates = [];
+          for (let i = 1; i <= 10; i++) {
+            if (resData[`processingDate${i}`] || resData[`processedWeight${i}`]) {
+              dates.push({ date: resData[`processingDate${i}`] || "", weight: resData[`processedWeight${i}`] || "" });
+            }
+          }
+          if (dates.length === 0) dates.push({ date: "", weight: "" }, { date: "", weight: "" });
+          resData.processingDates = dates;
+        }
+        setForms((prev) => [resData, ...prev]);
       }
       toast({ status: "success", title: "Registration form saved", duration: 2000 });
       close();
