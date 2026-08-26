@@ -140,14 +140,14 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             <SheetField label="Original Weight (lbs)"><Input {...sheetInputProps} type="number" value={draft.originalWeight} onChange={set("originalWeight")} /></SheetField>
             <SheetField label="Total Quantity (c/s)"><Input {...sheetInputProps} value={draft.totalQuantity} onChange={set("totalQuantity")} /></SheetField>
 
-            {draft.processingDates && draft.processingDates.map((pd, idx) => (
+            {Array.isArray(draft.processingDates) && draft.processingDates.map((pd, idx) => (
               <React.Fragment key={idx}>
                 <SheetField label={`(${idx + 1}) Processing Date`}>
                   <Flex gap={1} align="center">
                     <Input
                       {...sheetInputProps}
                       type="date"
-                      value={pd.date}
+                      value={pd.date || ""}
                       onChange={(e) => {
                         const newDates = [...draft.processingDates];
                         newDates[idx].date = e.target.value;
@@ -155,19 +155,35 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       }}
                       flex={1}
                     />
-                    {idx >= 2 && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      colorScheme="red"
+                      minW="auto"
+                      px={1}
+                      isDisabled={draft.processingDates.length <= 2}
+                      title={draft.processingDates.length <= 2 ? "Cannot delete first 2 rows" : "Delete this row"}
+                      onClick={() => {
+                        const newDates = draft.processingDates.filter((_, i) => i !== idx);
+                        setDraft({ ...draft, processingDates: newDates });
+                      }}
+                    >
+                      ×
+                    </Button>
+                    {idx === draft.processingDates.length - 1 && (
                       <Button
                         size="xs"
-                        variant="ghost"
-                        colorScheme="red"
+                        variant="outline"
+                        colorScheme="blue"
                         minW="auto"
-                        px={1}
+                        px={2}
                         onClick={() => {
-                          const newDates = draft.processingDates.filter((_, i) => i !== idx);
+                          const newDates = Array.isArray(draft.processingDates) ? [...draft.processingDates] : [];
+                          newDates.push({ date: "", weight: "" });
                           setDraft({ ...draft, processingDates: newDates });
                         }}
                       >
-                        ×
+                        +
                       </Button>
                     )}
                   </Flex>
@@ -176,7 +192,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                   <Input
                     {...sheetInputProps}
                     type="number"
-                    value={pd.weight}
+                    value={pd.weight || ""}
                     onChange={(e) => {
                       const newDates = [...draft.processingDates];
                       newDates[idx].weight = e.target.value;
@@ -186,19 +202,6 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                 </SheetField>
               </React.Fragment>
             ))}
-
-            <GridItem colSpan={2}>
-              <Button
-                size="xs"
-                variant="outline"
-                colorScheme="blue"
-                onClick={() => {
-                  setDraft({ ...draft, processingDates: [...draft.processingDates, { date: "", weight: "" }] });
-                }}
-              >
-                + Add Processing Date
-              </Button>
-            </GridItem>
 
             <SheetField label="Actual Yield (%)"><Input {...sheetInputProps} type="number" value={draft.actualYield} onChange={set("actualYield")} /></SheetField>
             <SheetField label="Temp"><Input {...sheetInputProps} value={draft.temp} onChange={set("temp")} /></SheetField>
