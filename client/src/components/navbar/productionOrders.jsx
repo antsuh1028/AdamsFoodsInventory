@@ -4,7 +4,7 @@ import {
   Box, Flex, Text, Badge, Button, Checkbox, Input, FormControl, FormLabel,
   Spinner, Divider, Collapse, SimpleGrid, Image, IconButton, useToast,
 } from "@chakra-ui/react";
-import { AddIcon, MinusIcon, ChevronDownIcon, ChevronRightIcon, RepeatIcon } from "@chakra-ui/icons";
+import {  ChevronDownIcon, ChevronRightIcon, RepeatIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import cache from "../../utils/apiCache";
 import FormScannerReturn from "./formScannerReturn";
@@ -18,19 +18,6 @@ const today = () => new Date().toISOString().split("T")[0];
 // Module-level cache: { [query]: { data, ts } }
 const invCache = new Map();
 const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
-
-// Stub values applied when user uploads a photo (OCR placeholder)
-const OCR_STUB_RETURN = {
-  location: "N303",
-  lot: "NB-STUB-001",
-  species: "Beef",
-  description: "Short Ribs Processed",
-  grade: "Choice",
-  brand: "Adams Foods",
-  packdate: today(),
-  date_recvd: today(),
-};
-const OCR_STUB_BOXES = [{ weight: "45" }, { weight: "48" }, { weight: "47" }];
 
 // ── Photo upload placeholder ──────────────────────────────────────────────────
 const PhotoUpload = ({ label, onStubApply }) => {
@@ -132,88 +119,6 @@ const InventoryRow = ({ item, selectedIndices, onToggleBox, onToggleAll }) => {
           ))}
         </SimpleGrid>
       </Collapse>
-    </Box>
-  );
-};
-
-// ── Return box list editor ────────────────────────────────────────────────────
-const BoxEditor = ({ boxes, onChange }) => {
-  const add = () => onChange([...boxes, { weight: "" }]);
-  const remove = (i) => onChange(boxes.filter((_, idx) => idx !== i));
-  const set = (i, val) => onChange(boxes.map((b, idx) => idx === i ? { weight: val } : b));
-  const total = boxes.reduce((s, b) => s + (parseFloat(b.weight) || 0), 0);
-
-  return (
-    <Box>
-      <Flex align="center" justify="space-between" mb={2}>
-        <Text fontSize="sm" fontWeight="medium">Boxes ({boxes.length})</Text>
-        <Flex align="center" gap={2}>
-          {total > 0 && <Text fontSize="xs" color="gray.500">{total.toFixed(1)} lb total</Text>}
-          <IconButton icon={<AddIcon />} size="xs" onClick={add} aria-label="add box" />
-        </Flex>
-      </Flex>
-      <SimpleGrid columns={3} gap={2}>
-        {boxes.map((b, i) => (
-          <Flex key={i} gap={1} align="center">
-            <Input
-              size="xs"
-              type="number"
-              placeholder="lb"
-              value={b.weight}
-              onChange={(e) => set(i, e.target.value)}
-            />
-            <IconButton icon={<MinusIcon />} size="xs" variant="ghost" onClick={() => remove(i)} aria-label="remove" />
-          </Flex>
-        ))}
-      </SimpleGrid>
-    </Box>
-  );
-};
-
-// ── Return pallet form (Step 3) ───────────────────────────────────────────────
-const ReturnForm = ({ orderId, onSubmit, onCancel, submitting, species }) => {
-  const [form, setForm] = useState({ location: "", lot: "", description: "", grade: "", brand: "", packdate: "", date_recvd: today() });
-  const [boxes, setBoxes] = useState([{ weight: "" }]);
-
-  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
-
-  const applyStub = () => {
-    setForm(OCR_STUB_RETURN);
-    setBoxes(OCR_STUB_BOXES.map((b) => ({ ...b })));
-  };
-
-  const handleSubmit = () => {
-    const validBoxes = boxes.filter((b) => b.weight && !isNaN(parseFloat(b.weight)));
-    onSubmit(orderId, { ...form, species, boxes: validBoxes.map((b) => ({ weight: String(b.weight) })) });
-  };
-
-  const field = (key, label, type = "text", transform) => (
-    <FormControl>
-      <FormLabel fontSize="xs" mb={0}>{label}</FormLabel>
-      <Input size="sm" type={type} value={form[key]} onChange={(e) => set(key, transform ? transform(e.target.value) : e.target.value)} />
-    </FormControl>
-  );
-
-  return (
-    <Box bg="blue.50" borderRadius="md" p={3} mt={2}>
-      <Text fontWeight="semibold" fontSize="sm" mb={3}>Add Return Pallet</Text>
-      <PhotoUpload label="Scan return form" onStubApply={applyStub} />
-      <SimpleGrid columns={2} gap={2} mb={3}>
-        {field("location", "Location *", "text", (v) => v.toUpperCase())}
-        {field("lot", "Lot # *")}
-        {field("description", "Description")}
-        {field("grade", "Grade")}
-        {field("brand", "Brand")}
-        {field("packdate", "Pack Date", "date")}
-        {field("date_recvd", "Date Received", "date")}
-      </SimpleGrid>
-      <BoxEditor boxes={boxes} onChange={setBoxes} />
-      <Flex gap={2} mt={3} justify="flex-end">
-        <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" colorScheme="blue" isLoading={submitting} onClick={handleSubmit}>
-          Add Pallet
-        </Button>
-      </Flex>
     </Box>
   );
 };

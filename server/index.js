@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 
@@ -10,6 +11,16 @@ const corsOptions = { origin: allowedOrigins };
 app.use(express.json());
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
+
+// General rate limiter for all endpoints except login/refresh (60 requests per minute)
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  skip: (req) => req.path === "/login" || req.path === "/refresh",
+  message: { error: "Too many requests, please try again later" },
+});
+
+app.use(generalLimiter);
 
 // ── Postgres routes ───────────────────────────────────────────────────────────
 app.use("/", require("./routes/auth.pg"));

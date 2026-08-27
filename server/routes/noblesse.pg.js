@@ -160,6 +160,21 @@ pool.query(`
   ALTER TABLE noblesse_registration_forms ADD COLUMN IF NOT EXISTS processing_dates JSONB
 `).catch((err) => console.error("processing_dates JSONB migration error:", err.message));
 
+pool.query(`
+  CREATE TABLE IF NOT EXISTS noblesse_registration_history (
+    id              SERIAL PRIMARY KEY,
+    tenant_id       UUID NOT NULL REFERENCES tenants(id),
+    form_id         INTEGER NOT NULL REFERENCES noblesse_registration_forms(id) ON DELETE CASCADE,
+    action          TEXT NOT NULL,
+    lot_number      TEXT,
+    changed_fields  JSONB,
+    old_values      JSONB,
+    new_values      JSONB,
+    performed_by    TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+`).catch((err) => console.error("noblesse_registration_history migration error:", err.message));
+
 // ── Formatters ────────────────────────────────────────────────────────────────
 
 const fmtReceipt = (row) => ({
@@ -259,6 +274,40 @@ const logNtiHistory = (tenantId, action, item, extra = {}, performedBy = null) =
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [tenantId, action, item.id || null, item.lot || null, JSON.stringify({ ...item, ...extra }), performedBy]
   ).catch((err) => console.error("nti history log error:", err.message));
+};
+
+const logRegistrationFormHistory = (tenantId, formId, action, lotNumber, changedFields = null, oldValues = null, newValues = null, performedBy = null) => {
+  return pool.query(
+    `INSERT INTO noblesse_registration_history (tenant_id, form_id, action, lot_number, changed_fields, old_values, new_values, performed_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [tenantId, formId, action, lotNumber, changedFields ? JSON.stringify(changedFields) : null,
+     oldValues ? JSON.stringify(oldValues) : null, newValues ? JSON.stringify(newValues) : null, performedBy]
+  ).catch((err) => console.error("registration form history log error:", err.message));
+};
+
+const getChangedFields = (oldData, newData) => {
+  const changed = {};
+  const changedFields = [];
+  Object.keys(newData).forEach(key => {
+    const oldVal = oldData[key];
+    const newVal = newData[key];
+    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+      changed[key] = { from: oldVal, to: newVal };
+      changedFields.push(key);
+    }
+  });
+  return { changedFields, changed };
+};
+
+const safeJsonParse = (value) => {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch (err) {
+    console.error("JSON parse error:", err.message, "value:", value);
+    return null;
+  }
 };
 
 // ── Receipts ──────────────────────────────────────────────────────────────────
@@ -995,6 +1044,30 @@ router.get("/noblesse-registration-forms", verifyToken, async (req, res) => {
   }
 });
 
+router.get("/noblesse-registration-forms/all/history", verifyToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM noblesse_registration_history WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 500`,
+      [req.tenantId]
+    );
+    const history = result.rows.map(row => ({
+      id: row.id,
+      formId: row.form_id,
+      action: row.action,
+      lotNumber: row.lot_number,
+      changedFields: safeJsonParse(row.changed_fields),
+      oldValues: safeJsonParse(row.old_values),
+      newValues: safeJsonParse(row.new_values),
+      performedBy: row.performed_by,
+      createdAt: row.created_at,
+    }));
+    res.json(history);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/noblesse-registration-forms/:id", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
@@ -1021,7 +1094,12 @@ router.post("/noblesse-registration-forms", verifyToken, async (req, res) => {
        RETURNING *`,
       [req.tenantId, ...regFormValues(req.body)]
     );
-    res.json(fmtRegistrationForm(result.rows[0]));
+    const form = result.rows[0];
+
+    // Log creation
+    logRegistrationFormHistory(req.tenantId, form.id, "created", form.lot_number, null, null, fmtRegistrationForm(form), req.username);
+
+    res.json(fmtRegistrationForm(form));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -1030,6 +1108,14 @@ router.post("/noblesse-registration-forms", verifyToken, async (req, res) => {
 
 router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) => {
   try {
+    // Fetch old data first for history
+    const oldRes = await pool.query(
+      `SELECT * FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2`,
+      [req.params.id, req.tenantId]
+    );
+    if (!oldRes.rows.length) return res.status(404).json({ error: "Not found" });
+    const oldData = fmtRegistrationForm(oldRes.rows[0]);
+
     const status = req.body.status && ["in_progress", "completed"].includes(req.body.status) ? req.body.status : null;
     const result = await pool.query(
       `UPDATE noblesse_registration_forms
@@ -1043,7 +1129,16 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
       [...regFormValues(req.body), status, req.params.id, req.tenantId]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });
-    res.json(fmtRegistrationForm(result.rows[0]));
+
+    const newForm = fmtRegistrationForm(result.rows[0]);
+    const { changedFields } = getChangedFields(oldData, newForm);
+
+    // Log update if there were changes
+    if (changedFields.length > 0) {
+      logRegistrationFormHistory(req.tenantId, req.params.id, "updated", newForm.lotNumber, changedFields, oldData, newForm, req.username);
+    }
+
+    res.json(newForm);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -1055,12 +1150,27 @@ router.patch("/noblesse-registration-forms/:id/status", verifyToken, async (req,
   const VALID = ["in_progress", "completed"];
   if (!VALID.includes(status)) return res.status(400).json({ error: "Invalid status" });
   try {
+    const oldRes = await pool.query(
+      `SELECT * FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2`,
+      [req.params.id, req.tenantId]
+    );
+    if (!oldRes.rows.length) return res.status(404).json({ error: "Not found" });
+    const oldForm = fmtRegistrationForm(oldRes.rows[0]);
+
     const result = await pool.query(
       `UPDATE noblesse_registration_forms SET status = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3 RETURNING *`,
       [status, req.params.id, req.tenantId]
     );
-    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
-    res.json(fmtRegistrationForm(result.rows[0]));
+
+    const newForm = fmtRegistrationForm(result.rows[0]);
+
+    // Log status change
+    if (oldForm.status !== newForm.status) {
+      logRegistrationFormHistory(req.tenantId, req.params.id, "status_changed", newForm.lotNumber,
+        ["status"], { status: oldForm.status }, { status: newForm.status }, req.username);
+    }
+
+    res.json(newForm);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -1068,13 +1178,46 @@ router.patch("/noblesse-registration-forms/:id/status", verifyToken, async (req,
 });
 
 router.delete("/noblesse-registration-forms/:id", verifyToken, async (req, res) => {
+  if (req.role !== "admin") return res.status(403).json({ error: "Admin only" });
   try {
+    const formRes = await pool.query(
+      `SELECT lot_number FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2`,
+      [req.params.id, req.tenantId]
+    );
+    if (!formRes.rows.length) return res.status(404).json({ error: "Not found" });
+
     const result = await pool.query(
       `DELETE FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2 RETURNING id`,
       [req.params.id, req.tenantId]
     );
-    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
+
+    // Log deletion
+    logRegistrationFormHistory(req.tenantId, req.params.id, "deleted", formRes.rows[0].lot_number, null, null, null, req.username);
+
     res.json({ deleted: result.rows[0].id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/noblesse-registration-forms/:id/history", verifyToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM noblesse_registration_history WHERE form_id = $1 AND tenant_id = $2 ORDER BY created_at DESC`,
+      [req.params.id, req.tenantId]
+    );
+    const history = result.rows.map(row => ({
+      id: row.id,
+      action: row.action,
+      lotNumber: row.lot_number,
+      changedFields: safeJsonParse(row.changed_fields),
+      oldValues: safeJsonParse(row.old_values),
+      newValues: safeJsonParse(row.new_values),
+      performedBy: row.performed_by,
+      createdAt: row.created_at,
+    }));
+    res.json(history);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

@@ -42,6 +42,9 @@ const Login = () => {
       });
       if (result.data.message === "Success") {
         localStorage.setItem("token", result.data.token);
+        if (result.data.refreshToken) {
+          localStorage.setItem("refreshToken", result.data.refreshToken);
+        }
         navigate("/loading...");
       } else {
         setError(result.data.message);

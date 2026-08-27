@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import {
   Box, Flex, Text, Button, IconButton, useToast, Badge,
 } from "@chakra-ui/react";
-import { CheckIcon, CloseIcon, DeleteIcon } from "@chakra-ui/icons";
+import { DeleteIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, cellInputStyle } from "./shared";
 import FloatingWindow from "../../components/FloatingWindow";
@@ -139,7 +139,7 @@ const InspectionSection = ({ receipt, isAdmin, onReceiptUpdate }) => {
   };
 
   return (
-    <Box borderTop="1px" borderColor="gray.200" bg="gray.50" px={4} py={3}>
+    <Box borderTop="1px" borderColor="gray.200" bg="gray.50" px={4} py={3} mb={8}>
       <Flex align="center" justify="space-between" mb={expanded ? 3 : 0}>
         <Text fontSize="sm" fontWeight="semibold" color="gray.500" textTransform="uppercase" letterSpacing="wide">
           Vehicle Inspection
@@ -293,43 +293,18 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
   const NCOLS = RECEIPT_LINE_COLS.length + 2; // row# + cols + delete
 
   return (
-    <Box border="1px" borderColor={editing ? "blue.300" : "gray.200"}
-      borderRadius="lg" mb={5} overflow="hidden" boxShadow="sm">
+    <>
+      <Box border="1px" borderColor="gray.200"
+        borderRadius="lg" mb={5} overflow="hidden" boxShadow="sm">
 
-      {/* Card header */}
-      <Box bg={editing ? "blue.50" : "gray.50"} px={4} py={3}
-        borderBottom="1px" borderColor={editing ? "blue.200" : "gray.200"}>
-        <Text fontSize="sm" fontWeight="bold" textTransform="uppercase"
-          letterSpacing="widest" color="gray.400" mb={2}>
-          Daily Incoming Product Record
-        </Text>
+        {/* Card header */}
+        <Box bg="gray.50" px={4} py={3}
+          borderBottom="1px" borderColor="gray.200">
+          <Text fontSize="sm" fontWeight="bold" textTransform="uppercase"
+            letterSpacing="widest" color="gray.400" mb={2}>
+            Daily Incoming Product Record
+          </Text>
 
-        {editing ? (
-          <Flex gap={4} align="flex-end" flexWrap="wrap">
-            <Box>
-              <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Date</Text>
-              {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
-              <input type="date" value={draftDate} onChange={(e) => setDraftDate(e.target.value)}
-                style={hdInput("140px")} autoFocus />
-            </Box>
-            <Box>
-              <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">BOL #</Text>
-              <input value={draftBol} onChange={(e) => setDraftBol(e.target.value)}
-                style={hdInput("90px")} placeholder="BOL #" />
-            </Box>
-            <Box>
-              <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Driver</Text>
-              <input value={draftDriver} onChange={(e) => setDraftDriver(e.target.value)}
-                style={hdInput("160px")} placeholder="Name" />
-            </Box>
-            <Flex gap={1} ml="auto" align="flex-end">
-              <IconButton icon={<CheckIcon />} size="sm" colorScheme="blue" aria-label="Save"
-                isLoading={saving} onClick={saveEdit} />
-              <IconButton icon={<CloseIcon />} size="sm" variant="ghost" colorScheme="gray"
-                aria-label="Cancel" onClick={cancelEdit} />
-            </Flex>
-          </Flex>
-        ) : (
           <Flex align="center" justify="space-between" flexWrap="wrap" gap={2}>
             <Flex gap={4} align="center" flexWrap="wrap">
               <Text fontSize="xl" fontWeight="semibold" color="gray.800">
@@ -355,26 +330,21 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
                   </Button>
                 )}
                 <Button size="xs" variant="ghost" colorScheme="gray" onClick={startEdit}>Edit</Button>
-                {canDelete && (
+                {isAdmin && (
                   <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
                     aria-label="Delete record" isLoading={deleting} onClick={handleDelete} />
                 )}
               </Flex>
             )}
           </Flex>
-        )}
-      </Box>
+        </Box>
 
-      {/* Table */}
-      <Box overflowX="auto">
-        <Box as="table" borderCollapse="collapse" style={{ minWidth: "100%" }}>
-          <thead>
-            <tr>
-              {editing && <XlTh center w="32px">#</XlTh>}
-              {RECEIPT_LINE_COLS.map((c) =>
-                editing ? (
-                  <XlTh key={c.key} w={c.w}>{c.label}</XlTh>
-                ) : (
+        {/* Table */}
+        <Box overflowX="auto">
+          <Box as="table" borderCollapse="collapse" style={{ minWidth: "100%" }}>
+            <thead>
+              <tr>
+                {RECEIPT_LINE_COLS.map((c) => (
                   <Box key={c.key} as="th" px={3} py="9px"
                     bg="gray.50" border="1px solid" borderColor="gray.200"
                     fontSize="md" fontWeight="semibold" color="gray.500"
@@ -383,70 +353,113 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
                     style={{ minWidth: c.w }}>
                     {c.label}
                   </Box>
-                )
-              )}
-              {editing && <XlTh w="36px" />}
-            </tr>
-          </thead>
-          <tbody>
-            {editing ? (
-              <>
-                {draftLines.map((line, i) => (
-                  <Box as="tr" key={i}>
-                    <XlRowNum n={i + 1} />
-                    {RECEIPT_LINE_COLS.map((col) => (
-                      <XlTd key={col.key} isInput>
-                        <input
-                          type={col.type}
-                          value={line[col.key] || ""}
-                          onChange={(e) => updateLine(i, col.key, e.target.value)}
-                          placeholder={col.placeholder}
-                          onKeyDown={(e) => handleCellKey(e, i)}
-                          style={xlInput}
-                        />
-                      </XlTd>
-                    ))}
-                    <XlTd center>
-                      <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
-                        aria-label="Remove" isDisabled={draftLines.length === 1}
-                        onClick={() => removeLine(i)} />
-                    </XlTd>
-                  </Box>
                 ))}
-                <Box as="tr" cursor="cell" onClick={addLine} _hover={{ bg: "blue.50" }}>
-                  <Box as="td" colSpan={NCOLS}
-                    border="1px solid" borderColor="gray.200" px={3} py="9px">
-                    <Text fontSize="sm" color="gray.400" fontStyle="italic">+ add row</Text>
+              </tr>
+            </thead>
+            <tbody>
+              {receipt.lines.length === 0 ? (
+                <Box as="tr">
+                  <Box as="td" colSpan={RECEIPT_LINE_COLS.length}
+                    border="1px solid" borderColor="gray.100" px={3} py={3}>
+                    <Text fontSize="sm" color="gray.300" fontStyle="italic">No line items recorded.</Text>
                   </Box>
                 </Box>
-              </>
-            ) : receipt.lines.length === 0 ? (
-              <Box as="tr">
-                <Box as="td" colSpan={RECEIPT_LINE_COLS.length}
-                  border="1px solid" borderColor="gray.100" px={3} py={3}>
-                  <Text fontSize="sm" color="gray.300" fontStyle="italic">No line items recorded.</Text>
-                </Box>
-              </Box>
-            ) : (
-              receipt.lines.map((l, j) => (
-                <Box as="tr" key={j} bg={j % 2 === 0 ? "white" : "gray.50"}>
-                  {RECEIPT_LINE_COLS.map((col, ci) => (
-                    <Box key={col.key} as="td" px={3} py="9px"
-                      border="1px solid" borderColor="gray.100"
-                      fontSize="md" whiteSpace="nowrap"
-                      fontWeight={ci === 0 ? "medium" : "normal"}
-                      color={ci === 0 ? "blue.700" : "gray.700"}>
-                      {cellValue(col, l)}
-                    </Box>
-                  ))}
-                </Box>
-              ))
-            )}
-          </tbody>
+              ) : (
+                receipt.lines.map((l, j) => (
+                  <Box as="tr" key={j} bg={j % 2 === 0 ? "white" : "gray.50"}>
+                    {RECEIPT_LINE_COLS.map((col, ci) => (
+                      <Box key={col.key} as="td" px={3} py="9px"
+                        border="1px solid" borderColor="gray.100"
+                        fontSize="md" whiteSpace="nowrap"
+                        fontWeight={ci === 0 ? "medium" : "normal"}
+                        color={ci === 0 ? "blue.700" : "gray.700"}>
+                        {cellValue(col, l)}
+                      </Box>
+                    ))}
+                  </Box>  
+                ))
+              )}
+            </tbody>
+          </Box>
         </Box>
       </Box>
 
       <InspectionSection receipt={receipt} isAdmin={isAdmin} onReceiptUpdate={onReceiptUpdate} />
+
+      {/* Edit modal */}
+      <FloatingWindow
+        isOpen={editing}
+        onClose={cancelEdit}
+        title={`Edit Daily Record — ${fmtDate(receipt.shipmentDate) || "No date"}`}
+        width={1600}
+        footer={<Flex gap={2} justify="flex-end" width="100%">
+          <Button size="sm" variant="ghost" onClick={cancelEdit}>Cancel</Button>
+          <Button size="sm" colorScheme="blue" isLoading={saving} onClick={saveEdit}>Save Changes</Button>
+        </Flex>}
+      >
+        <Box mb={4}>
+          <Flex gap={4} align="flex-end" flexWrap="wrap">
+            <Box>
+              <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Date</Text>
+              <input type="date" value={draftDate} onChange={(e) => setDraftDate(e.target.value)}
+                style={hdInput("140px")} autoFocus />
+            </Box>
+            <Box>
+              <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">BOL #</Text>
+              <input value={draftBol} onChange={(e) => setDraftBol(e.target.value)}
+                style={hdInput("90px")} placeholder="BOL #" />
+            </Box>
+            <Box>
+              <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Driver</Text>
+              <input value={draftDriver} onChange={(e) => setDraftDriver(e.target.value)}
+                style={hdInput("160px")} placeholder="Name" />
+            </Box>
+          </Flex>
+        </Box>
+
+        {/* Excel grid */}
+        <Box overflowX="auto" maxH="60vh">
+          <Box as="table" borderCollapse="collapse" style={{ minWidth: "100%" }}>
+            <thead>
+              <tr>
+                <XlTh center w="32px">#</XlTh>
+                {RECEIPT_LINE_COLS.map((c) => <XlTh key={c.key} w={c.w}>{c.label}</XlTh>)}
+                <XlTh w="36px" />
+              </tr>
+            </thead>
+            <tbody>
+              {draftLines.map((line, i) => (
+                <Box as="tr" key={i}>
+                  <XlRowNum n={i + 1} />
+                  {RECEIPT_LINE_COLS.map((col) => (
+                    <XlTd key={col.key} isInput>
+                      <input
+                        type={col.type}
+                        value={line[col.key] || ""}
+                        onChange={(e) => updateLine(i, col.key, e.target.value)}
+                        placeholder={col.placeholder}
+                        onKeyDown={(e) => handleCellKey(e, i)}
+                        style={xlInput}
+                      />
+                    </XlTd>
+                  ))}
+                  <XlTd center>
+                    <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
+                      aria-label="Remove" isDisabled={draftLines.length === 1}
+                      onClick={() => removeLine(i)} />
+                  </XlTd>
+                </Box>
+              ))}
+              <Box as="tr" cursor="cell" onClick={addLine} _hover={{ bg: "blue.50" }}>
+                <Box as="td" colSpan={NCOLS}
+                  border="1px solid" borderColor="gray.200" px={3} py="9px">
+                  <Text fontSize="sm" color="gray.400" fontStyle="italic">+ add row</Text>
+                </Box>
+              </Box>
+            </tbody>
+          </Box>
+        </Box>
+      </FloatingWindow>
 
       {/* Push to inventory confirmation modal */}
       <FloatingWindow
@@ -461,7 +474,7 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
           </Button>
         </>}
       >
-            <Text fontSize="sm" color="gray.500" mb={3}>
+        <Text fontSize="sm" color="gray.500" mb={3}>
               The following {pushLines.length} line(s) from this receipt will each become a new row in NTI Inventory.
               Received date will be set to <strong>{fmtDate(receipt.shipmentDate) || "—"}</strong>.
             </Text>
@@ -500,143 +513,7 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
               </Box>
             </Box>
       </FloatingWindow>
-    </Box>
-  );
-};
-
-// ── New record form — Excel-like entry ─────────────────────────────────────────
-
-const NewReceiptForm = ({ onReceiptAdded }) => {
-  const toast = useToast();
-  const [open, setOpen]             = useState(false);
-  const [newDate, setNewDate]       = useState(today());
-  const [newBol, setNewBol]         = useState("");
-  const [newDriver, setNewDriver]   = useState("");
-  const [newLines, setNewLines]     = useState([emptyLine()]);
-  const [submitting, setSubmitting] = useState(false);
-
-  const updateLine = (i, field, val) =>
-    setNewLines((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: val } : l));
-  const addLine    = () => setNewLines((prev) => [...prev, emptyLine()]);
-  const removeLine = (i) => setNewLines((prev) => prev.filter((_, idx) => idx !== i));
-
-  const cancel = () => {
-    setOpen(false);
-    setNewDate(today()); setNewBol(""); setNewDriver(""); setNewLines([emptyLine()]);
-  };
-
-  const submit = async () => {
-    const validLines = newLines.filter((l) => l.lot || l.brand || l.description);
-    setSubmitting(true);
-    try {
-      const res = await axiosInstance.post("/noblesse-receipts", {
-        shipmentDate: newDate, bolNumber: newBol, driver: newDriver, lines: validLines,
-      });
-      toast({ title: "Record logged", status: "success", position: "top", duration: 2000, isClosable: true });
-      onReceiptAdded(res.data);
-      cancel();
-    } catch {
-      toast({ title: "Failed to save", status: "error", position: "top", duration: 3000, isClosable: true });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleCellKey = (e, rowIdx) => {
-    if (e.key === "Enter") { e.preventDefault(); if (rowIdx === newLines.length - 1) addLine(); }
-  };
-
-  const NCOLS = RECEIPT_LINE_COLS.length + 2;
-
-  if (!open) {
-    return (
-      <Box border="2px dashed" borderColor="gray.200" borderRadius="md" mb={5} px={4} py={3}
-        cursor="pointer" _hover={{ borderColor: "blue.200", bg: "blue.50" }}
-        onClick={() => setOpen(true)}>
-        <Text fontSize="sm" color="gray.400" fontStyle="italic">+ new daily record</Text>
-      </Box>
-    );
-  }
-
-  return (
-    <Box border="1px solid" borderColor="gray.300" borderRadius="md" mb={5} overflow="hidden" boxShadow="sm">
-
-      {/* Header strip */}
-      <Box bg="gray.50" px={4} py={3} borderBottom="1px solid" borderBottomColor="gray.300">
-        <Text fontSize="sm" fontWeight="bold" textTransform="uppercase"
-          letterSpacing="widest" color="gray.400" mb={2}>
-          New Daily Incoming Product Record
-        </Text>
-        <Flex gap={4} align="flex-end" flexWrap="wrap">
-          <Box>
-            <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Date</Text>
-            {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
-            <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)}
-              style={hdInput("140px")} autoFocus />
-          </Box>
-          <Box>
-            <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">BOL #</Text>
-            <input placeholder="e.g. 8289" value={newBol} onChange={(e) => setNewBol(e.target.value)}
-              style={hdInput("90px")} />
-          </Box>
-          <Box>
-            <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Driver</Text>
-            <input placeholder="Name" value={newDriver} onChange={(e) => setNewDriver(e.target.value)}
-              style={hdInput("160px")} />
-          </Box>
-          <Flex gap={1} ml="auto">
-            <IconButton icon={<CheckIcon />} size="sm" colorScheme="blue" aria-label="Save"
-              isLoading={submitting} onClick={submit} />
-            <IconButton icon={<CloseIcon />} size="sm" variant="ghost" colorScheme="gray"
-              aria-label="Cancel" onClick={cancel} />
-          </Flex>
-        </Flex>
-      </Box>
-
-      {/* Excel grid */}
-      <Box overflowX="auto">
-        <Box as="table" borderCollapse="collapse" style={{ minWidth: "100%" }}>
-          <thead>
-            <tr>
-              <XlTh center w="32px">#</XlTh>
-              {RECEIPT_LINE_COLS.map((c) => <XlTh key={c.key} w={c.w}>{c.label}</XlTh>)}
-              <XlTh w="36px" />
-            </tr>
-          </thead>
-          <tbody>
-            {newLines.map((line, i) => (
-              <Box as="tr" key={i}>
-                <XlRowNum n={i + 1} />
-                {RECEIPT_LINE_COLS.map((col) => (
-                  <XlTd key={col.key} isInput>
-                    <input
-                      type={col.type}
-                      value={line[col.key]}
-                      onChange={(e) => updateLine(i, col.key, e.target.value)}
-                      placeholder={col.placeholder}
-                      onKeyDown={(e) => handleCellKey(e, i)}
-                      style={xlInput}
-                    />
-                  </XlTd>
-                ))}
-                <XlTd center>
-                  <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
-                    aria-label="Remove" isDisabled={newLines.length === 1}
-                    onClick={() => removeLine(i)} />
-                </XlTd>
-              </Box>
-            ))}
-            {/* Add-row tap target */}
-            <Box as="tr" cursor="cell" onClick={addLine} _hover={{ bg: "blue.50" }}>
-              <Box as="td" colSpan={NCOLS}
-                border="1px solid" borderColor="gray.200" px={3} py="9px">
-                <Text fontSize="sm" color="gray.400" fontStyle="italic">+ add row</Text>
-              </Box>
-            </Box>
-          </tbody>
-        </Box>
-      </Box>
-    </Box>
+    </>
   );
 };
 
@@ -739,6 +616,47 @@ const DAYS_PER_PAGE = 5;
 export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, onReceiptDelete, onInventoryPush, isAdmin, canDelete = false }) => {
   const [page, setPage]         = useState(0);
   const [viewMode, setViewMode] = useState("cards"); // "cards" | "table"
+  const [newRecordOpen, setNewRecordOpen] = useState(false);
+  const [newDate, setNewDate]   = useState(today());
+  const [newBol, setNewBol]     = useState("");
+  const [newDriver, setNewDriver] = useState("");
+  const [newLines, setNewLines] = useState([emptyLine()]);
+  const [submitting, setSubmitting] = useState(false);
+  const toast = useToast();
+
+  const updateLine = (i, field, val) =>
+    setNewLines((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: val } : l));
+  const addLine    = () => setNewLines((prev) => [...prev, emptyLine()]);
+  const removeLine = (i) => setNewLines((prev) => prev.filter((_, idx) => idx !== i));
+
+  const cancelNewRecord = () => {
+    setNewRecordOpen(false);
+    setNewDate(today()); setNewBol(""); setNewDriver(""); setNewLines([emptyLine()]);
+  };
+
+  const submitNewRecord = async () => {
+    const validLines = newLines.filter((l) => l.lot || l.brand || l.description);
+    setSubmitting(true);
+    try {
+      const res = await axiosInstance.post("/noblesse-receipts", {
+        shipmentDate: newDate, bolNumber: newBol, driver: newDriver, lines: validLines,
+      });
+      toast({ title: "Record logged", status: "success", position: "top", duration: 2000, isClosable: true });
+      onReceiptAdded(res.data);
+      setPage(0);
+      cancelNewRecord();
+    } catch {
+      toast({ title: "Failed to save", status: "error", position: "top", duration: 3000, isClosable: true });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCellKey = (e, rowIdx) => {
+    if (e.key === "Enter") { e.preventDefault(); if (rowIdx === newLines.length - 1) addLine(); }
+  };
+
+  const NCOLS = RECEIPT_LINE_COLS.length + 2;
 
   // Unique shipment dates sorted newest-first
   const allDates = [...new Set(receipts.map((r) => r.shipmentDate).filter(Boolean))]
@@ -751,8 +669,6 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
   const visible = receipts.filter((r) =>
     r.shipmentDate ? pageDateSet.has(r.shipmentDate) : page === 0
   );
-
-  const handleReceiptAdded = (r) => { onReceiptAdded(r); setPage(0); };
 
   // Segmented control style helpers
   const segBtn = (active) => ({
@@ -801,6 +717,13 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
               </Button>
             </Flex>
           )}
+
+          {/* New record button */}
+          {isAdmin && (
+            <Button size="xs" colorScheme="blue" onClick={() => setNewRecordOpen(true)}>
+              + New Record
+            </Button>
+          )}
         </Flex>
       </Flex>
 
@@ -808,7 +731,82 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
         <AllLinesTable receipts={receipts} />
       ) : (
         <>
-          {isAdmin && page === 0 && <NewReceiptForm onReceiptAdded={handleReceiptAdded} />}
+          {/* New record modal */}
+          <FloatingWindow
+            isOpen={newRecordOpen}
+            onClose={cancelNewRecord}
+            title="New Daily Incoming Product Record"
+            width={1600}
+            footer={<Flex gap={2} justify="flex-end" width="100%">
+              <Button size="sm" variant="ghost" onClick={cancelNewRecord}>Cancel</Button>
+              <Button size="sm" colorScheme="blue" isLoading={submitting} onClick={submitNewRecord}>Save Record</Button>
+            </Flex>}
+          >
+            <Box mb={4}>
+              <Flex gap={4} align="flex-end" flexWrap="wrap">
+                <Box>
+                  <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Date</Text>
+                  {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
+                  <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)}
+                    style={hdInput("140px")} autoFocus />
+                </Box>
+                <Box>
+                  <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">BOL #</Text>
+                  <input placeholder="e.g. 8289" value={newBol} onChange={(e) => setNewBol(e.target.value)}
+                    style={hdInput("90px")} />
+                </Box>
+                <Box>
+                  <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Driver</Text>
+                  <input placeholder="Name" value={newDriver} onChange={(e) => setNewDriver(e.target.value)}
+                    style={hdInput("160px")} />
+                </Box>
+              </Flex>
+            </Box>
+
+            {/* Excel grid */}
+            <Box overflowX="auto" maxH="60vh">
+              <Box as="table" borderCollapse="collapse" style={{ minWidth: "100%" }}>
+                <thead>
+                  <tr>
+                    <XlTh center w="32px">#</XlTh>
+                    {RECEIPT_LINE_COLS.map((c) => <XlTh key={c.key} w={c.w}>{c.label}</XlTh>)}
+                    <XlTh w="36px" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {newLines.map((line, i) => (
+                    <Box as="tr" key={i}>
+                      <XlRowNum n={i + 1} />
+                      {RECEIPT_LINE_COLS.map((col) => (
+                        <XlTd key={col.key} isInput>
+                          <input
+                            type={col.type}
+                            value={line[col.key]}
+                            onChange={(e) => updateLine(i, col.key, e.target.value)}
+                            placeholder={col.placeholder}
+                            onKeyDown={(e) => handleCellKey(e, i)}
+                            style={xlInput}
+                          />
+                        </XlTd>
+                      ))}
+                      <XlTd center>
+                        <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
+                          aria-label="Remove" isDisabled={newLines.length === 1}
+                          onClick={() => removeLine(i)} />
+                      </XlTd>
+                    </Box>
+                  ))}
+                  {/* Add-row tap target */}
+                  <Box as="tr" cursor="cell" onClick={addLine} _hover={{ bg: "blue.50" }}>
+                    <Box as="td" colSpan={NCOLS}
+                      border="1px solid" borderColor="gray.200" px={3} py="9px">
+                      <Text fontSize="sm" color="gray.400" fontStyle="italic">+ add row</Text>
+                    </Box>
+                  </Box>
+                </tbody>
+              </Box>
+            </Box>
+          </FloatingWindow>
 
           {visible.length === 0 && !isAdmin && (
             <Text fontSize="md" color="gray.400">No records logged yet.</Text>

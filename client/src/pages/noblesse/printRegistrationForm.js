@@ -11,6 +11,11 @@ const printRegistrationForm = (form = {}) => {
   if (!win) return;
 
   const val = (v) => (v === null || v === undefined || v === "" ? "" : esc(v));
+  const wt = (v) => {
+    if (!v && v !== 0) return "";
+    const num = parseFloat(v);
+    return isNaN(num) ? esc(v) : num.toFixed(2);
+  };
   const checkbox = (checked) => `<span class="checkbox">${checked ? "&#10003;" : ""}</span>`;
 
   const row = (leftLabel, leftVal, rightLabel, rightVal, opts = {}) => `
@@ -37,55 +42,60 @@ const printRegistrationForm = (form = {}) => {
         <style>
           @page { size: letter; margin: 12mm; }
           html, body {
-            margin: 0; padding: 0;
+            margin: 20px 0 0 0; padding: 0;
             font-family: Calibri, "Segoe UI", Arial, Helvetica, sans-serif;
             color: #1a1a1a;
           }
           .sheet {
             max-width: 720px; margin: 0 auto; padding: 16px;
-            border: 1px solid #d4d8dd;
+            border: none;
           }
           .header {
             display: flex; align-items: flex-start; justify-content: space-between;
-            border-bottom: 2px solid #1f3864; padding-bottom: 8px; margin-bottom: 10px;
+            border-bottom: 2px solid #1f3864; padding-bottom: 8px; margin-bottom: 24px;
           }
           .brand img { width: 320px; max-width: 60%; object-fit: contain; display: block; }
-          .brand .addr { font-size: 10px; color: #595959; margin-top: 4px; }
-          .header-right { text-align: right; font-size: 14px; font-weight: 700; color: #1f3864; white-space: nowrap; }
-          .header-right .line { margin-bottom: 12px; }
-          .header-right .fill { font-weight: 400; color: #1a1a1a; margin-left: 6px; }
+          .brand .addr { font-size: 12px; color: #595959; margin-top: 4px; }
+          .header-right { text-align: left; font-size: 20px; font-weight: 700; color: #1f3864; white-space: nowrap; }
+          .header-right .line { margin-bottom: 16px; }
+          .header-right .fill { font-weight: 700; color: #1a1a1a; margin-left: 12px; }
           .title {
-            text-align: center; font-size: 20px; font-weight: 800; color: #1f3864;
-            margin: 4px 0 14px;
+            text-align: center; font-size: 22px; font-weight: 800; color: #1f3864;
+            margin: 30px 0 20px;
           }
-          table.form { width: 100%; border-collapse: collapse; margin-bottom: 0; }
+          table.form { width: 100%; border-collapse: separate; margin-bottom: 24px; border-spacing: 12px 16px; }
           table.form td { padding: 0; }
           td.section {
-            background: #d9d9d9; font-weight: 700; font-size: 12px; color: #1a1a1a;
-            padding: 6px 10px;
+            background: #c9cace; font-weight: 700; font-size: 13px; color: #000000;
+            padding: 10px 10px; height: auto;
           }
           td.label {
-            width: 27%; text-align: right; font-weight: 700; font-size: 12px;
-            color: #1a1a1a; padding: 10px 12px 10px 6px; background: #ffffff; vertical-align: middle;
+            width: 27%; text-align: right; font-weight: 600; font-size: 13px;
+            color: #1f3864; padding: 16px 12px; background: #f5f5f5; vertical-align: middle;
           }
           td.field {
-            width: 23%; background: #f0f0f0; padding: 10px 12px; font-size: 13px;
+            width: 23%; background: #f5f5f5; padding: 16px 12px; font-size: 13px; color: #333;
           }
           td.plain-field {
-            width: 23%; background: #ffffff; padding: 10px 12px; font-size: 13px;
+            width: 23%; background: #f5f5f5; padding: 16px 12px; font-size: 13px; color: #333;
           }
           .checkbox {
             display: inline-flex; align-items: center; justify-content: center;
             width: 15px; height: 15px;
             border: 1px solid #1a1a1a; background: #fff; font-size: 11px; font-weight: 700;
           }
+          td.separator {
+            border: none; height: 12px; border-top: 2px solid #999; padding: 0;
+          }
           .footer-row td {
             border-top: 1px solid #d9d9d9;
-            text-align: left; font-weight: 700; font-size: 12px;
+            text-align: left; font-weight: 700; font-size: 14px;
             padding: 10px 6px;
           }
           .no-print { text-align: center; margin: 14px 0; }
-          @media print { .no-print { display: none; } }
+          @media print {
+            .no-print { display: none; }
+          }
         </style>
       </head>
       <body>
@@ -109,20 +119,21 @@ const printRegistrationForm = (form = {}) => {
             ${row("Vendor Lot/(IC)#", val(form.vendorLot), "Vendor", val(form.vendor))}
 
             ${sectionHeader("Product Identification")}
-            ${fullRow("Product Description", val(form.productDescription))}
+            ${row("Product Description", val(form.productDescription), "Original Weight (lbs)", wt(form.originalWeight))}
             ${fullRow("Processing Type", val(form.processingType))}
             ${row("Spec.(##X##)", val(form.spec), "Brand", val(form.brand))}
             ${row("EST#", val(form.estNumber), "Grade", val(form.grade))}
+            <tr><td colspan="4" class="separator"></td></tr>
 
             ${sectionHeader("Estimation/Checks")}
-            ${row("Due Date?", val(form.dueDate), "Predicted Yield (%)", val(form.predictedYield))}
+            ${row("Due Date?", val(form.dueDate), "Predicted Yield (%)", val(form.predictedYield) + (form.predictedYield ? "%" : ""))}
             ${row("Manifest/BL Attached?", checkbox(form.manifestBlAttached), "Process Report Attached?", checkbox(form.processReportAttached), { plain: true })}
 
             ${sectionHeader("Processing &amp; Yield")}
-            ${row("Original Weight (lbs)", val(form.originalWeight), "Total Quantity (c/s)", val(form.totalQuantity))}
-            ${row("(1)Processing Date(s)", val(form.processingDate1), "Processed Weight (lbs)", val(form.processedWeight1))}
-            ${row("(2)Processing Date(s)", val(form.processingDate2), "Processed Weight (lbs)", val(form.processedWeight2))}
-            ${row("Actual Yield (%)", val(form.actualYield), "Temp", val(form.temp))}
+            ${row("Total Quantity (c/s)", wt(form.totalQuantity), "", "")}
+            ${row("Processed Weight (lbs)", wt(form.processedWeight1), "(1)Processing Date(s)", val(form.processingDate1))}
+            ${row("Processed Weight (lbs)", wt(form.processedWeight2), "(2)Processing Date(s)", val(form.processingDate2))}
+            ${row("Actual Yield (%)", wt(form.actualYield) + (form.actualYield ? "%" : ""), "Temp", val(form.temp))}
 
             ${sectionHeader("Additional")}
             ${fullRow("Remarks", val(form.remarks), { tall: true })}

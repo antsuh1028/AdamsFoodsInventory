@@ -13,7 +13,6 @@ import {
   Alert,
   AlertIcon,
   Divider,
-  Link,
   Image,
 } from "@chakra-ui/react";
 import { EmailIcon, LockIcon } from "@chakra-ui/icons";
@@ -47,6 +46,9 @@ const NoblesseLogin = () => {
       const result = await axios.post(`${API_BASE_URL}/login`, { email, password });
       if (result.data.message === "Success") {
         localStorage.setItem("token", result.data.token);
+        if (result.data.refreshToken) {
+          localStorage.setItem("refreshToken", result.data.refreshToken);
+        }
         navigate("/noblesse");
       } else {
         setError(result.data.message);

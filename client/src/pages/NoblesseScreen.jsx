@@ -8,8 +8,6 @@ import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
-import { NtiInventoryTab } from "./noblesse/NtiInventoryTab";
-import { ProcessingReportTab } from "./noblesse/ProcessingReportTab";
 import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
 import ntiLogo from "../assets/nti.jpg";
 
@@ -20,11 +18,7 @@ const NoblesseScreen = () => {
   const isAdmin  = getRole() === "admin";
   const canEdit  = true; // all roles permitted on this screen are trusted to edit
 
-  const [pendingOrders, setPendingOrders] = useState([]);
-  const [ntiInventory, setNtiInventory]   = useState([]);
   const [receipts, setReceipts]           = useState([]);
-  const [afItems, setAfItems]             = useState([]);
-  const [procOrders, setProcOrders]       = useState([]);
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(null);
@@ -44,44 +38,19 @@ const NoblesseScreen = () => {
 
   const fetchData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
-    let backendReachable = false;
     try {
-      const [ordersRes, ntiInvRes, receiptsRes, afItemsRes] = await Promise.all([
-        axiosInstance.get("/production-orders?status=pending"),
-        axiosInstance.get("/nti-inventory"),
-        axiosInstance.get("/noblesse-receipts"),
-        axiosInstance.get("/nti-production-items"),
-      ]);
-      setPendingOrders(ordersRes.data || []);
-      setNtiInventory(ntiInvRes.data || []);
+      const receiptsRes = await axiosInstance.get("/noblesse-receipts");
       setReceipts(receiptsRes.data || []);
-      setAfItems(afItemsRes.data || []);
       setLastRefreshed(new Date());
       setError(null);
-      backendReachable = true;
+      startAutoRefresh();
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.error || err.message || "Failed to load Noblesse data");
-      // Stop polling — retrying on a fixed interval against a failing backend
-      // just spams the same error, so leave it to the manual Refresh button.
       stopAutoRefresh();
     } finally {
       setLoading(false);
       setRefreshing(false);
-    }
-
-    // Skip this entirely once we already know the backend is unreachable —
-    // no point firing another request that's just going to fail the same way.
-    if (!backendReachable) return;
-
-    try {
-      const res = await axiosInstance.get("/noblesse-proc-orders");
-      setProcOrders(res.data || []);
-      startAutoRefresh(); // (re)arm only once every endpoint in this cycle has succeeded
-    } catch (err) {
-      console.error("proc-orders fetch:", err.message);
-      setError(err.response?.data?.error || err.message || "Failed to load processing orders");
-      stopAutoRefresh();
     }
   }, []);
 
@@ -95,23 +64,6 @@ const NoblesseScreen = () => {
   const handleReceiptAdded  = (r) => setReceipts((prev) => [r, ...prev]);
   const handleReceiptUpdate = (r) => setReceipts((prev) => prev.map((x) => x.id === r.id ? r : x));
   const handleReceiptDelete = (id) => setReceipts((prev) => prev.filter((x) => x.id !== id));
-  const handleInventoryPush = (items) => setNtiInventory((prev) => [...items, ...prev]);
-
-  const handleProcOrderAdded = async (o) => {
-    setProcOrders((prev) => [o, ...prev]);
-    try {
-      const res = await axiosInstance.get("/nti-inventory");
-      setNtiInventory(res.data || []);
-    } catch (err) {
-      console.error("nti re-fetch:", err.message);
-    }
-  };
-  const handleProcOrderUpdate = (o) => setProcOrders((prev) => prev.map((x) => x.id === o.id ? o : x));
-  const handleProcOrderDelete = (id) => setProcOrders((prev) => prev.filter((x) => x.id !== id));
-
-  const handleNtiAdd    = (item) => setNtiInventory((prev) => [item, ...prev]);
-  const handleNtiUpdate = (item) => setNtiInventory((prev) => prev.map((x) => x.id === item.id ? item : x));
-  const handleNtiDelete = (id)   => setNtiInventory((prev) => prev.filter((x) => x.id !== id));
 
   if (loading) {
     return (
@@ -148,7 +100,7 @@ const NoblesseScreen = () => {
               />
             </Tooltip>
             <Button size="sm" variant="ghost" colorScheme="red"
-              onClick={() => { localStorage.removeItem("token"); navigate("/noblesse-login"); }}>
+              onClick={() => { localStorage.removeItem("token"); localStorage.removeItem("refreshToken"); navigate("/noblesse-login"); }}>
               Log out
             </Button>
           </Flex>
@@ -182,18 +134,6 @@ const NoblesseScreen = () => {
               Incoming Records
               {receipts.length > 0 && <Badge ml={2} colorScheme="blue" borderRadius="full">{receipts.length}</Badge>}
             </Tab>
-            <Tab>
-              Processing Report
-              {procOrders.filter((o) => o.status === "pending").length > 0 && (
-                <Badge ml={2} colorScheme="yellow" borderRadius="full">
-                  {procOrders.filter((o) => o.status === "pending").length}
-                </Badge>
-              )}
-            </Tab>
-            <Tab>
-              NTI Inventory
-              {ntiInventory.length > 0 && <Badge ml={2} colorScheme="green" borderRadius="full">{ntiInventory.length}</Badge>}
-            </Tab>
             <Tab>Registration Forms</Tab>
           </TabList>
 
@@ -206,30 +146,11 @@ const NoblesseScreen = () => {
                   onReceiptAdded={handleReceiptAdded}
                   onReceiptUpdate={handleReceiptUpdate}
                   onReceiptDelete={handleReceiptDelete}
-                  onInventoryPush={handleInventoryPush}
                   isAdmin={canEdit}
                   canDelete={isAdmin}
                 />
               </TabPanel>
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
-                <ProcessingReportTab
-                  ntiInventory={ntiInventory}
-                  procOrders={procOrders}
-                  onProcOrderAdded={handleProcOrderAdded}
-                  onProcOrderUpdate={handleProcOrderUpdate}
-                  onProcOrderDelete={handleProcOrderDelete}
-                  canDelete={isAdmin}
-                />
-              </TabPanel>
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
-                <NtiInventoryTab
-                  ntiInventory={ntiInventory} afItems={afItems}
-                  procOrders={procOrders}
-                  onAdd={handleNtiAdd} onUpdate={handleNtiUpdate} onDelete={handleNtiDelete}
-                  isAdmin={canEdit}
-                  canDelete={isAdmin}
-                />
-              </TabPanel>
+              {/* Processing Report & NTI Inventory tabs disabled for now */}
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
                 <RegistrationFormTab isAdmin={canEdit} canDelete={isAdmin} />
               </TabPanel>

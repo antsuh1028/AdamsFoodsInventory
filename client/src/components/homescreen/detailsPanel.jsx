@@ -291,7 +291,6 @@ const DetailsPanel = ({
     setBoxLoading("undo");
     try {
       const boxes = lastRemovedBoxes.boxes;
-      const totalWeight = boxes.reduce((s, b) => s + parseFloat(b.weight || 0), 0);
 
       if (boxes.length === 1) {
         const res = await authPatch(

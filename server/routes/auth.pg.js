@@ -10,6 +10,28 @@ const loginLimiter = rateLimit({
   message: { error: "Too many login attempts, try again later" },
 });
 
+const refreshLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: "Too many refresh attempts, try again later" },
+});
+
+const generateAccessToken = (user) => {
+  return jwt.sign(
+    { userId: user.id, role: user.role || "user", username: user.username, tenantId: user.tenant_id },
+    process.env.JWT_SECRET,
+    { expiresIn: "1h" }
+  );
+};
+
+const generateRefreshToken = (user) => {
+  return jwt.sign(
+    { userId: user.id },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+};
+
 router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   const username = email?.toLowerCase().trim();
@@ -38,15 +60,38 @@ router.post("/login", loginLimiter, async (req, res) => {
 
     if (!passwordMatch) return res.status(401).json({ message: "Invalid credentials" });
 
-    const token = jwt.sign(
-      { userId: user.id, role: user.role || "user", username: user.username, tenantId: user.tenant_id },
-      process.env.JWT_SECRET,
-      { expiresIn: "8h" }
-    );
-    res.json({ message: "Success", token });
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    res.json({ message: "Success", token: accessToken, refreshToken });
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+router.post("/refresh", refreshLimiter, async (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) return res.status(401).json({ error: "Refresh token required" });
+
+  try {
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+
+    // Verify token exists in database and hasn't been revoked
+    const result = await pool.query(
+      `SELECT u.*, t.id as tenant_id FROM users u
+       JOIN tenants t ON t.id = u.tenant_id
+       WHERE u.id = $1`,
+      [decoded.userId]
+    );
+    const user = result.rows[0];
+    if (!user) return res.status(401).json({ error: "User not found" });
+
+    const newAccessToken = generateAccessToken(user);
+    res.json({ token: newAccessToken });
+  } catch (err) {
+    console.error("Refresh error:", err);
+    res.status(401).json({ error: "Invalid refresh token" });
   }
 });
 

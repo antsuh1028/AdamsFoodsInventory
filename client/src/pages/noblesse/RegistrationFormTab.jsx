@@ -10,6 +10,7 @@ import printRegistrationForm from "./printRegistrationForm";
 import ntiLogo from "../../assets/nti.jpg";
 import FloatingWindow from "../../components/FloatingWindow";
 
+
 const emptyDraft = () => ({
   id: null,
   lotNumber: "", formDate: "", dateReceived: "", timeReceived: "",
@@ -19,7 +20,6 @@ const emptyDraft = () => ({
   manifestBlAttached: false, processReportAttached: false,
   originalWeight: "", totalQuantity: "",
   processingDates: [
-    { date: "", weight: "" },
     { date: "", weight: "" },
   ],
   actualYield: "", temp: "", remarks: "", checkedBy: "",
@@ -38,7 +38,6 @@ const sampleDraft = () => ({
   originalWeight: "1842", totalQuantity: "24",
   processingDates: [
     { date: today(), weight: "1695" },
-    { date: "", weight: "" },
   ],
   actualYield: "92.0", temp: "27",
   remarks: "Sample record for print preview — no backend data behind this.",
@@ -119,9 +118,34 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             <SheetField label="Vendor"><Input {...sheetInputProps} value={draft.vendor} onChange={set("vendor")} /></SheetField>
 
             <SectionBar>Product Identification</SectionBar>
-            <SheetField label="Product Description" full><Input {...sheetInputProps} value={draft.productDescription} onChange={set("productDescription")} /></SheetField>
+            <SheetField label="Product Description"><Input {...sheetInputProps} value={draft.productDescription} onChange={set("productDescription")} /></SheetField>
+            <SheetField label="Original Weight (lbs)"><Input {...sheetInputProps} type="number" value={draft.originalWeight} onChange={set("originalWeight")} /></SheetField>
             <SheetField label="Processing Type" full><Input {...sheetInputProps} value={draft.processingType} onChange={set("processingType")} /></SheetField>
-            <SheetField label="Spec.(##X##)"><Input {...sheetInputProps} value={draft.spec} onChange={set("spec")} /></SheetField>
+            <SheetField label="Spec. ">
+              <Flex gap={1} align="center">
+                <Input
+                  {...sheetInputProps}
+                  placeholder="10"
+                  value={draft.spec ? draft.spec.split("X")[0] || "" : ""}
+                  onChange={(e) => {
+                    const parts = draft.spec ? draft.spec.split("X") : ["", ""];
+                    setDraft({ ...draft, spec: `${e.target.value}X${parts[1] || ""}`.replace(/^X/, "") });
+                  }}
+                  flex={1}
+                />
+                <Text fontSize="sm" fontWeight="bold" color="gray.600">×</Text>
+                <Input
+                  {...sheetInputProps}
+                  placeholder="30"
+                  value={draft.spec ? draft.spec.split("X")[1] || "" : ""}
+                  onChange={(e) => {
+                    const parts = draft.spec ? draft.spec.split("X") : ["", ""];
+                    setDraft({ ...draft, spec: `${parts[0] || ""}X${e.target.value}`.replace(/X$/, "") });
+                  }}
+                  flex={1}
+                />
+              </Flex>
+            </SheetField>
             <SheetField label="Brand"><Input {...sheetInputProps} value={draft.brand} onChange={set("brand")} /></SheetField>
             <SheetField label="EST#"><Input {...sheetInputProps} value={draft.estNumber} onChange={set("estNumber")} /></SheetField>
             <SheetField label="Grade"><Input {...sheetInputProps} value={draft.grade} onChange={set("grade")} /></SheetField>
@@ -137,23 +161,12 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             </SheetField>
 
             <SectionBar>Processing &amp; Yield</SectionBar>
-            <SheetField label="Original Weight (lbs)"><Input {...sheetInputProps} type="number" value={draft.originalWeight} onChange={set("originalWeight")} /></SheetField>
+            <Box gridColumn="1 / -1" />
             <SheetField label="Total Quantity (c/s)"><Input {...sheetInputProps} value={draft.totalQuantity} onChange={set("totalQuantity")} /></SheetField>
+            <Box gridColumn="3 / -1" />
 
             {Array.isArray(draft.processingDates) && draft.processingDates.map((pd, idx) => (
               <React.Fragment key={idx}>
-                <SheetField label={`(${idx + 1}) Processing Date`}>
-                  <Input
-                    {...sheetInputProps}
-                    type="date"
-                    value={pd.date || ""}
-                    onChange={(e) => {
-                      const newDates = [...draft.processingDates];
-                      newDates[idx].date = e.target.value;
-                      setDraft({ ...draft, processingDates: newDates });
-                    }}
-                  />
-                </SheetField>
                 <SheetField label="Processed Weight (lbs)">
                   <Flex gap={1} align="center">
                     <Input
@@ -173,8 +186,8 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       colorScheme="red"
                       minW="auto"
                       px={1}
-                      isDisabled={draft.processingDates.length <= 2}
-                      title={draft.processingDates.length <= 2 ? "Cannot delete first 2 rows" : "Delete this row"}
+                      isDisabled={draft.processingDates.length <= 1}
+                      title={draft.processingDates.length <= 1 ? "Cannot delete last row" : "Delete this row"}
                       onClick={() => {
                         const newDates = draft.processingDates.filter((_, i) => i !== idx);
                         setDraft({ ...draft, processingDates: newDates });
@@ -200,10 +213,61 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                     )}
                   </Flex>
                 </SheetField>
+                <SheetField label={`(${idx + 1}) Processing Date`}>
+                  <Input
+                    {...sheetInputProps}
+                    type="date"
+                    value={pd.date || ""}
+                    onChange={(e) => {
+                      const newDates = [...draft.processingDates];
+                      newDates[idx].date = e.target.value;
+                      setDraft({ ...draft, processingDates: newDates });
+                    }}
+                  />
+                </SheetField>
               </React.Fragment>
             ))}
 
-            <SheetField label="Actual Yield (%)"><Input {...sheetInputProps} type="number" value={draft.actualYield} onChange={set("actualYield")} /></SheetField>
+            {(!Array.isArray(draft.processingDates) || draft.processingDates.length === 0) && (
+              <React.Fragment>
+                <SheetField label="Processed Weight (lbs)">
+                  <Flex gap={1} align="center">
+                    <Input
+                      {...sheetInputProps}
+                      type="number"
+                      placeholder="0.00"
+                    />
+                    <Button size="xs" variant="ghost" colorScheme="red" minW="auto" px={1} isDisabled title="Cannot delete last row">
+                      ×
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      colorScheme="blue"
+                      minW="auto"
+                      px={2}
+                      onClick={() => {
+                        const newDates = [{ date: "", weight: "" }, { date: "", weight: "" }];
+                        setDraft({ ...draft, processingDates: newDates });
+                      }}
+                    >
+                      +
+                    </Button>
+                  </Flex>
+                </SheetField>
+                <SheetField label="(1) Processing Date">
+                  <Input {...sheetInputProps} type="date" />
+                </SheetField>
+              </React.Fragment>
+            )}
+
+            <SheetField label="Actual Yield (%)">
+              <Box {...sheetInputProps} bg="white" border="1px solid" borderColor="gray.200" py={1}>
+                <Text fontSize="sm" color="gray.700" fontWeight="medium">
+                  {calculateYield(draft) ?? "—"}
+                </Text>
+              </Box>
+            </SheetField>
             <SheetField label="Temp"><Input {...sheetInputProps} value={draft.temp} onChange={set("temp")} /></SheetField>
 
             <SectionBar>Additional</SectionBar>
@@ -225,6 +289,23 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
 
 const statusColor = (status) => (status === "completed" ? "green" : "yellow");
 
+const calculateYield = (draft) => {
+  if (!draft || !draft.originalWeight || !Array.isArray(draft.processingDates)) {
+    return null;
+  }
+  const originalWeight = parseFloat(draft.originalWeight);
+  if (!originalWeight || originalWeight <= 0) return null;
+
+  const totalProcessedWeight = draft.processingDates.reduce((sum, pd) => {
+    const weight = parseFloat(pd.weight || 0);
+    return sum + (isNaN(weight) ? 0 : weight);
+  }, 0);
+
+  if (totalProcessedWeight === 0) return null;
+  const yield_ = (totalProcessedWeight / originalWeight * 100).toFixed(2);
+  return yield_;
+};
+
 export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
   const toast = useToast();
   const [forms, setForms]     = useState([]);
@@ -232,6 +313,11 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
   const [draft, setDraft]     = useState(null);
   const [saving, setSaving]   = useState(false);
   const [statusFilter, setStatusFilter] = useState("in_progress");
+  const [expandedId, setExpandedId] = useState(null);
+  const [allHistoryOpen, setAllHistoryOpen] = useState(false);
+  const [allHistory, setAllHistory] = useState([]);
+  const [allHistoryLoading, setAllHistoryLoading] = useState(false);
+  const [excelViewOpen, setExcelViewOpen] = useState(false);
 
   const fetchForms = useCallback(async () => {
     try {
@@ -243,6 +329,22 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
       setLoading(false);
     }
   }, []);
+
+  const openAllHistoryModal = async () => {
+    setAllHistoryOpen(true);
+    setAllHistoryLoading(true);
+    try {
+      const res = await axiosInstance.get("/noblesse-registration-forms/all/history");
+      setAllHistory(res.data || []);
+    } catch (err) {
+      console.error(err);
+      toast({ status: "error", title: "Failed to load history", duration: 2000 });
+    } finally {
+      setAllHistoryLoading(false);
+    }
+  };
+
+  const closeAllHistoryModal = () => setAllHistoryOpen(false);
 
   useEffect(() => { fetchForms(); }, [fetchForms]);
 
@@ -257,7 +359,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
           dates.push({ date: draft[`processingDate${i}`] || "", weight: draft[`processedWeight${i}`] || "" });
         }
       }
-      if (dates.length === 0) dates.push({ date: "", weight: "" }, { date: "", weight: "" });
+      if (dates.length === 0) dates.push({ date: "", weight: "" });
       draft.processingDates = dates;
     }
     setDraft(draft);
@@ -267,46 +369,15 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
   const save = async () => {
     setSaving(true);
     try {
-      // Convert processingDates array to backend format
+      // Send processingDates array directly to backend - no conversion needed
       const payload = { ...draft };
-      if (payload.processingDates) {
-        payload.processingDates.forEach((pd, idx) => {
-          payload[`processingDate${idx + 1}`] = pd.date;
-          payload[`processedWeight${idx + 1}`] = pd.weight;
-        });
-        delete payload.processingDates;
-      }
 
       if (draft.id) {
         const res = await axiosInstance.patch(`/noblesse-registration-forms/${draft.id}`, payload);
-        // Convert response back to array format for display
-        const resData = res.data;
-        if (!resData.processingDates) {
-          const dates = [];
-          for (let i = 1; i <= 10; i++) {
-            if (resData[`processingDate${i}`] || resData[`processedWeight${i}`]) {
-              dates.push({ date: resData[`processingDate${i}`] || "", weight: resData[`processedWeight${i}`] || "" });
-            }
-          }
-          if (dates.length === 0) dates.push({ date: "", weight: "" }, { date: "", weight: "" });
-          resData.processingDates = dates;
-        }
-        setForms((prev) => prev.map((f) => (f.id === res.data.id ? resData : f)));
+        setForms((prev) => prev.map((f) => (f.id === res.data.id ? res.data : f)));
       } else {
         const res = await axiosInstance.post("/noblesse-registration-forms", payload);
-        // Convert response back to array format for display
-        const resData = res.data;
-        if (!resData.processingDates) {
-          const dates = [];
-          for (let i = 1; i <= 10; i++) {
-            if (resData[`processingDate${i}`] || resData[`processedWeight${i}`]) {
-              dates.push({ date: resData[`processingDate${i}`] || "", weight: resData[`processedWeight${i}`] || "" });
-            }
-          }
-          if (dates.length === 0) dates.push({ date: "", weight: "" }, { date: "", weight: "" });
-          resData.processingDates = dates;
-        }
-        setForms((prev) => [resData, ...prev]);
+        setForms((prev) => [res.data, ...prev]);
       }
       toast({ status: "success", title: "Registration form saved", duration: 2000 });
       close();
@@ -381,7 +452,11 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
             </Button>
           </Flex>
         </Flex>
-        {isAdmin && <Button size="xs" colorScheme="blue" onClick={openNew}>+ New Registration Form</Button>}
+        <Flex gap={2}>
+          <Button size="xs" colorScheme="gray" variant="outline" onClick={() => setExcelViewOpen(true)}>View All</Button>
+          {isAdmin && <Button size="xs" colorScheme="gray" onClick={openAllHistoryModal}>History</Button>}
+          {isAdmin && <Button size="xs" colorScheme="blue" onClick={openNew}>+ New Registration Form</Button>}
+        </Flex>
       </Flex>
 
       {filteredForms.length === 0 ? (
@@ -389,7 +464,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
           {forms.length === 0 ? "No registration forms saved yet." : statusFilter ? `No ${statusFilter === "in_progress" ? "in progress" : "completed"} registration forms.` : "No registration forms."}
         </Text>
       ) : (
-        <Box as="table" width="100%" borderCollapse="collapse">
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
               <Th>Lot #</Th>
@@ -402,62 +477,117 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
           </thead>
           <tbody>
             {filteredForms.map((f, i) => (
-              <Box as="tr" key={f.id} bg={i % 2 === 0 ? "white" : "gray.50"}>
-                <Td fontWeight="medium" color="blue.700">{f.lotNumber || "—"}</Td>
-                <Td>{f.vendor || "—"}</Td>
-                <Td>{f.productDescription || "—"}</Td>
-                <Td>{fmtDate(f.dateReceived)}</Td>
-                <Td>
-                  <Menu>
-                    <MenuButton
-                      as={Badge}
-                      colorScheme={statusColor(f.status)}
-                      borderRadius="full"
-                      px={2}
-                      cursor="pointer"
-                      _hover={{ opacity: 0.8 }}
-                    >
-                      <Flex align="center" gap={1}>
-                        <Text fontSize="xs">{f.status === "completed" ? "Completed" : "In Progress"}</Text>
-                        <ChevronDownIcon boxSize={3} />
-                      </Flex>
-                    </MenuButton>
-                    <MenuList minW="120px">
-                      <MenuItem
-                        onClick={() => updateStatus(f.id, "in_progress")}
-                        isDisabled={f.status === "in_progress"}
-                        fontSize="sm"
+              <React.Fragment key={f.id}>
+                <tr
+                  style={{
+                    backgroundColor: i % 2 === 0 ? "white" : "rgb(245, 245, 245)",
+                    cursor: "pointer",
+                    transition: "background-color 0.2s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? "rgb(245, 245, 245)" : "rgb(230, 230, 230)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? "white" : "rgb(245, 245, 245)"; }}
+                  onDoubleClick={() => {
+                    if (expandedId === f.id) {
+                      setExpandedId(null);
+                    } else {
+                      setExpandedId(f.id);
+                    }
+                  }}
+                >
+                  <Td fontWeight="medium" color="blue.700">{f.lotNumber || "—"}</Td>
+                  <Td>{f.vendor || "—"}</Td>
+                  <Td>{f.productDescription || "—"}</Td>
+                  <Td>{fmtDate(f.dateReceived)}</Td>
+                  <Td>
+                    <Menu>
+                      <MenuButton
+                        as={Badge}
+                        colorScheme={statusColor(f.status)}
+                        borderRadius="full"
+                        px={2}
+                        cursor="pointer"
+                        _hover={{ opacity: 0.8 }}
                       >
-                        In Progress
-                      </MenuItem>
-                      <MenuItem
-                        onClick={() => updateStatus(f.id, "completed")}
-                        isDisabled={f.status === "completed"}
-                        fontSize="sm"
-                      >
-                        Completed
-                      </MenuItem>
-                    </MenuList>
-                  </Menu>
-                </Td>
-                <Td>
-                  <Flex gap={2}>
-                    <Button size="xs" variant="outline" onClick={() => openEdit(f)}>
-                      {f.status === "completed" ? "View" : "Revisit"}
-                    </Button>
-                    <Button size="xs" variant="outline" colorScheme="blue" onClick={() => printRegistrationForm(f)}>
-                      Print
-                    </Button>
-                    {canDelete && (
-                      <IconButton size="xs" aria-label="Delete" icon={<DeleteIcon />}
-                        variant="ghost" colorScheme="red" onClick={() => remove(f.id)} />
-                    )}
-                  </Flex>
-                </Td>
-              </Box>
+                        <Flex align="center" gap={1}>
+                          <Text fontSize="xs">{f.status === "completed" ? "Completed" : "In Progress"}</Text>
+                          <ChevronDownIcon boxSize={3} />
+                        </Flex>
+                      </MenuButton>
+                      <MenuList minW="120px">
+                        <MenuItem
+                          onClick={() => updateStatus(f.id, "in_progress")}
+                          isDisabled={f.status === "in_progress"}
+                          fontSize="sm"
+                        >
+                          In Progress
+                        </MenuItem>
+                        <MenuItem
+                          onClick={() => updateStatus(f.id, "completed")}
+                          isDisabled={f.status === "completed"}
+                          fontSize="sm"
+                        >
+                          Completed
+                        </MenuItem>
+                      </MenuList>
+                    </Menu>
+                  </Td>
+                  <Td>
+                    <Flex gap={2}>
+                      <Button size="xs" variant="outline" onClick={() => openEdit(f)}>
+                        {f.status === "completed" ? "View" : "Edit"}
+                      </Button>
+                      <Button size="xs" variant="outline" colorScheme="blue" onClick={() => printRegistrationForm(f)}>
+                        Print
+                      </Button>
+                      {isAdmin && (
+                        <IconButton size="xs" aria-label="Delete" icon={<DeleteIcon />}
+                          variant="ghost" colorScheme="red" onClick={() => remove(f.id)} />
+                      )}
+                    </Flex>
+                  </Td>
+                </tr>
+                {expandedId === f.id && (
+                  <tr style={{ backgroundColor: "rgb(230, 240, 255)", borderTop: "2px solid rgb(66, 153, 225)" }}>
+                    <td colSpan={6} style={{ padding: 0 }}>
+                      <Box p={4} width="100%">
+                        <Grid templateColumns="repeat(2, 1fr)" gap={4} fontSize="sm">
+                          <GridItem>
+                            <Text fontWeight="bold" color="gray.700">Lot #</Text>
+                            <Text>{f.lotNumber || "—"}</Text>
+                          </GridItem>
+                          <GridItem>
+                            <Text fontWeight="bold" color="gray.700">Form Date</Text>
+                            <Text>{fmtDate(f.formDate) || "—"}</Text>
+                          </GridItem>
+                          <GridItem>
+                            <Text fontWeight="bold" color="gray.700">Vendor</Text>
+                            <Text>{f.vendor || "—"}</Text>
+                          </GridItem>
+                          <GridItem>
+                            <Text fontWeight="bold" color="gray.700">Product Description</Text>
+                            <Text>{f.productDescription || "—"}</Text>
+                          </GridItem>
+                          <GridItem>
+                            <Text fontWeight="bold" color="gray.700">Processing Type</Text>
+                            <Text>{f.processingType || "—"}</Text>
+                          </GridItem>
+                          <GridItem>
+                            <Text fontWeight="bold" color="gray.700">Spec</Text>
+                            <Text>{f.spec || "—"}</Text>
+                          </GridItem>
+                          <GridItem colSpan={2}>
+                            <Text fontWeight="bold" color="gray.700">Remarks</Text>
+                            <Text>{f.remarks || "—"}</Text>
+                          </GridItem>
+                        </Grid>
+                      </Box>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
           </tbody>
-        </Box>
+        </table>
       )}
 
       <RegistrationFormModal
@@ -465,6 +595,134 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
         draft={draft} setDraft={setDraft}
         onSave={save} saving={saving}
       />
+
+      <FloatingWindow
+        isOpen={excelViewOpen}
+        onClose={() => setExcelViewOpen(false)}
+        title="All Registration Forms"
+        width={1200}
+      >
+        <Box overflowX="auto" maxH="70vh">
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+            <thead>
+              <tr style={{ backgroundColor: "#f0f0f0", fontWeight: "bold" }}>
+                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Lot #</th>
+                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Date Received</th>
+                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Vendor</th>
+                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Product</th>
+                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Type</th>
+                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Spec</th>
+                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center" }}>Original Weight</th>
+                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center" }}>Yield %</th>
+                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center" }}>Status</th>
+                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {forms.length === 0 ? (
+                <tr>
+                  <td colSpan={10} style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center", color: "#999" }}>
+                    No registration forms
+                  </td>
+                </tr>
+              ) : (
+                forms.map((f, idx) => (
+                  <tr key={f.id} style={{ backgroundColor: idx % 2 === 0 ? "white" : "#fafafa" }}>
+                    <td style={{ border: "1px solid #ddd", padding: "8px", fontWeight: "600", color: "#1e40af" }}>
+                      {f.lotNumber || "—"}
+                    </td>
+                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{fmtDate(f.dateReceived) || "—"}</td>
+                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{f.vendor || "—"}</td>
+                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{f.productDescription || "—"}</td>
+                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{f.processingType || "—"}</td>
+                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "center" }}>{f.spec || "—"}</td>
+                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "right" }}>
+                      {f.originalWeight ? `${f.originalWeight} lbs` : "—"}
+                    </td>
+                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "right" }}>
+                      {f.actualYield ? `${f.actualYield}%` : "—"}
+                    </td>
+                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "center" }}>
+                      <Badge colorScheme={statusColor(f.status)} fontSize="11px">
+                        {f.status === "completed" ? "Completed" : "In Progress"}
+                      </Badge>
+                    </td>
+                    <td style={{ border: "1px solid #ddd", padding: "8px", maxWidth: "200px" }}>
+                      {f.remarks || "—"}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </Box>
+      </FloatingWindow>
+
+      <FloatingWindow
+        isOpen={allHistoryOpen}
+        onClose={closeAllHistoryModal}
+        title="Registration Forms — All Changes"
+        width={900}
+      >
+        {allHistoryLoading ? (
+          <Flex justify="center" py={6}><Spinner size="sm" color="blue.500" /></Flex>
+        ) : allHistory.length === 0 ? (
+          <Text fontSize="sm" color="gray.500">No changes recorded</Text>
+        ) : (
+          <Flex direction="column" gap={3} maxH="70vh" overflowY="auto">
+            {allHistory.map((entry, idx) => (
+              <Box key={idx} p={3} bg="gray.50" borderRadius="md" borderLeft="4px" borderLeftColor="blue.500">
+                <Flex justify="space-between" align="start" gap={2} mb={1}>
+                  <Flex gap={2} align="center" flex={1}>
+                    <Badge
+                      colorScheme={
+                        entry.action === "created" ? "green" :
+                        entry.action === "deleted" ? "red" :
+                        entry.action === "status_changed" ? "purple" :
+                        "blue"
+                      }
+                      fontSize="xs"
+                    >
+                      {entry.action === "created" && "Created"}
+                      {entry.action === "updated" && "Updated"}
+                      {entry.action === "status_changed" && "Status"}
+                      {entry.action === "deleted" && "Deleted"}
+                    </Badge>
+                    <Text fontSize="sm" fontWeight="bold" color="gray.700" flex={1}>
+                      {entry.lotNumber || "—"}
+                    </Text>
+                  </Flex>
+                  <Text fontSize="xs" color="gray.500" whiteSpace="nowrap">
+                    {fmtDate(entry.createdAt)}
+                  </Text>
+                </Flex>
+                <Flex gap={2} fontSize="xs" color="gray.600" mb={2}>
+                  <Text fontWeight="500">{entry.performedBy || "System"}</Text>
+                </Flex>
+                {entry.changedFields && entry.changedFields.length > 0 && (
+                  <Box>
+                    <Text fontSize="xs" fontWeight="bold" color="gray.700" mb={1}>
+                      Changed: {entry.changedFields.join(", ")}
+                    </Text>
+                    {entry.oldValues && entry.newValues && (
+                      <Flex direction="column" gap={1} fontSize="xs" color="gray.600">
+                        {entry.changedFields.map((field) => (
+                          <Flex key={field} gap={2}>
+                            <Text minW="100px">{field}:</Text>
+                            <Text color="red.600">{JSON.stringify(entry.oldValues[field])}</Text>
+                            <Text>→</Text>
+                            <Text color="green.600">{JSON.stringify(entry.newValues[field])}</Text>
+                          </Flex>
+                        ))}
+                      </Flex>
+                    )}
+                  </Box>
+                )}
+              </Box>
+            ))}
+          </Flex>
+        )}
+      </FloatingWindow>
     </Box>
   );
 };

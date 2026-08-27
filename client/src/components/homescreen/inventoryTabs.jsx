@@ -78,6 +78,7 @@ const getAgeColor = (days) => {
 const InventoryLevelPanel = ({
   items,
   handleItemClick,
+  handleItemDoubleClick,
   level,
   selectedItem,
   flashLocation,
@@ -169,6 +170,7 @@ const InventoryLevelPanel = ({
                         <ListItem
                           key={`${item.location}-${index}`}
                           onClick={() => handleItemClick(item)}
+                          onDoubleClick={() => handleItemDoubleClick && handleItemDoubleClick(item)}
                         >
                           <Box
                             px={3}
@@ -242,6 +244,7 @@ const InventoryLevelPanel = ({
 const InventoryOtherPanel = ({
   items,
   handleItemClick,
+  handleItemDoubleClick,
   selectedItem,
   flashLocation,
   selectedIds,
@@ -314,6 +317,7 @@ const InventoryOtherPanel = ({
                           <ListItem
                             key={`${item.location}-${index}`}
                             onClick={() => handleItemClick(item)}
+                            onDoubleClick={() => handleItemDoubleClick && handleItemDoubleClick(item)}
                           >
                             <Box
                               px={3}
@@ -455,6 +459,7 @@ const SEARCH_KEYS = ["location", "lot", "vendor", "brand", "species", "descripti
 const InventoryTabs = ({
   items,
   handleItemClick,
+  handleItemDoubleClick,
   handleTabClick,
   selectedItem,
   flashLocation,
@@ -727,6 +732,7 @@ const InventoryTabs = ({
             key={`panel-${level}`}
             items={filteredItems}
             handleItemClick={handleRowClick}
+            handleItemDoubleClick={handleItemDoubleClick}
             level={level}
             selectedItem={selectedItem}
             flashLocation={flashLocation}
@@ -738,6 +744,7 @@ const InventoryTabs = ({
         <InventoryOtherPanel
           items={filteredItems}
           handleItemClick={handleRowClick}
+          handleItemDoubleClick={handleItemDoubleClick}
           selectedItem={selectedItem}
           flashLocation={flashLocation}
           selectedIds={selectedIds}
