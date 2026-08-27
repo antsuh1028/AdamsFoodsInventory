@@ -118,9 +118,9 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             <SheetField label="Vendor"><Input {...sheetInputProps} value={draft.vendor} onChange={set("vendor")} /></SheetField>
 
             <SectionBar>Product Identification</SectionBar>
-            <SheetField label="Product Description"><Input {...sheetInputProps} value={draft.productDescription} onChange={set("productDescription")} /></SheetField>
+            <SheetField label="Product Description" full><Input {...sheetInputProps} value={draft.productDescription} onChange={set("productDescription")} /></SheetField>
+            <SheetField label="Processing Type"><Input {...sheetInputProps} value={draft.processingType} onChange={set("processingType")} /></SheetField>
             <SheetField label="Original Weight (lbs)"><Input {...sheetInputProps} type="number" value={draft.originalWeight} onChange={set("originalWeight")} /></SheetField>
-            <SheetField label="Processing Type" full><Input {...sheetInputProps} value={draft.processingType} onChange={set("processingType")} /></SheetField>
             <SheetField label="Spec. ">
               <Flex gap={1} align="center">
                 <Input

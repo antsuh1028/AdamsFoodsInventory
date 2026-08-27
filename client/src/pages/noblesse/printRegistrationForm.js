@@ -55,42 +55,42 @@ const printRegistrationForm = (form = {}) => {
             border-bottom: 2px solid #1f3864; padding-bottom: 8px; margin-bottom: 24px;
           }
           .brand img { width: 320px; max-width: 60%; object-fit: contain; display: block; }
-          .brand .addr { font-size: 12px; color: #595959; margin-top: 4px; }
-          .header-right { text-align: left; font-size: 20px; font-weight: 700; color: #1f3864; white-space: nowrap; }
+          .brand .addr { font-size: 13px; color: #595959; margin-top: 4px; }
+          .header-right { text-align: left; font-size: 21px; font-weight: 700; color: #1f3864; white-space: nowrap; }
           .header-right .line { margin-bottom: 16px; }
           .header-right .fill { font-weight: 700; color: #1a1a1a; margin-left: 12px; }
           .title {
-            text-align: center; font-size: 22px; font-weight: 800; color: #1f3864;
-            margin: 30px 0 20px;
+            text-align: center; font-size: 23px; font-weight: 800; color: #1f3864;
+            margin: 7px 0 7px;
           }
           table.form { width: 100%; border-collapse: separate; margin-bottom: 24px; border-spacing: 12px 16px; }
-          table.form td { padding: 0; }
           td.section {
-            background: #c9cace; font-weight: 700; font-size: 13px; color: #000000;
-            padding: 10px 10px; height: auto;
+            background: #c9cace; font-weight: 700; font-size: 14px; color: #000000;
+            padding: 8px 14px; height: auto;
           }
           td.label {
-            width: 27%; text-align: right; font-weight: 600; font-size: 13px;
-            color: #1f3864; padding: 16px 12px; background: #f5f5f5; vertical-align: middle;
+            width: 27%; text-align: right; font-weight: 600; font-size: 14px;
+            color: #1f3864; padding: 0px 12px; background: #ffffff; vertical-align: middle;
           }
           td.field {
-            width: 23%; background: #f5f5f5; padding: 16px 12px; font-size: 13px; color: #333;
+            width: 23%; background: #f5f5f5; padding: 0px 12px 0px 24px; font-size: 14px; color: #333;
           }
           td.plain-field {
-            width: 23%; background: #f5f5f5; padding: 16px 12px; font-size: 13px; color: #333;
+            width: 23%; background: #f5f5f5; padding: 0px 12px 0px 24px; font-size: 14px; color: #333;
           }
           .checkbox {
             display: inline-flex; align-items: center; justify-content: center;
             width: 15px; height: 15px;
-            border: 1px solid #1a1a1a; background: #fff; font-size: 11px; font-weight: 700;
+            border: 1px solid #1a1a1a; background: #fff; font-size: 12px; font-weight: 700;
           }
           td.separator {
-            border: none; height: 12px; border-top: 2px solid #999; padding: 0;
+            border: none; border-top: 2px solid #999;
+            height: 0; padding: 0; line-height: 0; font-size: 0;
           }
           .footer-row td {
             border-top: 1px solid #d9d9d9;
-            text-align: left; font-weight: 700; font-size: 14px;
-            padding: 10px 6px;
+            text-align: left; font-weight: 700; font-size: 15px;
+            padding: 5px 6px;
           }
           .no-print { text-align: center; margin: 14px 0; }
           @media print {
@@ -119,8 +119,8 @@ const printRegistrationForm = (form = {}) => {
             ${row("Vendor Lot/(IC)#", val(form.vendorLot), "Vendor", val(form.vendor))}
 
             ${sectionHeader("Product Identification")}
-            ${row("Product Description", val(form.productDescription), "Original Weight (lbs)", wt(form.originalWeight))}
-            ${fullRow("Processing Type", val(form.processingType))}
+            ${fullRow("Product Description", val(form.productDescription))}
+            ${row("Processing Type", val(form.processingType), "Original Weight (lbs)", wt(form.originalWeight))}
             ${row("Spec.(##X##)", val(form.spec), "Brand", val(form.brand))}
             ${row("EST#", val(form.estNumber), "Grade", val(form.grade))}
             <tr><td colspan="4" class="separator"></td></tr>
