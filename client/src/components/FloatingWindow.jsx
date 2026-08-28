@@ -2,10 +2,24 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, Flex, Text, IconButton, Portal, Tooltip } from "@chakra-ui/react";
 import { CloseIcon } from "@chakra-ui/icons";
 
-const MIN_WIDTH = 360;
+const MIN_WIDTH = 300;
 const MIN_HEIGHT = 220;
+const EDGE_MARGIN = 16; // breathing room kept on each side when a window has to shrink
 const EDGE = 1;  // grab-zone thickness for straight edges
 const CORNER = 2; // grab-zone size for corners — kept small so it doesn't sit over the header's close/fullscreen buttons
+
+// The `width` a caller passes is a desktop *maximum*, not a fixed size — a window
+// asked to be 1600px wide has to come down to ~360px on a phone. Accepts a number
+// of pixels or a percentage string ("90%") measured against the viewport.
+const resolveWidth = (requested, viewportW) => {
+  const available = Math.max(240, viewportW - EDGE_MARGIN * 2);
+  const desired = typeof requested === "string" && requested.trim().endsWith("%")
+    ? (parseFloat(requested) / 100) * viewportW
+    : Number(requested);
+  const capped = Math.min(Number.isFinite(desired) ? desired : available, available);
+  // Never force a window wider than the screen just to honour MIN_WIDTH.
+  return Math.max(capped, Math.min(MIN_WIDTH, available));
+};
 
 // Invisible grab strip along one edge or corner of the window.
 const ResizeHandle = ({ edge, onStart }) => {
@@ -24,25 +38,51 @@ const ResizeHandle = ({ edge, onStart }) => {
 
 const FloatingWindow = ({
   isOpen, onClose, title, children, footer,
-  width = 860, height, isFullScreen = false, onToggleFullScreen,
+  width = "70%", height, isFullScreen = false, onToggleFullScreen,
   bodyProps, dark = false,
 }) => {
   const [position, setPosition] = useState(null);
   const [size, setSize] = useState(null); // null height = auto (content-driven) until user resizes
+  const [viewport, setViewport] = useState(() => ({
+    w: typeof window === "undefined" ? 1024 : window.innerWidth,
+    h: typeof window === "undefined" ? 768 : window.innerHeight,
+  }));
   const boxRef = useRef(null);
   const dragState = useRef(null);   // { startX, startY, originX, originY }
   const resizeState = useRef(null); // { edge, startX, startY, startWidth, startHeight, startLeft, startTop }
 
-  // Center the window (and reset any prior manual size) the first time it opens
+  // Rotating a phone or resizing the browser changes what fits — re-measure so
+  // the effect below can re-clamp the window against the new viewport.
   useEffect(() => {
-    if (isOpen && !position) {
-      const x = Math.max(20, (window.innerWidth - width) / 2);
-      const y = Math.max(20, window.innerHeight * 0.06);
-      setPosition({ x, y });
-    }
-    if (!isOpen) { setPosition(null); setSize(null); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!isOpen) return;
+    const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
   }, [isOpen]);
+
+  // Center on first open; on later viewport changes only pull the window back
+  // on-screen, rather than yanking it out from under the user.
+  useEffect(() => {
+    if (!isOpen) { setPosition(null); setSize(null); return; }
+    const w = resolveWidth(size?.width ?? width, viewport.w);
+    setPosition((prev) => {
+      if (!prev) {
+        return {
+          x: Math.max(EDGE_MARGIN, (viewport.w - w) / 2),
+          y: Math.max(EDGE_MARGIN, viewport.h * 0.06),
+        };
+      }
+      return {
+        x: Math.min(prev.x, Math.max(EDGE_MARGIN, viewport.w - w - EDGE_MARGIN)),
+        y: Math.min(prev.y, Math.max(EDGE_MARGIN, viewport.h - 80)),
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, viewport.w, viewport.h]);
 
   useEffect(() => {
     const onMouseMove = (e) => {
@@ -110,7 +150,9 @@ const FloatingWindow = ({
     };
   };
 
-  const currentWidth = size?.width ?? width;
+  // Routing a manual resize through resolveWidth too keeps a hand-sized window
+  // from hanging off the screen after a rotation.
+  const currentWidth = resolveWidth(size?.width ?? width, viewport.w);
 
   return (
     <Portal>
@@ -120,6 +162,7 @@ const FloatingWindow = ({
         left={isFullScreen ? 0 : `${position.x}px`}
         top={isFullScreen ? 0 : `${position.y}px`}
         width={isFullScreen ? "100vw" : `${currentWidth}px`}
+        maxW={isFullScreen ? "100vw" : `calc(100vw - ${EDGE_MARGIN * 2}px)`}
         height={isFullScreen ? "100vh" : `${size?.height ?? height ?? "auto"}${size?.height || height ? "px" : ""}`}
         maxH={isFullScreen ? "100vh" : (size?.height || height) ? "95vh" : "88vh"}
         bg={dark ? "gray.900" : "gray.50"}

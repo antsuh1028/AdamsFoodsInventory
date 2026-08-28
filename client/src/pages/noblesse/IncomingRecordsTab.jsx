@@ -330,10 +330,9 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
                   </Button>
                 )}
                 <Button size="xs" variant="ghost" colorScheme="gray" onClick={startEdit}>Edit</Button>
-                {isAdmin && (
-                  <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
-                    aria-label="Delete record" isLoading={deleting} onClick={handleDelete} />
-                )}
+                <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
+                  aria-label="Delete record" isLoading={deleting} onClick={handleDelete}
+                  isDisabled={!canDelete} title={canDelete ? "Delete record" : "Admins only"} />
               </Flex>
             )}
           </Flex>

@@ -539,10 +539,9 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
                       <Button size="xs" variant="outline" colorScheme="blue" onClick={() => printRegistrationForm(f)}>
                         Print
                       </Button>
-                      {isAdmin && (
-                        <IconButton size="xs" aria-label="Delete" icon={<DeleteIcon />}
-                          variant="ghost" colorScheme="red" onClick={() => remove(f.id)} />
-                      )}
+                      <IconButton size="xs" aria-label="Delete" icon={<DeleteIcon />}
+                        variant="ghost" colorScheme="red" onClick={() => remove(f.id)}
+                        isDisabled={!canDelete} title={canDelete ? "Delete" : "Admins only"} />
                     </Flex>
                   </Td>
                 </tr>

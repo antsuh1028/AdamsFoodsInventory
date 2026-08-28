@@ -48,6 +48,7 @@ axiosInstance.interceptors.response.use(
 
       const refreshToken = localStorage.getItem("refreshToken");
       if (!refreshToken) {
+        isRefreshing = false;
         localStorage.removeItem("token");
         window.location.href = "/";
         return Promise.reject(error);
@@ -64,9 +65,16 @@ axiosInstance.interceptors.response.use(
           return axiosInstance(originalRequest);
         })
         .catch((err) => {
-          localStorage.removeItem("token");
-          localStorage.removeItem("refreshToken");
-          window.location.href = "/";
+          // Only a 401 from /refresh means the session is actually over. A 429
+          // from the refresh limiter, a 5xx while the server restarts, or a
+          // dropped connection (no err.response at all) are all transient —
+          // keep the session so the next request can try again, rather than
+          // dumping the user on the login screen and losing their unsaved work.
+          if (err.response?.status === 401) {
+            localStorage.removeItem("token");
+            localStorage.removeItem("refreshToken");
+            window.location.href = "/";
+          }
           processQueue(err, null);
           return Promise.reject(err);
         })
@@ -75,8 +83,11 @@ axiosInstance.interceptors.response.use(
         });
     }
 
-    if (error.response?.status === 403) {
-      localStorage.removeItem("token");
+    // 403 covers two unrelated cases: verifyToken sends it when no token was
+    // sent at all, requireRole sends it when the role is insufficient. Only the
+    // first is an auth failure — logging out on the second kicks a non-admin
+    // out of the app for merely touching an admin-only route.
+    if (error.response?.status === 403 && !localStorage.getItem("token")) {
       localStorage.removeItem("refreshToken");
       window.location.href = "/";
     }

@@ -20,7 +20,11 @@ const generateAccessToken = (user) => {
   return jwt.sign(
     { userId: user.id, role: user.role || "user", username: user.username, tenantId: user.tenant_id },
     process.env.JWT_SECRET,
-    { expiresIn: "1h" }
+    // 8h covers a full shift. Shorter windows aren't worth much here while the
+    // refresh token lives in localStorage beside the access token — anything
+    // that can read one can read the other — and every refresh round-trip is
+    // another chance to bounce someone to the login screen mid-form.
+    { expiresIn: "8h" }
   );
 };
 

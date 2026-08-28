@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const pool   = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
+const requireRole = require("../middleware/requireRole");
 
 // Idempotent migrations
 pool.query(`
@@ -164,7 +165,7 @@ pool.query(`
   CREATE TABLE IF NOT EXISTS noblesse_registration_history (
     id              SERIAL PRIMARY KEY,
     tenant_id       UUID NOT NULL REFERENCES tenants(id),
-    form_id         INTEGER NOT NULL REFERENCES noblesse_registration_forms(id) ON DELETE CASCADE,
+    form_id         INTEGER,
     action          TEXT NOT NULL,
     lot_number      TEXT,
     changed_fields  JSONB,
@@ -174,6 +175,19 @@ pool.query(`
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )
 `).catch((err) => console.error("noblesse_registration_history migration error:", err.message));
+
+// form_id was originally NOT NULL REFERENCES noblesse_registration_forms(id) ON
+// DELETE CASCADE, which makes a "deleted" audit row impossible to keep: log before
+// the delete and the cascade removes it, log after and the FK has nothing to point
+// at. An audit trail has to outlive the row it describes, so the constraint goes.
+pool.query(`
+  ALTER TABLE noblesse_registration_history
+  DROP CONSTRAINT IF EXISTS noblesse_registration_history_form_id_fkey
+`).catch((err) => console.error("registration history FK drop migration error:", err.message));
+
+pool.query(`
+  ALTER TABLE noblesse_registration_history ALTER COLUMN form_id DROP NOT NULL
+`).catch((err) => console.error("registration history form_id nullable migration error:", err.message));
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -367,7 +381,7 @@ router.patch("/noblesse-receipts/:id", verifyToken, async (req, res) => {
   }
 });
 
-router.delete("/noblesse-receipts/:id", verifyToken, async (req, res) => {
+router.delete("/noblesse-receipts/:id", verifyToken, requireRole("admin"), async (req, res) => {
   try {
     const result = await pool.query(
       `DELETE FROM noblesse_receipts WHERE id = $1 AND tenant_id = $2 RETURNING id`,
@@ -1177,8 +1191,7 @@ router.patch("/noblesse-registration-forms/:id/status", verifyToken, async (req,
   }
 });
 
-router.delete("/noblesse-registration-forms/:id", verifyToken, async (req, res) => {
-  if (req.role !== "admin") return res.status(403).json({ error: "Admin only" });
+router.delete("/noblesse-registration-forms/:id", verifyToken, requireRole("admin"), async (req, res) => {
   try {
     const formRes = await pool.query(
       `SELECT lot_number FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2`,
