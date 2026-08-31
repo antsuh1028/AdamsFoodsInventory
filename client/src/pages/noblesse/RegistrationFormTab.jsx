@@ -11,6 +11,19 @@ import ntiLogo from "../../assets/nti.jpg";
 import FloatingWindow from "../../components/FloatingWindow";
 
 
+// Stored verbatim as the field value, so the number, abbreviation and name all
+// survive into the printed form and the history snapshot with no lookup table
+// to keep in sync.
+const PROCESSING_TYPES = [
+  "101 SLC-BG Slicing & Bagging",
+  "102 DBN-PK Deboning & Bagging",
+  "103 PRTN-PK Portioning & Packing",
+  "104 CUT-PK 1/2 Cutting & Packing",
+  "105 BONE CUT Bone Cut",
+  "106 CUT-RL Cutting & Rolling",
+  "108 SHR-CT Short Rib Cut",
+];
+
 const emptyDraft = () => ({
   id: null,
   lotNumber: "", formDate: "", dateReceived: "", timeReceived: "",
@@ -31,7 +44,7 @@ const emptyDraft = () => ({
 const sampleDraft = () => ({
   lotNumber: "N26124-01", formDate: today(), dateReceived: today(), timeReceived: "14:30",
   vendorLot: "IC-88213", vendor: "IBP Foods",
-  productDescription: "Beef Brisket, Boneless", processingType: "Cut & Vacuum Pack",
+  productDescription: "Beef Brisket, Boneless", processingType: "104 CUT-PK 1/2 Cutting & Packing",
   spec: "10X30", brand: "IBP", estNumber: "9268", grade: "Choice",
   dueDate: today(), predictedYield: "92",
   manifestBlAttached: true, processReportAttached: false,
@@ -146,7 +159,18 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
 
             <SectionBar>Product Identification</SectionBar>
             <SheetField label="Product Description" full><Input {...sheetInputProps} value={draft.productDescription} onChange={set("productDescription")} /></SheetField>
-            <SheetField label="Processing Type"><Input {...sheetInputProps} value={draft.processingType} onChange={set("processingType")} /></SheetField>
+            <SheetField label="Processing Type">
+              <Select {...sheetInputProps} value={draft.processingType || ""} onChange={set("processingType")}>
+                <option value="">—</option>
+                {PROCESSING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                {/* Forms saved before this list existed hold free text. Keeping
+                    the current value as an option stops opening an old form
+                    from silently blanking the field. */}
+                {draft.processingType && !PROCESSING_TYPES.includes(draft.processingType) && (
+                  <option value={draft.processingType}>{draft.processingType} (existing)</option>
+                )}
+              </Select>
+            </SheetField>
             <SheetField label="Original Weight (lbs)"><Input {...sheetInputProps} type="number" value={draft.originalWeight} onChange={set("originalWeight")} /></SheetField>
             <SheetField label="Spec. ">
               <Flex gap={1} align="center">
