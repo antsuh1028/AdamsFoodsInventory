@@ -255,39 +255,6 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
               </React.Fragment>
             ))}
 
-            {(!Array.isArray(draft.processingDates) || draft.processingDates.length === 0) && (
-              <React.Fragment>
-                <SheetField label="Processed Weight (lbs)">
-                  <Flex gap={1} align="center">
-                    <Input
-                      {...sheetInputProps}
-                      type="number"
-                      placeholder="0.00"
-                    />
-                    <Button size="xs" variant="ghost" colorScheme="red" minW="auto" px={1} isDisabled title="Cannot delete last row">
-                      ×
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      colorScheme="blue"
-                      minW="auto"
-                      px={2}
-                      onClick={() => {
-                        const newDates = [{ date: "", weight: "" }, { date: "", weight: "" }];
-                        setDraft({ ...draft, processingDates: newDates });
-                      }}
-                    >
-                      +
-                    </Button>
-                  </Flex>
-                </SheetField>
-                <SheetField label="(1) Processing Date">
-                  <Input {...sheetInputProps} type="date" />
-                </SheetField>
-              </React.Fragment>
-            )}
-
             <SheetField label="Actual Yield (%)">
               <Box {...sheetInputProps} bg="white" border="1px solid" borderColor="gray.200" py={1}>
                 <Text fontSize="sm" color="gray.700" fontWeight="medium">
@@ -378,8 +345,10 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
   const openNew  = () => setDraft(emptyDraft());
   const openEdit = (form) => {
     const draft = { ...emptyDraft(), ...form };
-    // Convert backend format to array format
-    if (!draft.processingDates) {
+    // Convert backend format to array format. An empty array is truthy, so it
+    // has to be checked for explicitly — otherwise the form renders with no
+    // processing row at all and the yield can never be calculated.
+    if (!Array.isArray(draft.processingDates) || draft.processingDates.length === 0) {
       const dates = [];
       for (let i = 1; i <= 10; i++) {
         if (draft[`processingDate${i}`] || draft[`processedWeight${i}`]) {

@@ -9,6 +9,8 @@ import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
+import BoxScanner from "../components/navbar/boxScanner";
+import ScannerDiagnostic from "../components/navbar/scannerDiagnostic";
 import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -17,6 +19,12 @@ const NoblesseScreen = () => {
   const navigate = useNavigate();
   const isAdmin  = getRole() === "admin";
   const canEdit  = true; // all roles permitted on this screen are trusted to edit
+
+  // Box weighing belongs to Noblesse Trading, so it lives here rather than in
+  // the Adams Foods navbar. The diagnostic sits alongside it because it exists
+  // to configure the same scanner.
+  const [boxScanOpen, setBoxScanOpen] = useState(false);
+  const [scanDiagOpen, setScanDiagOpen] = useState(false);
 
   const [receipts, setReceipts]           = useState([]);
   const [loading, setLoading]             = useState(true);
@@ -87,6 +95,15 @@ const NoblesseScreen = () => {
             <Image src={ntiLogo} alt="Noblesse Trading Inc" height="36px" objectFit="contain" />
           </Flex>
           <Flex align="center" gap={3}>
+            <Button size="sm" colorScheme="teal" onClick={() => setBoxScanOpen(true)}>
+              Box Weighing
+            </Button>
+            {isAdmin && (
+              <Button size="sm" variant="ghost" colorScheme="gray"
+                onClick={() => setScanDiagOpen(true)}>
+                Scanner Diagnostic
+              </Button>
+            )}
             {lastRefreshed && (
               <Text fontSize="sm" color="gray.400">
                 Updated {lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
@@ -158,6 +175,11 @@ const NoblesseScreen = () => {
           </Box>
         </Tabs>
       </Flex>
+
+      <BoxScanner isOpen={boxScanOpen} onClose={() => setBoxScanOpen(false)} />
+      {isAdmin && (
+        <ScannerDiagnostic isOpen={scanDiagOpen} onClose={() => setScanDiagOpen(false)} />
+      )}
     </Flex>
   );
 };
