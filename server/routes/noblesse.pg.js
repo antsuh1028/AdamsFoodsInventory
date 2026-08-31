@@ -1193,19 +1193,24 @@ router.patch("/noblesse-registration-forms/:id/status", verifyToken, async (req,
 
 router.delete("/noblesse-registration-forms/:id", verifyToken, requireRole("admin"), async (req, res) => {
   try {
+    // Read the whole row, not just the lot number: once the delete runs this is
+    // the only copy of the form that will ever exist, so the history entry has
+    // to carry it or the record is gone for good.
     const formRes = await pool.query(
-      `SELECT lot_number FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2`,
+      `SELECT * FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2`,
       [req.params.id, req.tenantId]
     );
     if (!formRes.rows.length) return res.status(404).json({ error: "Not found" });
+    const deletedForm = fmtRegistrationForm(formRes.rows[0]);
 
     const result = await pool.query(
       `DELETE FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2 RETURNING id`,
       [req.params.id, req.tenantId]
     );
 
-    // Log deletion
-    logRegistrationFormHistory(req.tenantId, req.params.id, "deleted", formRes.rows[0].lot_number, null, null, null, req.username);
+    // Logged as oldValues — this is what the form was before it ceased to exist.
+    logRegistrationFormHistory(req.tenantId, req.params.id, "deleted", deletedForm.lotNumber,
+      null, deletedForm, null, req.username);
 
     res.json({ deleted: result.rows[0].id });
   } catch (err) {

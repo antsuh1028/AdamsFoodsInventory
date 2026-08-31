@@ -281,6 +281,73 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
   );
 };
 
+// Human labels for the snapshot shown on create/delete history entries.
+const SNAPSHOT_FIELDS = [
+  ["lotNumber", "Lot #"],
+  ["formDate", "Form date"],
+  ["dateReceived", "Date received"],
+  ["timeReceived", "Time received"],
+  ["vendor", "Vendor"],
+  ["vendorLot", "Vendor lot"],
+  ["productDescription", "Product"],
+  ["processingType", "Processing type"],
+  ["spec", "Spec"],
+  ["brand", "Brand"],
+  ["estNumber", "EST #"],
+  ["grade", "Grade"],
+  ["dueDate", "Due date"],
+  ["predictedYield", "Predicted yield"],
+  ["originalWeight", "Original weight"],
+  ["totalQuantity", "Total quantity"],
+  ["actualYield", "Actual yield"],
+  ["temp", "Temp"],
+  ["remarks", "Remarks"],
+  ["checkedBy", "Checked by"],
+  ["status", "Status"],
+];
+
+const isBlank = (v) =>
+  v === null || v === undefined || v === "" ||
+  (Array.isArray(v) && v.length === 0);
+
+// Renders the full form captured on a create or a delete. Empty fields are
+// omitted so a sparse form does not produce a wall of dashes.
+const HistorySnapshot = ({ form, tone, label }) => {
+  if (!form) return null;
+  const filled = SNAPSHOT_FIELDS.filter(([key]) => !isBlank(form[key]));
+  const dates = Array.isArray(form.processingDates)
+    ? form.processingDates.filter((pd) => pd && (pd.date || pd.weight))
+    : [];
+
+  if (filled.length === 0 && dates.length === 0) {
+    return <Text fontSize="xs" color="gray.500" fontStyle="italic">No field data recorded.</Text>;
+  }
+
+  return (
+    <Box mt={1} p={2} bg={`${tone}.50`} borderRadius="md" border="1px solid" borderColor={`${tone}.200`}>
+      <Text fontSize="xs" fontWeight="bold" color={`${tone}.800`} mb={1}>{label}</Text>
+      <Grid templateColumns={{ base: "1fr", md: "repeat(2, 1fr)" }} gap={1} fontSize="xs">
+        {filled.map(([key, labelText]) => (
+          <Flex key={key} gap={2}>
+            <Text color="gray.500" minW="110px" flexShrink={0}>{labelText}:</Text>
+            <Text color="gray.800" wordBreak="break-word">{String(form[key])}</Text>
+          </Flex>
+        ))}
+      </Grid>
+      {dates.length > 0 && (
+        <Box mt={1}>
+          <Text color="gray.500" fontSize="xs">Processing:</Text>
+          {dates.map((pd, i) => (
+            <Text key={i} fontSize="xs" color="gray.800" pl={2}>
+              ({i + 1}) {pd.date || "—"} · {pd.weight ?? "—"} lbs
+            </Text>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+};
+
 const statusColor = (status) => (status === "completed" ? "green" : "yellow");
 
 const calculateYield = (draft) => {
@@ -717,6 +784,16 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
                       </Flex>
                     )}
                   </Box>
+                )}
+
+                {/* A create or delete has no field diff, so show the whole form
+                    instead. For a delete this is the only surviving copy. */}
+                {!entry.changedFields?.length && (entry.newValues || entry.oldValues) && (
+                  <HistorySnapshot
+                    form={entry.newValues || entry.oldValues}
+                    tone={entry.action === "deleted" ? "red" : "green"}
+                    label={entry.action === "deleted" ? "Deleted record" : "Created with"}
+                  />
                 )}
               </Box>
             ))}
