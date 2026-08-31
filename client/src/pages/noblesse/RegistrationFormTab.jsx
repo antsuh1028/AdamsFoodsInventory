@@ -46,14 +46,30 @@ const sampleDraft = () => ({
 
 // Sheet-style field: bold right-aligned label + light-gray filled input,
 // laid out as a pair of grid columns to mirror the printed form's rows.
+// On mobile the sheet collapses to a single column, so each field becomes a
+// label row stacked above its input row; the right-aligned two-column pairing
+// only makes sense once there is room for it.
 const SheetField = ({ label, full, plain, children }) => (
   <>
-    <GridItem colSpan={1} display="flex" alignItems="center" justifyContent="flex-end">
-      <Text fontSize="2xs" fontWeight="bold" p={2} color="gray.700" textTransform="uppercase" letterSpacing="wide" textAlign="right">
+    <GridItem
+      colSpan={1}
+      display="flex"
+      alignItems="center"
+      justifyContent={{ base: "flex-start", md: "flex-end" }}
+    >
+      <Text
+        fontSize="2xs" fontWeight="bold" p={2} color="gray.700"
+        textTransform="uppercase" letterSpacing="wide"
+        textAlign={{ base: "left", md: "right" }}
+      >
         {label}
       </Text>
     </GridItem>
-    <GridItem colSpan={full ? 3 : 1} bg={plain ? "transparent" : "#f0f0f0"} borderRadius="sm">
+    <GridItem
+      colSpan={{ base: 1, md: full ? 3 : 1 }}
+      bg={plain ? "transparent" : "#f0f0f0"}
+      borderRadius="sm"
+    >
       {children}
     </GridItem>
   </>
@@ -62,7 +78,7 @@ const SheetField = ({ label, full, plain, children }) => (
 const sheetInputProps = { size: "sm", bg: "transparent", border: "none", borderRadius: 0, px: 2, _focus: { boxShadow: "none", bg: "white" } };
 
 const SectionBar = ({ children }) => (
-  <GridItem colSpan={4} bg="#ccd3db" px={3} py={2} fontSize="xs" fontWeight="bold" color="gray.800">
+  <GridItem colSpan={{ base: 1, md: 4 }} bg="#ccd3db" px={3} py={2} fontSize="xs" fontWeight="bold" color="gray.800">
     {children}
   </GridItem>
 );
@@ -81,11 +97,11 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
       isFullScreen={isFullScreen}
       onToggleFullScreen={() => setIsFullScreen((v) => !v)}
       width={900}
-      footer={<Flex justify="space-between" width="100%">
+      footer={<Flex justify="space-between" width="100%" gap={2} wrap="wrap">
         <Button size="sm" variant="outline" colorScheme="purple" onClick={() => setDraft({ ...draft, ...sampleDraft() })}>
           Fill Sample Data
         </Button>
-        <Flex gap={2}>
+        <Flex gap={2} flex={{ base: "1 1 100%", md: "0 0 auto" }} justify="flex-end">
           <Button size="sm" variant="outline" onClick={() => printRegistrationForm(draft)}>Print</Button>
           <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button size="sm" colorScheme="blue" isLoading={saving} onClick={onSave}>Save</Button>
@@ -93,16 +109,24 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
       </Flex>}
     >
         <Box maxW="820px" mx="auto">
-          <Flex align="flex-start" justify="space-between" borderBottom="2px solid #2b6cb0" pb={2} mb={3}>
-            <Image src={ntiLogo} alt="Noblesse Trading Inc." width="220px" objectFit="contain" />
-            <Flex direction="column" gap={2} align="flex-end">
+          <Flex
+            direction={{ base: "column", md: "row" }}
+            align={{ base: "stretch", md: "flex-start" }}
+            justify="space-between" gap={{ base: 3, md: 0 }}
+            borderBottom="2px solid #2b6cb0" pb={2} mb={3}
+          >
+            <Image
+              src={ntiLogo} alt="Noblesse Trading Inc."
+              width={{ base: "160px", md: "220px" }} objectFit="contain"
+            />
+            <Flex direction="column" gap={2} align={{ base: "stretch", md: "flex-end" }}>
               <Flex align="center" gap={2}>
-                <Text fontSize="sm" fontWeight="bold" color="blue.700">Lot#:</Text>
-                <Input size="sm" width="150px" value={draft.lotNumber} onChange={set("lotNumber")} placeholder="N26124-01" />
+                <Text fontSize="sm" fontWeight="bold" color="blue.700" minW="40px">Lot#:</Text>
+                <Input size="sm" width={{ base: "100%", md: "150px" }} value={draft.lotNumber} onChange={set("lotNumber")} placeholder="N26124-01" />
               </Flex>
               <Flex align="center" gap={2}>
-                <Text fontSize="sm" fontWeight="bold" color="blue.700">Date:</Text>
-                <Input size="sm" width="150px" type="date" value={draft.formDate} onChange={set("formDate")} />
+                <Text fontSize="sm" fontWeight="bold" color="blue.700" minW="40px">Date:</Text>
+                <Input size="sm" width={{ base: "100%", md: "150px" }} type="date" value={draft.formDate} onChange={set("formDate")} />
               </Flex>
             </Flex>
           </Flex>
@@ -110,7 +134,10 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             {draft.id ? "Edit Registration Form" : "New Registration Form"}
           </Text>
 
-          <Grid templateColumns="1fr 2fr 1fr 2fr" gap="1px" bg="gray.200" mb={5} border="1px solid" borderColor="gray.200">
+          <Grid
+            templateColumns={{ base: "1fr", md: "1fr 2fr 1fr 2fr" }}
+            gap="1px" bg="gray.200" mb={5} border="1px solid" borderColor="gray.200"
+          >
             <SectionBar>Logistics &amp; Vendor</SectionBar>
             <SheetField label="Date Received"><Input {...sheetInputProps} type="date" value={draft.dateReceived} onChange={set("dateReceived")} /></SheetField>
             <SheetField label="Time Received"><Input {...sheetInputProps} type="time" value={draft.timeReceived} onChange={set("timeReceived")} /></SheetField>
@@ -420,8 +447,9 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
 
   return (
     <Box>
-      <Flex justify="space-between" align="center" mb={4}>
-        <Flex align="center" gap={3} flex={1}>
+      <Flex justify="space-between" align={{ base: "stretch", md: "center" }} mb={4}
+        direction={{ base: "column", md: "row" }} gap={{ base: 3, md: 0 }}>
+        <Flex align="center" gap={3} flex={1} wrap="wrap">
           <Text fontSize="sm" fontWeight="semibold" color="gray.600" textTransform="uppercase" letterSpacing="wide">
             Registration Forms
           </Text>
@@ -452,7 +480,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
             </Button>
           </Flex>
         </Flex>
-        <Flex gap={2}>
+        <Flex gap={2} wrap="wrap">
           <Button size="xs" colorScheme="gray" variant="outline" onClick={() => setExcelViewOpen(true)}>View All</Button>
           {isAdmin && <Button size="xs" colorScheme="gray" onClick={openAllHistoryModal}>History</Button>}
           {isAdmin && <Button size="xs" colorScheme="blue" onClick={openNew}>+ New Registration Form</Button>}
@@ -464,7 +492,10 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
           {forms.length === 0 ? "No registration forms saved yet." : statusFilter ? `No ${statusFilter === "in_progress" ? "in progress" : "completed"} registration forms.` : "No registration forms."}
         </Text>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        // A table cannot reflow into a narrow column, so on mobile it scrolls
+        // sideways inside this box rather than forcing the whole page to.
+        <Box overflowX="auto" width="100%">
+        <table style={{ width: "100%", minWidth: "720px", borderCollapse: "collapse" }}>
           <thead>
             <tr>
               <Th>Lot #</Th>
@@ -549,7 +580,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
                   <tr style={{ backgroundColor: "rgb(230, 240, 255)", borderTop: "2px solid rgb(66, 153, 225)" }}>
                     <td colSpan={6} style={{ padding: 0 }}>
                       <Box p={4} width="100%">
-                        <Grid templateColumns="repeat(2, 1fr)" gap={4} fontSize="sm">
+                        <Grid templateColumns={{ base: "1fr", md: "repeat(2, 1fr)" }} gap={4} fontSize="sm">
                           <GridItem>
                             <Text fontWeight="bold" color="gray.700">Lot #</Text>
                             <Text>{f.lotNumber || "—"}</Text>
@@ -574,7 +605,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
                             <Text fontWeight="bold" color="gray.700">Spec</Text>
                             <Text>{f.spec || "—"}</Text>
                           </GridItem>
-                          <GridItem colSpan={2}>
+                          <GridItem colSpan={{ base: 1, md: 2 }}>
                             <Text fontWeight="bold" color="gray.700">Remarks</Text>
                             <Text>{f.remarks || "—"}</Text>
                           </GridItem>
@@ -587,6 +618,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
             ))}
           </tbody>
         </table>
+        </Box>
       )}
 
       <RegistrationFormModal
@@ -602,7 +634,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
         width={1200}
       >
         <Box overflowX="auto" maxH="70vh">
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+          <table style={{ width: "100%", minWidth: "900px", borderCollapse: "collapse", fontSize: "13px" }}>
             <thead>
               <tr style={{ backgroundColor: "#f0f0f0", fontWeight: "bold" }}>
                 <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Lot #</th>
