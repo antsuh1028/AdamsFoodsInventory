@@ -160,8 +160,12 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             <SectionBar>Product Identification</SectionBar>
             <SheetField label="Product Description" full><Input {...sheetInputProps} value={draft.productDescription} onChange={set("productDescription")} /></SheetField>
             <SheetField label="Processing Type">
-              <Select {...sheetInputProps} value={draft.processingType || ""} onChange={set("processingType")}>
-                <option value="">—</option>
+              {/* Styled like the Status select rather than with sheetInputProps,
+                  which strips the border and makes a dropdown look like a
+                  plain text field. */}
+              <Select size="sm" bg="white" border="1px solid" borderColor="gray.300"
+                value={draft.processingType || ""} onChange={set("processingType")}>
+                <option value="">— Select processing type —</option>
                 {PROCESSING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 {/* Forms saved before this list existed hold free text. Keeping
                     the current value as an option stops opening an old form
