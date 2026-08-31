@@ -15,6 +15,34 @@
 const DEFAULT_MAX_CHUNK_BYTES = 64 * 1024;
 const DEFAULT_MAX_CHUNK_ITEMS = 250;
 
+// Running totals are kept as integer thousandths and formatted only for
+// display. A float accumulator would drift over a thousand-box shift, and the
+// operator's running total has to agree with what the server stores.
+const weightToThousandths = (s) => {
+  const [whole, frac = ""] = String(s).split(".");
+  return parseInt(whole, 10) * 1000 + parseInt((frac + "000").slice(0, 3), 10);
+};
+
+const fromThousandths = (n) => {
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  return `${sign}${Math.floor(abs / 1000)}.${String(abs % 1000).padStart(3, "0")}`;
+};
+
+const emptyStats = () => ({ count: 0, totals: {} });
+
+// Formats the stored thousandths into display strings, e.g.
+// { count: 3, totals: { LB: "228.600" } }
+const formatStats = (stats) => {
+  const source = stats || emptyStats();
+  return {
+    count: source.count || 0,
+    totals: Object.entries(source.totals || {}).map(([unit, thousandths]) => ({
+      unit, total: fromThousandths(thousandths),
+    })).sort((a, b) => a.unit.localeCompare(b.unit)),
+  };
+};
+
 const toWireItem = (record) => ({
   weight: record.weight,
   weightUnit: record.weightUnit,
@@ -58,6 +86,19 @@ const createScanQueue = ({
 
   let flushing = false;
 
+  // Session-level counters, so the operator's running total survives a reload
+  // and a resume rather than living in React state.
+  const bumpStats = async (weight, unit, direction) => {
+    const session = await backend.getSession();
+    if (!session) return null;
+    const stats = session.stats || emptyStats();
+    const totals = { ...stats.totals };
+    totals[unit] = (totals[unit] || 0) + direction * weightToThousandths(weight);
+    const next = { count: Math.max(0, (stats.count || 0) + direction), totals };
+    await backend.setSession({ ...session, stats: next });
+    return next;
+  };
+
   // Persist first, then report success. If the write throws, the caller must
   // hear about it — a scan that was never stored must not be treated as taken.
   const enqueue = async (scan) => {
@@ -72,7 +113,28 @@ const createScanQueue = ({
       status: "pending",
       scannedAt: new Date().toISOString(),
     };
-    return backend.putScan(record);
+    const localId = await backend.putScan(record);
+    await bumpStats(record.weight, record.weightUnit, +1);
+    return localId;
+  };
+
+  // Removes the most recent scan that has not yet been confirmed by the server.
+  // Once a scan is flushed it belongs to the batch and cannot be taken back from
+  // here — there is no void endpoint — so this reports that rather than lying.
+  const undoLast = async () => {
+    const pending = await backend.listPending();
+    if (!pending.length) {
+      return { undone: false, reason: "nothing-pending" };
+    }
+    const last = pending[pending.length - 1];
+    await backend.deleteScans([last.localId]);
+    await bumpStats(last.weight, last.weightUnit, -1);
+    return { undone: true, record: last };
+  };
+
+  const getStats = async () => {
+    const session = await backend.getSession();
+    return formatStats(session && session.stats);
   };
 
   // Sends every pending record and clears only what the server confirms.
@@ -151,9 +213,9 @@ const createScanQueue = ({
     const uuid = clientUuid || existing?.clientUuid;
     if (!uuid) throw new Error("start requires a clientUuid");
 
-    await backend.setSession({ clientUuid: uuid, batchId: null, status: "open" });
+    await backend.setSession({ clientUuid: uuid, batchId: null, status: "open", stats: emptyStats() });
     const created = await api.createBatch(uuid);
-    const session = { clientUuid: uuid, batchId: created.batch_id, status: "open" };
+    const session = { clientUuid: uuid, batchId: created.batch_id, status: "open", stats: emptyStats() };
     await backend.setSession(session);
     return session;
   };
@@ -185,6 +247,8 @@ const createScanQueue = ({
 
   return {
     enqueue,
+    undoLast,
+    getStats,
     flush,
     start,
     stop,
@@ -195,4 +259,5 @@ const createScanQueue = ({
 };
 
 module.exports = { createScanQueue, chunkRecords, toWireItem,
+  weightToThousandths, fromThousandths, formatStats,
   DEFAULT_MAX_CHUNK_BYTES, DEFAULT_MAX_CHUNK_ITEMS };

@@ -35,6 +35,8 @@ export const useScanSession = () => {
   const [pending, setPending] = useState(0);
   const [resumable, setResumable] = useState(null);
   const [lastError, setLastError] = useState(null);
+  const [stats, setStats] = useState({ count: 0, totals: [] });
+  const [lastScan, setLastScan] = useState(null);
 
   const queueRef = useRef(null);
   const wakeLockRef = useRef(null);
@@ -55,7 +57,9 @@ export const useScanSession = () => {
   }, []);
 
   const refreshPending = useCallback(async () => {
-    if (queueRef.current) setPending(await queueRef.current.countPending());
+    if (!queueRef.current) return;
+    setPending(await queueRef.current.countPending());
+    setStats(await queueRef.current.getStats());
   }, []);
 
   const flush = useCallback(async () => {
@@ -113,10 +117,20 @@ export const useScanSession = () => {
   const addScan = useCallback(async (scan) => {
     if (!queueRef.current) throw new Error("Scan store not ready");
     await queueRef.current.enqueue(scan);
+    setLastScan(scan);
     sinceFlushRef.current += 1;
     await refreshPending();
     if (sinceFlushRef.current >= FLUSH_EVERY_SCANS) flush();
+    return scan;
   }, [flush, refreshPending]);
+
+  const undoLast = useCallback(async () => {
+    if (!queueRef.current) return { undone: false, reason: "not-ready" };
+    const result = await queueRef.current.undoLast();
+    if (result.undone) setLastScan(null);
+    await refreshPending();
+    return result;
+  }, [refreshPending]);
 
   const stop = useCallback(async () => {
     if (!queueRef.current) return null;
@@ -166,8 +180,8 @@ export const useScanSession = () => {
   useEffect(() => () => { releaseWakeLock(); }, [releaseWakeLock]);
 
   return {
-    ready, durable, session, pending, resumable, lastError,
-    start, resume, stop, flush, addScan,
+    ready, durable, session, pending, resumable, lastError, stats, lastScan,
+    start, resume, stop, flush, addScan, undoLast,
   };
 };
 

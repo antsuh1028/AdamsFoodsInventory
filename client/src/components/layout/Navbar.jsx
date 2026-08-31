@@ -35,6 +35,7 @@ import FormScanner from "../navbar/formScanner.jsx";
 import OrderScanner from "../navbar/orderScanner.jsx";
 import ProductionOrders from "../navbar/productionOrders.jsx";
 import ScannerDiagnostic from "../navbar/scannerDiagnostic.jsx";
+import BoxScanner from "../navbar/boxScanner.jsx";
 
 const ShowDrawer = ({
   isOpen,
@@ -51,6 +52,7 @@ const ShowDrawer = ({
   onOrderScanOpen,
   onProductionOpen,
   onScanDiagOpen,
+  onBoxScanOpen,
 }) => {
   const navigate = useNavigate();
   const [otherOpen, setOtherOpen] = useState(false);
@@ -90,6 +92,7 @@ const ShowDrawer = ({
           {navBtn("Freezer Map", onMapOpen)}
           {navBtn("Scan Pallet Form", onScanOpen)}
           {navBtn("Scan Order Sheet", onOrderScanOpen)}
+          {isAdminOrManager && navBtn("Box Weighing", onBoxScanOpen)}
           {isAdminOrManager && navBtn("History Log", onHistoryOpen)}
           {isAdminOrManager && navBtn("Production Orders", onProductionOpen)}
 
@@ -189,6 +192,11 @@ const Navbar = () => {
     onOpen: onScanDiagOpen,
     onClose: onScanDiagClose,
   } = useDisclosure();
+  const {
+    isOpen: isBoxScanOpen,
+    onOpen: onBoxScanOpen,
+    onClose: onBoxScanClose,
+  } = useDisclosure();
 
   return (
     <>
@@ -268,6 +276,7 @@ const Navbar = () => {
         onOrderScanOpen={onOrderScanOpen}
         onProductionOpen={onProductionOpen}
         onScanDiagOpen={onScanDiagOpen}
+        onBoxScanOpen={onBoxScanOpen}
       />
       <UploadFile isOpen={isUploadOpen} onClose={onUploadClose} />
       <IncomingOrders isOpen={isIPROpen} onClose={onIPRClose} />
@@ -282,6 +291,7 @@ const Navbar = () => {
       <OrderScanner isOpen={isOrderScanOpen} onClose={onOrderScanClose} />
       <ProductionOrders isOpen={isProductionOpen} onClose={onProductionClose} />
       <ScannerDiagnostic isOpen={isScanDiagOpen} onClose={onScanDiagClose} />
+      <BoxScanner isOpen={isBoxScanOpen} onClose={onBoxScanClose} />
     </>
   );
 };
