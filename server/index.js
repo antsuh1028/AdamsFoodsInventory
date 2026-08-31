@@ -12,11 +12,17 @@ app.use(express.json());
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
-// General rate limiter for all endpoints except login/refresh (60 requests per minute)
+// General rate limiter for all endpoints except login/refresh (60 requests per minute).
+// Box-scanning routes are exempt and carry their own, much higher limiter: this
+// one keys on IP, so every iPad behind the warehouse NAT would share a single
+// 60/min budget and a scanning session flushing every few seconds would trip it.
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
-  skip: (req) => req.path === "/login" || req.path === "/refresh",
+  skip: (req) =>
+    req.path === "/login" ||
+    req.path === "/refresh" ||
+    req.path.startsWith("/box-batches"),
   message: { error: "Too many requests, please try again later" },
 });
 
@@ -42,5 +48,6 @@ app.use("/", require("./routes/snapshots.pg"));
 app.use("/", require("./routes/s3.pg"));
 app.use("/", require("./routes/production.pg"));
 app.use("/", require("./routes/noblesse.pg"));
+app.use("/", require("./routes/boxes.pg"));
 
 app.listen(3001, () => console.log("Server running on port 3001 [postgres]"));
