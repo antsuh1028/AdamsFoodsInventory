@@ -1,5 +1,3 @@
-"use strict";
-
 // IndexedDB backend for scanQueue. Deliberately thin: every decision about what
 // is safe to delete lives in scanQueue.js, which is unit-tested. This file only
 // moves records in and out of storage.

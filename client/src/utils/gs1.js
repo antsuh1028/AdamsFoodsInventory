@@ -1,5 +1,3 @@
-"use strict";
-
 // GS1 Application Identifier parser for catchweight box labels.
 //
 // This file is mirrored verbatim at client/src/utils/gs1.js so the browser can
@@ -136,6 +134,7 @@ const parseGs1 = (raw) => {
   for (const prefix of SYMBOLOGY_PREFIXES) {
     if (s.startsWith(prefix)) { s = s.slice(prefix.length); break; }
   }
+  // eslint-disable-next-line no-control-regex
   s = s.replace(/^\u001D+/, ""); // a leading FNC1 is a start marker, not data
 
   const result = {

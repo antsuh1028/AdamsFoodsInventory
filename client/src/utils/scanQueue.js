@@ -1,5 +1,3 @@
-"use strict";
-
 // Durable scan queue: the piece that decides what gets persisted, what gets
 // sent, and — most importantly — what is safe to delete.
 //
