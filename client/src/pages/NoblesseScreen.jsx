@@ -2,8 +2,10 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Box, Flex, Text, Spinner, Badge, IconButton, Tooltip, Image, Button,
   Tabs, TabList, TabPanels, Tab, TabPanel,
+  Drawer, DrawerOverlay, DrawerContent, DrawerHeader, DrawerFooter,
+  Stack, Divider, useDisclosure,
 } from "@chakra-ui/react";
-import { RepeatIcon, ArrowBackIcon, WarningIcon } from "@chakra-ui/icons";
+import { RepeatIcon, WarningIcon, HamburgerIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
@@ -25,6 +27,21 @@ const NoblesseScreen = () => {
   // to configure the same scanner.
   const [boxScanOpen, setBoxScanOpen] = useState(false);
   const [scanDiagOpen, setScanDiagOpen] = useState(false);
+  const { isOpen: drawerOpen, onOpen: openDrawer, onClose: closeDrawer } = useDisclosure();
+
+  const logOut = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
+    navigate("/noblesse-login");
+  };
+
+  // Runs the action and closes the drawer behind it, matching the Adams navbar.
+  const drawerBtn = (label, handler) => (
+    <Button bg="white" justifyContent="flex-start"
+      onClick={() => { handler(); closeDrawer(); }}>
+      {label}
+    </Button>
+  );
 
   const [receipts, setReceipts]           = useState([]);
   const [loading, setLoading]             = useState(true);
@@ -86,24 +103,11 @@ const NoblesseScreen = () => {
       <Box bg="white" borderBottom="1px" borderColor="gray.200" px={6} py={4} flexShrink={0}>
         <Flex align="center" justify="space-between">
           <Flex align="center" gap={3}>
-            {isAdmin && (
-              <Tooltip label="Back to Adams Foods">
-                <IconButton icon={<ArrowBackIcon />} size="sm" variant="ghost"
-                  colorScheme="gray" aria-label="Back" onClick={() => navigate("/home")} />
-              </Tooltip>
-            )}
+            <IconButton icon={<HamburgerIcon />} size="sm" variant="ghost"
+              colorScheme="gray" aria-label="Menu" onClick={openDrawer} />
             <Image src={ntiLogo} alt="Noblesse Trading Inc" height="36px" objectFit="contain" />
           </Flex>
           <Flex align="center" gap={3}>
-            <Button size="sm" colorScheme="teal" onClick={() => setBoxScanOpen(true)}>
-              Box Weighing
-            </Button>
-            {isAdmin && (
-              <Button size="sm" variant="ghost" colorScheme="gray"
-                onClick={() => setScanDiagOpen(true)}>
-                Scanner Diagnostic
-              </Button>
-            )}
             {lastRefreshed && (
               <Text fontSize="sm" color="gray.400">
                 Updated {lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
@@ -116,10 +120,6 @@ const NoblesseScreen = () => {
                 aria-label="Refresh" onClick={() => fetchData(true)} isDisabled={refreshing}
               />
             </Tooltip>
-            <Button size="sm" variant="ghost" colorScheme="red"
-              onClick={() => { localStorage.removeItem("token"); localStorage.removeItem("refreshToken"); navigate("/noblesse-login"); }}>
-              Log out
-            </Button>
           </Flex>
         </Flex>
       </Box>
@@ -175,6 +175,33 @@ const NoblesseScreen = () => {
           </Box>
         </Tabs>
       </Flex>
+
+      <Drawer placement="left" onClose={closeDrawer} isOpen={drawerOpen}>
+        <DrawerOverlay />
+        <DrawerContent>
+          <DrawerHeader borderBottomWidth="1px">Menu</DrawerHeader>
+          <Stack direction="column" spacing={3} p={4}>
+            {drawerBtn("Box Weighing", () => setBoxScanOpen(true))}
+            {drawerBtn("Refresh Data", () => fetchData(true))}
+
+            {isAdmin && (
+              <>
+                <Divider />
+                {drawerBtn("Scanner Diagnostic", () => setScanDiagOpen(true))}
+                <Divider />
+                {drawerBtn("← Adams Foods", () => navigate("/home"))}
+              </>
+            )}
+          </Stack>
+
+          <DrawerFooter justifyContent="center">
+            <Button bg="red.400" color="black"
+              _hover={{ bg: "red.500", color: "white" }} onClick={logOut}>
+              Log Out
+            </Button>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
 
       <BoxScanner isOpen={boxScanOpen} onClose={() => setBoxScanOpen(false)} />
       {isAdmin && (
