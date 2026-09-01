@@ -606,9 +606,22 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                     <Flex align="center" gap={2}>
                       {/* Inside the first cell rather than its own column, so
                           the expanded row's colSpan does not have to change. */}
-                      {expandedId === f.id
-                        ? <ChevronUpIcon boxSize={4} color="blue.500" />
-                        : <ChevronDownIcon boxSize={4} color="gray.400" />}
+                      <IconButton
+                        aria-label={expandedId === f.id ? "Collapse details" : "Expand details"}
+                        title={expandedId === f.id ? "Collapse" : "Expand"}
+                        icon={expandedId === f.id ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                        size="xs"
+                        variant="ghost"
+                        colorScheme={expandedId === f.id ? "blue" : "gray"}
+                        // The row also expands on double-click. Without these
+                        // the button's own events bubble up to it and toggle a
+                        // second time, cancelling the first.
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedId(expandedId === f.id ? null : f.id);
+                        }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      />
                       <Text as="span">{f.lotNumber || "—"}</Text>
                     </Flex>
                   </Td>
