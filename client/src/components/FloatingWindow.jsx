@@ -165,11 +165,14 @@ const FloatingWindow = ({
         maxW={isFullScreen ? "100vw" : `calc(100vw - ${EDGE_MARGIN * 2}px)`}
         height={isFullScreen ? "100vh" : `${size?.height ?? height ?? "auto"}${size?.height || height ? "px" : ""}`}
         maxH={isFullScreen ? "100vh" : (size?.height || height) ? "95vh" : "88vh"}
-        bg={dark ? "gray.900" : "gray.50"}
+        // Deliberately darker than the gray.50 page behind it. When both were
+        // gray.50 the window had nothing but a 1px border separating it from
+        // the screen and read as part of the page.
+        bg={dark ? "gray.900" : "gray.100"}
         borderRadius={isFullScreen ? 0 : "lg"}
         boxShadow="2xl"
         border="1px solid"
-        borderColor={dark ? "gray.700" : "gray.300"}
+        borderColor={dark ? "gray.700" : "gray.400"}
         zIndex={1400}
         display="flex"
         flexDirection="column"
@@ -177,7 +180,7 @@ const FloatingWindow = ({
       >
         <Flex
           align="center" justify="space-between"
-          bg={dark ? "gray.800" : "gray.50"} borderBottom="1px" borderColor={dark ? "gray.700" : "gray.200"}
+          bg={dark ? "gray.800" : "gray.200"} borderBottom="1px" borderColor={dark ? "gray.700" : "gray.300"}
           px={4} py={2} flexShrink={0}
           cursor={isFullScreen ? "default" : "move"}
           onMouseDown={startDrag}
