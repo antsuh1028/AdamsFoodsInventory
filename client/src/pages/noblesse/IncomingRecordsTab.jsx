@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, IconButton, useToast, Badge,
+  AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogContent, AlertDialogOverlay,
 } from "@chakra-ui/react";
 import { DeleteIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
@@ -223,6 +225,9 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
   const [saving, setSaving]           = useState(false);
   const [pushOpen, setPushOpen]       = useState(false);
   const [pushing, setPushing]         = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  // Cancel takes focus, so Enter on the dialog does not delete the record.
+  const cancelDeleteRef = useRef(null);
 
   const pushLines = (receipt.lines || []).filter((l) => l.lot || l.description || l.brand);
 
@@ -256,10 +261,12 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
     setDeleting(true);
     try {
       await axiosInstance.delete(`/noblesse-receipts/${receipt.id}`);
+      setConfirmDelete(false);
       onReceiptDelete(receipt.id);
     } catch {
       toast({ title: "Failed to delete", status: "error", position: "top", duration: 3000, isClosable: true });
       setDeleting(false);
+      setConfirmDelete(false);
     }
   };
 
@@ -331,7 +338,7 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
                 )}
                 <Button size="xs" variant="ghost" colorScheme="gray" onClick={startEdit}>Edit</Button>
                 <IconButton icon={<DeleteIcon />} size="xs" variant="ghost" colorScheme="red"
-                  aria-label="Delete record" isLoading={deleting} onClick={handleDelete}
+                  aria-label="Delete record" isLoading={deleting} onClick={() => setConfirmDelete(true)}
                   isDisabled={!canDelete} title={canDelete ? "Delete record" : "Admins only"} />
               </Flex>
             )}
@@ -512,6 +519,51 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
               </Box>
             </Box>
       </FloatingWindow>
+
+      {/* Deleting a day's record takes every product line with it and there is
+          no undo, so name what is about to go rather than asking "are you sure". */}
+      <AlertDialog
+        isOpen={confirmDelete}
+        leastDestructiveRef={cancelDeleteRef}
+        onClose={() => setConfirmDelete(false)}
+        isCentered
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Delete this record?
+            </AlertDialogHeader>
+
+            <AlertDialogBody>
+              <Text mb={3}>
+                This permanently deletes the incoming record for{" "}
+                <strong>{fmtDate(receipt.shipmentDate) || "no date"}</strong>
+                {receipt.bolNumber ? <> (BOL {receipt.bolNumber})</> : null}
+                {" "}and all {receipt.lines?.length || 0} product line
+                {receipt.lines?.length === 1 ? "" : "s"} on it.
+              </Text>
+              {receipt.inventoryPushed && (
+                <Text color="orange.600" fontWeight="medium" fontSize="sm">
+                  These lines were already pushed to inventory. Deleting this record
+                  does not remove them from inventory.
+                </Text>
+              )}
+              <Text fontSize="sm" color="gray.500" mt={2}>
+                This cannot be undone.
+              </Text>
+            </AlertDialogBody>
+
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelDeleteRef} onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </Button>
+              <Button colorScheme="red" onClick={handleDelete} isLoading={deleting}>
+                Delete record
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </>
   );
 };
