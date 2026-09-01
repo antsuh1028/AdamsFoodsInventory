@@ -11,6 +11,7 @@ import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
+import { lotNumberForDate, fmtLongDate } from "./noblesse/shared";
 import BoxScanner from "../components/navbar/boxScanner";
 import ScannerDiagnostic from "../components/navbar/scannerDiagnostic";
 import ntiLogo from "../assets/nti.jpg";
@@ -44,6 +45,7 @@ const NoblesseScreen = () => {
   );
 
   const [receipts, setReceipts]           = useState([]);
+  const [refreshSignal, setRefreshSignal] = useState(0);
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(null);
@@ -66,6 +68,9 @@ const NoblesseScreen = () => {
     try {
       const receiptsRes = await axiosInstance.get("/noblesse-receipts");
       setReceipts(receiptsRes.data || []);
+      // Tabs that load their own data watch this and re-fetch. Without it the
+      // timestamp below ticks while their contents stay frozen at page load.
+      setRefreshSignal((n) => n + 1);
       setLastRefreshed(new Date());
       setError(null);
       startAutoRefresh();
@@ -106,6 +111,21 @@ const NoblesseScreen = () => {
             <IconButton icon={<HamburgerIcon />} size="sm" variant="ghost"
               colorScheme="gray" aria-label="Menu" onClick={openDrawer} />
             <Image src={ntiLogo} alt="Noblesse Trading Inc" height="36px" objectFit="contain" />
+
+            {/* Recomputed on every render rather than memoised, so the 60s
+                auto-refresh rolls it over shortly after midnight without a
+                page reload. */}
+            <Box borderLeft="1px solid" borderColor="gray.200" pl={4} ml={1}>
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
+                {fmtLongDate()}
+              </Text>
+              <Flex align="baseline" gap={2}>
+                <Text fontSize="xs" color="gray.500">Lot</Text>
+                <Text fontSize="lg" fontWeight="bold" color="red.800" lineHeight="1.1">
+                  {lotNumberForDate()}
+                </Text>
+              </Flex>
+            </Box>
           </Flex>
           <Flex align="center" gap={3}>
             {lastRefreshed && (
@@ -169,7 +189,8 @@ const NoblesseScreen = () => {
               </TabPanel>
               {/* Processing Report & NTI Inventory tabs disabled for now */}
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
-                <RegistrationFormTab isAdmin={canEdit} canDelete={isAdmin} />
+                <RegistrationFormTab isAdmin={canEdit} canDelete={isAdmin}
+                  refreshSignal={refreshSignal} />
               </TabPanel>
             </TabPanels>
           </Box>

@@ -2,6 +2,26 @@ import { Box } from "@chakra-ui/react";
 
 export const today = () => new Date().toISOString().slice(0, 10);
 
+// Lot numbers are N{YY}{JJJ} — two-digit year plus zero-padded day of the year —
+// with a per-record sequence appended downstream. 2026-09-01 is N26244.
+//
+// The day is taken from the LOCAL calendar date, not UTC: the warehouse is in
+// California, so a UTC day-of-year would roll the lot over mid-afternoon. The
+// subtraction itself runs in UTC because that has no daylight-saving jumps.
+export const lotNumberForDate = (date = new Date()) => {
+  const year = date.getFullYear();
+  const dayOfYear = Math.floor(
+    (Date.UTC(year, date.getMonth(), date.getDate()) - Date.UTC(year, 0, 0)) / 86400000
+  );
+  return `N${String(year % 100).padStart(2, "0")}${String(dayOfYear).padStart(3, "0")}`;
+};
+
+// "Tuesday, September 1, 2026"
+export const fmtLongDate = (date = new Date()) =>
+  date.toLocaleDateString(undefined, {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+
 export const fmtDate = (val) => {
   if (!val) return "—";
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(val))) {

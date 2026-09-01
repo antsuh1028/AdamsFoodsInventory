@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   Box, Flex, Text, Button, IconButton, Badge, Spinner, useToast, Image,
   Grid, GridItem, Input, Textarea, Select, Checkbox, Menu, MenuButton, MenuList, MenuItem,
@@ -395,7 +395,7 @@ const calculateYield = (draft) => {
   return yield_;
 };
 
-export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
+export const RegistrationFormTab = ({ isAdmin, canDelete = false, refreshSignal = 0 }) => {
   const toast = useToast();
   const [forms, setForms]     = useState([]);
   const [loading, setLoading] = useState(true);
@@ -436,6 +436,16 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
   const closeAllHistoryModal = () => setAllHistoryOpen(false);
 
   useEffect(() => { fetchForms(); }, [fetchForms]);
+
+  // Re-fetch when the parent's auto-refresh ticks. Compared against a ref so
+  // the initial value does not trigger a duplicate fetch alongside the mount
+  // effect above.
+  const lastSignal = useRef(refreshSignal);
+  useEffect(() => {
+    if (lastSignal.current === refreshSignal) return;
+    lastSignal.current = refreshSignal;
+    fetchForms();
+  }, [refreshSignal, fetchForms]);
 
   const openNew  = () => setDraft(emptyDraft());
   const openEdit = (form) => {

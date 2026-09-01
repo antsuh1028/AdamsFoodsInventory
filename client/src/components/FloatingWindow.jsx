@@ -51,11 +51,13 @@ const FloatingWindow = ({
   const dragState = useRef(null);   // { startX, startY, originX, originY }
   const resizeState = useRef(null); // { edge, startX, startY, startWidth, startHeight, startLeft, startTop }
 
-  // Rotating a phone or resizing the browser changes what fits — re-measure so
-  // the effect below can re-clamp the window against the new viewport.
+  // Re-measure on every open, not just while open. The browser can be resized
+  // (or the window opened on a different display) while this is closed, and a
+  // listener that only runs when isOpen leaves the stored size stale.
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) return undefined;
     const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    onResize();
     window.addEventListener("resize", onResize);
     window.addEventListener("orientationchange", onResize);
     return () => {
@@ -68,14 +70,20 @@ const FloatingWindow = ({
   // on-screen, rather than yanking it out from under the user.
   useEffect(() => {
     if (!isOpen) { setPosition(null); setSize(null); return; }
-    const w = resolveWidth(size?.width ?? width, viewport.w);
     setPosition((prev) => {
       if (!prev) {
+        // Measured straight from the browser rather than from viewport state.
+        // The setViewport above has not necessarily landed on this pass, and
+        // centring against a stale value is exactly the bug this fixes.
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const liveWidth = resolveWidth(size?.width ?? width, vw);
         return {
-          x: Math.max(EDGE_MARGIN, (viewport.w - w) / 2),
-          y: Math.max(EDGE_MARGIN, viewport.h * 0.06),
+          x: Math.max(EDGE_MARGIN, Math.round((vw - liveWidth) / 2)),
+          y: Math.max(EDGE_MARGIN, Math.round(vh * 0.06)),
         };
       }
+      const w = resolveWidth(size?.width ?? width, viewport.w);
       return {
         x: Math.min(prev.x, Math.max(EDGE_MARGIN, viewport.w - w - EDGE_MARGIN)),
         y: Math.min(prev.y, Math.max(EDGE_MARGIN, viewport.h - 80)),
