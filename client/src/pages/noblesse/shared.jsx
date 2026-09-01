@@ -2,6 +2,15 @@ import { Box } from "@chakra-ui/react";
 
 export const today = () => new Date().toISOString().slice(0, 10);
 
+// today() is UTC-based, which in California flips to tomorrow around 4-5pm.
+// Use this wherever the answer has to match the wall calendar the warehouse
+// is working to.
+export const localToday = () => {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 // Lot numbers are N{YY}{JJJ} — two-digit year plus zero-padded day of the year —
 // with a per-record sequence appended downstream. 2026-09-01 is N26244.
 //

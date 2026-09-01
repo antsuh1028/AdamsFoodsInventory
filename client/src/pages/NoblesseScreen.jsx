@@ -190,7 +190,7 @@ const NoblesseScreen = () => {
               {/* Processing Report & NTI Inventory tabs disabled for now */}
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
                 <RegistrationFormTab isAdmin={canEdit} canDelete={isAdmin}
-                  refreshSignal={refreshSignal} />
+                  isAdminUser={isAdmin} refreshSignal={refreshSignal} />
               </TabPanel>
             </TabPanels>
           </Box>

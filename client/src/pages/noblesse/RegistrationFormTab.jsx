@@ -9,6 +9,7 @@ import { fmtDate, today, Th, Td } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
 import ntiLogo from "../../assets/nti.jpg";
 import FloatingWindow from "../../components/FloatingWindow";
+import AllFormsTable from "./AllFormsTable";
 
 
 // Stored verbatim as the field value, so the number, abbreviation and name all
@@ -395,7 +396,7 @@ const calculateYield = (draft) => {
   return yield_;
 };
 
-export const RegistrationFormTab = ({ isAdmin, canDelete = false, refreshSignal = 0 }) => {
+export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = false, refreshSignal = 0 }) => {
   const toast = useToast();
   const [forms, setForms]     = useState([]);
   const [loading, setLoading] = useState(true);
@@ -556,7 +557,9 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, refreshSignal 
         </Flex>
         <Flex gap={2} wrap="wrap">
           <Button size="xs" colorScheme="gray" variant="outline" onClick={() => setExcelViewOpen(true)}>View All</Button>
-          {isAdmin && <Button size="xs" colorScheme="gray" onClick={openAllHistoryModal}>History</Button>}
+          {/* The isAdmin prop above is really "can edit" and is always true here.
+              History is gated on the actual role check. */}
+          {isAdminUser && <Button size="xs" colorScheme="gray" onClick={openAllHistoryModal}>History</Button>}
           {isAdmin && <Button size="xs" colorScheme="blue" onClick={openNew}>+ New Registration Form</Button>}
         </Flex>
       </Flex>
@@ -705,62 +708,9 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, refreshSignal 
         isOpen={excelViewOpen}
         onClose={() => setExcelViewOpen(false)}
         title="All Registration Forms"
-        width={1200}
+        width={1360}
       >
-        <Box overflowX="auto" maxH="70vh">
-          <table style={{ width: "100%", minWidth: "900px", borderCollapse: "collapse", fontSize: "13px" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#f0f0f0", fontWeight: "bold" }}>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Lot #</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Date Received</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Vendor</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Product</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Type</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Spec</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center" }}>Original Weight</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center" }}>Yield %</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center" }}>Status</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {forms.length === 0 ? (
-                <tr>
-                  <td colSpan={10} style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center", color: "#999" }}>
-                    No registration forms
-                  </td>
-                </tr>
-              ) : (
-                forms.map((f, idx) => (
-                  <tr key={f.id} style={{ backgroundColor: idx % 2 === 0 ? "white" : "#fafafa" }}>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", fontWeight: "600", color: "#1e40af" }}>
-                      {f.lotNumber || "—"}
-                    </td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{fmtDate(f.dateReceived) || "—"}</td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{f.vendor || "—"}</td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{f.productDescription || "—"}</td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{f.processingType || "—"}</td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "center" }}>{f.spec || "—"}</td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "right" }}>
-                      {f.originalWeight ? `${f.originalWeight} lbs` : "—"}
-                    </td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "right" }}>
-                      {f.actualYield ? `${f.actualYield}%` : "—"}
-                    </td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "center" }}>
-                      <Badge colorScheme={statusColor(f.status)} fontSize="11px">
-                        {f.status === "completed" ? "Completed" : "In Progress"}
-                      </Badge>
-                    </td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", maxWidth: "200px" }}>
-                      {f.remarks || "—"}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </Box>
+        <AllFormsTable forms={forms} />
       </FloatingWindow>
 
       <FloatingWindow
