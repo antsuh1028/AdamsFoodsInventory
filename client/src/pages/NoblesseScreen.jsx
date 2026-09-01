@@ -2,13 +2,16 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Box, Flex, Text, Spinner, Badge, IconButton, Tooltip, Image, Button,
   Tabs, TabList, TabPanels, Tab, TabPanel,
+  Drawer, DrawerOverlay, DrawerContent, DrawerHeader, DrawerFooter,
+  Stack, Divider, useDisclosure,
 } from "@chakra-ui/react";
-import { RepeatIcon, ArrowBackIcon, WarningIcon } from "@chakra-ui/icons";
+import { RepeatIcon, WarningIcon, HamburgerIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
+import { lotNumberForDate, fmtLongDate } from "./noblesse/shared";
 import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -18,7 +21,24 @@ const NoblesseScreen = () => {
   const isAdmin  = getRole() === "admin";
   const canEdit  = true; // all roles permitted on this screen are trusted to edit
 
+  const { isOpen: drawerOpen, onOpen: openDrawer, onClose: closeDrawer } = useDisclosure();
+
+  const logOut = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
+    navigate("/noblesse-login");
+  };
+
+  // Runs the action and closes the drawer behind it, matching the Adams navbar.
+  const drawerBtn = (label, handler) => (
+    <Button bg="white" justifyContent="flex-start"
+      onClick={() => { handler(); closeDrawer(); }}>
+      {label}
+    </Button>
+  );
+
   const [receipts, setReceipts]           = useState([]);
+  const [refreshSignal, setRefreshSignal] = useState(0);
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(null);
@@ -41,6 +61,9 @@ const NoblesseScreen = () => {
     try {
       const receiptsRes = await axiosInstance.get("/noblesse-receipts");
       setReceipts(receiptsRes.data || []);
+      // Tabs that load their own data watch this and re-fetch. Without it the
+      // timestamp below ticks while their contents stay frozen at page load.
+      setRefreshSignal((n) => n + 1);
       setLastRefreshed(new Date());
       setError(null);
       startAutoRefresh();
@@ -78,13 +101,24 @@ const NoblesseScreen = () => {
       <Box bg="white" borderBottom="1px" borderColor="gray.200" px={6} py={4} flexShrink={0}>
         <Flex align="center" justify="space-between">
           <Flex align="center" gap={3}>
-            {isAdmin && (
-              <Tooltip label="Back to Adams Foods">
-                <IconButton icon={<ArrowBackIcon />} size="sm" variant="ghost"
-                  colorScheme="gray" aria-label="Back" onClick={() => navigate("/home")} />
-              </Tooltip>
-            )}
+            <IconButton icon={<HamburgerIcon />} size="sm" variant="ghost"
+              colorScheme="gray" aria-label="Menu" onClick={openDrawer} />
             <Image src={ntiLogo} alt="Noblesse Trading Inc" height="36px" objectFit="contain" />
+
+            {/* Recomputed on every render rather than memoised, so the 60s
+                auto-refresh rolls it over shortly after midnight without a
+                page reload. */}
+            <Box borderLeft="1px solid" borderColor="gray.200" pl={4} ml={1}>
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
+                {fmtLongDate()}
+              </Text>
+              <Flex align="baseline" gap={2}>
+                <Text fontSize="xs" color="gray.500">Lot</Text>
+                <Text fontSize="lg" fontWeight="bold" color="red.800" lineHeight="1.1">
+                  {lotNumberForDate()}
+                </Text>
+              </Flex>
+            </Box>
           </Flex>
           <Flex align="center" gap={3}>
             {lastRefreshed && (
@@ -99,10 +133,6 @@ const NoblesseScreen = () => {
                 aria-label="Refresh" onClick={() => fetchData(true)} isDisabled={refreshing}
               />
             </Tooltip>
-            <Button size="sm" variant="ghost" colorScheme="red"
-              onClick={() => { localStorage.removeItem("token"); localStorage.removeItem("refreshToken"); navigate("/noblesse-login"); }}>
-              Log out
-            </Button>
           </Flex>
         </Flex>
       </Box>
@@ -152,12 +182,37 @@ const NoblesseScreen = () => {
               </TabPanel>
               {/* Processing Report & NTI Inventory tabs disabled for now */}
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
-                <RegistrationFormTab isAdmin={canEdit} canDelete={isAdmin} />
+                <RegistrationFormTab isAdmin={canEdit} canDelete={isAdmin}
+                  isAdminUser={isAdmin} refreshSignal={refreshSignal} />
               </TabPanel>
             </TabPanels>
           </Box>
         </Tabs>
       </Flex>
+
+      <Drawer placement="left" onClose={closeDrawer} isOpen={drawerOpen}>
+        <DrawerOverlay />
+        <DrawerContent>
+          <DrawerHeader borderBottomWidth="1px">Menu</DrawerHeader>
+          <Stack direction="column" spacing={3} p={4}>
+            {drawerBtn("Refresh Data", () => fetchData(true))}
+
+            {isAdmin && (
+              <>
+                <Divider />
+                {drawerBtn("← Adams Foods", () => navigate("/home"))}
+              </>
+            )}
+          </Stack>
+
+          <DrawerFooter justifyContent="center">
+            <Button bg="red.400" color="black"
+              _hover={{ bg: "red.500", color: "white" }} onClick={logOut}>
+              Log Out
+            </Button>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
     </Flex>
   );
 };

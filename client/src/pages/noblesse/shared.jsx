@@ -1,6 +1,50 @@
 import { Box } from "@chakra-ui/react";
 
-export const today = () => new Date().toISOString().slice(0, 10);
+// Every date in this app is a Pacific business date. The warehouse is in
+// Maywood, CA, so "today" means today in Maywood — not in UTC, and not in
+// whatever timezone the viewer's device happens to be set to.
+//
+// This previously used toISOString(), which is UTC and flipped to tomorrow at
+// 4pm or 5pm Pacific, so anything received in the afternoon was dated a day
+// ahead. Intl handles the DST offset, so there is no fixed -8/-7 to maintain.
+export const PACIFIC_TZ = "America/Los_Angeles";
+
+const pacificParts = (date = new Date()) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: PACIFIC_TZ,
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(date);
+  const get = (type) => Number(parts.find((p) => p.type === type).value);
+  return { year: get("year"), month: get("month"), day: get("day") };
+};
+
+// "YYYY-MM-DD" for the current Pacific date.
+export const today = (date = new Date()) => {
+  const { year, month, day } = pacificParts(date);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${year}-${pad(month)}-${pad(day)}`;
+};
+
+// Lot numbers are N{YY}{JJJ} — two-digit year plus zero-padded day of the year —
+// with a per-record sequence appended downstream. 2026-09-01 is N26244.
+//
+// Day-of-year is derived from the Pacific calendar date; the subtraction runs
+// in UTC only because that arithmetic has no daylight-saving jumps in it.
+export const lotNumberForDate = (date = new Date()) => {
+  const { year, month, day } = pacificParts(date);
+  const dayOfYear = Math.floor(
+    (Date.UTC(year, month - 1, day) - Date.UTC(year, 0, 0)) / 86400000
+  );
+  return `N${String(year % 100).padStart(2, "0")}${String(dayOfYear).padStart(3, "0")}`;
+};
+
+// "Tuesday, September 1, 2026" — in Pacific, so it agrees with the lot number
+// beside it even when the viewer's device is on another clock.
+export const fmtLongDate = (date = new Date()) =>
+  date.toLocaleDateString("en-US", {
+    timeZone: PACIFIC_TZ,
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
 
 export const fmtDate = (val) => {
   if (!val) return "—";

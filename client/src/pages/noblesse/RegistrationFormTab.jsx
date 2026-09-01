@@ -1,15 +1,29 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   Box, Flex, Text, Button, IconButton, Badge, Spinner, useToast, Image,
   Grid, GridItem, Input, Textarea, Select, Checkbox, Menu, MenuButton, MenuList, MenuItem,
 } from "@chakra-ui/react";
-import { DeleteIcon, ChevronDownIcon } from "@chakra-ui/icons";
+import { DeleteIcon, ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, Th, Td } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
 import ntiLogo from "../../assets/nti.jpg";
 import FloatingWindow from "../../components/FloatingWindow";
+import AllFormsTable from "./AllFormsTable";
 
+
+// Stored verbatim as the field value, so the number, abbreviation and name all
+// survive into the printed form and the history snapshot with no lookup table
+// to keep in sync.
+const PROCESSING_TYPES = [
+  "101 SLC-BG Slicing & Bagging",
+  "102 DBN-PK Deboning & Bagging",
+  "103 PRTN-PK Portioning & Packing",
+  "104 CUT-PK 1/2 Cutting & Packing",
+  "105 BONE CUT Bone Cut",
+  "106 CUT-RL Cutting & Rolling",
+  "108 SHR-CT Short Rib Cut",
+];
 
 const emptyDraft = () => ({
   id: null,
@@ -31,7 +45,7 @@ const emptyDraft = () => ({
 const sampleDraft = () => ({
   lotNumber: "N26124-01", formDate: today(), dateReceived: today(), timeReceived: "14:30",
   vendorLot: "IC-88213", vendor: "IBP Foods",
-  productDescription: "Beef Brisket, Boneless", processingType: "Cut & Vacuum Pack",
+  productDescription: "Beef Brisket, Boneless", processingType: "104 CUT-PK 1/2 Cutting & Packing",
   spec: "10X30", brand: "IBP", estNumber: "9268", grade: "Choice",
   dueDate: today(), predictedYield: "92",
   manifestBlAttached: true, processReportAttached: false,
@@ -46,14 +60,30 @@ const sampleDraft = () => ({
 
 // Sheet-style field: bold right-aligned label + light-gray filled input,
 // laid out as a pair of grid columns to mirror the printed form's rows.
+// On mobile the sheet collapses to a single column, so each field becomes a
+// label row stacked above its input row; the right-aligned two-column pairing
+// only makes sense once there is room for it.
 const SheetField = ({ label, full, plain, children }) => (
   <>
-    <GridItem colSpan={1} display="flex" alignItems="center" justifyContent="flex-end">
-      <Text fontSize="2xs" fontWeight="bold" p={2} color="gray.700" textTransform="uppercase" letterSpacing="wide" textAlign="right">
+    <GridItem
+      colSpan={1}
+      display="flex"
+      alignItems="center"
+      justifyContent={{ base: "flex-start", md: "flex-end" }}
+    >
+      <Text
+        fontSize="2xs" fontWeight="bold" p={2} color="gray.700"
+        textTransform="uppercase" letterSpacing="wide"
+        textAlign={{ base: "left", md: "right" }}
+      >
         {label}
       </Text>
     </GridItem>
-    <GridItem colSpan={full ? 3 : 1} bg={plain ? "transparent" : "#f0f0f0"} borderRadius="sm">
+    <GridItem
+      colSpan={{ base: 1, md: full ? 3 : 1 }}
+      bg={plain ? "transparent" : "#f0f0f0"}
+      borderRadius="sm"
+    >
       {children}
     </GridItem>
   </>
@@ -62,7 +92,7 @@ const SheetField = ({ label, full, plain, children }) => (
 const sheetInputProps = { size: "sm", bg: "transparent", border: "none", borderRadius: 0, px: 2, _focus: { boxShadow: "none", bg: "white" } };
 
 const SectionBar = ({ children }) => (
-  <GridItem colSpan={4} bg="#ccd3db" px={3} py={2} fontSize="xs" fontWeight="bold" color="gray.800">
+  <GridItem colSpan={{ base: 1, md: 4 }} bg="#ccd3db" px={3} py={2} fontSize="xs" fontWeight="bold" color="gray.800">
     {children}
   </GridItem>
 );
@@ -81,11 +111,11 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
       isFullScreen={isFullScreen}
       onToggleFullScreen={() => setIsFullScreen((v) => !v)}
       width={900}
-      footer={<Flex justify="space-between" width="100%">
+      footer={<Flex justify="space-between" width="100%" gap={2} wrap="wrap">
         <Button size="sm" variant="outline" colorScheme="purple" onClick={() => setDraft({ ...draft, ...sampleDraft() })}>
           Fill Sample Data
         </Button>
-        <Flex gap={2}>
+        <Flex gap={2} flex={{ base: "1 1 100%", md: "0 0 auto" }} justify="flex-end">
           <Button size="sm" variant="outline" onClick={() => printRegistrationForm(draft)}>Print</Button>
           <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button size="sm" colorScheme="blue" isLoading={saving} onClick={onSave}>Save</Button>
@@ -93,16 +123,24 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
       </Flex>}
     >
         <Box maxW="820px" mx="auto">
-          <Flex align="flex-start" justify="space-between" borderBottom="2px solid #2b6cb0" pb={2} mb={3}>
-            <Image src={ntiLogo} alt="Noblesse Trading Inc." width="220px" objectFit="contain" />
-            <Flex direction="column" gap={2} align="flex-end">
+          <Flex
+            direction={{ base: "column", md: "row" }}
+            align={{ base: "stretch", md: "flex-start" }}
+            justify="space-between" gap={{ base: 3, md: 0 }}
+            borderBottom="2px solid #2b6cb0" pb={2} mb={3}
+          >
+            <Image
+              src={ntiLogo} alt="Noblesse Trading Inc."
+              width={{ base: "160px", md: "220px" }} objectFit="contain"
+            />
+            <Flex direction="column" gap={2} align={{ base: "stretch", md: "flex-end" }}>
               <Flex align="center" gap={2}>
-                <Text fontSize="sm" fontWeight="bold" color="blue.700">Lot#:</Text>
-                <Input size="sm" width="150px" value={draft.lotNumber} onChange={set("lotNumber")} placeholder="N26124-01" />
+                <Text fontSize="sm" fontWeight="bold" color="blue.700" minW="40px">Lot#:</Text>
+                <Input size="sm" width={{ base: "100%", md: "150px" }} value={draft.lotNumber} onChange={set("lotNumber")} placeholder="N26124-01" />
               </Flex>
               <Flex align="center" gap={2}>
-                <Text fontSize="sm" fontWeight="bold" color="blue.700">Date:</Text>
-                <Input size="sm" width="150px" type="date" value={draft.formDate} onChange={set("formDate")} />
+                <Text fontSize="sm" fontWeight="bold" color="blue.700" minW="40px">Date:</Text>
+                <Input size="sm" width={{ base: "100%", md: "150px" }} type="date" value={draft.formDate} onChange={set("formDate")} />
               </Flex>
             </Flex>
           </Flex>
@@ -110,7 +148,10 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             {draft.id ? "Edit Registration Form" : "New Registration Form"}
           </Text>
 
-          <Grid templateColumns="1fr 2fr 1fr 2fr" gap="1px" bg="gray.200" mb={5} border="1px solid" borderColor="gray.200">
+          <Grid
+            templateColumns={{ base: "1fr", md: "1fr 2fr 1fr 2fr" }}
+            gap="1px" bg="gray.200" mb={5} border="1px solid" borderColor="gray.200"
+          >
             <SectionBar>Logistics &amp; Vendor</SectionBar>
             <SheetField label="Date Received"><Input {...sheetInputProps} type="date" value={draft.dateReceived} onChange={set("dateReceived")} /></SheetField>
             <SheetField label="Time Received"><Input {...sheetInputProps} type="time" value={draft.timeReceived} onChange={set("timeReceived")} /></SheetField>
@@ -119,7 +160,22 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
 
             <SectionBar>Product Identification</SectionBar>
             <SheetField label="Product Description" full><Input {...sheetInputProps} value={draft.productDescription} onChange={set("productDescription")} /></SheetField>
-            <SheetField label="Processing Type"><Input {...sheetInputProps} value={draft.processingType} onChange={set("processingType")} /></SheetField>
+            <SheetField label="Processing Type">
+              {/* Styled like the Status select rather than with sheetInputProps,
+                  which strips the border and makes a dropdown look like a
+                  plain text field. */}
+              <Select size="sm" bg="white" border="1px solid" borderColor="gray.300"
+                value={draft.processingType || ""} onChange={set("processingType")}>
+                <option value="">— Select processing type —</option>
+                {PROCESSING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                {/* Forms saved before this list existed hold free text. Keeping
+                    the current value as an option stops opening an old form
+                    from silently blanking the field. */}
+                {draft.processingType && !PROCESSING_TYPES.includes(draft.processingType) && (
+                  <option value={draft.processingType}>{draft.processingType} (existing)</option>
+                )}
+              </Select>
+            </SheetField>
             <SheetField label="Original Weight (lbs)"><Input {...sheetInputProps} type="number" value={draft.originalWeight} onChange={set("originalWeight")} /></SheetField>
             <SheetField label="Spec. ">
               <Flex gap={1} align="center">
@@ -228,39 +284,6 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
               </React.Fragment>
             ))}
 
-            {(!Array.isArray(draft.processingDates) || draft.processingDates.length === 0) && (
-              <React.Fragment>
-                <SheetField label="Processed Weight (lbs)">
-                  <Flex gap={1} align="center">
-                    <Input
-                      {...sheetInputProps}
-                      type="number"
-                      placeholder="0.00"
-                    />
-                    <Button size="xs" variant="ghost" colorScheme="red" minW="auto" px={1} isDisabled title="Cannot delete last row">
-                      ×
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      colorScheme="blue"
-                      minW="auto"
-                      px={2}
-                      onClick={() => {
-                        const newDates = [{ date: "", weight: "" }, { date: "", weight: "" }];
-                        setDraft({ ...draft, processingDates: newDates });
-                      }}
-                    >
-                      +
-                    </Button>
-                  </Flex>
-                </SheetField>
-                <SheetField label="(1) Processing Date">
-                  <Input {...sheetInputProps} type="date" />
-                </SheetField>
-              </React.Fragment>
-            )}
-
             <SheetField label="Actual Yield (%)">
               <Box {...sheetInputProps} bg="white" border="1px solid" borderColor="gray.200" py={1}>
                 <Text fontSize="sm" color="gray.700" fontWeight="medium">
@@ -287,6 +310,73 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
   );
 };
 
+// Human labels for the snapshot shown on create/delete history entries.
+const SNAPSHOT_FIELDS = [
+  ["lotNumber", "Lot #"],
+  ["formDate", "Form date"],
+  ["dateReceived", "Date received"],
+  ["timeReceived", "Time received"],
+  ["vendor", "Vendor"],
+  ["vendorLot", "Vendor lot"],
+  ["productDescription", "Product"],
+  ["processingType", "Processing type"],
+  ["spec", "Spec"],
+  ["brand", "Brand"],
+  ["estNumber", "EST #"],
+  ["grade", "Grade"],
+  ["dueDate", "Due date"],
+  ["predictedYield", "Predicted yield"],
+  ["originalWeight", "Original weight"],
+  ["totalQuantity", "Total quantity"],
+  ["actualYield", "Actual yield"],
+  ["temp", "Temp"],
+  ["remarks", "Remarks"],
+  ["checkedBy", "Checked by"],
+  ["status", "Status"],
+];
+
+const isBlank = (v) =>
+  v === null || v === undefined || v === "" ||
+  (Array.isArray(v) && v.length === 0);
+
+// Renders the full form captured on a create or a delete. Empty fields are
+// omitted so a sparse form does not produce a wall of dashes.
+const HistorySnapshot = ({ form, tone, label }) => {
+  if (!form) return null;
+  const filled = SNAPSHOT_FIELDS.filter(([key]) => !isBlank(form[key]));
+  const dates = Array.isArray(form.processingDates)
+    ? form.processingDates.filter((pd) => pd && (pd.date || pd.weight))
+    : [];
+
+  if (filled.length === 0 && dates.length === 0) {
+    return <Text fontSize="xs" color="gray.500" fontStyle="italic">No field data recorded.</Text>;
+  }
+
+  return (
+    <Box mt={1} p={2} bg={`${tone}.50`} borderRadius="md" border="1px solid" borderColor={`${tone}.200`}>
+      <Text fontSize="xs" fontWeight="bold" color={`${tone}.800`} mb={1}>{label}</Text>
+      <Grid templateColumns={{ base: "1fr", md: "repeat(2, 1fr)" }} gap={1} fontSize="xs">
+        {filled.map(([key, labelText]) => (
+          <Flex key={key} gap={2}>
+            <Text color="gray.500" minW="110px" flexShrink={0}>{labelText}:</Text>
+            <Text color="gray.800" wordBreak="break-word">{String(form[key])}</Text>
+          </Flex>
+        ))}
+      </Grid>
+      {dates.length > 0 && (
+        <Box mt={1}>
+          <Text color="gray.500" fontSize="xs">Processing:</Text>
+          {dates.map((pd, i) => (
+            <Text key={i} fontSize="xs" color="gray.800" pl={2}>
+              ({i + 1}) {pd.date || "—"} · {pd.weight ?? "—"} lbs
+            </Text>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+};
+
 const statusColor = (status) => (status === "completed" ? "green" : "yellow");
 
 const calculateYield = (draft) => {
@@ -306,7 +396,7 @@ const calculateYield = (draft) => {
   return yield_;
 };
 
-export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
+export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = false, refreshSignal = 0 }) => {
   const toast = useToast();
   const [forms, setForms]     = useState([]);
   const [loading, setLoading] = useState(true);
@@ -348,11 +438,23 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
 
   useEffect(() => { fetchForms(); }, [fetchForms]);
 
+  // Re-fetch when the parent's auto-refresh ticks. Compared against a ref so
+  // the initial value does not trigger a duplicate fetch alongside the mount
+  // effect above.
+  const lastSignal = useRef(refreshSignal);
+  useEffect(() => {
+    if (lastSignal.current === refreshSignal) return;
+    lastSignal.current = refreshSignal;
+    fetchForms();
+  }, [refreshSignal, fetchForms]);
+
   const openNew  = () => setDraft(emptyDraft());
   const openEdit = (form) => {
     const draft = { ...emptyDraft(), ...form };
-    // Convert backend format to array format
-    if (!draft.processingDates) {
+    // Convert backend format to array format. An empty array is truthy, so it
+    // has to be checked for explicitly — otherwise the form renders with no
+    // processing row at all and the yield can never be calculated.
+    if (!Array.isArray(draft.processingDates) || draft.processingDates.length === 0) {
       const dates = [];
       for (let i = 1; i <= 10; i++) {
         if (draft[`processingDate${i}`] || draft[`processedWeight${i}`]) {
@@ -420,8 +522,9 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
 
   return (
     <Box>
-      <Flex justify="space-between" align="center" mb={4}>
-        <Flex align="center" gap={3} flex={1}>
+      <Flex justify="space-between" align={{ base: "stretch", md: "center" }} mb={4}
+        direction={{ base: "column", md: "row" }} gap={{ base: 3, md: 0 }}>
+        <Flex align="center" gap={3} flex={1} wrap="wrap">
           <Text fontSize="sm" fontWeight="semibold" color="gray.600" textTransform="uppercase" letterSpacing="wide">
             Registration Forms
           </Text>
@@ -452,9 +555,11 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
             </Button>
           </Flex>
         </Flex>
-        <Flex gap={2}>
+        <Flex gap={2} wrap="wrap">
           <Button size="xs" colorScheme="gray" variant="outline" onClick={() => setExcelViewOpen(true)}>View All</Button>
-          {isAdmin && <Button size="xs" colorScheme="gray" onClick={openAllHistoryModal}>History</Button>}
+          {/* The isAdmin prop above is really "can edit" and is always true here.
+              History is gated on the actual role check. */}
+          {isAdminUser && <Button size="xs" colorScheme="gray" onClick={openAllHistoryModal}>History</Button>}
           {isAdmin && <Button size="xs" colorScheme="blue" onClick={openNew}>+ New Registration Form</Button>}
         </Flex>
       </Flex>
@@ -464,7 +569,10 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
           {forms.length === 0 ? "No registration forms saved yet." : statusFilter ? `No ${statusFilter === "in_progress" ? "in progress" : "completed"} registration forms.` : "No registration forms."}
         </Text>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        // A table cannot reflow into a narrow column, so on mobile it scrolls
+        // sideways inside this box rather than forcing the whole page to.
+        <Box overflowX="auto" width="100%">
+        <table style={{ width: "100%", minWidth: "720px", borderCollapse: "collapse" }}>
           <thead>
             <tr>
               <Th>Lot #</Th>
@@ -494,7 +602,29 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
                     }
                   }}
                 >
-                  <Td fontWeight="medium" color="blue.700">{f.lotNumber || "—"}</Td>
+                  <Td fontWeight="medium" color="blue.700">
+                    <Flex align="center" gap={2}>
+                      {/* Inside the first cell rather than its own column, so
+                          the expanded row's colSpan does not have to change. */}
+                      <IconButton
+                        aria-label={expandedId === f.id ? "Collapse details" : "Expand details"}
+                        title={expandedId === f.id ? "Collapse" : "Expand"}
+                        icon={expandedId === f.id ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                        size="xs"
+                        variant="ghost"
+                        colorScheme={expandedId === f.id ? "blue" : "gray"}
+                        // The row also expands on double-click. Without these
+                        // the button's own events bubble up to it and toggle a
+                        // second time, cancelling the first.
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedId(expandedId === f.id ? null : f.id);
+                        }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      />
+                      <Text as="span">{f.lotNumber || "—"}</Text>
+                    </Flex>
+                  </Td>
                   <Td>{f.vendor || "—"}</Td>
                   <Td>{f.productDescription || "—"}</Td>
                   <Td>{fmtDate(f.dateReceived)}</Td>
@@ -549,7 +679,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
                   <tr style={{ backgroundColor: "rgb(230, 240, 255)", borderTop: "2px solid rgb(66, 153, 225)" }}>
                     <td colSpan={6} style={{ padding: 0 }}>
                       <Box p={4} width="100%">
-                        <Grid templateColumns="repeat(2, 1fr)" gap={4} fontSize="sm">
+                        <Grid templateColumns={{ base: "1fr", md: "repeat(2, 1fr)" }} gap={4} fontSize="sm">
                           <GridItem>
                             <Text fontWeight="bold" color="gray.700">Lot #</Text>
                             <Text>{f.lotNumber || "—"}</Text>
@@ -574,7 +704,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
                             <Text fontWeight="bold" color="gray.700">Spec</Text>
                             <Text>{f.spec || "—"}</Text>
                           </GridItem>
-                          <GridItem colSpan={2}>
+                          <GridItem colSpan={{ base: 1, md: 2 }}>
                             <Text fontWeight="bold" color="gray.700">Remarks</Text>
                             <Text>{f.remarks || "—"}</Text>
                           </GridItem>
@@ -587,74 +717,18 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
             ))}
           </tbody>
         </table>
+        </Box>
       )}
-
-      <RegistrationFormModal
-        isOpen={!!draft} onClose={close}
-        draft={draft} setDraft={setDraft}
-        onSave={save} saving={saving}
-      />
 
       <FloatingWindow
         isOpen={excelViewOpen}
         onClose={() => setExcelViewOpen(false)}
         title="All Registration Forms"
-        width={1200}
+        width={1360}
       >
-        <Box overflowX="auto" maxH="70vh">
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#f0f0f0", fontWeight: "bold" }}>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Lot #</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Date Received</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Vendor</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Product</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Type</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Spec</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center" }}>Original Weight</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center" }}>Yield %</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center" }}>Status</th>
-                <th style={{ border: "1px solid #ddd", padding: "10px", textAlign: "left" }}>Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {forms.length === 0 ? (
-                <tr>
-                  <td colSpan={10} style={{ border: "1px solid #ddd", padding: "10px", textAlign: "center", color: "#999" }}>
-                    No registration forms
-                  </td>
-                </tr>
-              ) : (
-                forms.map((f, idx) => (
-                  <tr key={f.id} style={{ backgroundColor: idx % 2 === 0 ? "white" : "#fafafa" }}>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", fontWeight: "600", color: "#1e40af" }}>
-                      {f.lotNumber || "—"}
-                    </td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{fmtDate(f.dateReceived) || "—"}</td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{f.vendor || "—"}</td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{f.productDescription || "—"}</td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px" }}>{f.processingType || "—"}</td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "center" }}>{f.spec || "—"}</td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "right" }}>
-                      {f.originalWeight ? `${f.originalWeight} lbs` : "—"}
-                    </td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "right" }}>
-                      {f.actualYield ? `${f.actualYield}%` : "—"}
-                    </td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "center" }}>
-                      <Badge colorScheme={statusColor(f.status)} fontSize="11px">
-                        {f.status === "completed" ? "Completed" : "In Progress"}
-                      </Badge>
-                    </td>
-                    <td style={{ border: "1px solid #ddd", padding: "8px", maxWidth: "200px" }}>
-                      {f.remarks || "—"}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </Box>
+        {/* Double-click opens the edit form over this list rather than closing
+            it, so the filters and page survive the round trip. */}
+        <AllFormsTable forms={forms} onEdit={openEdit} />
       </FloatingWindow>
 
       <FloatingWindow
@@ -717,11 +791,30 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false }) => {
                     )}
                   </Box>
                 )}
+
+                {/* A create or delete has no field diff, so show the whole form
+                    instead. For a delete this is the only surviving copy. */}
+                {!entry.changedFields?.length && (entry.newValues || entry.oldValues) && (
+                  <HistorySnapshot
+                    form={entry.newValues || entry.oldValues}
+                    tone={entry.action === "deleted" ? "red" : "green"}
+                    label={entry.action === "deleted" ? "Deleted record" : "Created with"}
+                  />
+                )}
               </Box>
             ))}
           </Flex>
         )}
       </FloatingWindow>
+
+      {/* Rendered last on purpose. Every FloatingWindow sits at zIndex 1400, so
+          at equal z-index DOM order decides what stacks on top — and the edit
+          form has to sit above the list it was opened from. */}
+      <RegistrationFormModal
+        isOpen={!!draft} onClose={close}
+        draft={draft} setDraft={setDraft}
+        onSave={save} saving={saving}
+      />
     </Box>
   );
 };
