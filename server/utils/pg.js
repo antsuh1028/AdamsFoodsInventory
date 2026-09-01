@@ -8,9 +8,13 @@ const connectionString = (process.env.DB_CONNECTION_STRING || "")
 const pool = new Pool({
   connectionString,
   ssl: { rejectUnauthorized: true },
-  // Neon drops idle connections when it scales down, so retire ours first —
-  // reconnecting on the next query is cheap, being handed a dead socket is not.
-  idleTimeoutMillis: 30_000,
+  // Must stay comfortably ABOVE the client's 60s auto-refresh interval. At the
+  // pg default of 10s (or the 30s this was) the pooled connection is always
+  // gone before the next poll, so every poll pays a fresh DNS lookup, TCP
+  // connect and TLS handshake — and every one of those is a chance to hit a
+  // transient ENOTFOUND. Reusing the connection removes that churn entirely,
+  // while still retiring it well before Neon suspends on inactivity.
+  idleTimeoutMillis: 120_000,
   connectionTimeoutMillis: 10_000,
   keepAlive: true,
   max: 10,

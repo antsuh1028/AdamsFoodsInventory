@@ -3,7 +3,7 @@ import {
   Box, Flex, Text, Button, IconButton, Badge, Spinner, useToast, Image,
   Grid, GridItem, Input, Textarea, Select, Checkbox, Menu, MenuButton, MenuList, MenuItem,
 } from "@chakra-ui/react";
-import { DeleteIcon, ChevronDownIcon } from "@chakra-ui/icons";
+import { DeleteIcon, ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, Th, Td } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
@@ -602,7 +602,16 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                     }
                   }}
                 >
-                  <Td fontWeight="medium" color="blue.700">{f.lotNumber || "—"}</Td>
+                  <Td fontWeight="medium" color="blue.700">
+                    <Flex align="center" gap={2}>
+                      {/* Inside the first cell rather than its own column, so
+                          the expanded row's colSpan does not have to change. */}
+                      {expandedId === f.id
+                        ? <ChevronUpIcon boxSize={4} color="blue.500" />
+                        : <ChevronDownIcon boxSize={4} color="gray.400" />}
+                      <Text as="span">{f.lotNumber || "—"}</Text>
+                    </Flex>
+                  </Td>
                   <Td>{f.vendor || "—"}</Td>
                   <Td>{f.productDescription || "—"}</Td>
                   <Td>{fmtDate(f.dateReceived)}</Td>
