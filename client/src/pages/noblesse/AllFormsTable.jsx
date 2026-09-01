@@ -55,7 +55,7 @@ const compare = (a, b, col, dir) => {
   return dir === "asc" ? base : -base;
 };
 
-const AllFormsTable = ({ forms = [] }) => {
+const AllFormsTable = ({ forms = [], onEdit }) => {
   const [sort, setSort] = useState({ key: "dateReceived", dir: "desc" });
   const [filters, setFilters] = useState({});
   const [page, setPage] = useState(0);
@@ -166,6 +166,11 @@ const AllFormsTable = ({ forms = [] }) => {
         </Flex>
 
         <Flex align="center" gap={1}>
+          {onEdit && visible.length > 0 && (
+            <Text fontSize="xs" color="gray.400" mr={3} display={{ base: "none", md: "block" }}>
+              Double-click a row to edit
+            </Text>
+          )}
           <Text fontSize="xs" color="gray.500" mr={2}>
             {days.length === 0 ? "No dates" : `Days ${safePage * DAYS_PER_PAGE + 1}–${Math.min((safePage + 1) * DAYS_PER_PAGE, days.length)} of ${days.length}`}
           </Text>
@@ -234,7 +239,10 @@ const AllFormsTable = ({ forms = [] }) => {
                 return (
                   <Box as="tr" key={form.id}
                     bg={isToday ? "green.50" : idx % 2 === 0 ? "white" : "gray.50"}
-                    _hover={{ bg: isToday ? "green.100" : "blue.50" }}>
+                    _hover={{ bg: isToday ? "green.100" : "blue.50" }}
+                    cursor={onEdit ? "pointer" : undefined}
+                    title={onEdit ? "Double-click to edit" : undefined}
+                    onDoubleClick={onEdit ? () => onEdit(form) : undefined}>
                     {COLUMNS.map((col, ci) => (
                       <Box as="td" key={col.key}
                         px={3} py={2} fontSize="sm"

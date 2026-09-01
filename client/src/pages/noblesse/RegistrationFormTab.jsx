@@ -698,19 +698,15 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
         </Box>
       )}
 
-      <RegistrationFormModal
-        isOpen={!!draft} onClose={close}
-        draft={draft} setDraft={setDraft}
-        onSave={save} saving={saving}
-      />
-
       <FloatingWindow
         isOpen={excelViewOpen}
         onClose={() => setExcelViewOpen(false)}
         title="All Registration Forms"
         width={1360}
       >
-        <AllFormsTable forms={forms} />
+        {/* Double-click opens the edit form over this list rather than closing
+            it, so the filters and page survive the round trip. */}
+        <AllFormsTable forms={forms} onEdit={openEdit} />
       </FloatingWindow>
 
       <FloatingWindow
@@ -788,6 +784,15 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
           </Flex>
         )}
       </FloatingWindow>
+
+      {/* Rendered last on purpose. Every FloatingWindow sits at zIndex 1400, so
+          at equal z-index DOM order decides what stacks on top — and the edit
+          form has to sit above the list it was opened from. */}
+      <RegistrationFormModal
+        isOpen={!!draft} onClose={close}
+        draft={draft} setDraft={setDraft}
+        onSave={save} saving={saving}
+      />
     </Box>
   );
 };
