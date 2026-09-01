@@ -2,8 +2,11 @@ import React, { useMemo, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, Input, Select, IconButton, Tooltip,
 } from "@chakra-ui/react";
-import { TriangleUpIcon, TriangleDownIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon } from "@chakra-ui/icons";
-import { fmtDate, localToday } from "./shared";
+import {
+  TriangleUpIcon, TriangleDownIcon, ChevronLeftIcon, ChevronRightIcon,
+  ChevronUpIcon, ChevronDownIcon, CloseIcon, SearchIcon,
+} from "@chakra-ui/icons";
+import { fmtDate, today } from "./shared";
 
 // Sortable, filterable view of every registration form.
 //
@@ -56,8 +59,11 @@ const AllFormsTable = ({ forms = [] }) => {
   const [sort, setSort] = useState({ key: "dateReceived", dir: "desc" });
   const [filters, setFilters] = useState({});
   const [page, setPage] = useState(0);
+  // Hidden by default — most visits are just to read the list, and a permanent
+  // row of empty inputs pushes the data down for no reason.
+  const [showFilters, setShowFilters] = useState(false);
 
-  const todayStr = localToday();
+  const todayStr = today(); // Pacific business date
 
   const setFilter = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -65,6 +71,15 @@ const AllFormsTable = ({ forms = [] }) => {
   };
 
   const clearFilters = () => { setFilters({}); setPage(0); };
+
+  // Collapsing must not silently keep filtering. Hiding the row clears it; the
+  // count on the button covers the case where they are left open and applied.
+  const toggleFilters = () => {
+    setShowFilters((open) => {
+      if (open) clearFilters();
+      return !open;
+    });
+  };
   const activeFilters = Object.entries(filters).filter(([, v]) => v);
 
   const toggleSort = (key) => {
@@ -133,9 +148,19 @@ const AllFormsTable = ({ forms = [] }) => {
               {todayCount} received today
             </Badge>
           )}
+          <Button
+            size="xs"
+            variant={showFilters ? "solid" : "outline"}
+            colorScheme={activeFilters.length ? "blue" : "gray"}
+            leftIcon={<SearchIcon boxSize={3} />}
+            rightIcon={showFilters ? <ChevronUpIcon /> : <ChevronDownIcon />}
+            onClick={toggleFilters}
+          >
+            Filters{activeFilters.length > 0 && ` (${activeFilters.length})`}
+          </Button>
           {activeFilters.length > 0 && (
             <Button size="xs" variant="ghost" leftIcon={<CloseIcon boxSize={2} />} onClick={clearFilters}>
-              Clear {activeFilters.length} filter{activeFilters.length === 1 ? "" : "s"}
+              Clear
             </Button>
           )}
         </Flex>
@@ -175,7 +200,7 @@ const AllFormsTable = ({ forms = [] }) => {
                 );
               })}
             </Box>
-            <Box as="tr">
+            <Box as="tr" display={showFilters ? undefined : "none"}>
               {COLUMNS.map((col) => (
                 <Box as="th" key={col.key} bg="gray.50" borderBottom="1px solid" borderColor="gray.200" px={2} py={1}>
                   {col.filter === "text" && (
