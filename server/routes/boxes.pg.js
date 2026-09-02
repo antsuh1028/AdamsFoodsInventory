@@ -380,24 +380,28 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
 router.get("/box-batches", verifyToken, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   try {
+    // Both aggregates are independent scalar subqueries rather than joins.
+    // Joining batch_items for the count AND again for the per-unit totals
+    // multiplies the two together: 17 boxes x 1 unit produced 17 copies of the
+    // same total, and with two units it would also have doubled box_count.
+    // A scalar subquery returns exactly one value and cannot fan out.
     const result = await pool.query(
       `SELECT b.batch_id, b.lot_number, b.status, b.created_at, b.closed_at,
-              COUNT(i.item_id)::int AS box_count,
-              COALESCE(
-                json_agg(json_build_object('unit', t.weight_unit, 'total', t.total))
-                  FILTER (WHERE t.weight_unit IS NOT NULL),
-                '[]'
-              ) AS totals
+              (SELECT COUNT(*)::int
+                 FROM batch_items i
+                WHERE i.batch_id = b.batch_id) AS box_count,
+              COALESCE((
+                SELECT json_agg(json_build_object('unit', g.weight_unit, 'total', g.total)
+                                ORDER BY g.weight_unit)
+                  FROM (
+                    SELECT weight_unit, SUM(weight)::text AS total
+                      FROM batch_items
+                     WHERE batch_id = b.batch_id
+                     GROUP BY weight_unit
+                  ) g
+              ), '[]'::json) AS totals
          FROM box_batches b
-         LEFT JOIN batch_items i ON i.batch_id = b.batch_id
-         LEFT JOIN LATERAL (
-           SELECT weight_unit, SUM(weight)::text AS total
-             FROM batch_items
-            WHERE batch_id = b.batch_id
-            GROUP BY weight_unit
-         ) t ON true
         WHERE b.tenant_id = $1
-        GROUP BY b.batch_id, b.lot_number, b.status, b.created_at, b.closed_at
         ORDER BY b.created_at DESC
         LIMIT $2`,
       [req.tenantId, limit]
