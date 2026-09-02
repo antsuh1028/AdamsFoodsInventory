@@ -114,38 +114,61 @@ const readAi = (s, i) => {
   throw new Gs1Error("UNKNOWN_AI", `Unrecognized application identifier "${two}"`, { at: i, ai: two });
 };
 
-/**
- * Parse a GS1-128 payload.
- *
- * Returns { gtin, productionDate, packagingDate, serial, lot,
- *           weight: { value, unit, decimals }, raw, unparsed }
- * where weight.value is a decimal STRING.
- *
- * Throws Gs1Error. Callers should branch on err.code — in particular
- * NO_WEIGHT_AI ("this label carries no weight") is a different situation from
- * every other code ("this scan is bad"). Whatever was parsed before the failure
- * is attached as err.partial.
- */
-const parseGs1 = (raw) => {
-  if (typeof raw !== "string" || raw.trim() === "") {
-    throw new Gs1Error("EMPTY", "Empty barcode payload");
+// Some scanners transmit the AIs in the bracketed human-readable form:
+//   (01)90076338792309(3201)000630(11)260331(21)1102019882
+// It is the same data. The brackets are never in the encoded symbol — the
+// scanner adds them — but they make every field boundary explicit, so this
+// form needs no FNC1 and no length table to be read unambiguously.
+const looksLikeHri = (s) => /^\(\d{2,4}\)/.test(s);
+
+const readHriPairs = (s) => {
+  const pairs = [];
+  const re = /\((\d{2,4})\)([^(]*)/g;
+  let expectedAt = 0;
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    // Anything between one field and the next is not part of either, and
+    // guessing what it belongs to is how wrong weights happen.
+    if (m.index !== expectedAt) {
+      throw new Gs1Error("TRUNCATED",
+        `Unexpected text before AI (${m[1]})`, { at: expectedAt });
+    }
+    if (m[2].length === 0) {
+      throw new Gs1Error("TRUNCATED", `AI ${m[1]} has no value`, { ai: m[1] });
+    }
+    pairs.push({ ai: m[1], value: m[2] });
+    expectedAt = re.lastIndex;
+  }
+  if (pairs.length === 0 || expectedAt !== s.length) {
+    throw new Gs1Error("TRUNCATED", "Malformed bracketed GS1 payload", { at: expectedAt });
   }
 
-  let s = raw.trim();
-  for (const prefix of SYMBOLOGY_PREFIXES) {
-    if (s.startsWith(prefix)) { s = s.slice(prefix.length); break; }
+  // The brackets make boundaries explicit, but a fixed-length AI carrying the
+  // wrong number of characters still means a bad label.
+  for (const p of pairs) {
+    const declared = FIXED[p.ai];
+    const isMeasurement = MEASUREMENT_PREFIXES.has(p.ai.slice(0, 2)) && p.ai.length === 4;
+    const expected = declared !== undefined ? declared : (isMeasurement ? 6 : null);
+    if (expected !== null && p.value.length !== expected) {
+      throw new Gs1Error("TRUNCATED",
+        `AI ${p.ai} expects ${expected} characters, got ${p.value.length}`,
+        { ai: p.ai, value: p.value });
+    }
+    if (expected !== null && !/^\d+$/.test(p.value)) {
+      throw new Gs1Error("NON_NUMERIC",
+        `AI ${p.ai} expects digits, got "${p.value}"`, { ai: p.ai, value: p.value });
+    }
   }
-  // eslint-disable-next-line no-control-regex
-  s = s.replace(/^\u001D+/, ""); // a leading FNC1 is a start marker, not data
+  return pairs;
+};
 
-  const result = {
-    gtin: null, productionDate: null, packagingDate: null, serial: null, lot: null,
-    weight: null, raw, unparsed: [],
-  };
-
+// Walks an unbracketed payload, using the AI table to know where each field
+// ends. This is the form that genuinely needs FNC1 for variable-length fields.
+const readPackedPairs = (s) => {
+  const pairs = [];
   let i = 0;
   while (i < s.length) {
-    if (s[i] === GS) { i += 1; continue; } // separator between variable fields
+    if (s[i] === GS) { i += 1; continue; }
 
     const spec = readAi(s, i);
     const start = i + spec.ai.length;
@@ -176,31 +199,72 @@ const parseGs1 = (raw) => {
       }
       i = start + spec.length;
     }
+    pairs.push({ ai: spec.ai, value });
+  }
+  return pairs;
+};
 
-    const unitFor = NET_WEIGHT_UNITS[spec.ai.slice(0, 3)];
-    if (spec.ai.length === 4 && unitFor) {
+/**
+ * Parse a GS1-128 payload.
+ *
+ * Returns { gtin, productionDate, packagingDate, serial, lot,
+ *           weight: { value, unit, decimals }, raw, unparsed }
+ * where weight.value is a decimal STRING.
+ *
+ * Throws Gs1Error. Callers should branch on err.code — in particular
+ * NO_WEIGHT_AI ("this label carries no weight") is a different situation from
+ * every other code ("this scan is bad"). Whatever was parsed before the failure
+ * is attached as err.partial.
+ */
+const parseGs1 = (raw) => {
+  if (typeof raw !== "string" || raw.trim() === "") {
+    throw new Gs1Error("EMPTY", "Empty barcode payload");
+  }
+
+  let s = raw.trim();
+  for (const prefix of SYMBOLOGY_PREFIXES) {
+    if (s.startsWith(prefix)) { s = s.slice(prefix.length); break; }
+  }
+  // eslint-disable-next-line no-control-regex
+  s = s.replace(/^\u001D+/, ""); // a leading FNC1 is a start marker, not data
+
+  const result = {
+    gtin: null, productionDate: null, packagingDate: null, serial: null, lot: null,
+    weight: null, raw, unparsed: [],
+  };
+
+  // Both transmission forms reduce to the same list of (AI, value) pairs, so
+  // everything below this point is shared.
+  const pairs = looksLikeHri(s) ? readHriPairs(s) : readPackedPairs(s);
+
+  for (const { ai, value } of pairs) {
+    const unitFor = NET_WEIGHT_UNITS[ai.slice(0, 3)];
+    if (ai.length === 4 && unitFor) {
       if (result.weight) {
         throw new Gs1Error("AMBIGUOUS_WEIGHT",
-          "Payload carries more than one net weight", { ai: spec.ai });
+          "Payload carries more than one net weight", { ai });
       }
-      const decimals = Number(spec.ai[3]);
+      // The decimal position comes from the AI's last digit, never a constant:
+      // one supplier ships 3202 (76.20) and another 3201 (63.0), and a
+      // hardcoded divisor is a 10x error on one of them.
+      const decimals = Number(ai[3]);
       result.weight = { value: applyDecimal(value, decimals), unit: unitFor, decimals };
-    } else if (spec.ai === "01") {
+    } else if (ai === "01") {
       result.gtin = value;
-    } else if (spec.ai === "11") {
+    } else if (ai === "11") {
       result.productionDate = parseGs1Date(value);
-    } else if (spec.ai === "13") {
+    } else if (ai === "13") {
       // Packaging date. Kept distinct from AI 11 rather than merged, because
       // they are genuinely different events — but real supplier labels use one
       // or the other, so callers that just need "when was this box made" should
       // read productionDate ?? packagingDate.
       result.packagingDate = parseGs1Date(value);
-    } else if (spec.ai === "10") {
+    } else if (ai === "10") {
       result.lot = value;
-    } else if (spec.ai === "21") {
+    } else if (ai === "21") {
       result.serial = value;
     } else {
-      result.unparsed.push(spec.ai + value);
+      result.unparsed.push(ai + value);
     }
   }
 
