@@ -72,7 +72,10 @@ const printWeightManifest = ({
       <head>
         <title>Tally${lotNumber ? " " + esc(lotNumber) : ""}</title>
         <style>
-          @page { size: letter portrait; margin: 12mm; }
+          /* Extra headroom at the top so the title is not tight against the
+             sheet edge, and printers that clip the first few millimetres do
+             not eat into it. */
+          @page { size: letter portrait; margin: 22mm 12mm 12mm; }
           html, body {
             margin: 0; padding: 0;
             font-family: Calibri, "Segoe UI", Arial, Helvetica, sans-serif;
@@ -81,7 +84,7 @@ const printWeightManifest = ({
           .sheet { max-width: 760px; margin: 0 auto; }
           h1 {
             text-align: center; font-size: 26px; font-style: italic; font-weight: 700;
-            margin: 0 0 18px;
+            margin: 18px 0 22px;
           }
           table.head { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
           table.head td { padding: 2px 4px; font-size: 12px; vertical-align: bottom; }
