@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Box, Flex, Text, Button, Badge, Input, Select, Divider,
   Alert, AlertIcon, Stat, StatLabel, StatNumber, StatHelpText, useToast,
+  AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogContent, AlertDialogOverlay,
 } from "@chakra-ui/react";
 import FloatingWindow from "../FloatingWindow";
 import useScanSession from "../../hooks/useScanSession";
@@ -104,6 +106,10 @@ const BoxScanner = ({ isOpen, onClose }) => {
     setHeader((h) => ({ ...h, [key]: value }));
   };
 
+  const [confirmStart, setConfirmStart] = useState(false);
+  // Focus sits on "Go back" so Enter dismisses rather than commits — the
+  // scanner types Enter, and this dialog is open while one is in someone's hand.
+  const cancelStartRef = useRef(null);
   const [rejection, setRejection] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showManual, setShowManual] = useState(false);
@@ -159,7 +165,10 @@ const BoxScanner = ({ isOpen, onClose }) => {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [isOpen, session, handleScanResult]);
 
-  const onStart = async () => {
+  // Confirmed before opening the batch, because the lot is fixed for the whole
+  // session: every box scanned after this belongs to it, and getting it wrong
+  // means re-scanning the pallet rather than editing a field.
+  const doStart = async () => {
     setBusy(true);
     try {
       await primeAudio(); // iOS needs a gesture before audio will play
@@ -169,9 +178,11 @@ const BoxScanner = ({ isOpen, onClose }) => {
         billOfLading: header.billOfLading.trim() || null,
         itemDescription: header.itemDescription.trim() || null,
       });
+      setConfirmStart(false);
     } catch (err) {
       toast({ title: "Could not start session", description: err.message,
         status: "error", position: "top", duration: 5000 });
+      setConfirmStart(false);
     } finally { setBusy(false); }
   };
 
@@ -254,7 +265,8 @@ const BoxScanner = ({ isOpen, onClose }) => {
               Undo last
             </Button>
             {!session ? (
-              <Button size="lg" colorScheme="blue" onClick={onStart} isLoading={busy} isDisabled={!ready}>
+              <Button size="lg" colorScheme="blue" onClick={() => setConfirmStart(true)}
+                isLoading={busy} isDisabled={!ready}>
                 Start session
               </Button>
             ) : (
@@ -414,6 +426,65 @@ const BoxScanner = ({ isOpen, onClose }) => {
           <ManualEntry onAdd={onManualAdd} disabled={busy} />
         </>
       )}
+
+      <AlertDialog
+        isOpen={confirmStart}
+        leastDestructiveRef={cancelStartRef}
+        onClose={() => setConfirmStart(false)}
+        isCentered
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Check the lot and details before starting
+            </AlertDialogHeader>
+
+            <AlertDialogBody>
+              <Text fontSize="sm" mb={3}>
+                Every box scanned in this session is recorded against these details,
+                and the lot number cannot be changed once scanning begins.
+              </Text>
+
+              <Box borderWidth="1px" borderColor="gray.200" borderRadius="md" overflow="hidden">
+                {[
+                  ["Lot #", header.lotNumber.trim()],
+                  ["Vendor", header.vendor.trim()],
+                  ["Item description", header.itemDescription.trim()],
+                  ["Ship to / BOL", header.billOfLading.trim()],
+                ].map(([label, value], i) => (
+                  <Flex key={label} px={3} py={2} gap={3} align="baseline"
+                    bg={i % 2 ? "gray.50" : "white"}>
+                    <Text fontSize="xs" color="gray.500" minW="120px"
+                      textTransform="uppercase" letterSpacing="wide">
+                      {label}
+                    </Text>
+                    {value ? (
+                      <Text fontSize={label === "Lot #" ? "lg" : "sm"}
+                        fontWeight={label === "Lot #" ? "bold" : "medium"}
+                        color={label === "Lot #" ? "red.800" : "gray.800"}>
+                        {value}
+                      </Text>
+                    ) : (
+                      <Text fontSize="sm" color="orange.500" fontStyle="italic">
+                        not set — will print blank on the manifest
+                      </Text>
+                    )}
+                  </Flex>
+                ))}
+              </Box>
+            </AlertDialogBody>
+
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelStartRef} onClick={() => setConfirmStart(false)}>
+                Go back and edit
+              </Button>
+              <Button colorScheme="blue" onClick={doStart} isLoading={busy}>
+                Start scanning
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </FloatingWindow>
   );
 };
