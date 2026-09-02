@@ -26,8 +26,17 @@ class TallyError extends Error {
   }
 }
 
-const text = (cell) =>
-  cell === null || cell === undefined ? "" : String(cell).trim();
+// read-excel-file hands back real Date objects for date cells. Excel stores a
+// date-only value at midnight UTC, so it has to be read back in UTC — using
+// local components turns 8/17 into 8/16 anywhere west of Greenwich.
+const text = (cell) => {
+  if (cell === null || cell === undefined) return "";
+  if (cell instanceof Date) {
+    if (Number.isNaN(cell.getTime())) return "";
+    return cell.toISOString().slice(0, 10);
+  }
+  return String(cell).trim();
+};
 
 // Strips every non-alphanumeric character, so "Box/Pcs.", "Box / Pcs" and
 // "BOX PCS:" all match. Label punctuation varies between hand-edited copies of
@@ -36,12 +45,19 @@ const norm = (cell) => text(cell).toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 // Excel gives numbers as numbers and hand-typed values as strings. Weights are
 // carried as decimal strings from here on, never floats.
+//
+// The rounding matters. Excel stores its own SUM results with binary floating
+// point error — a row totalling 680.24 comes through as 680.2399999999999 —
+// so truncating the digits reads it as 680.239 and the checksum fires on a
+// discrepancy that does not exist. Rounding to the nearest thousandth
+// normalises both sides before they are compared.
 const toThousandths = (cell) => {
   if (cell === null || cell === undefined || cell === "") return null;
   const raw = String(cell).trim().replace(/,/g, "");
   if (!/^\d*\.?\d+$/.test(raw)) return null;
-  const [whole, frac = ""] = raw.split(".");
-  return (parseInt(whole || "0", 10)) * 1000 + parseInt((frac + "000").slice(0, 3), 10);
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 1000);
 };
 
 const fromThousandths = (n) => {
@@ -54,20 +70,46 @@ const fromThousandths = (n) => {
 // the first non-empty cell to its right on the same row.
 const labelledValue = (rows, ...labels) => {
   const wanted = labels.map((l) => norm(l));
-  for (const row of rows) {
-    if (!row) continue;
-    for (let c = 0; c < row.length; c += 1) {
-      if (!wanted.includes(norm(row[c]))) continue;
-      for (let k = c + 1; k < row.length; k += 1) {
-        const v = text(row[k]);
-        if (v) return v;
+
+  const scan = (matches) => {
+    for (const row of rows) {
+      if (!row) continue;
+      for (let c = 0; c < row.length; c += 1) {
+        const cell = norm(row[c]);
+        if (!cell || !matches(cell)) continue;
+        for (let k = c + 1; k < row.length; k += 1) {
+          const v = text(row[k]);
+          if (!v) continue;
+          // Reaching another label means this field was left blank.
+          if (KNOWN_LABELS.has(norm(v))) break;
+          return v;
+        }
       }
     }
-  }
-  return null;
+    return null;
+  };
+
+  // Exact matches first, across the whole sheet. Only then fall back to
+  // containment, because the real form crams two labels into one cell
+  // ("Ship To          Bill of Lading") and a partial match is otherwise too
+  // eager — "Vendor" would happily match a "Vendor Lot" heading.
+  const exact = scan((cell) => wanted.includes(cell));
+  if (exact !== null) return exact;
+  return scan((cell) => wanted.some((w) => w.length >= 6 && cell.includes(w)));
 };
 
 const findRowIndex = (rows, predicate) => rows.findIndex((r) => r && predicate(r));
+
+// Every label that appears on the form. A blank field leaves nothing between
+// its label and the next one, so without this the scan walks straight past the
+// empty cell and returns the following LABEL as the value — "Ship To" on a
+// sheet with no ship-to reads as "Lot#".
+const KNOWN_LABELS = new Set([
+  "vendor", "date", "shipto", "billoflading", "shiptobilloflading",
+  "lot", "lotnumber", "itemdescription", "item", "boxpcs", "total",
+  "totalboxes", "subtotal", "assembledby", "checkedby", "memo",
+  "noblessetrading",
+]);
 
 /**
  * Parse a tally workbook (as rows from read-excel-file) into
