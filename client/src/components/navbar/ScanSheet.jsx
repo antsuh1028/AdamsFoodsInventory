@@ -45,6 +45,13 @@ const StatusCell = ({ status }) => {
 
 const NOT_A_BOX = new Set(["duplicate", "rejected"]);
 
+// A live session row keeps the scanned weight and its converted twin; a row
+// read back from the server is already stored in pounds. The grid shows the
+// pound figure either way, so what the operator watches during the session is
+// the same number that ends up on the manifest.
+const weightOf = (s) => s.displayWeight || s.weight;
+const unitOf = (s) => (s.displayWeight ? "LB" : s.weightUnit);
+
 const ScanSheet = ({ scans = [], totals = [] }) => {
   const endRef = useRef(null);
   const counted = scans.filter((s) => !NOT_A_BOX.has(s.status)).length;
@@ -88,9 +95,17 @@ const ScanSheet = ({ scans = [], totals = [] }) => {
                     <td style={{ ...cellStyle, textAlign: "right", fontWeight: 700,
                       fontSize: "17px", color: rejected ? "#C53030" : dup ? "#805AD5" : "#1A365D",
                       textDecoration: dup ? "line-through" : undefined }}>
-                      {s.weight}
+                      {weightOf(s)}
                     </td>
-                    <td style={{ ...cellStyle, textAlign: "center", color: "#718096" }}>{s.weightUnit}</td>
+                    <td style={{ ...cellStyle, textAlign: "center", color: "#718096" }}>
+                      {unitOf(s)}
+                      {s.convertedFrom && (
+                        <span style={{ fontSize: "10px", color: "#805AD5", marginLeft: "4px" }}
+                          title={`Label read ${s.weight} ${s.convertedFrom}`}>
+                          ←{s.convertedFrom}
+                        </span>
+                      )}
+                    </td>
                     <td style={{ ...cellStyle, color: "#4A5568" }}>{s.gtin || "—"}</td>
                     <td style={{ ...cellStyle, color: "#4A5568" }}>
                       {s.productionDate ? fmtDate(s.productionDate) : "—"}

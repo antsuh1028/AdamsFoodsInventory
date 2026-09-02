@@ -39,8 +39,16 @@ const printWeightManifest = ({
   // twice; neither is product arriving, so neither belongs on a tally.
   const boxes = scans.filter((s) => s.status !== "rejected" && s.status !== "duplicate");
 
-  const units = [...new Set(boxes.map((s) => s.weightUnit).filter(Boolean))];
+  // Everything on a manifest is pounds. A live session row carries the scanned
+  // weight plus displayWeight, its converted twin; a row read back from the
+  // server is already stored converted. Printing s.weight directly would put
+  // kilograms on the page for non-American boxes while the total said pounds.
+  const weightOf = (s) => s.displayWeight || s.weight;
+  const unitOf = (s) => (s.displayWeight ? "LB" : s.weightUnit);
+
+  const units = [...new Set(boxes.map(unitOf).filter(Boolean))];
   const unit = units.length === 1 ? units[0] : "";
+  const convertedCount = boxes.filter((s) => s.convertedFrom).length;
 
   const rows = [];
   for (let i = 0; i < boxes.length; i += PER_ROW) rows.push(boxes.slice(i, i + PER_ROW));
@@ -49,12 +57,12 @@ const printWeightManifest = ({
   const rowHtml = [];
   for (let r = 0; r < Math.max(MIN_ROWS, rows.length); r += 1) {
     const row = rows[r] || [];
-    const sum = row.reduce((acc, s) => acc + toThousandths(s.weight), 0);
+    const sum = row.reduce((acc, s) => acc + toThousandths(weightOf(s)), 0);
     grand += sum;
 
     const cells = Array.from({ length: PER_ROW }, (_, c) => {
       const s = row[c];
-      return `<td class="w">${s ? esc(fromThousandths(toThousandths(s.weight))) : ""}${
+      return `<td class="w">${s ? esc(fromThousandths(toThousandths(weightOf(s)))) : ""}${
         s && s.isManual ? '<span class="m">M</span>' : ""}</td>`;
     }).join("");
 
@@ -158,6 +166,10 @@ const printWeightManifest = ({
 
           ${units.length > 1
             ? `<div style="margin-top:6px;font-size:10px;">Mixed units on this tally: ${units.join(", ")} — subtotal is not meaningful.</div>`
+            : ""}
+          ${convertedCount
+            ? `<div style="margin-top:6px;font-size:10px;">${convertedCount} box${
+                convertedCount === 1 ? "" : "es"} labelled in kilograms, converted to pounds.</div>`
             : ""}
           ${boxes.some((b) => b.isManual)
             ? '<div style="margin-top:6px;font-size:9px;">M = entered manually (damaged or unbarcoded label)</div>'

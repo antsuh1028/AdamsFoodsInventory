@@ -4,6 +4,7 @@ const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const { parseGs1 } = require("../utils/gs1");
 const { parseTallySheet } = require("../utils/tallySheet");
+const { toPounds, kgToLb, sumWeights, trimTrailingZeros } = require("../utils/weight");
 const { upload } = require("../utils/aws");
 const readXlsxFile = require("read-excel-file/node");
 
@@ -61,6 +62,13 @@ for (const col of ["vendor", "ship_to", "bill_of_lading", "item_description"]) {
 // reconciling a shipment needs to be able to tell them apart.
 pool.query(`ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'scanned'`)
   .catch((err) => console.error("box_batches source migration error:", err.message));
+
+// Every weight is stored in pounds. Non-American suppliers label in kilograms,
+// so those are converted on the way in; this column records that it happened.
+// It is provenance, not a second weight — the original figure is recoverable
+// from raw_barcode, which still holds the kilogram payload it was read from.
+pool.query(`ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS converted_from TEXT`)
+  .catch((err) => console.error("batch_items converted_from migration error:", err.message));
 
 // Free duplicate-scan protection: the same serial cannot land in a batch twice.
 pool.query(`
@@ -123,8 +131,13 @@ const validateItem = (item) => {
       return { ok: false, code: "MISSING_BARCODE",
         reason: "rawBarcode is required unless isManual is true" };
     }
+    const asLb = toPounds(weight, weightUnit);
+    if (toThousandths(asLb.weight) > MAX_WEIGHT_THOUSANDTHS) {
+      return { ok: false, code: "IMPLAUSIBLE_WEIGHT", reason: "weight exceeds plausible range" };
+    }
     return { ok: true, row: {
-      weight, weightUnit, gtin: null, productionDate: null,
+      weight: asLb.weight, weightUnit: asLb.weightUnit, convertedFrom: asLb.convertedFrom,
+      gtin: null, productionDate: null,
       serial: null, rawBarcode: null, isManual: true,
     } };
   }
@@ -146,10 +159,24 @@ const validateItem = (item) => {
       reason: `Client sent ${weightUnit} but rawBarcode decodes to ${parsed.weight.unit}` };
   }
 
+  // Only now, with the barcode verified against what the client claimed, is the
+  // weight converted. Doing it on the client instead would send pounds against a
+  // kilogram payload and the UNIT_MISMATCH check above would reject the scan —
+  // the verification has to happen in the unit the label is actually printed in.
+  //
+  // Everything below comes from the server's own parse, not from the client.
+  const asLb = toPounds(parsed.weight.value, parsed.weight.unit);
+  if (toThousandths(asLb.weight) > MAX_WEIGHT_THOUSANDTHS) {
+    return { ok: false, code: "IMPLAUSIBLE_WEIGHT",
+      reason: `Converts to ${asLb.weight} LB, outside the plausible range` };
+  }
+
   return { ok: true, row: {
-    // Everything persisted comes from the server's own parse, not the client.
-    weight: parsed.weight.value,
-    weightUnit: parsed.weight.unit,
+    // Stored in pounds. The original kilogram figure is not lost — raw_barcode
+    // holds the payload it was read from and re-parses to it exactly.
+    weight: asLb.weight,
+    weightUnit: asLb.weightUnit,
+    convertedFrom: asLb.convertedFrom,
     gtin: parsed.gtin,
     // Suppliers use one or the other: AI 11 (production) or AI 13 (packaging).
     // Both answer "when was this box made", so whichever is present fills the
@@ -282,12 +309,13 @@ router.post("/box-batches/:id/items", verifyToken, scanLimiter, async (req, res)
       const rows = toInsert.map((r) => r.row);
       const insertedRows = await client.query(
         `INSERT INTO batch_items
-           (tenant_id, batch_id, weight, weight_unit, gtin, production_date, serial, raw_barcode, is_manual)
-         SELECT $1, $2, w, u, g, d, s, r, m
+           (tenant_id, batch_id, weight, weight_unit, gtin, production_date, serial,
+            raw_barcode, is_manual, converted_from)
+         SELECT $1, $2, w, u, g, d, s, r, m, c
          FROM UNNEST(
            $3::numeric[], $4::text[], $5::text[], $6::date[],
-           $7::text[], $8::text[], $9::boolean[]
-         ) AS t(w, u, g, d, s, r, m)
+           $7::text[], $8::text[], $9::boolean[], $10::text[]
+         ) AS t(w, u, g, d, s, r, m, c)
          ON CONFLICT DO NOTHING
          RETURNING item_id, serial`,
         [
@@ -300,6 +328,7 @@ router.post("/box-batches/:id/items", verifyToken, scanLimiter, async (req, res)
           rows.map((r) => r.serial),
           rows.map((r) => r.rawBarcode),
           rows.map((r) => r.isManual),
+          rows.map((r) => r.convertedFrom || null),
         ]
       );
 
@@ -448,17 +477,39 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
       return v || fromSheet || null;
     };
 
+    // Converted only after the sheet has been reconciled against its own
+    // checksums in the unit it was written in. Each box converts individually
+    // and the total is the sum of those converted figures, so the printed
+    // column adds up to the printed total — summing in kilograms and converting
+    // once gives a total that disagrees with the column by a few hundredths.
+    // Trailing zeros are trimmed so a converted sheet reads the way the paper
+    // one does. An LB sheet passes through untouched — there is nothing to
+    // convert, and reformatting figures the operator is about to compare
+    // against the page in their hand helps nobody.
+    const isKg = weightUnit === "KG";
+    const converted = isKg
+      ? parsed.weights.map((w) => trimTrailingZeros(kgToLb(w)))
+      : parsed.weights;
+    const subtotal = isKg ? trimTrailingZeros(sumWeights(converted)) : parsed.computed.subtotal;
+    const storedUnit = "LB";
+
     const summary = {
       lotNumber: pick(req.body.lotNumber, parsed.lotNumber),
       vendor: pick(req.body.vendor, parsed.vendor),
       shipTo: pick(req.body.shipTo, parsed.shipTo),
       itemDescription: pick(req.body.itemDescription, parsed.itemDescription),
       date: parsed.date,
-      weightUnit,
+      weightUnit: storedUnit,
+      convertedFrom: weightUnit === "KG" ? "KG" : null,
       boxes: parsed.computed.boxes,
-      subtotal: parsed.computed.subtotal,
+      subtotal,
       declared: parsed.declared,
-      weights: parsed.weights,
+      weights: converted,
+      // What the sheet itself said, so the preview can show the operator the
+      // figures they will recognise from the paper.
+      asWritten: weightUnit === "KG"
+        ? { unit: "KG", subtotal: parsed.computed.subtotal, weights: parsed.weights }
+        : null,
     };
 
     if (dryRun) return res.json({ preview: true, ...summary });
@@ -494,10 +545,11 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
       // is_manual is true because none of these came from a barcode; the
       // batch's source column is what marks the whole lot as imported.
       await client.query(
-        `INSERT INTO batch_items (tenant_id, batch_id, weight, weight_unit, is_manual)
-         SELECT $1, $2, w, $3, true
+        `INSERT INTO batch_items
+           (tenant_id, batch_id, weight, weight_unit, is_manual, converted_from)
+         SELECT $1, $2, w, $3, true, $5
            FROM UNNEST($4::numeric[]) AS w`,
-        [req.tenantId, batchId, weightUnit, parsed.weights]
+        [req.tenantId, batchId, storedUnit, summary.weights, summary.convertedFrom]
       );
 
       await client.query("COMMIT");
@@ -571,7 +623,7 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
 
     const items = await pool.query(
       `SELECT item_id, weight::text AS weight, weight_unit, gtin,
-              production_date, serial, is_manual, scanned_at
+              production_date, serial, is_manual, converted_from, scanned_at
          FROM batch_items
         WHERE batch_id = $1 AND tenant_id = $2
         ORDER BY item_id`,
@@ -589,6 +641,7 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
           ? new Date(r.production_date).toISOString().slice(0, 10) : null,
         serial: r.serial,
         isManual: r.is_manual,
+        convertedFrom: r.converted_from,
         scannedAt: r.scanned_at,
         status: "synced", // it is in the database, so by definition it synced
       })),

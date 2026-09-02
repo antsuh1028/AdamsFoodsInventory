@@ -10,6 +10,8 @@
 // Storage and transport are injected so this logic is testable without a
 // browser. scanStore.js supplies the IndexedDB backend in the app.
 
+const { toPounds } = require("./weight");
+
 // express.json() defaults to a 100kb body. A resume-flush after a long offline
 // stretch can be thousands of scans, so requests are chunked well under that.
 const DEFAULT_MAX_CHUNK_BYTES = 64 * 1024;
@@ -30,6 +32,14 @@ const fromThousandths = (n) => {
 };
 
 const emptyStats = () => ({ count: 0, totals: {} });
+
+// Everything is stored and printed in pounds; kilogram labels are converted.
+const STORED_UNIT = "LB";
+
+// Records written before conversion existed have no displayWeight. Falling back
+// to the scanned weight keeps a resumed session from reading as zero — those
+// rows are pounds already, since conversion is what introduced the field.
+const displayOf = (record) => record.displayWeight || record.weight;
 
 // Formats the stored thousandths into display strings, e.g.
 // { count: 3, totals: { LB: "228.600" } }
@@ -102,9 +112,21 @@ const createScanQueue = ({
   // Persist first, then report success. If the write throws, the caller must
   // hear about it — a scan that was never stored must not be treated as taken.
   const enqueue = async (scan) => {
+    // Two weights are kept, deliberately.
+    //
+    // `weight`/`weightUnit` are exactly what the label said, and are what goes
+    // on the wire: the server re-parses raw_barcode and rejects any disagreement,
+    // so a kilogram label has to be sent in kilograms or the scan is refused.
+    //
+    // `displayWeight` is the same box in pounds, which is what gets stored and
+    // what the manifest prints. The grid and the running total use it so the
+    // number on screen during the session is the number on the paper afterwards.
+    const asLb = toPounds(scan.weight, scan.weightUnit);
     const record = {
       weight: scan.weight,
       weightUnit: scan.weightUnit,
+      displayWeight: asLb.weight,
+      convertedFrom: asLb.convertedFrom,
       rawBarcode: scan.rawBarcode || null,
       gtin: scan.gtin || null,
       serial: scan.serial || null,
@@ -114,7 +136,7 @@ const createScanQueue = ({
       scannedAt: new Date().toISOString(),
     };
     const localId = await backend.putScan(record);
-    await bumpStats(record.weight, record.weightUnit, +1);
+    await bumpStats(displayOf(record), STORED_UNIT, +1);
     return localId;
   };
 
@@ -128,7 +150,7 @@ const createScanQueue = ({
     }
     const last = pending[pending.length - 1];
     await backend.deleteScans([last.localId]);
-    await bumpStats(last.weight, last.weightUnit, -1);
+    await bumpStats(displayOf(last), STORED_UNIT, -1);
     return { undone: true, record: last };
   };
 
@@ -218,7 +240,7 @@ const createScanQueue = ({
         if (duplicated.length) {
           await backend.markDuplicate(duplicated.map((r) => r.localId));
           for (const record of duplicated) {
-            await bumpStats(record.weight, record.weightUnit, -1);
+            await bumpStats(displayOf(record), STORED_UNIT, -1);
           }
         }
       }
