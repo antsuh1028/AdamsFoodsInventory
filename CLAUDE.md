@@ -1,5 +1,58 @@
 # CLAUDE.md — working context
 
+> ## ⏸ PAUSED MID-TASK — read this first (2026-09-02)
+>
+> Branch **`box-weighing-v2`** holds finished, committed, unreleased work.
+> **`master` = `dd13b58` = what production is actually running.** Don't deploy
+> `box-weighing-v2` without being asked.
+>
+> ### Done and committed (`a5444cd`)
+> **KG→LB conversion.** Every weight is now stored and printed in pounds.
+> - `server/utils/weight.js` + byte-identical mirror `client/src/utils/weight.js`
+>   (a test enforces the mirror, exactly like `gs1.js`). Exact integer-ratio
+>   conversion in BigInt; carries a `/* global BigInt */` directive because CRA's
+>   linter otherwise fails the build on the mirrored copy.
+> - Conversion happens **server-side, after the barcode check** in `validateItem`.
+>   It cannot move to the client: the server re-derives the weight from
+>   `raw_barcode`, so a pre-converted client weight is rejected as `UNIT_MISMATCH`.
+> - New column `batch_items.converted_from` (provenance only, not a second
+>   weight — the KG figure is recoverable from `raw_barcode`).
+> - `scanQueue` keeps two weights per row: `weight`/`weightUnit` as scanned (what
+>   goes on the wire) and `displayWeight` in LB (what the grid, totals and
+>   manifest show). Don't collapse these.
+> - **Per-box conversion, then sum** — never sum-then-convert. On a 7-box sample
+>   the two disagree by 0.001 lb, which leaves a manifest whose column does not
+>   add up to its own total. `weight.test.js` pins this with real figures.
+>
+> ### Still to build — all four agreed with the user, none started
+> 1. **Row editing.** Delete/void any row (even synced) and edit a weight, with an
+>    audit trail: flag the row as adjusted and retain the original barcode weight.
+>    Needs `PATCH` + `DELETE /box-batches/:id/items/:itemId`. **Admins must be able
+>    to edit and delete rows on already-stored batches, not just live ones** — gate
+>    with `requireRole("admin")` server-side, per §8 (a client-side check is not a
+>    control). Prefer a soft void so the audit survives.
+> 2. **Merged manifests.** A *saved, reopenable* group — tick several sessions,
+>    name it, reprint later and get the identical form. New tables
+>    (`manifest_groups` + a join table), not a print-time-only selection.
+> 3. **In-app numeric keypad** for manual weight entry, so iPadOS never needs to
+>    show its keyboard (a paired BT scanner is an HID keyboard and suppresses it).
+>    Inputs go `readOnly` and the keypad drives them.
+> 4. The tally-sheet **date is still discarded** on import — see §4 Known gap.
+>
+> ### State at the pause
+> Full suite **387 passed / 6 failed** (the same six pre-existing — see §7).
+> Client builds clean (523.3 kB). `server/scripts/tally-accuracy.js` is a local
+> gitignored script that re-parses all 55 workbooks in `2026/`; last run 55/55
+> with 55/55 checksum agreement.
+>
+> ### Two things the user raised that were NOT decided
+> - iPad keyboard: they should check whether their scanner has an *iOS keyboard
+>   toggle* config barcode. That fixes typing device-wide, not just in this app.
+> - 11 of the 55 sheets have messy lot cells (`"P12 N26230-01"`, `"N26244-3"`).
+>   The editable preview covers it; pre-filling from the filename would remove
+>   most of the friction. Offered, not built.
+
+
 Orientation for a fresh session. The README covers the stack; this file covers
 what is **not** derivable from reading the code, plus the traps that have already
 cost real debugging time.
