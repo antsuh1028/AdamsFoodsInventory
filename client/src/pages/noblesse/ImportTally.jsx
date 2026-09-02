@@ -24,8 +24,11 @@ const newUuid = () =>
 // Read off the sheet but correctable before committing — real files carry
 // things like "P12 N26230-01" in the lot cell.
 const EditableField = ({ label, value, onChange, placeholder }) => (
-  <Flex px={3} py={2} gap={3} align="center" borderBottom="1px solid" borderColor="gray.100">
-    <Text fontSize="xs" color="gray.500" minW="120px" textTransform="uppercase" letterSpacing="wide">
+  <Flex px={3} py={2} gap={{ base: 1, sm: 3 }} align={{ base: "stretch", sm: "center" }}
+    direction={{ base: "column", sm: "row" }}
+    borderBottom="1px solid" borderColor="gray.100">
+    <Text fontSize="xs" color="gray.500" minW={{ base: "auto", sm: "120px" }}
+      textTransform="uppercase" letterSpacing="wide">
       {label}
     </Text>
     <Input size="sm" flex={1} value={value} onChange={(e) => onChange(e.target.value)}
@@ -35,8 +38,11 @@ const EditableField = ({ label, value, onChange, placeholder }) => (
 );
 
 const ReadOnlyField = ({ label, value }) => (
-  <Flex px={3} py={2} gap={3} align="baseline" borderBottom="1px solid" borderColor="gray.100">
-    <Text fontSize="xs" color="gray.500" minW="120px" textTransform="uppercase" letterSpacing="wide">
+  <Flex px={3} py={2} gap={{ base: 1, sm: 3 }} align={{ base: "flex-start", sm: "baseline" }}
+    direction={{ base: "column", sm: "row" }}
+    borderBottom="1px solid" borderColor="gray.100">
+    <Text fontSize="xs" color="gray.500" minW={{ base: "auto", sm: "120px" }}
+      textTransform="uppercase" letterSpacing="wide">
       {label}
     </Text>
     <Text fontSize="sm" fontWeight="medium" color="gray.800">{value}</Text>

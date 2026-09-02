@@ -30,7 +30,7 @@ const rawInputProps = {
 const StatCard = ({ label, value, help, color = "gray.800", size = "3xl" }) => (
   <Stat
     px={4} py={3} bg="white" borderRadius="lg"
-    border="1px solid" borderColor="gray.200" minW="150px" flex="1 1 150px"
+    border="1px solid" borderColor="gray.200" minW={{ base: "130px", md: "150px" }} flex="1 1 130px"
   >
     <StatLabel fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
       {label}
@@ -64,24 +64,24 @@ const ManualEntry = ({ onAdd, disabled }) => {
           <Text fontSize="xs" color="gray.600" mb={1}>Weight</Text>
           <Input
             {...rawInputProps}
-            size="lg" inputMode="decimal" placeholder="76.20"
+            size={{ base: "md", md: "lg" }} inputMode="decimal" placeholder="76.20"
             value={weight} onChange={(e) => setWeight(e.target.value)}
             isInvalid={weight.length > 0 && !valid}
           />
         </Box>
         <Box flex="0 0 110px">
           <Text fontSize="xs" color="gray.600" mb={1}>Unit</Text>
-          <Select size="lg" value={unit} onChange={(e) => setUnit(e.target.value)}>
+          <Select size={{ base: "md", md: "lg" }} value={unit} onChange={(e) => setUnit(e.target.value)}>
             <option value="LB">LB</option>
             <option value="KG">KG</option>
           </Select>
         </Box>
         <Box flex="2 1 200px">
           <Text fontSize="xs" color="gray.600" mb={1}>Note (optional)</Text>
-          <Input {...rawInputProps} size="lg" placeholder="torn label"
+          <Input {...rawInputProps} size={{ base: "md", md: "lg" }} placeholder="torn label"
             value={note} onChange={(e) => setNote(e.target.value)} />
         </Box>
-        <Button size="lg" colorScheme="orange" onClick={submit}
+        <Button size={{ base: "md", md: "lg" }} colorScheme="orange" onClick={submit} flex={{ base: "1 1 100%", md: "0 0 auto" }}
           isDisabled={!valid || disabled}>
           Add
         </Button>
@@ -252,25 +252,25 @@ const BoxScanner = ({ isOpen, onClose }) => {
       width={980}
       footer={
         <Flex gap={2} width="100%" justify="space-between" wrap="wrap">
-          <Button size="lg" variant="outline" onClick={() => setShowManual((v) => !v)}
+          <Button size={{ base: "sm", md: "lg" }} variant="outline" onClick={() => setShowManual((v) => !v)}
             isDisabled={!session}>
             {showManual ? "Hide manual entry" : "Manual entry"}
           </Button>
           <Flex gap={2} wrap="wrap">
-            <Button size="lg" variant="outline" colorScheme="blue"
+            <Button size={{ base: "sm", md: "lg" }} variant="outline" colorScheme="blue"
               onClick={onPrintManifest} isDisabled={scans.length === 0}>
               Print manifest
             </Button>
-            <Button size="lg" variant="outline" onClick={onUndo} isDisabled={!session || pending === 0}>
+            <Button size={{ base: "sm", md: "lg" }} variant="outline" onClick={onUndo} isDisabled={!session || pending === 0}>
               Undo last
             </Button>
             {!session ? (
-              <Button size="lg" colorScheme="blue" onClick={() => setConfirmStart(true)}
+              <Button size={{ base: "sm", md: "lg" }} colorScheme="blue" onClick={() => setConfirmStart(true)}
                 isLoading={busy} isDisabled={!ready}>
                 Start session
               </Button>
             ) : (
-              <Button size="lg" colorScheme="red" onClick={onStop} isLoading={busy}>
+              <Button size={{ base: "sm", md: "lg" }} colorScheme="red" onClick={onStop} isLoading={busy}>
                 Stop &amp; close
               </Button>
             )}
@@ -328,7 +328,7 @@ const BoxScanner = ({ isOpen, onClose }) => {
           comes out complete rather than needing to be filled in by hand. */}
       <Box px={4} py={3} bg="white" borderRadius="lg" border="1px solid" borderColor="gray.200" mb={3}>
         {session ? (
-          <Flex gap={6} wrap="wrap" align="baseline">
+          <Flex gap={{ base: 3, md: 6 }} wrap="wrap" align="baseline">
             <Box>
               <Text fontSize="xs" color="gray.500" textTransform="uppercase">Lot</Text>
               <Text fontSize="2xl" fontWeight="bold" color="red.800" lineHeight="1.1">
@@ -452,9 +452,11 @@ const BoxScanner = ({ isOpen, onClose }) => {
                   ["Item description", header.itemDescription.trim()],
                   ["Ship to / BOL", header.billOfLading.trim()],
                 ].map(([label, value], i) => (
-                  <Flex key={label} px={3} py={2} gap={3} align="baseline"
+                  <Flex key={label} px={3} py={2} gap={{ base: 0, sm: 3 }}
+                    direction={{ base: "column", sm: "row" }}
+                    align={{ base: "flex-start", sm: "baseline" }}
                     bg={i % 2 ? "gray.50" : "white"}>
-                    <Text fontSize="xs" color="gray.500" minW="120px"
+                    <Text fontSize="xs" color="gray.500" minW={{ base: "auto", sm: "120px" }}
                       textTransform="uppercase" letterSpacing="wide">
                       {label}
                     </Text>

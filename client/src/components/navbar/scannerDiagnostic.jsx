@@ -255,7 +255,7 @@ const ScannerDiagnostic = ({ isOpen, onClose }) => {
 
       {keys.length > 0 && (
         <Box overflowX="auto" maxH="40vh" overflowY="auto">
-          <Table size="sm" variant="simple">
+          <Table size="sm" variant="simple" style={{ minWidth: "520px" }}>
             <Thead position="sticky" top={0} bg="white" zIndex={1}>
               <Tr>
                 <Th fontSize="xs">#</Th>
