@@ -11,8 +11,8 @@ const FLUSH_EVERY_SCANS = 5;
 const FLUSH_INTERVAL_MS = 4000;
 
 const api = {
-  createBatch: (clientUuid, lotNumber) =>
-    axiosInstance.post("/box-batches", { clientUuid, lotNumber }).then((r) => r.data),
+  createBatch: (clientUuid, meta) =>
+    axiosInstance.post("/box-batches", { clientUuid, ...meta }).then((r) => r.data),
   postItems: (batchId, items) =>
     axiosInstance.post(`/box-batches/${batchId}/items`, { items }).then((r) => r.data),
   closeBatch: (batchId) =>
@@ -95,12 +95,12 @@ export const useScanSession = () => {
     wakeLockRef.current = null;
   }, []);
 
-  const start = useCallback(async (lotNumber = null) => {
+  const start = useCallback(async (meta = {}) => {
     if (!queueRef.current) return null;
     // A new session starts from an empty grid — the previous batch is closed
     // and already on the server.
     await queueRef.current.clearSession();
-    const opened = await queueRef.current.start(newUuid(), lotNumber);
+    const opened = await queueRef.current.start(newUuid(), meta);
     setSession(opened);
     setResumable(null);
     await acquireWakeLock();

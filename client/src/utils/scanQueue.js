@@ -232,16 +232,16 @@ const createScanQueue = ({
   // records it locally so a crash between the two is recoverable.
   // One session is one lot: every box scanned between start and stop belongs to
   // the same lot, and that is what the weight manifest is built from.
-  const start = async (clientUuid, lotNumber = null) => {
+  const start = async (clientUuid, meta = {}) => {
     const existing = await backend.getSession();
     if (existing && existing.batchId && existing.status === "open") return existing;
 
     const uuid = clientUuid || existing?.clientUuid;
     if (!uuid) throw new Error("start requires a clientUuid");
 
-    const base = { clientUuid: uuid, lotNumber, status: "open", stats: emptyStats() };
+    const base = { clientUuid: uuid, ...meta, status: "open", stats: emptyStats() };
     await backend.setSession({ ...base, batchId: null });
-    const created = await api.createBatch(uuid, lotNumber);
+    const created = await api.createBatch(uuid, meta);
     const session = { ...base, batchId: created.batch_id };
     await backend.setSession(session);
     return session;

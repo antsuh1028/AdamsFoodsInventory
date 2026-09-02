@@ -61,6 +61,10 @@ const PastBatches = ({ isOpen, onClose }) => {
     if (!openBatch) return;
     printWeightManifest({
       lotNumber: openBatch.lot_number,
+      vendor: openBatch.vendor,
+      shipTo: openBatch.ship_to,
+      billOfLading: openBatch.bill_of_lading,
+      itemDescription: openBatch.item_description,
       date: fmtDate(String(openBatch.created_at).slice(0, 10)),
       scans: openBatch.items,
     });

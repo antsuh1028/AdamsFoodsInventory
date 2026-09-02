@@ -46,6 +46,13 @@ pool.query(`CREATE INDEX IF NOT EXISTS batch_items_batch_id_idx ON batch_items (
 pool.query(`ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS lot_number TEXT`)
   .catch((err) => console.error("box_batches lot_number migration error:", err.message));
 
+// The rest of the tally sheet heading. Stored on the batch so a past session
+// reprints as a complete form rather than one missing its header.
+for (const col of ["vendor", "ship_to", "bill_of_lading", "item_description"]) {
+  pool.query(`ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS ${col} TEXT`)
+    .catch((err) => console.error(`box_batches ${col} migration error:`, err.message));
+}
+
 // Free duplicate-scan protection: the same serial cannot land in a batch twice.
 pool.query(`
   CREATE UNIQUE INDEX IF NOT EXISTS batch_items_batch_serial_uniq
@@ -150,18 +157,21 @@ const validateItem = (item) => {
 // Create a batch. Idempotent on client_uuid so a retried POST after a dropped
 // response returns the original batch instead of orphaning one.
 router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
-  const { clientUuid, lotNumber } = req.body || {};
+  const { clientUuid, lotNumber, vendor, shipTo, billOfLading, itemDescription } = req.body || {};
   if (!clientUuid || typeof clientUuid !== "string") {
     return res.status(400).json({ error: "clientUuid is required" });
   }
 
   try {
     const inserted = await pool.query(
-      `INSERT INTO box_batches (tenant_id, client_uuid, lot_number)
-       VALUES ($1, $2, $3)
+      `INSERT INTO box_batches
+         (tenant_id, client_uuid, lot_number, vendor, ship_to, bill_of_lading, item_description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (client_uuid) DO NOTHING
-       RETURNING batch_id, status, created_at, lot_number`,
-      [req.tenantId, clientUuid, lotNumber || null]
+       RETURNING batch_id, status, created_at, lot_number,
+                 vendor, ship_to, bill_of_lading, item_description`,
+      [req.tenantId, clientUuid, lotNumber || null, vendor || null,
+       shipTo || null, billOfLading || null, itemDescription || null]
     );
 
     if (inserted.rows.length) {
@@ -171,7 +181,9 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
     // Already existed. Scope the lookup by tenant so a UUID guessed from
     // another tenant cannot be adopted.
     const existing = await pool.query(
-      `SELECT batch_id, status, created_at, lot_number FROM box_batches
+      `SELECT batch_id, status, created_at, lot_number,
+              vendor, ship_to, bill_of_lading, item_description
+         FROM box_batches
        WHERE client_uuid = $1 AND tenant_id = $2`,
       [clientUuid, req.tenantId]
     );
@@ -386,7 +398,8 @@ router.get("/box-batches", verifyToken, async (req, res) => {
     // same total, and with two units it would also have doubled box_count.
     // A scalar subquery returns exactly one value and cannot fan out.
     const result = await pool.query(
-      `SELECT b.batch_id, b.lot_number, b.status, b.created_at, b.closed_at,
+      `SELECT b.batch_id, b.lot_number, b.vendor, b.item_description,
+              b.status, b.created_at, b.closed_at,
               (SELECT COUNT(*)::int
                  FROM batch_items i
                 WHERE i.batch_id = b.batch_id) AS box_count,
@@ -421,7 +434,8 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
   }
   try {
     const batch = await pool.query(
-      `SELECT batch_id, lot_number, status, created_at, closed_at
+      `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description,
+              status, created_at, closed_at
          FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]
     );

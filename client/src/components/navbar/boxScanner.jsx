@@ -96,7 +96,13 @@ const BoxScanner = ({ isOpen, onClose }) => {
 
   // One session is one lot, so the manifest produced at Stop covers exactly
   // these boxes. Defaults to today's lot; editable before the session opens.
-  const [lotNumber, setLotNumber] = useState(lotNumberForDate());
+  const [header, setHeader] = useState({
+    lotNumber: lotNumberForDate(), vendor: "", billOfLading: "", itemDescription: "",
+  });
+  const setField = (key) => (e) => {
+    const { value } = e.target;
+    setHeader((h) => ({ ...h, [key]: value }));
+  };
 
   const [rejection, setRejection] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -157,7 +163,12 @@ const BoxScanner = ({ isOpen, onClose }) => {
     setBusy(true);
     try {
       await primeAudio(); // iOS needs a gesture before audio will play
-      await start(lotNumber.trim() || null);
+      await start({
+        lotNumber: header.lotNumber.trim() || null,
+        vendor: header.vendor.trim() || null,
+        billOfLading: header.billOfLading.trim() || null,
+        itemDescription: header.itemDescription.trim() || null,
+      });
     } catch (err) {
       toast({ title: "Could not start session", description: err.message,
         status: "error", position: "top", duration: 5000 });
@@ -187,7 +198,10 @@ const BoxScanner = ({ isOpen, onClose }) => {
 
   const onPrintManifest = () => {
     printWeightManifest({
-      lotNumber: session?.lotNumber || lotNumber,
+      lotNumber: session?.lotNumber || header.lotNumber,
+      vendor: session?.vendor || header.vendor,
+      billOfLading: session?.billOfLading || header.billOfLading,
+      itemDescription: session?.itemDescription || header.itemDescription,
       date: fmtDate(today()),
       scans,
     });
@@ -296,28 +310,51 @@ const BoxScanner = ({ isOpen, onClose }) => {
           color={pending > 0 ? "orange.500" : "green.600"}
           size="2xl"
         />
-        <Box px={4} py={3} bg="white" borderRadius="lg" border="1px solid" borderColor="gray.200"
-          flex="1 1 220px" minW="200px">
-          <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide" mb={1}>
-            Lot number
-          </Text>
-          {session ? (
-            <Text fontSize="2xl" fontWeight="bold" color="red.800" lineHeight="1.1">
-              {session.lotNumber || "—"}
-            </Text>
-          ) : (
-            <Input
-              {...rawInputProps}
-              size="md" value={lotNumber}
-              onChange={(e) => setLotNumber(e.target.value)}
-              placeholder="N26244"
-            />
-          )}
-          <Text fontSize="xs" color="gray.400" mt={1}>
-            {session ? "every box below belongs to this lot" : "editable until the session starts"}
-          </Text>
-        </Box>
       </Flex>
+
+      {/* The tally sheet heading. Captured before scanning so the printed form
+          comes out complete rather than needing to be filled in by hand. */}
+      <Box px={4} py={3} bg="white" borderRadius="lg" border="1px solid" borderColor="gray.200" mb={3}>
+        {session ? (
+          <Flex gap={6} wrap="wrap" align="baseline">
+            <Box>
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase">Lot</Text>
+              <Text fontSize="2xl" fontWeight="bold" color="red.800" lineHeight="1.1">
+                {session.lotNumber || "—"}
+              </Text>
+            </Box>
+            <Box><Text fontSize="xs" color="gray.500" textTransform="uppercase">Vendor</Text>
+              <Text fontSize="md" fontWeight="600">{session.vendor || "—"}</Text></Box>
+            <Box><Text fontSize="xs" color="gray.500" textTransform="uppercase">Item</Text>
+              <Text fontSize="md" fontWeight="600">{session.itemDescription || "—"}</Text></Box>
+            <Box><Text fontSize="xs" color="gray.500" textTransform="uppercase">BOL</Text>
+              <Text fontSize="md" fontWeight="600">{session.billOfLading || "—"}</Text></Box>
+          </Flex>
+        ) : (
+          <Flex gap={3} wrap="wrap">
+            <Box flex="1 1 150px">
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Lot #</Text>
+              <Input {...rawInputProps} size="md" value={header.lotNumber}
+                onChange={setField("lotNumber")} placeholder="N26244-01" />
+            </Box>
+            <Box flex="1 1 150px">
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Vendor</Text>
+              <Input {...rawInputProps} size="md" value={header.vendor}
+                onChange={setField("vendor")} placeholder="TREX/GOP" />
+            </Box>
+            <Box flex="2 1 220px">
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Item description</Text>
+              <Input {...rawInputProps} size="md" value={header.itemDescription}
+                onChange={setField("itemDescription")} placeholder="HUMERUS BONE" />
+            </Box>
+            <Box flex="1 1 150px">
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Ship to / BOL</Text>
+              <Input {...rawInputProps} size="md" value={header.billOfLading}
+                onChange={setField("billOfLading")} />
+            </Box>
+          </Flex>
+        )}
+      </Box>
 
       <ScanSheet scans={scans} totals={stats.totals} />
 
