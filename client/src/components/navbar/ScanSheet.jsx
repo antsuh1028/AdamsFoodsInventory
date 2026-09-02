@@ -37,12 +37,18 @@ const cellStyle = {
 
 const StatusCell = ({ status }) => {
   if (status === "rejected") return <Badge colorScheme="red" fontSize="10px">Rejected</Badge>;
+  // Not counted: the server already held this box, so it is not a second one.
+  if (status === "duplicate") return <Badge colorScheme="purple" fontSize="10px">Duplicate</Badge>;
   if (status === "pending") return <Badge colorScheme="orange" fontSize="10px">Sending</Badge>;
   return <Badge colorScheme="green" fontSize="10px">Saved</Badge>;
 };
 
+const NOT_A_BOX = new Set(["duplicate", "rejected"]);
+
 const ScanSheet = ({ scans = [], totals = [] }) => {
   const endRef = useRef(null);
+  const counted = scans.filter((s) => !NOT_A_BOX.has(s.status)).length;
+  const skipped = scans.length - counted;
 
   // Follow the newest row, the way a spreadsheet does as you fill it.
   useEffect(() => {
@@ -73,13 +79,15 @@ const ScanSheet = ({ scans = [], totals = [] }) => {
             ) : (
               scans.map((s, i) => {
                 const rejected = s.status === "rejected";
+                const dup = s.status === "duplicate";
                 return (
                   <tr key={s.localId ?? i}
-                    style={{ background: rejected ? "#FFF5F5" : i % 2 ? "#F7FAFC" : "white" }}>
+                    style={{ background: rejected ? "#FFF5F5" : dup ? "#FAF5FF" : i % 2 ? "#F7FAFC" : "white" }}>
                     <td style={{ ...cellStyle, textAlign: "center", color: "#A0AEC0",
                       background: "#EDF2F7", fontSize: "13px" }}>{i + 1}</td>
                     <td style={{ ...cellStyle, textAlign: "right", fontWeight: 700,
-                      fontSize: "17px", color: rejected ? "#C53030" : "#1A365D" }}>
+                      fontSize: "17px", color: rejected ? "#C53030" : dup ? "#805AD5" : "#1A365D",
+                      textDecoration: dup ? "line-through" : undefined }}>
                       {s.weight}
                     </td>
                     <td style={{ ...cellStyle, textAlign: "center", color: "#718096" }}>{s.weightUnit}</td>
@@ -107,9 +115,19 @@ const ScanSheet = ({ scans = [], totals = [] }) => {
 
       <Flex borderTop="2px solid" borderColor="gray.400" bg="gray.50"
         px={3} py={2} align="center" justify="space-between" gap={4} wrap="wrap">
-        <Text fontSize="sm" fontWeight="bold" color="gray.600" textTransform="uppercase" letterSpacing="wide">
-          {scans.length} box{scans.length === 1 ? "" : "es"}
-        </Text>
+        {/* Counts boxes that actually arrived. A duplicate is the same box
+            scanned twice and a rejection never recorded, so neither adds to
+            the count the total is quoted against. */}
+        <Flex align="baseline" gap={3} wrap="wrap">
+          <Text fontSize="sm" fontWeight="bold" color="gray.600" textTransform="uppercase" letterSpacing="wide">
+            {counted} box{counted === 1 ? "" : "es"}
+          </Text>
+          {skipped > 0 && (
+            <Text fontSize="xs" color="purple.600">
+              {skipped} not counted
+            </Text>
+          )}
+        </Flex>
         <Flex gap={5} wrap="wrap">
           {totals.length === 0 ? (
             <Text fontSize="lg" color="gray.400">—</Text>

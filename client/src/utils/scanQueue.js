@@ -179,6 +179,7 @@ const createScanQueue = ({
         summary.sent += chunk.length;
         const results = (response && response.results) || [];
         const confirmed = [];
+        const duplicated = [];
 
         for (let i = 0; i < chunk.length; i += 1) {
           const record = chunk[i];
@@ -192,10 +193,12 @@ const createScanQueue = ({
             summary.accepted += 1;
             confirmed.push(record.localId);
           } else if (result.status === "duplicate") {
-            // The server already holds this box. Taking it out of the flush
-            // queue is correct; retrying forever would wedge the queue.
+            // The same physical box scanned twice — the server kept the first
+            // and refused this one. It must NOT be counted as a saved box: the
+            // running total has to match what the database actually holds, or
+            // the printed manifest overstates the shipment.
             summary.duplicates += 1;
-            confirmed.push(record.localId);
+            duplicated.push(record);
           } else if (result.status === "rejected") {
             // Not deleted. The operator has to see it and re-enter it, so it is
             // parked out of the flush path rather than dropped or retried.
@@ -209,6 +212,15 @@ const createScanQueue = ({
         // leaves the pending queue. countPending() still drops to zero, which
         // is what the unflushed-work warnings key off.
         if (confirmed.length) await backend.markSynced(confirmed);
+
+        // A duplicate stays visible so the operator can see the double-scan,
+        // but its weight is backed out of the running total.
+        if (duplicated.length) {
+          await backend.markDuplicate(duplicated.map((r) => r.localId));
+          for (const record of duplicated) {
+            await bumpStats(record.weight, record.weightUnit, -1);
+          }
+        }
       }
       return summary;
     } finally {

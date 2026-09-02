@@ -89,6 +89,16 @@ const createIndexedDbBackend = (db) => {
       }));
     },
 
+    // The same box scanned twice. Kept visible so the operator can see it
+    // happened, but not counted as an arriving box.
+    markDuplicate: async (localIds) => {
+      const store = tx(SCANS, "readwrite").objectStore(SCANS);
+      await Promise.all(localIds.map(async (id) => {
+        const existing = await promisify(store.get(id));
+        if (existing) await promisify(store.put({ ...existing, status: "duplicate" }));
+      }));
+    },
+
     listAll: async () => {
       const store = tx(SCANS, "readonly").objectStore(SCANS);
       const rows = await promisify(store.getAll());
@@ -141,6 +151,12 @@ const createMemoryBackend = () => {
       ids.forEach((id) => {
         const s = scans.get(id);
         if (s) scans.set(id, { ...s, status: "synced" });
+      });
+    },
+    markDuplicate: async (ids) => {
+      ids.forEach((id) => {
+        const s = scans.get(id);
+        if (s) scans.set(id, { ...s, status: "duplicate" });
       });
     },
     markRejected: async (localId, reason) => {

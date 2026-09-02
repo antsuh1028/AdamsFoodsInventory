@@ -26,9 +26,10 @@ const printWeightManifest = ({ lotNumber, date, scans = [], checkedBy = "" } = {
   const win = window.open("", "_blank");
   if (!win) return;
 
-  // Rejected boxes were never recorded, so they must not appear on a document
-  // that says how much product arrived.
-  const rows = scans.filter((s) => s.status !== "rejected");
+  // Rejected scans were never recorded, and a duplicate is the same physical
+  // box scanned twice — neither represents product arriving, so neither can
+  // appear on a document stating how much did.
+  const rows = scans.filter((s) => s.status !== "rejected" && s.status !== "duplicate");
 
   const byUnit = {};
   for (const s of rows) {
