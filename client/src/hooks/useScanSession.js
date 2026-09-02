@@ -37,6 +37,7 @@ export const useScanSession = () => {
   const [lastError, setLastError] = useState(null);
   const [stats, setStats] = useState({ count: 0, totals: [] });
   const [lastScan, setLastScan] = useState(null);
+  const [scans, setScans] = useState([]);
 
   const queueRef = useRef(null);
   const wakeLockRef = useRef(null);
@@ -60,6 +61,7 @@ export const useScanSession = () => {
     if (!queueRef.current) return;
     setPending(await queueRef.current.countPending());
     setStats(await queueRef.current.getStats());
+    setScans(await queueRef.current.listSession());
   }, []);
 
   const flush = useCallback(async () => {
@@ -93,9 +95,12 @@ export const useScanSession = () => {
     wakeLockRef.current = null;
   }, []);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (lotNumber = null) => {
     if (!queueRef.current) return null;
-    const opened = await queueRef.current.start(newUuid());
+    // A new session starts from an empty grid — the previous batch is closed
+    // and already on the server.
+    await queueRef.current.clearSession();
+    const opened = await queueRef.current.start(newUuid(), lotNumber);
     setSession(opened);
     setResumable(null);
     await acquireWakeLock();
@@ -180,7 +185,7 @@ export const useScanSession = () => {
   useEffect(() => () => { releaseWakeLock(); }, [releaseWakeLock]);
 
   return {
-    ready, durable, session, pending, resumable, lastError, stats, lastScan,
+    ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
     start, resume, stop, flush, addScan, undoLast,
   };
 };

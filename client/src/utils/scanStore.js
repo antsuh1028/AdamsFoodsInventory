@@ -79,6 +79,22 @@ const createIndexedDbBackend = (db) => {
       await Promise.all(localIds.map((id) => promisify(store.delete(id))));
     },
 
+    // Confirmed by the server, so out of the flush queue — but kept on disk so
+    // the operator's session grid can still show it.
+    markSynced: async (localIds) => {
+      const store = tx(SCANS, "readwrite").objectStore(SCANS);
+      await Promise.all(localIds.map(async (id) => {
+        const existing = await promisify(store.get(id));
+        if (existing) await promisify(store.put({ ...existing, status: "synced" }));
+      }));
+    },
+
+    listAll: async () => {
+      const store = tx(SCANS, "readonly").objectStore(SCANS);
+      const rows = await promisify(store.getAll());
+      return rows.sort((a, b) => a.localId - b.localId);
+    },
+
     markRejected: async (localId, reason) => {
       const store = tx(SCANS, "readwrite").objectStore(SCANS);
       const existing = await promisify(store.get(localId));
@@ -119,7 +135,14 @@ const createMemoryBackend = () => {
     },
     listPending: async () => byStatus("pending"),
     countPending: async () => byStatus("pending").length,
+    listAll: async () => [...scans.values()].sort((a, b) => a.localId - b.localId),
     deleteScans: async (ids) => { ids.forEach((id) => scans.delete(id)); },
+    markSynced: async (ids) => {
+      ids.forEach((id) => {
+        const s = scans.get(id);
+        if (s) scans.set(id, { ...s, status: "synced" });
+      });
+    },
     markRejected: async (localId, reason) => {
       const s = scans.get(localId);
       if (s) scans.set(localId, { ...s, status: "rejected", reason });

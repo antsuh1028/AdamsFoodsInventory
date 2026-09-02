@@ -8,6 +8,8 @@ import useScanSession from "../../hooks/useScanSession";
 import { createScanAssembler } from "../../utils/scanInput";
 import { parseGs1 } from "../../utils/gs1";
 import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
+import ScanSheet from "./ScanSheet";
+import { lotNumberForDate } from "../../pages/noblesse/shared";
 
 // Operator-facing scanning screen. Designed to be read across a bench by
 // someone wearing gloves holding a box: big numbers, few controls, and an
@@ -87,9 +89,13 @@ const ManualEntry = ({ onAdd, disabled }) => {
 
 const BoxScanner = ({ isOpen, onClose }) => {
   const {
-    ready, durable, session, pending, resumable, lastError, stats, lastScan,
+    ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
     start, resume, stop, flush, addScan, undoLast,
   } = useScanSession();
+
+  // One session is one lot, so the manifest produced at Stop covers exactly
+  // these boxes. Defaults to today's lot; editable before the session opens.
+  const [lotNumber, setLotNumber] = useState(lotNumberForDate());
 
   const [rejection, setRejection] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -150,7 +156,7 @@ const BoxScanner = ({ isOpen, onClose }) => {
     setBusy(true);
     try {
       await primeAudio(); // iOS needs a gesture before audio will play
-      await start();
+      await start(lotNumber.trim() || null);
     } catch (err) {
       toast({ title: "Could not start session", description: err.message,
         status: "error", position: "top", duration: 5000 });
@@ -203,9 +209,6 @@ const BoxScanner = ({ isOpen, onClose }) => {
     }
   };
 
-  const totalText = stats.totals.length
-    ? stats.totals.map((t) => `${t.total} ${t.unit}`).join("  •  ")
-    : "—";
 
   return (
     <FloatingWindow
@@ -266,15 +269,13 @@ const BoxScanner = ({ isOpen, onClose }) => {
         </Alert>
       )}
 
-      <Flex gap={3} wrap="wrap" mb={3}>
-        <StatCard label="Boxes" value={stats.count} />
+      <Flex gap={3} wrap="wrap" mb={3} align="stretch">
         <StatCard
           label="Last box"
           value={lastScan ? lastScan.weight : "—"}
           help={lastScan ? lastScan.weightUnit : "waiting for a scan"}
           color={lastScan ? "blue.600" : "gray.400"}
         />
-        <StatCard label="Running total" value={totalText} size="2xl" />
         <StatCard
           label="Unsent"
           value={pending}
@@ -282,7 +283,30 @@ const BoxScanner = ({ isOpen, onClose }) => {
           color={pending > 0 ? "orange.500" : "green.600"}
           size="2xl"
         />
+        <Box px={4} py={3} bg="white" borderRadius="lg" border="1px solid" borderColor="gray.200"
+          flex="1 1 220px" minW="200px">
+          <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide" mb={1}>
+            Lot number
+          </Text>
+          {session ? (
+            <Text fontSize="2xl" fontWeight="bold" color="red.800" lineHeight="1.1">
+              {session.lotNumber || "—"}
+            </Text>
+          ) : (
+            <Input
+              {...rawInputProps}
+              size="md" value={lotNumber}
+              onChange={(e) => setLotNumber(e.target.value)}
+              placeholder="N26244"
+            />
+          )}
+          <Text fontSize="xs" color="gray.400" mt={1}>
+            {session ? "every box below belongs to this lot" : "editable until the session starts"}
+          </Text>
+        </Box>
       </Flex>
+
+      <ScanSheet scans={scans} totals={stats.totals} />
 
       {lastError && (
         <Alert status="warning" borderRadius="md" mb={3} fontSize="sm">

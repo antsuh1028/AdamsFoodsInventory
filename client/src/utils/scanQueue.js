@@ -137,6 +137,14 @@ const createScanQueue = ({
     return formatStats(session && session.stats);
   };
 
+  // Every scan in this session, oldest first, whatever its sync state. This is
+  // what the operator's grid renders.
+  const listSession = () => backend.listAll();
+
+  // Wipes the local session. Only safe once the batch is closed, which means
+  // the server has everything.
+  const clearSession = () => backend.clearAll();
+
   // Sends every pending record and clears only what the server confirms.
   // Returns a summary; never throws for transport failure, because a failed
   // flush is a normal condition in a warehouse and must simply be retried.
@@ -184,8 +192,8 @@ const createScanQueue = ({
             summary.accepted += 1;
             confirmed.push(record.localId);
           } else if (result.status === "duplicate") {
-            // The server already holds this box. Clearing it locally is correct;
-            // retrying forever would wedge the queue.
+            // The server already holds this box. Taking it out of the flush
+            // queue is correct; retrying forever would wedge the queue.
             summary.duplicates += 1;
             confirmed.push(record.localId);
           } else if (result.status === "rejected") {
@@ -196,7 +204,11 @@ const createScanQueue = ({
           }
         }
 
-        if (confirmed.length) await backend.deleteScans(confirmed);
+        // Marked, not deleted. The operator's session grid shows every box
+        // scanned, so a confirmed record has to outlive its flush — it just
+        // leaves the pending queue. countPending() still drops to zero, which
+        // is what the unflushed-work warnings key off.
+        if (confirmed.length) await backend.markSynced(confirmed);
       }
       return summary;
     } finally {
@@ -206,16 +218,19 @@ const createScanQueue = ({
 
   // Opens a batch server-side immediately (spec 6.2: never defer to Stop) and
   // records it locally so a crash between the two is recoverable.
-  const start = async (clientUuid) => {
+  // One session is one lot: every box scanned between start and stop belongs to
+  // the same lot, and that is what the weight manifest is built from.
+  const start = async (clientUuid, lotNumber = null) => {
     const existing = await backend.getSession();
     if (existing && existing.batchId && existing.status === "open") return existing;
 
     const uuid = clientUuid || existing?.clientUuid;
     if (!uuid) throw new Error("start requires a clientUuid");
 
-    await backend.setSession({ clientUuid: uuid, batchId: null, status: "open", stats: emptyStats() });
+    const base = { clientUuid: uuid, lotNumber, status: "open", stats: emptyStats() };
+    await backend.setSession({ ...base, batchId: null });
     const created = await api.createBatch(uuid);
-    const session = { clientUuid: uuid, batchId: created.batch_id, status: "open", stats: emptyStats() };
+    const session = { ...base, batchId: created.batch_id };
     await backend.setSession(session);
     return session;
   };
@@ -249,6 +264,8 @@ const createScanQueue = ({
     enqueue,
     undoLast,
     getStats,
+    listSession,
+    clearSession,
     flush,
     start,
     stop,
