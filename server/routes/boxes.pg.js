@@ -41,6 +41,11 @@ pool.query(`
 pool.query(`CREATE INDEX IF NOT EXISTS batch_items_batch_id_idx ON batch_items (batch_id)`)
   .catch((err) => console.error("batch_items index migration error:", err.message));
 
+// A scanning session covers exactly one lot, so the lot belongs on the batch.
+// Without it a stored batch cannot be reprinted as a weight manifest.
+pool.query(`ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS lot_number TEXT`)
+  .catch((err) => console.error("box_batches lot_number migration error:", err.message));
+
 // Free duplicate-scan protection: the same serial cannot land in a batch twice.
 pool.query(`
   CREATE UNIQUE INDEX IF NOT EXISTS batch_items_batch_serial_uniq
@@ -145,18 +150,18 @@ const validateItem = (item) => {
 // Create a batch. Idempotent on client_uuid so a retried POST after a dropped
 // response returns the original batch instead of orphaning one.
 router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
-  const { clientUuid } = req.body || {};
+  const { clientUuid, lotNumber } = req.body || {};
   if (!clientUuid || typeof clientUuid !== "string") {
     return res.status(400).json({ error: "clientUuid is required" });
   }
 
   try {
     const inserted = await pool.query(
-      `INSERT INTO box_batches (tenant_id, client_uuid)
-       VALUES ($1, $2)
+      `INSERT INTO box_batches (tenant_id, client_uuid, lot_number)
+       VALUES ($1, $2, $3)
        ON CONFLICT (client_uuid) DO NOTHING
-       RETURNING batch_id, status, created_at`,
-      [req.tenantId, clientUuid]
+       RETURNING batch_id, status, created_at, lot_number`,
+      [req.tenantId, clientUuid, lotNumber || null]
     );
 
     if (inserted.rows.length) {
@@ -166,7 +171,7 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
     // Already existed. Scope the lookup by tenant so a UUID guessed from
     // another tenant cannot be adopted.
     const existing = await pool.query(
-      `SELECT batch_id, status, created_at FROM box_batches
+      `SELECT batch_id, status, created_at, lot_number FROM box_batches
        WHERE client_uuid = $1 AND tenant_id = $2`,
       [clientUuid, req.tenantId]
     );
@@ -363,6 +368,88 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
   } catch (err) {
     console.error("close box batch:", err);
     return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ── Reading batches back ─────────────────────────────────────────────────────
+// Without these the data is write-only: scanned, stored, and unreachable from
+// anywhere but psql.
+
+// Batch list with derived counts and totals. Totals come back as strings so
+// NUMERIC never round-trips through a float.
+router.get("/box-batches", verifyToken, async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  try {
+    const result = await pool.query(
+      `SELECT b.batch_id, b.lot_number, b.status, b.created_at, b.closed_at,
+              COUNT(i.item_id)::int AS box_count,
+              COALESCE(
+                json_agg(json_build_object('unit', t.weight_unit, 'total', t.total))
+                  FILTER (WHERE t.weight_unit IS NOT NULL),
+                '[]'
+              ) AS totals
+         FROM box_batches b
+         LEFT JOIN batch_items i ON i.batch_id = b.batch_id
+         LEFT JOIN LATERAL (
+           SELECT weight_unit, SUM(weight)::text AS total
+             FROM batch_items
+            WHERE batch_id = b.batch_id
+            GROUP BY weight_unit
+         ) t ON true
+        WHERE b.tenant_id = $1
+        GROUP BY b.batch_id, b.lot_number, b.status, b.created_at, b.closed_at
+        ORDER BY b.created_at DESC
+        LIMIT $2`,
+      [req.tenantId, limit]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("list box batches:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// One batch and every box on it — what the weight manifest is printed from.
+router.get("/box-batches/:id", verifyToken, async (req, res) => {
+  const batchId = Number(req.params.id);
+  if (!Number.isInteger(batchId)) {
+    return res.status(400).json({ error: "Invalid batch id" });
+  }
+  try {
+    const batch = await pool.query(
+      `SELECT batch_id, lot_number, status, created_at, closed_at
+         FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
+      [batchId, req.tenantId]
+    );
+    if (!batch.rows.length) return res.status(404).json({ error: "Batch not found" });
+
+    const items = await pool.query(
+      `SELECT item_id, weight::text AS weight, weight_unit, gtin,
+              production_date, serial, is_manual, scanned_at
+         FROM batch_items
+        WHERE batch_id = $1 AND tenant_id = $2
+        ORDER BY item_id`,
+      [batchId, req.tenantId]
+    );
+
+    res.json({
+      ...batch.rows[0],
+      items: items.rows.map((r) => ({
+        localId: r.item_id,
+        weight: r.weight,
+        weightUnit: r.weight_unit,
+        gtin: r.gtin,
+        productionDate: r.production_date
+          ? new Date(r.production_date).toISOString().slice(0, 10) : null,
+        serial: r.serial,
+        isManual: r.is_manual,
+        scannedAt: r.scanned_at,
+        status: "synced", // it is in the database, so by definition it synced
+      })),
+    });
+  } catch (err) {
+    console.error("read box batch:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

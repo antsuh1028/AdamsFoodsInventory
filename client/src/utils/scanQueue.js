@@ -229,7 +229,7 @@ const createScanQueue = ({
 
     const base = { clientUuid: uuid, lotNumber, status: "open", stats: emptyStats() };
     await backend.setSession({ ...base, batchId: null });
-    const created = await api.createBatch(uuid);
+    const created = await api.createBatch(uuid, lotNumber);
     const session = { ...base, batchId: created.batch_id };
     await backend.setSession(session);
     return session;

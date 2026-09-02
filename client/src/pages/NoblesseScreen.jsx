@@ -14,6 +14,7 @@ import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
 import { lotNumberForDate, fmtLongDate } from "./noblesse/shared";
 import BoxScanner from "../components/navbar/boxScanner";
 import ScannerDiagnostic from "../components/navbar/scannerDiagnostic";
+import PastBatches from "../components/navbar/pastBatches";
 import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -28,6 +29,7 @@ const NoblesseScreen = () => {
   // to configure the same scanner.
   const [boxScanOpen, setBoxScanOpen] = useState(false);
   const [scanDiagOpen, setScanDiagOpen] = useState(false);
+  const [pastBatchesOpen, setPastBatchesOpen] = useState(false);
   const { isOpen: drawerOpen, onOpen: openDrawer, onClose: closeDrawer } = useDisclosure();
 
   const logOut = () => {
@@ -203,6 +205,7 @@ const NoblesseScreen = () => {
           <DrawerHeader borderBottomWidth="1px">Menu</DrawerHeader>
           <Stack direction="column" spacing={3} p={4}>
             {drawerBtn("Box Weighing", () => setBoxScanOpen(true))}
+            {drawerBtn("Past Weighing Sessions", () => setPastBatchesOpen(true))}
             {drawerBtn("Refresh Data", () => fetchData(true))}
 
             {isAdmin && (
@@ -225,6 +228,7 @@ const NoblesseScreen = () => {
       </Drawer>
 
       <BoxScanner isOpen={boxScanOpen} onClose={() => setBoxScanOpen(false)} />
+      <PastBatches isOpen={pastBatchesOpen} onClose={() => setPastBatchesOpen(false)} />
       {isAdmin && (
         <ScannerDiagnostic isOpen={scanDiagOpen} onClose={() => setScanDiagOpen(false)} />
       )}

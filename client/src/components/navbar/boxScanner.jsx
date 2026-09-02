@@ -9,7 +9,8 @@ import { createScanAssembler } from "../../utils/scanInput";
 import { parseGs1 } from "../../utils/gs1";
 import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import ScanSheet from "./ScanSheet";
-import { lotNumberForDate } from "../../pages/noblesse/shared";
+import { lotNumberForDate, today, fmtDate } from "../../pages/noblesse/shared";
+import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 
 // Operator-facing scanning screen. Designed to be read across a bench by
 // someone wearing gloves holding a box: big numbers, few controls, and an
@@ -184,6 +185,14 @@ const BoxScanner = ({ isOpen, onClose }) => {
     } finally { setBusy(false); }
   };
 
+  const onPrintManifest = () => {
+    printWeightManifest({
+      lotNumber: session?.lotNumber || lotNumber,
+      date: fmtDate(today()),
+      scans,
+    });
+  };
+
   const onUndo = async () => {
     const result = await undoLast();
     if (result.undone) {
@@ -223,6 +232,10 @@ const BoxScanner = ({ isOpen, onClose }) => {
             {showManual ? "Hide manual entry" : "Manual entry"}
           </Button>
           <Flex gap={2} wrap="wrap">
+            <Button size="lg" variant="outline" colorScheme="blue"
+              onClick={onPrintManifest} isDisabled={scans.length === 0}>
+              Print manifest
+            </Button>
             <Button size="lg" variant="outline" onClick={onUndo} isDisabled={!session || pending === 0}>
               Undo last
             </Button>

@@ -11,8 +11,8 @@ const FLUSH_EVERY_SCANS = 5;
 const FLUSH_INTERVAL_MS = 4000;
 
 const api = {
-  createBatch: (clientUuid) =>
-    axiosInstance.post("/box-batches", { clientUuid }).then((r) => r.data),
+  createBatch: (clientUuid, lotNumber) =>
+    axiosInstance.post("/box-batches", { clientUuid, lotNumber }).then((r) => r.data),
   postItems: (batchId, items) =>
     axiosInstance.post(`/box-batches/${batchId}/items`, { items }).then((r) => r.data),
   closeBatch: (batchId) =>
