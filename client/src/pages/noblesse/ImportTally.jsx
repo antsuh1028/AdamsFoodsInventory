@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Select, Spinner,
+  Box, Flex, Text, Button, Badge, Select, Spinner, Input,
   Alert, AlertIcon, useToast,
 } from "@chakra-ui/react";
 import FloatingWindow from "../../components/FloatingWindow";
@@ -21,18 +21,25 @@ const newUuid = () =>
         return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
       });
 
-const Field = ({ label, value, warn }) => (
-  <Flex px={3} py={2} gap={3} align="baseline" borderBottom="1px solid" borderColor="gray.100">
-    <Text fontSize="xs" color="gray.500" minW="130px" textTransform="uppercase" letterSpacing="wide">
+// Read off the sheet but correctable before committing — real files carry
+// things like "P12 N26230-01" in the lot cell.
+const EditableField = ({ label, value, onChange, placeholder }) => (
+  <Flex px={3} py={2} gap={3} align="center" borderBottom="1px solid" borderColor="gray.100">
+    <Text fontSize="xs" color="gray.500" minW="120px" textTransform="uppercase" letterSpacing="wide">
       {label}
     </Text>
-    {value ? (
-      <Text fontSize="sm" fontWeight="medium" color="gray.800">{value}</Text>
-    ) : (
-      <Text fontSize="sm" color={warn ? "orange.500" : "gray.400"} fontStyle="italic">
-        {warn || "not on the sheet"}
-      </Text>
-    )}
+    <Input size="sm" flex={1} value={value} onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder || "blank on the sheet"}
+      autoCorrect="off" autoCapitalize="off" spellCheck={false} />
+  </Flex>
+);
+
+const ReadOnlyField = ({ label, value }) => (
+  <Flex px={3} py={2} gap={3} align="baseline" borderBottom="1px solid" borderColor="gray.100">
+    <Text fontSize="xs" color="gray.500" minW="120px" textTransform="uppercase" letterSpacing="wide">
+      {label}
+    </Text>
+    <Text fontSize="sm" fontWeight="medium" color="gray.800">{value}</Text>
   </Flex>
 );
 
@@ -42,10 +49,15 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [unit, setUnit] = useState("LB");
+  const [heading, setHeading] = useState({ lotNumber: "", vendor: "", itemDescription: "", shipTo: "" });
+  const setField = (k) => (v) => setHeading((h) => ({ ...h, [k]: v }));
   const fileRef = useRef(null);
   const toast = useToast();
 
-  const reset = () => { setFile(null); setPreview(null); setError(null); };
+  const reset = () => {
+    setFile(null); setPreview(null); setError(null);
+    setHeading({ lotNumber: "", vendor: "", itemDescription: "", shipTo: "" });
+  };
 
   const close = () => { reset(); onClose(); };
 
@@ -53,7 +65,12 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
     const form = new FormData();
     form.append("file", chosen);
     form.append("weightUnit", unit);
-    if (commit) form.append("clientUuid", newUuid());
+    if (commit) {
+      form.append("clientUuid", newUuid());
+      // Corrections made in the preview. Weights are never sent back — they
+      // came from the sheet and passed its checksums.
+      for (const [k, v] of Object.entries(heading)) if (v.trim()) form.append(k, v.trim());
+    }
     else form.append("dryRun", "true");
 
     const { data } = await axiosInstance.post("/box-batches/import", form, {
@@ -70,7 +87,14 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
     setError(null);
     setBusy(true);
     try {
-      setPreview(await send(chosen, { commit: false }));
+      const data = await send(chosen, { commit: false });
+      setPreview(data);
+      setHeading({
+        lotNumber: data.lotNumber || "",
+        vendor: data.vendor || "",
+        itemDescription: data.itemDescription || "",
+        shipTo: data.shipTo || "",
+      });
     } catch (err) {
       const body = err.response?.data;
       setError(body || { error: err.message });
@@ -177,12 +201,15 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
           </Flex>
 
           <Box border="1px solid" borderColor="gray.200" borderRadius="md" mb={3}>
-            <Field label="Lot #" value={preview.lotNumber} warn="not on the sheet — add it before importing" />
-            <Field label="Vendor" value={preview.vendor} />
-            <Field label="Item" value={preview.itemDescription} />
-            <Field label="Date" value={preview.date} />
-            <Field label="Boxes" value={String(preview.boxes)} />
-            <Field label="Total" value={`${preview.subtotal} ${preview.weightUnit}`} />
+            <EditableField label="Lot #" value={heading.lotNumber} onChange={setField("lotNumber")} placeholder="N26229-01" />
+            <EditableField label="Vendor" value={heading.vendor} onChange={setField("vendor")} />
+            <EditableField label="Item" value={heading.itemDescription} onChange={setField("itemDescription")} />
+            <EditableField label="Ship to / BOL" value={heading.shipTo} onChange={setField("shipTo")} />
+            {/* Read from the sheet and checked against its own totals, so not
+                open to editing — that is the guarantee the import rests on. */}
+            <ReadOnlyField label="Date" value={preview.date || "—"} />
+            <ReadOnlyField label="Boxes" value={String(preview.boxes)} />
+            <ReadOnlyField label="Total" value={`${preview.subtotal} ${preview.weightUnit}`} />
           </Box>
 
           <Text fontSize="xs" color="gray.500" mb={1} textTransform="uppercase" letterSpacing="wide">

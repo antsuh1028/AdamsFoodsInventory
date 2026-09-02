@@ -32,3 +32,5 @@ scripts/smoke-test.js
 .claude/settings.local.json
 server/scripts
 server/tests
+# Sample tally workbooks used for parser accuracy checks — real shipment data
+2026/

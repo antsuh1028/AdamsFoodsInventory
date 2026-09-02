@@ -439,11 +439,20 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
       });
     }
 
+    // The heading may be corrected in the preview before committing — real
+    // sheets carry things like "P12 N26230-01" in the lot cell. The WEIGHTS are
+    // deliberately not overridable: they passed the sheet's own checksums, and
+    // letting them be hand-edited afterwards would quietly void that guarantee.
+    const pick = (override, fromSheet) => {
+      const v = typeof override === "string" ? override.trim() : "";
+      return v || fromSheet || null;
+    };
+
     const summary = {
-      lotNumber: parsed.lotNumber,
-      vendor: parsed.vendor,
-      shipTo: parsed.shipTo,
-      itemDescription: parsed.itemDescription,
+      lotNumber: pick(req.body.lotNumber, parsed.lotNumber),
+      vendor: pick(req.body.vendor, parsed.vendor),
+      shipTo: pick(req.body.shipTo, parsed.shipTo),
+      itemDescription: pick(req.body.itemDescription, parsed.itemDescription),
       date: parsed.date,
       weightUnit,
       boxes: parsed.computed.boxes,
@@ -465,8 +474,8 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
          VALUES ($1, $2, $3, $4, $5, $6, 'imported', 'closed', now())
          ON CONFLICT (client_uuid) DO NOTHING
          RETURNING batch_id`,
-        [req.tenantId, clientUuid, parsed.lotNumber, parsed.vendor,
-         parsed.shipTo, parsed.itemDescription]
+        [req.tenantId, clientUuid, summary.lotNumber, summary.vendor,
+         summary.shipTo, summary.itemDescription]
       );
 
       // A retried upload finds its own batch rather than importing twice.

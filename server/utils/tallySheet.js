@@ -124,10 +124,18 @@ const parseTallySheet = (rows) => {
     throw new TallyError("EMPTY_SHEET", "The workbook has no rows");
   }
 
-  const headerIdx = findRowIndex(rows, (r) => r.some((c) => norm(c) === "boxpcs"));
+  // The header is found by the "Item" / "Total" pair rather than by "Box/Pcs."
+  // alone: on real sheets that first header cell has sometimes been overtyped —
+  // several in the 2026 set carry a bare "," there — while Item and Total are
+  // always intact. The grid beneath is identical either way.
+  const isHeaderRow = (r) =>
+    r.some((c) => norm(c) === "boxpcs") ||
+    (r.some((c) => norm(c) === "item") && r.some((c) => norm(c) === "total"));
+
+  const headerIdx = findRowIndex(rows, isHeaderRow);
   if (headerIdx === -1) {
     throw new TallyError("NOT_A_TALLY",
-      'Could not find the "Box/Pcs." header — this does not look like a tally sheet');
+      'Could not find the weight grid header — this does not look like a tally sheet');
   }
 
   const footerIdx = findRowIndex(rows, (r) => r.some((c) => norm(c) === "totalboxes"));
@@ -135,9 +143,16 @@ const parseTallySheet = (rows) => {
     throw new TallyError("NOT_A_TALLY", 'Could not find the "Total Boxes" row');
   }
 
-  // The count sits in the first column of the data rows, so the weights begin
-  // in the column after it.
-  const countCol = rows[headerIdx].findIndex((c) => norm(c) === "boxpcs");
+  // The count sits in the column immediately before "Item", which is where the
+  // weights start. Derived from "Item" rather than from the count header,
+  // because that header is the cell that gets overtyped.
+  const headerRow = rows[headerIdx];
+  const boxCol = headerRow.findIndex((c) => norm(c) === "boxpcs");
+  const itemCol = headerRow.findIndex((c) => norm(c) === "item");
+  const countCol = boxCol !== -1 ? boxCol : itemCol - 1;
+  if (countCol < 0) {
+    throw new TallyError("NOT_A_TALLY", "Could not locate the box count column");
+  }
   const firstWeightCol = countCol + 1;
 
   const weights = [];
