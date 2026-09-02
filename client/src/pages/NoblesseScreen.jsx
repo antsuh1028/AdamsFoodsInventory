@@ -11,7 +11,9 @@ import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
+import { WeightManifestTab } from "./noblesse/WeightManifestTab";
 import { lotNumberForDate, fmtLongDate } from "./noblesse/shared";
+import ScannerDiagnostic from "../components/navbar/scannerDiagnostic";
 import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -21,6 +23,10 @@ const NoblesseScreen = () => {
   const isAdmin  = getRole() === "admin";
   const canEdit  = true; // all roles permitted on this screen are trusted to edit
 
+  // Box weighing belongs to Noblesse Trading, so it lives here rather than in
+  // the Adams Foods navbar. The diagnostic sits alongside it because it exists
+  // to configure the same scanner.
+  const [scanDiagOpen, setScanDiagOpen] = useState(false);
   const { isOpen: drawerOpen, onOpen: openDrawer, onClose: closeDrawer } = useDisclosure();
 
   const logOut = () => {
@@ -165,6 +171,7 @@ const NoblesseScreen = () => {
               {receipts.length > 0 && <Badge ml={2} colorScheme="blue" borderRadius="full">{receipts.length}</Badge>}
             </Tab>
             <Tab>Registration Forms</Tab>
+            <Tab>Weight Manifests</Tab>
           </TabList>
 
           <Box bg="white" borderRadius="lg" boxShadow="sm" border="1px" borderColor="gray.200"
@@ -185,6 +192,9 @@ const NoblesseScreen = () => {
                 <RegistrationFormTab isAdmin={canEdit} canDelete={isAdmin}
                   isAdminUser={isAdmin} refreshSignal={refreshSignal} />
               </TabPanel>
+              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
+                <WeightManifestTab refreshSignal={refreshSignal} />
+              </TabPanel>
             </TabPanels>
           </Box>
         </Tabs>
@@ -200,6 +210,8 @@ const NoblesseScreen = () => {
             {isAdmin && (
               <>
                 <Divider />
+                {drawerBtn("Scanner Diagnostic", () => setScanDiagOpen(true))}
+                <Divider />
                 {drawerBtn("← Adams Foods", () => navigate("/home"))}
               </>
             )}
@@ -213,6 +225,10 @@ const NoblesseScreen = () => {
           </DrawerFooter>
         </DrawerContent>
       </Drawer>
+
+      {isAdmin && (
+        <ScannerDiagnostic isOpen={scanDiagOpen} onClose={() => setScanDiagOpen(false)} />
+      )}
     </Flex>
   );
 };
