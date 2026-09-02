@@ -3,6 +3,9 @@ const rateLimit = require("express-rate-limit");
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const { parseGs1 } = require("../utils/gs1");
+const { parseTallySheet } = require("../utils/tallySheet");
+const { upload } = require("../utils/aws");
+const readXlsxFile = require("read-excel-file/node");
 
 // ── Migrations (idempotent, applied on boot like the rest of this codebase) ───
 
@@ -52,6 +55,12 @@ for (const col of ["vendor", "ship_to", "bill_of_lading", "item_description"]) {
   pool.query(`ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS ${col} TEXT`)
     .catch((err) => console.error(`box_batches ${col} migration error:`, err.message));
 }
+
+// 'scanned' or 'imported'. A barcode-verified lot and one keyed in by hand on
+// an iPad are both legitimate, but they carry different confidence and anyone
+// reconciling a shipment needs to be able to tell them apart.
+pool.query(`ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'scanned'`)
+  .catch((err) => console.error("box_batches source migration error:", err.message));
 
 // Free duplicate-scan protection: the same serial cannot land in a batch twice.
 pool.query(`
@@ -383,6 +392,116 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
   }
 });
 
+// ── Importing a hand-entered tally sheet ─────────────────────────────────────
+// The path for lots whose labels carry no barcode: the weights are written
+// into the Excel form on an iPad and the file is uploaded here.
+//
+// Send dryRun=true first to show the operator what was read; without it the
+// batch is written. Both go through the same parser, so the preview cannot
+// disagree with what gets stored.
+router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file"),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    const dryRun = String(req.body.dryRun) === "true";
+    const clientUuid = req.body.clientUuid;
+    if (!dryRun && !clientUuid) {
+      return res.status(400).json({ error: "clientUuid is required to commit an import" });
+    }
+
+    let parsed;
+    try {
+      const rows = await readXlsxFile(req.file.buffer);
+      parsed = parseTallySheet(rows);
+    } catch (err) {
+      // A parse or checksum failure is the operator's problem to fix in the
+      // spreadsheet, so it comes back as a 400 with the specific reason.
+      return res.status(400).json({
+        error: err.message,
+        code: err.code || "PARSE_FAILED",
+        details: err.details || null,
+      });
+    }
+
+    // The unit is not on the sheet. Canada and Mexico ship in kilograms, so
+    // this cannot be assumed — the operator picks it and it is recorded.
+    const weightUnit = String(req.body.weightUnit || "LB").toUpperCase();
+    if (!UNITS.has(weightUnit)) {
+      return res.status(400).json({ error: "weightUnit must be LB or KG" });
+    }
+
+    const overLimit = parsed.weights.filter((w) => toThousandths(w) > MAX_WEIGHT_THOUSANDTHS);
+    if (overLimit.length) {
+      return res.status(400).json({
+        code: "IMPLAUSIBLE_WEIGHT",
+        error: `Sheet contains ${overLimit.length} weight(s) outside the plausible range`,
+        details: { weights: overLimit.slice(0, 5) },
+      });
+    }
+
+    const summary = {
+      lotNumber: parsed.lotNumber,
+      vendor: parsed.vendor,
+      shipTo: parsed.shipTo,
+      itemDescription: parsed.itemDescription,
+      date: parsed.date,
+      weightUnit,
+      boxes: parsed.computed.boxes,
+      subtotal: parsed.computed.subtotal,
+      declared: parsed.declared,
+      weights: parsed.weights,
+    };
+
+    if (dryRun) return res.json({ preview: true, ...summary });
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const batch = await client.query(
+        `INSERT INTO box_batches
+           (tenant_id, client_uuid, lot_number, vendor, ship_to, item_description,
+            source, status, closed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'imported', 'closed', now())
+         ON CONFLICT (client_uuid) DO NOTHING
+         RETURNING batch_id`,
+        [req.tenantId, clientUuid, parsed.lotNumber, parsed.vendor,
+         parsed.shipTo, parsed.itemDescription]
+      );
+
+      // A retried upload finds its own batch rather than importing twice.
+      if (!batch.rows.length) {
+        await client.query("ROLLBACK");
+        const existing = await pool.query(
+          `SELECT batch_id FROM box_batches WHERE client_uuid = $1 AND tenant_id = $2`,
+          [clientUuid, req.tenantId]
+        );
+        if (!existing.rows.length) return res.status(409).json({ error: "clientUuid already used" });
+        return res.json({ ...summary, batchId: existing.rows[0].batch_id, reused: true });
+      }
+
+      const batchId = batch.rows[0].batch_id;
+
+      // is_manual is true because none of these came from a barcode; the
+      // batch's source column is what marks the whole lot as imported.
+      await client.query(
+        `INSERT INTO batch_items (tenant_id, batch_id, weight, weight_unit, is_manual)
+         SELECT $1, $2, w, $3, true
+           FROM UNNEST($4::numeric[]) AS w`,
+        [req.tenantId, batchId, weightUnit, parsed.weights]
+      );
+
+      await client.query("COMMIT");
+      return res.status(201).json({ ...summary, batchId, reused: false });
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("import tally:", err);
+      return res.status(500).json({ error: "Internal Server Error" });
+    } finally {
+      client.release();
+    }
+  });
+
 // ── Reading batches back ─────────────────────────────────────────────────────
 // Without these the data is write-only: scanned, stored, and unreachable from
 // anywhere but psql.
@@ -398,7 +517,7 @@ router.get("/box-batches", verifyToken, async (req, res) => {
     // same total, and with two units it would also have doubled box_count.
     // A scalar subquery returns exactly one value and cannot fan out.
     const result = await pool.query(
-      `SELECT b.batch_id, b.lot_number, b.vendor, b.item_description,
+      `SELECT b.batch_id, b.lot_number, b.vendor, b.item_description, b.source,
               b.status, b.created_at, b.closed_at,
               (SELECT COUNT(*)::int
                  FROM batch_items i
@@ -434,7 +553,7 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
   }
   try {
     const batch = await pool.query(
-      `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description,
+      `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description, source,
               status, created_at, closed_at
          FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]

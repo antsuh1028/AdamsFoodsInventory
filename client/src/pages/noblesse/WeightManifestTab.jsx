@@ -8,6 +8,7 @@ import axiosInstance from "../../utils/axiosInstance";
 import ScanSheet from "../../components/navbar/ScanSheet";
 import BoxScanner from "../../components/navbar/boxScanner";
 import printWeightManifest from "./printWeightManifest";
+import ImportTally from "./ImportTally";
 import { fmtDate, today } from "./shared";
 
 // Past weighing sessions, one row per session. Expanding a row pulls its boxes
@@ -40,6 +41,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const [details, setDetails] = useState({});   // batch_id -> full batch
   const [loadingId, setLoadingId] = useState(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const toast = useToast();
 
   const fetchBatches = useCallback(async () => {
@@ -181,9 +183,14 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
           </Text>
         </Flex>
 
-        <Button size="xs" colorScheme="teal" onClick={() => setScannerOpen(true)}>
-          + New Box Weighing Session
-        </Button>
+        <Flex gap={2}>
+          <Button size="xs" variant="outline" colorScheme="teal" onClick={() => setImportOpen(true)}>
+            Import tally sheet
+          </Button>
+          <Button size="xs" colorScheme="teal" onClick={() => setScannerOpen(true)}>
+            + New Box Weighing Session
+          </Button>
+        </Flex>
       </Flex>
 
       {error && (
@@ -282,9 +289,16 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                         whiteSpace="nowrap" style={{ fontVariantNumeric: "tabular-nums" }}
                         borderBottom="1px solid" borderColor="gray.100">{totalsText(b.totals)}</Box>
                       <Box as="td" px={3} py={2} borderBottom="1px solid" borderColor="gray.100">
-                        <Badge colorScheme={b.status === "closed" ? "green" : "orange"} fontSize="10px">
-                          {b.status === "closed" ? "Closed" : "Open"}
-                        </Badge>
+                        <Flex gap={1} wrap="wrap">
+                          <Badge colorScheme={b.status === "closed" ? "green" : "orange"} fontSize="10px">
+                            {b.status === "closed" ? "Closed" : "Open"}
+                          </Badge>
+                          {/* A barcode-verified lot and one keyed in by hand
+                              carry different confidence. */}
+                          {b.source === "imported" && (
+                            <Badge colorScheme="purple" fontSize="10px">Imported</Badge>
+                          )}
+                        </Flex>
                       </Box>
                       <Box as="td" px={3} py={2} borderBottom="1px solid" borderColor="gray.100" textAlign="right">
                         <Button size="xs" variant="outline" colorScheme="blue"
@@ -321,6 +335,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       )}
 
       <BoxScanner isOpen={scannerOpen} onClose={onScannerClose} />
+      <ImportTally isOpen={importOpen} onClose={() => setImportOpen(false)} onImported={fetchBatches} />
     </Box>
   );
 };
