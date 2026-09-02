@@ -135,7 +135,7 @@ const ScannerDiagnostic = ({ isOpen, onClose }) => {
         ? `inter-key ms: min ${capture.timing.min} / avg ${capture.timing.avg} / max ${capture.timing.max}`
         : "inter-key ms: n/a",
       capture.parsed
-        ? `parsed: ${capture.parsed.weight.value} ${capture.parsed.weight.unit}, gtin ${capture.parsed.gtin}, serial ${capture.parsed.serial}`
+        ? `parsed: ${capture.parsed.weight.value} ${capture.parsed.weight.unit}, gtin ${capture.parsed.gtin}, serial ${capture.parsed.serial}, production ${capture.parsed.productionDate || "-"}, packaging ${capture.parsed.packagingDate || "-"}, lot ${capture.parsed.lot || "-"}`
         : `parse FAILED: ${capture.parseError.code} — ${capture.parseError.message}`,
     ].join("\n");
     navigator.clipboard?.writeText(report);
@@ -233,6 +233,7 @@ const ScannerDiagnostic = ({ isOpen, onClose }) => {
                 <Text><strong>Weight:</strong> {capture.parsed.weight.value} {capture.parsed.weight.unit}</Text>
                 <Text><strong>GTIN:</strong> {capture.parsed.gtin || "—"}</Text>
                 <Text><strong>Production date:</strong> {capture.parsed.productionDate || "—"}</Text>
+                <Text><strong>Packaging date:</strong> {capture.parsed.packagingDate || "—"}</Text>
                 <Text><strong>Lot:</strong> {capture.parsed.lot || "—"}</Text>
                 <Text><strong>Serial:</strong> {capture.parsed.serial || "—"}</Text>
               </Flex>

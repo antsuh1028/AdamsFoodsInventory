@@ -117,7 +117,8 @@ const readAi = (s, i) => {
 /**
  * Parse a GS1-128 payload.
  *
- * Returns { gtin, productionDate, serial, lot, weight: { value, unit, decimals }, raw, unparsed }
+ * Returns { gtin, productionDate, packagingDate, serial, lot,
+ *           weight: { value, unit, decimals }, raw, unparsed }
  * where weight.value is a decimal STRING.
  *
  * Throws Gs1Error. Callers should branch on err.code — in particular
@@ -138,7 +139,7 @@ const parseGs1 = (raw) => {
   s = s.replace(/^\u001D+/, ""); // a leading FNC1 is a start marker, not data
 
   const result = {
-    gtin: null, productionDate: null, serial: null, lot: null,
+    gtin: null, productionDate: null, packagingDate: null, serial: null, lot: null,
     weight: null, raw, unparsed: [],
   };
 
@@ -188,6 +189,12 @@ const parseGs1 = (raw) => {
       result.gtin = value;
     } else if (spec.ai === "11") {
       result.productionDate = parseGs1Date(value);
+    } else if (spec.ai === "13") {
+      // Packaging date. Kept distinct from AI 11 rather than merged, because
+      // they are genuinely different events — but real supplier labels use one
+      // or the other, so callers that just need "when was this box made" should
+      // read productionDate ?? packagingDate.
+      result.packagingDate = parseGs1Date(value);
     } else if (spec.ai === "10") {
       result.lot = value;
     } else if (spec.ai === "21") {

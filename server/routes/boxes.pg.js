@@ -130,7 +130,10 @@ const validateItem = (item) => {
     weight: parsed.weight.value,
     weightUnit: parsed.weight.unit,
     gtin: parsed.gtin,
-    productionDate: parsed.productionDate,
+    // Suppliers use one or the other: AI 11 (production) or AI 13 (packaging).
+    // Both answer "when was this box made", so whichever is present fills the
+    // column rather than leaving it null for half the vendors.
+    productionDate: parsed.productionDate || parsed.packagingDate,
     serial: parsed.serial,
     rawBarcode,
     isManual: false,
