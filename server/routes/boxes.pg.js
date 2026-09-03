@@ -178,6 +178,37 @@ const migrate = async () => {
   await step("registration_form_batches index",
     `CREATE INDEX IF NOT EXISTS registration_form_batches_form_idx
        ON registration_form_batches (form_id)`);
+
+  // Every removal, kept. Voiding leaves its trace on the row itself, but an
+  // erased box or a deleted session leaves nothing at all — and "where did that
+  // box go" is precisely the question a reconciliation asks months later.
+  //
+  // NO foreign keys to box_batches or batch_items, deliberately: an audit row
+  // has to outlive the row it describes. With an FK, logging before the delete
+  // gets cascaded away and logging after has nothing to point at. The same
+  // lesson is written into noblesse_registration_history.
+  //
+  // `details` carries the destroyed row itself, because after a permanent
+  // delete this is the only copy that will ever exist.
+  await step("box_removal_history", `
+    CREATE TABLE IF NOT EXISTS box_removal_history (
+      id           SERIAL PRIMARY KEY,
+      tenant_id    UUID NOT NULL REFERENCES tenants(id),
+      action       TEXT NOT NULL,
+      batch_id     INTEGER,
+      item_id      INTEGER,
+      lot_number   TEXT,
+      summary      TEXT,
+      reason       TEXT,
+      details      JSONB,
+      performed_by TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await step("box_removal_history index",
+    `CREATE INDEX IF NOT EXISTS box_removal_history_created_idx
+       ON box_removal_history (tenant_id, created_at DESC)`);
 };
 
 migrate();
@@ -212,6 +243,21 @@ const weightInLb = (t = "") => {
   // screen would disagree with the paper.
   return `ROUND(ROUND(CASE WHEN ${col}weight_unit = 'KG' THEN ${col}weight / 0.45359237 ELSE ${col}weight END, 3), 2)`;
 };
+
+// Records a removal. Never throws into the request path: failing to write the
+// audit row must not fail the operation the operator actually asked for — but
+// it is logged loudly, because a silently missing audit trail is worse than a
+// noisy one.
+const logBoxRemoval = ({
+  tenantId, action, batchId = null, itemId = null,
+  lotNumber = null, summary = null, reason = null, details = null, performedBy = null,
+}) => pool.query(
+  `INSERT INTO box_removal_history
+     (tenant_id, action, batch_id, item_id, lot_number, summary, reason, details, performed_by)
+   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+  [tenantId, action, batchId, itemId, lotNumber, summary, reason,
+   details ? JSON.stringify(details) : null, performedBy]
+).catch((err) => console.error("box removal history log error:", err.message));
 
 // ── Validation helpers ───────────────────────────────────────────────────────
 
@@ -508,7 +554,7 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
 
   try {
     const batch = await pool.query(
-      `SELECT batch_id, status FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
+      `SELECT batch_id, status, lot_number FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]
     );
     if (!batch.rows.length) return res.status(404).json({ error: "Batch not found" });
@@ -558,7 +604,7 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
 
 const rowGate = async (batchId, req) => {
   const batch = await pool.query(
-    `SELECT batch_id, status FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
+    `SELECT batch_id, status, lot_number FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
     [batchId, req.tenantId]
   );
   if (!batch.rows.length) return { ok: false, status: 404, error: "Batch not found" };
@@ -655,12 +701,21 @@ router.delete("/box-batches/:id/items/:itemId", verifyToken, scanLimiter, async 
               voided_by = COALESCE(voided_by, $1),
               void_reason = COALESCE(void_reason, $2)
         WHERE item_id = $3 AND batch_id = $4 AND tenant_id = $5
-      RETURNING item_id, voided_at, void_reason`,
+      RETURNING item_id, voided_at, void_reason,
+                weight::text AS weight, weight_unit, serial, is_manual`,
       [req.userId, reason, itemId, batchId, req.tenantId]
     );
     if (!voided.rows.length) return res.status(404).json({ error: "Row not found" });
 
-    return res.json({ ...voided.rows[0], voided: true });
+    const row = voided.rows[0];
+    logBoxRemoval({
+      tenantId: req.tenantId, action: "item_voided",
+      batchId, itemId, lotNumber: gate.batch.lot_number,
+      summary: `Box of ${row.weight} ${row.weight_unit} taken off the tally`,
+      reason: row.void_reason, details: row, performedBy: req.username || req.userId,
+    });
+
+    return res.json({ ...row, voided: true });
   } catch (err) {
     console.error("void batch item:", err);
     return res.status(500).json({ error: "Internal Server Error" });
@@ -683,10 +738,19 @@ router.post("/box-batches/:id/items/:itemId/restore", verifyToken, scanLimiter, 
       `UPDATE batch_items
           SET voided_at = NULL, voided_by = NULL, void_reason = NULL
         WHERE item_id = $1 AND batch_id = $2 AND tenant_id = $3
-      RETURNING item_id`,
+      RETURNING item_id, weight::text AS weight, weight_unit, serial`,
       [itemId, batchId, req.tenantId]
     );
     if (!restored.rows.length) return res.status(404).json({ error: "Row not found" });
+
+    // Logged as well as the void: a trail that shows only removals, and not the
+    // ones that were undone, overstates what actually left the tally.
+    logBoxRemoval({
+      tenantId: req.tenantId, action: "item_restored",
+      batchId, itemId, lotNumber: gate.batch.lot_number,
+      summary: `Box of ${restored.rows[0].weight} ${restored.rows[0].weight_unit} put back on the tally`,
+      details: restored.rows[0], performedBy: req.username || req.userId,
+    });
 
     return res.json({ itemId: restored.rows[0].item_id, voided: false });
   } catch (err) {
@@ -714,13 +778,23 @@ router.delete("/box-batches/:id/items/:itemId/permanent",
     try {
       // Scoped to the batch AND the tenant, so an id guessed from another
       // tenant's session cannot be erased.
+      // The whole row comes back, not just a few columns: once the DELETE runs
+      // this is the only copy of the box that will ever exist, and the audit
+      // entry has to carry it or the record is gone for good.
       const gone = await pool.query(
         `DELETE FROM batch_items
           WHERE item_id = $1 AND batch_id = $2 AND tenant_id = $3
-        RETURNING item_id, weight::text AS weight, weight_unit, serial`,
+        RETURNING *, weight::text AS weight`,
         [itemId, batchId, req.tenantId]
       );
       if (!gone.rows.length) return res.status(404).json({ error: "Row not found" });
+
+      logBoxRemoval({
+        tenantId: req.tenantId, action: "item_deleted",
+        batchId, itemId,
+        summary: `Box of ${gone.rows[0].weight} ${gone.rows[0].weight_unit} erased permanently`,
+        details: gone.rows[0], performedBy: req.username || req.userId,
+      });
 
       // Logged deliberately: this is the one operation in the box path that
       // destroys data, and the serial is what a later reconciliation would
@@ -809,9 +883,12 @@ router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req,
     }
 
     // Children first: batch_items references box_batches, and there is no
-    // ON DELETE CASCADE on that constraint.
+    // ON DELETE CASCADE on that constraint. Every box comes back with the
+    // delete so the audit entry carries the session in full — after this there
+    // is no other copy of these weights anywhere.
     const items = await client.query(
-      `DELETE FROM batch_items WHERE batch_id = $1 AND tenant_id = $2`,
+      `DELETE FROM batch_items WHERE batch_id = $1 AND tenant_id = $2
+       RETURNING *, weight::text AS weight`,
       [batchId, req.tenantId]
     );
     await client.query(
@@ -821,11 +898,19 @@ router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req,
 
     await client.query("COMMIT");
 
-    // Logged deliberately: this destroys a whole session's worth of weights.
     console.warn(
       `box_batches delete: batch ${batchId} (lot ${batch.rows[0].lot_number || "none"}) ` +
       `with ${items.rowCount} boxes by user ${req.userId}`
     );
+
+    logBoxRemoval({
+      tenantId: req.tenantId, action: "batch_deleted",
+      batchId, lotNumber: batch.rows[0].lot_number,
+      summary: `Whole session deleted — ${items.rowCount} box` +
+               `${items.rowCount === 1 ? "" : "es"}`,
+      details: { batch: batch.rows[0], items: items.rows },
+      performedBy: req.username || req.userId,
+    });
 
     return res.json({ deleted: true, batchId, boxesDeleted: items.rowCount });
   } catch (err) {
@@ -1259,14 +1344,58 @@ router.delete("/manifest-groups/:id", verifyToken, requireRole("admin"), async (
   const groupId = Number(req.params.id);
   if (!Number.isInteger(groupId)) return res.status(400).json({ error: "Invalid group id" });
   try {
+    // The member list is read first: the CASCADE takes it with the group, and
+    // which sessions the manifest covered is the part worth keeping.
+    const members = await pool.query(
+      `SELECT batch_id, position FROM manifest_group_batches WHERE group_id = $1`,
+      [groupId]
+    );
     const gone = await pool.query(
-      `DELETE FROM manifest_groups WHERE group_id = $1 AND tenant_id = $2 RETURNING group_id`,
+      `DELETE FROM manifest_groups WHERE group_id = $1 AND tenant_id = $2 RETURNING *`,
       [groupId, req.tenantId]
     );
     if (!gone.rows.length) return res.status(404).json({ error: "Manifest not found" });
+
+    logBoxRemoval({
+      tenantId: req.tenantId, action: "manifest_group_deleted",
+      lotNumber: gone.rows[0].lot_number,
+      summary: `Merged manifest removed — covered ${members.rows.length} session` +
+               `${members.rows.length === 1 ? "" : "s"}`,
+      details: { group: gone.rows[0], batches: members.rows },
+      performedBy: req.username || req.userId,
+    });
+
     res.json({ deleted: true, groupId });
   } catch (err) {
     console.error("delete manifest group:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Everything that has been taken off a tally, newest first. Voids and restores
+// are included alongside the permanent deletions: a trail showing only removals
+// and not the ones that were undone overstates what actually left.
+router.get("/box-removals", verifyToken, async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 100, 500);
+  const batchId = req.query.batchId ? Number(req.query.batchId) : null;
+  if (req.query.batchId && !Number.isInteger(batchId)) {
+    return res.status(400).json({ error: "Invalid batch id" });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT id, action, batch_id, item_id, lot_number, summary, reason,
+              details, performed_by, created_at
+         FROM box_removal_history
+        WHERE tenant_id = $1
+          AND ($2::int IS NULL OR batch_id = $2)
+        ORDER BY created_at DESC, id DESC
+        LIMIT $3`,
+      [req.tenantId, batchId, limit]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("list box removals:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });

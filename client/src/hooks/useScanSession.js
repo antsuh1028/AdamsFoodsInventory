@@ -116,6 +116,21 @@ export const useScanSession = () => {
     return opened;
   }, [acquireWakeLock, refreshPending]);
 
+  // Decline a recovered batch. The scans it holds never reached the server, so
+  // discarding them is the one action in this hook that destroys data the
+  // server has no copy of — the caller confirms it, and the count is returned
+  // so the confirmation can state exactly what is being thrown away.
+  const discardResumable = useCallback(async () => {
+    if (!queueRef.current) return { discarded: false };
+    const lost = await queueRef.current.countPending();
+    await queueRef.current.clearSession();
+    setResumable(null);
+    setSession(null);
+    setScans([]);
+    await refreshPending();
+    return { discarded: true, lost };
+  }, [refreshPending]);
+
   const resume = useCallback(async () => {
     if (!queueRef.current) return null;
     const existing = await queueRef.current.findResumable();
@@ -220,7 +235,7 @@ export const useScanSession = () => {
 
   return {
     ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
-    start, resume, stop, flush, addScan, undoLast, editScan, voidScan,
+    start, resume, discardResumable, stop, flush, addScan, undoLast, editScan, voidScan,
   };
 };
 

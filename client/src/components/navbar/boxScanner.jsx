@@ -122,7 +122,7 @@ const KeypadPanel = ({ onAdd, disabled }) => {
 const BoxScanner = ({ isOpen, onClose }) => {
   const {
     ready, durable, session, pending, resumable, lastError, lastScan, scans,
-    start, resume, stop, flush, addScan, undoLast, editScan, voidScan,
+    start, resume, discardResumable, stop, flush, addScan, undoLast, editScan, voidScan,
   } = useScanSession();
 
   // One session is one lot, so the manifest produced at Stop covers exactly
@@ -146,6 +146,10 @@ const BoxScanner = ({ isOpen, onClose }) => {
   // scan grid is the primary readout and sometimes wants the room.
   const [showManual, setShowManual] = useState(true);
   const [rowBusy, setRowBusy] = useState(null);
+  // Declining a recovered batch throws away scans the server never received,
+  // so it is confirmed rather than a single tap next to "Resume it".
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const cancelDiscardRef = useRef(null);
   const toast = useToast();
   const assemblerRef = useRef(null);
 
@@ -282,6 +286,29 @@ const BoxScanner = ({ isOpen, onClose }) => {
     }
   };
 
+  const onDiscardResumable = async () => {
+    setConfirmDiscard(false);
+    setBusy(true);
+    try {
+      const { lost } = await discardResumable();
+      toast({
+        title: "Unfinished batch discarded",
+        description: lost
+          ? `${lost} unsent scan(s) were thrown away.`
+          : "Nothing was pending.",
+        status: "info", duration: 4000, position: "top",
+      });
+    } catch (err) {
+      toast({
+        title: "Could not discard it",
+        description: err.message,
+        status: "error", duration: 5000, position: "top",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onManualAdd = async (entry) => {
     try {
       await addScan(entry);
@@ -353,9 +380,15 @@ const BoxScanner = ({ isOpen, onClose }) => {
                 Batch {resumable.batchId} has {resumable.pending} scan(s) that never reached the server.
               </Text>
             </Box>
-            <Button size="sm" colorScheme="orange" onClick={onResume} isLoading={busy}>
-              Resume it
-            </Button>
+            <Flex gap={2} wrap="wrap">
+              <Button size="sm" variant="outline" colorScheme="gray"
+                onClick={() => setConfirmDiscard(true)} isDisabled={busy}>
+                Discard it
+              </Button>
+              <Button size="sm" colorScheme="orange" onClick={onResume} isLoading={busy}>
+                Resume it
+              </Button>
+            </Flex>
           </Flex>
         </Alert>
       )}
@@ -488,6 +521,42 @@ const BoxScanner = ({ isOpen, onClose }) => {
         </Box>
       )}
 
+
+      <AlertDialog
+        isOpen={confirmDiscard}
+        leastDestructiveRef={cancelDiscardRef}
+        onClose={() => setConfirmDiscard(false)}
+        isCentered
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Discard the unfinished batch?
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              <Text fontSize="sm" mb={2}>
+                {resumable
+                  ? `Batch ${resumable.batchId} holds ${resumable.pending} scan(s) that never reached the server.`
+                  : "This batch holds scans that never reached the server."}
+              </Text>
+              <Text fontSize="sm" color="red.700">
+                There is no copy of them anywhere else. Discarding loses those
+                weights for good — resuming sends them and takes a few seconds.
+              </Text>
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              {/* Focus sits here: the scanner types Enter, and this is the
+                  button that keeps the operator's work. */}
+              <Button ref={cancelDiscardRef} onClick={() => setConfirmDiscard(false)}>
+                Go back
+              </Button>
+              <Button colorScheme="red" onClick={onDiscardResumable} isLoading={busy}>
+                Discard the scans
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
 
       <AlertDialog
         isOpen={confirmStart}

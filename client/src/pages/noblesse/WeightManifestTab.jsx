@@ -28,6 +28,24 @@ const COLUMNS = [
   { key: "status",           label: "Status",  filter: "none",   width: "90px" },
 ];
 
+// Restores are shown in the same trail, so the labels have to distinguish
+// "gone for good" from "taken off but recoverable".
+const REMOVAL_LABEL = {
+  item_voided: "Voided",
+  item_restored: "Restored",
+  item_deleted: "Box erased",
+  batch_deleted: "Session deleted",
+  manifest_group_deleted: "Manifest removed",
+};
+
+const REMOVAL_COLOR = {
+  item_voided: "orange",
+  item_restored: "green",
+  item_deleted: "red",
+  batch_deleted: "red",
+  manifest_group_deleted: "gray",
+};
+
 const totalsText = (totals) =>
   Array.isArray(totals) && totals.length
     ? totals.map((t) => `${t.total} ${t.unit}`).join("  ·  ")
@@ -53,6 +71,12 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const [confirmMerge, setConfirmMerge] = useState(false);
   // The whole session, not one box inside it.
   const [confirmDeleteBatch, setConfirmDeleteBatch] = useState(null);
+  // Removing a merged manifest destroys a saved, filed form — it gets the same
+  // confirmation the session delete does.
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(null);
+  const cancelDeleteGroupRef = useRef(null);
+  const [removals, setRemovals] = useState(null);
+  const [showRemovals, setShowRemovals] = useState(false);
   const [deletingBatch, setDeletingBatch] = useState(false);
   const cancelDeleteBatchRef = useRef(null);
   const [merging, setMerging] = useState(false);
@@ -246,13 +270,28 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
     }
   };
 
+  const loadRemovals = useCallback(async () => {
+    try {
+      const { data } = await axiosInstance.get("/box-removals", { params: { limit: 100 } });
+      setRemovals(data || []);
+    } catch (err) {
+      toast({
+        title: "Could not load the removal history",
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 4000, position: "top",
+      });
+    }
+  }, [toast]);
+
   const deleteGroup = async (group) => {
+    setConfirmDeleteGroup(null);
     try {
       await axiosInstance.delete(`/manifest-groups/${group.group_id}`);
       toast({ title: "Merged manifest removed",
         description: "The sessions and their boxes are untouched.",
         status: "info", duration: 3000, position: "top" });
       fetchGroups();
+      if (showRemovals) loadRemovals();
     } catch (err) {
       toast({ title: "Could not remove it",
         description: err.response?.data?.error || err.message,
@@ -287,6 +326,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         return next;
       });
       fetchBatches();
+      if (showRemovals) loadRemovals();
     } catch (err) {
       toast({
         title: "Could not delete that session",
@@ -399,6 +439,62 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         </Alert>
       )}
 
+      {/* Everything taken off a tally. Voids and restores sit alongside the
+          permanent deletions on purpose: a trail showing only removals, and
+          not the ones that were undone, overstates what actually left. */}
+      <Box mb={5}>
+        <Flex align="baseline" gap={2} wrap="wrap">
+          <Button size="xs" variant="ghost" colorScheme="gray"
+            onClick={() => {
+              const next = !showRemovals;
+              setShowRemovals(next);
+              if (next && removals === null) loadRemovals();
+            }}>
+            {showRemovals ? "Hide removal history" : "Removal history"}
+          </Button>
+          {showRemovals && (
+            <Button size="xs" variant="link" colorScheme="blue" onClick={loadRemovals}>
+              Refresh
+            </Button>
+          )}
+        </Flex>
+
+        {showRemovals && (
+          <Box mt={2} borderWidth="1px" borderColor="gray.200" borderRadius="md"
+            overflow="hidden" maxH="260px" overflowY="auto">
+            {removals === null ? (
+              <Flex justify="center" py={4}><Spinner size="sm" color="blue.500" /></Flex>
+            ) : removals.length === 0 ? (
+              <Text fontSize="sm" color="gray.500" p={3}>
+                Nothing has been removed yet. From here on, every void, erased box
+                and deleted session is recorded.
+              </Text>
+            ) : (
+              removals.map((r, i) => (
+                <Flex key={r.id} px={3} py={2} gap={3} align="baseline" wrap="wrap"
+                  bg={i % 2 ? "gray.50" : "white"}
+                  borderBottom="1px solid" borderColor="gray.100">
+                  <Badge fontSize="9px" colorScheme={REMOVAL_COLOR[r.action] || "gray"}>
+                    {REMOVAL_LABEL[r.action] || r.action}
+                  </Badge>
+                  {r.lot_number && (
+                    <Text fontSize="sm" fontWeight="600" color="gray.700">{r.lot_number}</Text>
+                  )}
+                  <Text fontSize="sm" color="gray.700">{r.summary}</Text>
+                  {r.reason && (
+                    <Text fontSize="xs" color="gray.500" fontStyle="italic">“{r.reason}”</Text>
+                  )}
+                  <Text fontSize="xs" color="gray.500" ml="auto" whiteSpace="nowrap">
+                    {r.performed_by ? `${r.performed_by} · ` : ""}
+                    {new Date(r.created_at).toLocaleString()}
+                  </Text>
+                </Flex>
+              ))
+            )}
+          </Box>
+        )}
+      </Box>
+
       {/* Saved merges. Each one is a reference to its sessions, so reprinting
           picks up any correction made since — it is not a frozen copy. */}
       {groups.length > 0 && (
@@ -433,7 +529,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                   </Button>
                   {isAdmin && (
                     <Button size="xs" variant="ghost" colorScheme="red"
-                      onClick={() => deleteGroup(g)}>
+                      onClick={() => setConfirmDeleteGroup(g)}>
                       Remove
                     </Button>
                   )}
@@ -692,6 +788,54 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
               </Button>
               <Button colorScheme="red" onClick={deleteBatch} isLoading={deletingBatch}>
                 Delete session
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
+
+      {/* Removing a merged manifest destroys a saved form somebody may have
+          printed and filed. The sessions survive, and the dialog says so, since
+          that is the thing a person is actually worried about here. */}
+      <AlertDialog
+        isOpen={Boolean(confirmDeleteGroup)}
+        leastDestructiveRef={cancelDeleteGroupRef}
+        onClose={() => setConfirmDeleteGroup(null)}
+        isCentered
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Remove this merged manifest?
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              {confirmDeleteGroup && (
+                <>
+                  <Text fontSize="sm" mb={3}>
+                    The merged form goes. The weighing sessions it covered, and every
+                    box in them, are left untouched — only the grouping is removed.
+                  </Text>
+                  <Box px={3} py={2} bg="gray.50" borderRadius="md"
+                    border="1px solid" borderColor="gray.200">
+                    <Text fontSize="sm" fontWeight="bold" color="red.800">
+                      {confirmDeleteGroup.name || confirmDeleteGroup.lot_number
+                        || `Manifest ${confirmDeleteGroup.group_id}`}
+                    </Text>
+                    <Text fontSize="sm" color="gray.700" mt={1}>
+                      {confirmDeleteGroup.session_count} session
+                      {confirmDeleteGroup.session_count === 1 ? "" : "s"}
+                      {" · "}{confirmDeleteGroup.box_count} boxes
+                    </Text>
+                  </Box>
+                </>
+              )}
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelDeleteGroupRef} onClick={() => setConfirmDeleteGroup(null)}>
+                Go back
+              </Button>
+              <Button colorScheme="red" onClick={() => deleteGroup(confirmDeleteGroup)}>
+                Remove manifest
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>
