@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Box, Flex, Text, Badge, IconButton, Tooltip } from "@chakra-ui/react";
-import { EditIcon, DeleteIcon, RepeatIcon } from "@chakra-ui/icons";
+import {
+  Box, Flex, Text, Badge, IconButton, Tooltip, Button,
+  AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogContent, AlertDialogOverlay,
+} from "@chakra-ui/react";
+import { EditIcon, DeleteIcon, RepeatIcon, WarningTwoIcon } from "@chakra-ui/icons";
 import NumericKeypad from "./NumericKeypad";
 import { fmtDate } from "../../pages/noblesse/shared";
 
@@ -66,25 +70,45 @@ const ScanSheet = ({
   // Supplying these turns the grid editable. Left out, it renders exactly as
   // before — the manifest tab uses it read-only for non-admins.
   onEditWeight, onVoid, onRestore, busyId = null,
+  // Admin-only, and separate from onVoid on purpose: this one does not come
+  // back. Supplied only where an admin is actually looking at the grid.
+  onHardDelete,
 }) => {
   const endRef = useRef(null);
   const [editing, setEditing] = useState(null);   // localId being corrected
   const [draft, setDraft] = useState("");
+  const [draftUnit, setDraftUnit] = useState("LB");
+  const [confirmErase, setConfirmErase] = useState(null);   // row awaiting confirmation
+  const cancelEraseRef = useRef(null);
   const counted = scans.filter((s) => !NOT_A_BOX.has(s.status)).length;
   const skipped = scans.length - counted;
-  const editable = Boolean(onEditWeight || onVoid);
+  const editable = Boolean(onEditWeight || onVoid || onHardDelete);
   const cols = editable ? [...COLS, ACTIONS_COL] : COLS;
 
   const startEdit = (row) => {
     setEditing(row.localId);
     setDraft(weightOf(row));
+    // Stored weights are pounds, so that is where a correction starts — the
+    // operator switches to KG when the label they are holding says kilograms.
+    setDraftUnit("LB");
   };
 
   const commitEdit = async (row) => {
     const value = draft.trim();
-    if (!value || value === weightOf(row)) { setEditing(null); return; }
-    await onEditWeight(row, value);
+    // Re-typing the same pound figure is a no-op; the same number in kilograms
+    // is not, so the unit has to be part of that comparison.
+    if (!value || (value === weightOf(row) && draftUnit === "LB")) {
+      setEditing(null);
+      return;
+    }
+    await onEditWeight(row, value, draftUnit);
     setEditing(null);
+  };
+
+  const commitErase = async () => {
+    const row = confirmErase;
+    setConfirmErase(null);
+    if (row) await onHardDelete(row);
   };
 
   // Follow the newest row, the way a spreadsheet does as you fill it.
@@ -173,13 +197,22 @@ const ScanSheet = ({
                       <td style={{ ...cellStyle, textAlign: "center" }}>
                         <Flex gap={1} justify="center">
                           {voided ? (
-                            onRestore && (
-                              <Tooltip label="Put this box back on the tally">
-                                <IconButton aria-label="Restore" icon={<RepeatIcon />}
-                                  size="xs" variant="ghost" colorScheme="blue" isLoading={busy}
-                                  onClick={() => onRestore(s)} />
-                              </Tooltip>
-                            )
+                            <>
+                              {onRestore && (
+                                <Tooltip label="Put this box back on the tally">
+                                  <IconButton aria-label="Restore" icon={<RepeatIcon />}
+                                    size="xs" variant="ghost" colorScheme="blue" isLoading={busy}
+                                    onClick={() => onRestore(s)} />
+                                </Tooltip>
+                              )}
+                              {onHardDelete && (
+                                <Tooltip label="Erase this row completely — cannot be undone">
+                                  <IconButton aria-label="Erase" icon={<WarningTwoIcon />}
+                                    size="xs" variant="ghost" colorScheme="red" isLoading={busy}
+                                    onClick={() => setConfirmErase(s)} />
+                                </Tooltip>
+                              )}
+                            </>
                           ) : (
                             <>
                               {onEditWeight && (
@@ -194,6 +227,13 @@ const ScanSheet = ({
                                   <IconButton aria-label="Void" icon={<DeleteIcon />}
                                     size="xs" variant="ghost" colorScheme="red" isLoading={busy}
                                     onClick={() => onVoid(s)} />
+                                </Tooltip>
+                              )}
+                              {onHardDelete && (
+                                <Tooltip label="Erase this row completely — cannot be undone">
+                                  <IconButton aria-label="Erase" icon={<WarningTwoIcon />}
+                                    size="xs" variant="ghost" colorScheme="red" isLoading={busy}
+                                    onClick={() => setConfirmErase(s)} />
                                 </Tooltip>
                               )}
                             </>
@@ -218,7 +258,8 @@ const ScanSheet = ({
                             onSubmit={() => commitEdit(s)}
                             onCancel={() => setEditing(null)}
                             label={`Correct box ${i + 1}`}
-                            unit={unitOf(s)}
+                            unit={draftUnit}
+                            onUnitChange={setDraftUnit}
                             submitLabel="Save weight"
                             isDisabled={busy}
                           />
@@ -265,6 +306,54 @@ const ScanSheet = ({
           )}
         </Flex>
       </Flex>
+
+      {/* Erasing is the one action here that destroys data, so it is confirmed.
+          leastDestructiveRef puts focus on "Go back" — this grid is on screen
+          while a scanner is connected, and a scanner types Enter. */}
+      <AlertDialog
+        isOpen={Boolean(confirmErase)}
+        leastDestructiveRef={cancelEraseRef}
+        onClose={() => setConfirmErase(null)}
+        isCentered
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Erase this row completely?
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              <Text fontSize="sm" mb={3}>
+                This removes the box and its record entirely. It cannot be undone,
+                and nothing will show that it was ever scanned.
+              </Text>
+              {confirmErase && (
+                <Box px={3} py={2} bg="gray.50" borderRadius="md"
+                  border="1px solid" borderColor="gray.200">
+                  <Text fontSize="sm" fontWeight="bold">
+                    {weightOf(confirmErase)} {unitOf(confirmErase)}
+                  </Text>
+                  <Text fontSize="xs" color="gray.600">
+                    {confirmErase.isManual
+                      ? "manual entry"
+                      : `serial ${confirmErase.serial || "unknown"}`}
+                  </Text>
+                </Box>
+              )}
+              <Text fontSize="sm" mt={3} color="gray.600">
+                To keep the record and just take it off the tally, void it instead.
+              </Text>
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelEraseRef} onClick={() => setConfirmErase(null)}>
+                Go back
+              </Button>
+              <Button colorScheme="red" onClick={commitErase}>
+                Erase permanently
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </Box>
   );
 };

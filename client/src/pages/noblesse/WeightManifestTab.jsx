@@ -168,13 +168,21 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
     if (batch.status !== "open" && !isAdmin) return {};
     const base = `/box-batches/${batch.batch_id}/items`;
     return {
+      // The unit goes up as the operator typed it; the server converts it
+      // itself rather than trusting a client-converted figure.
       onEditWeight: rowAction(batch,
-        (row, weight) => axiosInstance.patch(`${base}/${row.localId}`,
-          { weight, weightUnit: "LB" }), "Weight corrected"),
+        (row, weight, weightUnit = "LB") => axiosInstance.patch(`${base}/${row.localId}`,
+          { weight, weightUnit }), "Weight corrected"),
       onVoid: rowAction(batch,
         (row) => axiosInstance.delete(`${base}/${row.localId}`), "Box taken off the tally"),
       onRestore: rowAction(batch,
         (row) => axiosInstance.post(`${base}/${row.localId}/restore`), "Box put back"),
+      // Erasing destroys the record, so it is admin-only regardless of whether
+      // the session is still open. Gated server-side too.
+      ...(isAdmin ? {
+        onHardDelete: rowAction(batch,
+          (row) => axiosInstance.delete(`${base}/${row.localId}/permanent`), "Row erased"),
+      } : {}),
     };
   };
 

@@ -161,22 +161,33 @@ const createScanQueue = ({
   // call fails, the local copy is left alone, so the grid never shows a figure
   // the database does not hold. patchServer is injected by the caller because
   // this module deliberately knows nothing about HTTP.
-  const editScan = async (localId, newWeight, { patchServer } = {}) => {
+  const editScan = async (localId, newWeight, { unit = "LB", patchServer } = {}) => {
     const rows = await backend.listAll();
     const row = rows.find((r) => r.localId === localId);
     if (!row) return { edited: false, reason: "not-found" };
 
-    const asLb = toPounds(newWeight, "LB");
+    // The operator types the figure in whatever unit the label carries; it is
+    // converted here so the grid and the manifest stay in pounds. Making them
+    // convert 34.5 kg in their head is how a wrong weight reaches a manifest.
+    const asLb = toPounds(newWeight, unit);
     const before = displayOf(row);
-    if (asLb.weight === before) return { edited: false, reason: "unchanged" };
+    if (asLb.weight === before && !asLb.convertedFrom) {
+      return { edited: false, reason: "unchanged" };
+    }
 
-    if (row.serverItemId && patchServer) await patchServer(row.serverItemId, asLb.weight);
+    // The server is told the unit too, and does its own conversion — the client
+    // is not trusted to have converted correctly.
+    if (row.serverItemId && patchServer) {
+      await patchServer(row.serverItemId, newWeight, unit);
+    }
 
     const patched = await backend.patchScan(localId, {
       displayWeight: asLb.weight,
       weight: asLb.weight,
       weightUnit: "LB",
-      convertedFrom: null,
+      // Kept so the row can say on its face that the figure came off a
+      // kilogram label, and cleared when a correction moves it back to pounds.
+      convertedFrom: asLb.convertedFrom,
       // What the label originally said, captured once so a second correction
       // does not overwrite it with the first correction.
       originalWeight: row.originalWeight || before,
@@ -218,6 +229,28 @@ const createScanQueue = ({
       await bumpStats(displayOf(row), STORED_UNIT, -1);
     }
     return { voided: true, record: patched };
+  };
+
+  // Erase a row outright. Voiding is the normal path and keeps the audit trail;
+  // this is for a row that should never have existed — a test scan, a box from
+  // another lot. The server gates it to admins; this only carries it out.
+  const deleteScan = async (localId, { deleteServer } = {}) => {
+    const rows = await backend.listAll();
+    const row = rows.find((r) => r.localId === localId);
+    if (!row) return { deleted: false, reason: "not-found" };
+
+    // Server first: if it refuses, the local copy stays, so the grid never
+    // hides a box the database still holds.
+    if (row.serverItemId && deleteServer) await deleteServer(row.serverItemId);
+
+    await backend.deleteScans([localId]);
+    // Only back the weight out if it was still counting. A voided, duplicate or
+    // rejected row was already excluded, and subtracting again would understate
+    // the shipment.
+    if (!["voided", "duplicate", "rejected"].includes(row.status)) {
+      await bumpStats(displayOf(row), STORED_UNIT, -1);
+    }
+    return { deleted: true, record: row };
   };
 
   const getStats = async () => {
@@ -369,6 +402,7 @@ const createScanQueue = ({
     undoLast,
     editScan,
     voidScan,
+    deleteScan,
     getStats,
     listSession,
     clearSession,

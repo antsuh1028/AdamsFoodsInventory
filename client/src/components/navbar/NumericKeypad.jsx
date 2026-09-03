@@ -1,5 +1,6 @@
 import React from "react";
-import { Box, Button, Flex, Text, SimpleGrid } from "@chakra-ui/react";
+import { Box, Button, Flex, Text, SimpleGrid, ButtonGroup } from "@chakra-ui/react";
+import { kgToLb } from "../../utils/weight";
 
 // An on-screen keypad drawn in the page, not summoned from the OS.
 //
@@ -26,6 +27,10 @@ const NumericKeypad = ({
   onCancel,
   label = "Weight",
   unit = "LB",
+  // Supplying this turns the unit into a control. A box labelled in kilograms
+  // has to be enterable as kilograms — making the operator convert 34.5 kg in
+  // their head is how a wrong weight ends up on a manifest.
+  onUnitChange,
   submitLabel = "Save",
   isDisabled = false,
 }) => {
@@ -43,11 +48,30 @@ const NumericKeypad = ({
 
   return (
     <Box p={3} bg="white" borderRadius="md" border="1px solid" borderColor="gray.300">
-      <Flex justify="space-between" align="baseline" mb={2}>
+      <Flex justify="space-between" align="center" mb={2} gap={2}>
         <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
           {label}
         </Text>
-        <Text fontSize="xs" color="gray.400">{unit}</Text>
+        {onUnitChange ? (
+          <ButtonGroup size="xs" isAttached variant="outline">
+            {["LB", "KG"].map((u) => (
+              <Button
+                key={u}
+                onClick={() => onUnitChange(u)}
+                isDisabled={isDisabled}
+                colorScheme={unit === u ? "blue" : "gray"}
+                variant={unit === u ? "solid" : "outline"}
+                onMouseDown={(e) => e.preventDefault()}
+                tabIndex={-1}
+                px={3}
+              >
+                {u}
+              </Button>
+            ))}
+          </ButtonGroup>
+        ) : (
+          <Text fontSize="xs" color="gray.400">{unit}</Text>
+        )}
       </Flex>
 
       {/* The readout is a div, not an input: focusing an input is what makes
@@ -82,6 +106,14 @@ const NumericKeypad = ({
           </Button>
         ))}
       </SimpleGrid>
+
+      {/* Said plainly, because the number the operator types is not the number
+          that gets stored — and the manifest is in pounds either way. */}
+      {unit === "KG" && valid && (
+        <Text fontSize="xs" color="purple.600" mb={2} textAlign="right">
+          Stored as {kgToLb(value)} LB
+        </Text>
+      )}
 
       <Flex gap={2}>
         {onCancel && (

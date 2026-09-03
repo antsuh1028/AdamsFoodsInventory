@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Input, Select, Divider,
+  Box, Flex, Text, Button, Badge, Input, Divider,
   Alert, AlertIcon, Stat, StatLabel, StatNumber, StatHelpText, useToast,
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
   AlertDialogContent, AlertDialogOverlay,
@@ -12,6 +12,7 @@ import { parseGs1 } from "../../utils/gs1";
 import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import ScanSheet from "./ScanSheet";
 import NumericKeypad from "./NumericKeypad";
+import getRole from "../../utils/getRole";
 import { lotNumberForDate, today, fmtDate } from "../../pages/noblesse/shared";
 import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 
@@ -41,10 +42,21 @@ const StatCard = ({ label, value, help, color = "gray.800", size = "3xl" }) => (
   </Stat>
 );
 
-const ManualEntry = ({ onAdd, disabled }) => {
+// The keypad panel: a permanent part of an open session, not something to go
+// looking for. Most boxes are scanned, but a damaged or unbarcoded label has to
+// be typed, and on the iPad that is only possible here — a paired Bluetooth
+// scanner is an HID keyboard, so iPadOS suppresses its own on-screen keyboard.
+//
+// Nothing on this panel is focusable by default. That is deliberate: the global
+// keydown handler below ignores keystrokes whose target is an INPUT, TEXTAREA or
+// SELECT, so any field left focused here would silently swallow scans instead of
+// recording them. The unit lives on the keypad as buttons, and the note — which
+// needs a real keyboard and so is desktop-only in practice — stays collapsed.
+const KeypadPanel = ({ onAdd, disabled }) => {
   const [weight, setWeight] = useState("");
   const [unit, setUnit] = useState("LB");
   const [note, setNote] = useState("");
+  const [showNote, setShowNote] = useState(false);
 
   const valid = /^\d{1,5}(\.\d{1,3})?$/.test(weight) && parseFloat(weight) > 0;
 
@@ -53,19 +65,23 @@ const ManualEntry = ({ onAdd, disabled }) => {
     await onAdd({ weight, weightUnit: unit, isManual: true, note });
     setWeight("");
     setNote("");
+    setShowNote(false);
   };
 
   return (
     <Box p={3} bg="orange.50" borderRadius="md" border="1px solid" borderColor="orange.200">
-      <Text fontSize="sm" fontWeight="bold" color="orange.800" mb={2}>
-        Manual entry — damaged or unbarcoded label
-      </Text>
+      <Flex justify="space-between" align="baseline" mb={2} gap={2} wrap="wrap">
+        <Text fontSize="sm" fontWeight="bold" color="orange.800">
+          Type a weight — damaged or unbarcoded label
+        </Text>
+        <Button size="xs" variant="ghost" colorScheme="orange" tabIndex={-1}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setShowNote((v) => !v)}>
+          {showNote ? "Hide note" : "Add note"}
+        </Button>
+      </Flex>
+
       <Flex gap={3} wrap="wrap" align="flex-start">
-        {/* The weight is entered on a keypad drawn in the page rather than a
-            text input. A paired Bluetooth scanner is an HID keyboard, and
-            iPadOS suppresses the on-screen keyboard whenever one is connected —
-            so an <input> here is untypable without unpairing the scanner the
-            operator is holding. */}
         <Box flex="0 0 240px" maxW="100%">
           <NumericKeypad
             value={weight}
@@ -73,31 +89,31 @@ const ManualEntry = ({ onAdd, disabled }) => {
             onSubmit={submit}
             label="Weight"
             unit={unit}
+            onUnitChange={setUnit}
             submitLabel="Add box"
             isDisabled={disabled}
           />
         </Box>
 
-        <Flex direction="column" gap={2} flex="1 1 200px">
-          <Box>
-            <Text fontSize="xs" color="gray.600" mb={1}>Unit</Text>
-            <Select size={{ base: "md", md: "lg" }} value={unit}
-              onChange={(e) => setUnit(e.target.value)}>
-              <option value="LB">LB</option>
-              <option value="KG">KG</option>
-            </Select>
-            {unit === "KG" && (
-              <Text fontSize="xs" color="purple.600" mt={1}>
-                Stored in pounds — converted on save.
+        <Box flex="1 1 200px">
+          {showNote ? (
+            <>
+              <Text fontSize="xs" color="gray.600" mb={1}>Note (optional)</Text>
+              <Input {...rawInputProps} size={{ base: "md", md: "lg" }} placeholder="torn label"
+                value={note} onChange={(e) => setNote(e.target.value)} />
+              {/* Said out loud because the consequence is silent: a focused
+                  field takes the scanner's keystrokes instead of the session. */}
+              <Text fontSize="xs" color="orange.700" mt={1}>
+                Scans are not recorded while this field has focus. Hide it before
+                scanning again.
               </Text>
-            )}
-          </Box>
-          <Box>
-            <Text fontSize="xs" color="gray.600" mb={1}>Note (optional)</Text>
-            <Input {...rawInputProps} size={{ base: "md", md: "lg" }} placeholder="torn label"
-              value={note} onChange={(e) => setNote(e.target.value)} />
-          </Box>
-        </Flex>
+            </>
+          ) : (
+            <Text fontSize="xs" color="gray.500">
+              Scan as usual — this stays open for the boxes that cannot be scanned.
+            </Text>
+          )}
+        </Box>
       </Flex>
     </Box>
   );
@@ -106,8 +122,12 @@ const ManualEntry = ({ onAdd, disabled }) => {
 const BoxScanner = ({ isOpen, onClose }) => {
   const {
     ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
-    start, resume, stop, flush, addScan, undoLast, editScan, voidScan,
+    start, resume, stop, flush, addScan, undoLast, editScan, voidScan, eraseScan,
   } = useScanSession();
+
+  // Erasing a row outright is admin-only. The server enforces it; this only
+  // decides whether to draw the control.
+  const isAdmin = getRole() === "admin";
 
   // One session is one lot, so the manifest produced at Stop covers exactly
   // these boxes. Defaults to today's lot; editable before the session opens.
@@ -125,7 +145,10 @@ const BoxScanner = ({ isOpen, onClose }) => {
   const cancelStartRef = useRef(null);
   const [rejection, setRejection] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [showManual, setShowManual] = useState(false);
+  // Open by default: the keypad is part of the session, not something to go
+  // hunting for when a torn label turns up mid-pallet. Collapsible because the
+  // scan grid is the primary readout and sometimes wants the room.
+  const [showManual, setShowManual] = useState(true);
   const [rowBusy, setRowBusy] = useState(null);
   const toast = useToast();
   const assemblerRef = useRef(null);
@@ -286,7 +309,7 @@ const BoxScanner = ({ isOpen, onClose }) => {
         <Flex gap={2} width="100%" justify="space-between" wrap="wrap">
           <Button size={{ base: "sm", md: "lg" }} variant="outline" onClick={() => setShowManual((v) => !v)}
             isDisabled={!session}>
-            {showManual ? "Hide manual entry" : "Manual entry"}
+            {showManual ? "Hide keypad" : "Show keypad"}
           </Button>
           <Flex gap={2} wrap="wrap">
             <Button size={{ base: "sm", md: "lg" }} variant="outline" colorScheme="blue"
@@ -405,10 +428,14 @@ const BoxScanner = ({ isOpen, onClose }) => {
         totals={stats.totals}
         busyId={rowBusy}
         onEditWeight={session
-          ? onRowChange((row, weight) => editScan(row.localId, weight), "Weight corrected")
+          ? onRowChange((row, weight, unit) => editScan(row.localId, weight, unit),
+              "Weight corrected")
           : undefined}
         onVoid={session
           ? onRowChange((row) => voidScan(row.localId), "Box taken off the tally")
+          : undefined}
+        onHardDelete={session && isAdmin
+          ? onRowChange((row) => eraseScan(row.localId), "Row erased")
           : undefined}
       />
 
@@ -435,7 +462,7 @@ const BoxScanner = ({ isOpen, onClose }) => {
             <Text fontSize="sm">{rejection.reason}</Text>
             {rejection.code === "NO_WEIGHT_AI" && (
               <Text fontSize="sm" mt={1}>
-                Use manual entry for this box.
+                Type this box's weight on the keypad below.
               </Text>
             )}
           </Box>
@@ -457,7 +484,8 @@ const BoxScanner = ({ isOpen, onClose }) => {
         <Box p={4} bg="gray.50" borderRadius="md" border="1px dashed" borderColor="gray.300" mb={3}>
           <Text fontSize="sm" color="gray.600">
             Press <strong>Start session</strong> to open a batch, then scan each box.
-            Weights are read from the barcode — nothing is typed.
+            Weights are read from the barcode; a keypad opens with the session for
+            the labels that cannot be scanned.
           </Text>
         </Box>
       )}
@@ -465,7 +493,7 @@ const BoxScanner = ({ isOpen, onClose }) => {
       {showManual && session && (
         <>
           <Divider my={3} />
-          <ManualEntry onAdd={onManualAdd} disabled={busy} />
+          <KeypadPanel onAdd={onManualAdd} disabled={busy} />
         </>
       )}
 

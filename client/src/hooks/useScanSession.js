@@ -17,12 +17,19 @@ const api = {
     axiosInstance.post(`/box-batches/${batchId}/items`, { items }).then((r) => r.data),
   closeBatch: (batchId) =>
     axiosInstance.post(`/box-batches/${batchId}/close`).then((r) => r.data),
-  patchItem: (batchId, itemId, weight) =>
+  // The unit goes up as typed; the server converts it itself rather than
+  // trusting a figure the client already converted.
+  patchItem: (batchId, itemId, weight, weightUnit = "LB") =>
     axiosInstance.patch(`/box-batches/${batchId}/items/${itemId}`,
-      { weight, weightUnit: "LB" }).then((r) => r.data),
+      { weight, weightUnit }).then((r) => r.data),
   voidItem: (batchId, itemId, reason) =>
     axiosInstance.delete(`/box-batches/${batchId}/items/${itemId}`,
       { data: { reason } }).then((r) => r.data),
+  // Separate path from voidItem, admin-gated server-side. The row does not
+  // come back, so it must not be reachable by a replayed void request.
+  eraseItem: (batchId, itemId) =>
+    axiosInstance.delete(`/box-batches/${batchId}/items/${itemId}/permanent`)
+      .then((r) => r.data),
 };
 
 const newUuid = () =>
@@ -146,11 +153,13 @@ export const useScanSession = () => {
   // Correcting a row that has already reached the server goes through the
   // server first; scanQueue leaves the local copy alone if that call fails, so
   // the grid never shows a weight the database does not hold.
-  const editScan = useCallback(async (localId, weight) => {
+  const editScan = useCallback(async (localId, weight, unit = "LB") => {
     if (!queueRef.current) return { edited: false, reason: "not-ready" };
     const batchId = session?.batchId;
     const result = await queueRef.current.editScan(localId, weight, {
-      patchServer: (itemId, value) => api.patchItem(batchId, itemId, value),
+      unit,
+      patchServer: (itemId, value, valueUnit) =>
+        api.patchItem(batchId, itemId, value, valueUnit),
     });
     await refreshPending();
     return result;
@@ -162,6 +171,19 @@ export const useScanSession = () => {
     const result = await queueRef.current.voidScan(localId, {
       voidServer: (itemId, why) => api.voidItem(batchId, itemId, why),
       reason,
+    });
+    await refreshPending();
+    return result;
+  }, [session, refreshPending]);
+
+  // Admin-only escape hatch for a row that should never have existed. The
+  // server enforces the role; if it refuses, scanQueue leaves the local copy
+  // alone so the grid never hides a box the database still holds.
+  const eraseScan = useCallback(async (localId) => {
+    if (!queueRef.current) return { deleted: false, reason: "not-ready" };
+    const batchId = session?.batchId;
+    const result = await queueRef.current.deleteScan(localId, {
+      deleteServer: (itemId) => api.eraseItem(batchId, itemId),
     });
     await refreshPending();
     return result;
@@ -216,7 +238,7 @@ export const useScanSession = () => {
 
   return {
     ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
-    start, resume, stop, flush, addScan, undoLast, editScan, voidScan,
+    start, resume, stop, flush, addScan, undoLast, editScan, voidScan, eraseScan,
   };
 };
 
