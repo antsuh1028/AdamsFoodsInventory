@@ -1,61 +1,57 @@
 # CLAUDE.md — working context
 
-> ## ⏸ PAUSED MID-TASK — read this first (2026-09-02)
+> ## Branch `box-weighing-v2` — built, tested, NOT deployed (2026-09-02)
 >
-> Branch **`box-weighing-v2`** holds finished, committed, unreleased work.
-> **`master` = `dd13b58` = what production is actually running.** Don't deploy
-> `box-weighing-v2` without being asked.
+> **`master` = `dd13b58` = what production runs.** This branch is four commits
+> ahead and has never been deployed. Don't deploy it without being asked.
 >
-> ### Done and committed (`a5444cd`)
-> **KG→LB conversion.** Every weight is now stored and printed in pounds.
-> - `server/utils/weight.js` + byte-identical mirror `client/src/utils/weight.js`
->   (a test enforces the mirror, exactly like `gs1.js`). Exact integer-ratio
->   conversion in BigInt; carries a `/* global BigInt */` directive because CRA's
->   linter otherwise fails the build on the mirrored copy.
-> - Conversion happens **server-side, after the barcode check** in `validateItem`.
->   It cannot move to the client: the server re-derives the weight from
+> All four requested features are complete. Suite **449 pass / 6 pre-existing
+> fail**; client builds clean.
+>
+> **1. KG→LB conversion.** Every weight is stored and printed in pounds.
+> `server/utils/weight.js` + byte-identical mirror `client/src/utils/weight.js`
+> (a test enforces the mirror; carries `/* global BigInt */` or CRA's linter
+> fails the build). Exact integer-ratio conversion in BigInt.
+> - Converts **server-side, after the barcode check** in `validateItem`. It
+>   cannot move to the client — the server re-derives the weight from
 >   `raw_barcode`, so a pre-converted client weight is rejected as `UNIT_MISMATCH`.
-> - New column `batch_items.converted_from` (provenance only, not a second
->   weight — the KG figure is recoverable from `raw_barcode`).
-> - `scanQueue` keeps two weights per row: `weight`/`weightUnit` as scanned (what
->   goes on the wire) and `displayWeight` in LB (what the grid, totals and
->   manifest show). Don't collapse these.
 > - **Per-box conversion, then sum** — never sum-then-convert. On a 7-box sample
->   the two disagree by 0.001 lb, which leaves a manifest whose column does not
->   add up to its own total. `weight.test.js` pins this with real figures.
+>   the two disagree by 0.001 lb, leaving a manifest whose column does not add up
+>   to its own total. `weight.test.js` pins this with real figures.
+> - `scanQueue` keeps two weights per row: `weight`/`weightUnit` as scanned (goes
+>   on the wire) and `displayWeight` in LB (grid, totals, manifest). Don't
+>   collapse these.
 >
-> ### Still to build — all four agreed with the user, none started
-> 1. **Row editing.** Delete/void any row (even synced) and edit a weight, with an
->    audit trail: flag the row as adjusted and retain the original barcode weight.
->    Needs `PATCH` + `DELETE /box-batches/:id/items/:itemId`. **Admins must be able
->    to edit and delete rows on already-stored batches, not just live ones** — gate
->    with `requireRole("admin")` server-side, per §8 (a client-side check is not a
->    control). Prefer a soft void so the audit survives.
-> 2. **Merged manifests.** A *saved, reopenable* group — tick several sessions,
->    name it, reprint later and get the identical form. New tables
->    (`manifest_groups` + a join table), not a print-time-only selection.
-> 3. **In-app numeric keypad** for manual weight entry, so iPadOS never needs to
->    show its keyboard (a paired BT scanner is an HID keyboard and suppresses it).
->    Inputs go `readOnly` and the keypad drives them.
-> 4. The tally-sheet **date is still discarded** on import — see §4 Known gap.
+> **2. Row editing** — `PATCH` / `DELETE` / `POST .../restore` on one row.
+> - Deleting is a **soft void**: voided rows stay visible, struck through, and
+>   are excluded from every count, total and printed manifest.
+> - Corrections keep the label's figure in `original_weight`, captured with
+>   `COALESCE` so a second edit cannot overwrite the original with the first edit.
+> - **Operator may correct an open session; a closed one is admin-only**, enforced
+>   server-side (mutation-tested).
+> - A corrected row that has **not yet synced** is detached from its barcode and
+>   sent as a manual entry. Keeping the barcode would not preserve verification —
+>   the server would reject the box as `WEIGHT_MISMATCH` and it would be lost.
+> - Synced rows keep their server id (`serverItemId`, set by `markSynced`), which
+>   is what makes mid-session correction of an already-sent box possible.
 >
-> ### State at the pause
-> Full suite **387 passed / 6 failed** (the same six pre-existing — see §7).
-> Client builds clean (523.3 kB). `server/scripts/tally-accuracy.js` is a local
-> gitignored script that re-parses all 55 workbooks in `2026/`; last run 55/55
-> with 55/55 checksum agreement.
+> **3. Merged manifests** — `manifest_groups` + `manifest_group_batches`.
+> A group stores **references, never copies**. Reprinting pulls fresh, so a
+> correction made after the merge appears on the next print.
 >
-> ### Two things the user raised that were NOT decided
-> - iPad keyboard: they should check whether their scanner has an *iOS keyboard
->   toggle* config barcode. That fixes typing device-wide, not just in this app.
-> - 11 of the 55 sheets have messy lot cells (`"P12 N26230-01"`, `"N26244-3"`).
->   The editable preview covers it; pre-filling from the filename would remove
->   most of the friction. Offered, not built.
-
-
-Orientation for a fresh session. The README covers the stack; this file covers
-what is **not** derivable from reading the code, plus the traps that have already
-cost real debugging time.
+> **4. In-app numeric keypad** (`NumericKeypad.jsx`) for manual entry and for
+> correcting a row. A paired BT scanner is an HID keyboard, so iPadOS suppresses
+> its own; the readout is a `div`, not an `input`, because focusing an input is
+> what triggers the OS keyboard. Buttons are `tabIndex={-1}` with
+> `onMouseDown` prevented so a scan's Enter cannot re-press the last button.
+>
+> ### Not done
+> - The tally-sheet **date is still discarded** on import — see §4 Known gap.
+> - iPad keyboard: the user should check whether their scanner has an *iOS
+>   keyboard toggle* config barcode — fixes typing device-wide, not just here.
+> - 11 of 55 sheets have messy lot cells (`"P12 N26230-01"`, `"N26244-3"`).
+>   Pre-filling from the filename would remove most of the friction. Offered,
+>   not built.
 
 ---
 
