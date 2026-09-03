@@ -206,12 +206,6 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         (row) => axiosInstance.delete(`${base}/${row.localId}`), "Box taken off the tally"),
       onRestore: rowAction(batch,
         (row) => axiosInstance.post(`${base}/${row.localId}/restore`), "Box put back"),
-      // Erasing destroys the record, so it is admin-only regardless of whether
-      // the session is still open. Gated server-side too.
-      ...(isAdmin ? {
-        onHardDelete: rowAction(batch,
-          (row) => axiosInstance.delete(`${base}/${row.localId}/permanent`), "Row erased"),
-      } : {}),
     };
   };
 

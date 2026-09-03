@@ -722,8 +722,9 @@ router.delete("/box-batches/:id/items/:itemId", verifyToken, scanLimiter, async 
   }
 });
 
-// Undo a void. Without this a mis-click is permanent, which would make voiding
-// more dangerous than the hard delete it replaced.
+// Undo a void. Without this a mis-click would be permanent, and voiding is the
+// only way to take a single box off a tally — deleting one outright is not
+// offered, because a voided row still says what happened.
 router.post("/box-batches/:id/items/:itemId/restore", verifyToken, scanLimiter, async (req, res) => {
   const { batchId, itemId } = rowIds(req);
   if (!Number.isInteger(batchId) || !Number.isInteger(itemId)) {
@@ -758,58 +759,6 @@ router.post("/box-batches/:id/items/:itemId/restore", verifyToken, scanLimiter, 
     return res.status(500).json({ error: "Internal Server Error" });
   }
 });
-
-// Erase a row outright. Voiding is the normal way to take a box off a tally and
-// keeps the audit trail; this is the escape hatch for a row that should never
-// have existed at all — a test scan, a box belonging to another lot — where
-// leaving a struck-through line on the manifest would confuse whoever reads it.
-//
-// Admin only, and admin ONLY: unlike voiding, an operator cannot do this even on
-// their own open session, because the row does not come back. It is a separate
-// path from DELETE .../items/:itemId rather than a flag on it, so a permanent
-// delete can never be the result of a mistyped or replayed void request.
-router.delete("/box-batches/:id/items/:itemId/permanent",
-  verifyToken, requireRole("admin"), scanLimiter, async (req, res) => {
-    const { batchId, itemId } = rowIds(req);
-    if (!Number.isInteger(batchId) || !Number.isInteger(itemId)) {
-      return res.status(400).json({ error: "Invalid id" });
-    }
-
-    try {
-      // Scoped to the batch AND the tenant, so an id guessed from another
-      // tenant's session cannot be erased.
-      // The whole row comes back, not just a few columns: once the DELETE runs
-      // this is the only copy of the box that will ever exist, and the audit
-      // entry has to carry it or the record is gone for good.
-      const gone = await pool.query(
-        `DELETE FROM batch_items
-          WHERE item_id = $1 AND batch_id = $2 AND tenant_id = $3
-        RETURNING *, weight::text AS weight`,
-        [itemId, batchId, req.tenantId]
-      );
-      if (!gone.rows.length) return res.status(404).json({ error: "Row not found" });
-
-      logBoxRemoval({
-        tenantId: req.tenantId, action: "item_deleted",
-        batchId, itemId,
-        summary: `Box of ${gone.rows[0].weight} ${gone.rows[0].weight_unit} erased permanently`,
-        details: gone.rows[0], performedBy: req.username || req.userId,
-      });
-
-      // Logged deliberately: this is the one operation in the box path that
-      // destroys data, and the serial is what a later reconciliation would
-      // otherwise have no way to account for.
-      console.warn(
-        `batch_items permanent delete: item ${itemId} (serial ${gone.rows[0].serial || "none"}) ` +
-        `from batch ${batchId} by user ${req.userId}`
-      );
-
-      return res.json({ deleted: true, itemId, row: gone.rows[0] });
-    } catch (err) {
-      console.error("permanent delete batch item:", err);
-      return res.status(500).json({ error: "Internal Server Error" });
-    }
-  });
 
 // Delete an entire weighing session and every box in it.
 //
