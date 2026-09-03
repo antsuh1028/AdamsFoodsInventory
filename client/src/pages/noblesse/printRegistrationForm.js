@@ -136,7 +136,8 @@ const printRegistrationForm = (form = {}) => {
 
             ${sectionHeader("Product Identification")}
             ${fullRow("Product Description", val(form.productDescription))}
-            ${row("Processing Type", val(form.processingType), "Original Weight (lbs)", wt(form.originalWeight))}
+            ${fullRow("Processing Type", val(form.processingType))}
+            ${row("Original Weight (lbs)", wt(form.originalWeight), "Total Quantity (c/s)", val(form.totalQuantity))}
             ${row("Spec.(##X##)", val(form.spec), "Brand", val(form.brand))}
             ${row("EST#", val(form.estNumber), "Grade", val(form.grade))}
             <tr><td colspan="4" class="separator"></td></tr>
@@ -146,7 +147,6 @@ const printRegistrationForm = (form = {}) => {
             ${row("Manifest/BL Attached?", checkbox(form.manifestBlAttached), "Process Report Attached?", checkbox(form.processReportAttached), { plain: true })}
 
             ${sectionHeader("Processing &amp; Yield")}
-            ${row("Total Quantity (c/s)", wt(form.totalQuantity), "", "")}
             ${processingRows}
             ${row("Actual Yield (%)", wt(form.actualYield) + (form.actualYield ? "%" : ""), "Temp", val(form.temp))}
 

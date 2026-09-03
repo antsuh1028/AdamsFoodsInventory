@@ -178,7 +178,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                 )}
               </Select>
             </SheetField>
-            <SheetField label="Original Weight (lbs)"><Input {...sheetInputProps} type="number" value={draft.originalWeight} onChange={set("originalWeight")} /></SheetField>
+            <SheetField label="Original Wt. (lbs)"><Input {...sheetInputProps} type="number" value={draft.originalWeight} onChange={set("originalWeight")} /></SheetField>
             <SheetField label="Total Quantity (c/s)"><Input {...sheetInputProps} value={draft.totalQuantity} onChange={set("totalQuantity")} /></SheetField>
             <SheetField label="Spec. ">
               <Flex gap={1} align="center">
