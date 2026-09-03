@@ -103,6 +103,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
   if (!draft) return null;
   const set = (key) => (e) => setDraft({ ...draft, [key]: e.target.value });
   const setCheck = (key) => (e) => setDraft({ ...draft, [key]: e.target.checked });
+  const remainingCases = calculateRemainingCases(draft);
 
   return (
     <FloatingWindow
@@ -338,7 +339,23 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                 </Text>
               </Box>
             </SheetField>
+            <SheetField label="Remaining (c/s)">
+              <Box {...sheetInputProps} bg="white" border="1px solid" borderColor="gray.200" py={1}>
+                {/* Shown in red when it goes negative rather than hidden or
+                    clamped: more cases processed than arrived means a figure
+                    somewhere is wrong, and that is worth seeing. */}
+                <Text
+                  fontSize="sm"
+                  fontWeight="medium"
+                  color={remainingCases !== null && remainingCases < 0 ? "red.600" : "gray.700"}
+                >
+                  {remainingCases === null ? "—" : remainingCases}
+                </Text>
+              </Box>
+            </SheetField>
+
             <SheetField label="Temp"><Input {...sheetInputProps} value={draft.temp} onChange={set("temp")} /></SheetField>
+            <Box gridColumn="3 / -1" />
 
             <SectionBar>Additional</SectionBar>
             <SheetField label="Remarks" full>
@@ -441,6 +458,25 @@ const calculateYield = (draft) => {
   if (totalProcessedWeight === 0) return null;
   const yield_ = (totalProcessedWeight / originalWeight * 100).toFixed(2);
   return yield_;
+};
+
+// Cases still to process: what arrived, less every case processed so far.
+//
+// total_quantity is a free-text column and sometimes carries wording rather
+// than a bare number, so anything that will not parse yields no figure at all
+// rather than a confidently wrong one.
+const calculateRemainingCases = (draft) => {
+  if (!draft) return null;
+  const total = parseFloat(draft.totalQuantity);
+  if (isNaN(total)) return null;
+
+  const processed = (Array.isArray(draft.processingDates) ? draft.processingDates : [])
+    .reduce((sum, pd) => {
+      const n = parseFloat(pd.cases);
+      return sum + (isNaN(n) ? 0 : n);
+    }, 0);
+
+  return total - processed;
 };
 
 export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = false, refreshSignal = 0 }) => {
