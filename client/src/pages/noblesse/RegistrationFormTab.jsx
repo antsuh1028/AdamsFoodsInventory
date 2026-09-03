@@ -246,7 +246,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       reads as weight / cases / date rather than one long strip.
                       Every other field on the sheet is a lone input filling its
                       cell, which is why only this row needs it. */}
-                  <Flex gap={3} align="center" px={2} py={1}>
+                  <Flex gap={5} align="center" px={3} py={1.5}>
                     <Input
                       {...sheetInputProps}
                       bg="white"
