@@ -1203,6 +1203,15 @@ router.delete("/noblesse-registration-forms/:id", verifyToken, requireRole("admi
     if (!formRes.rows.length) return res.status(404).json({ error: "Not found" });
     const deletedForm = fmtRegistrationForm(formRes.rows[0]);
 
+    // Clear any links to weighing sessions first. That table deliberately has
+    // no foreign key to this one (see the migration in boxes.pg.js), so nothing
+    // cleans up after it — leaving rows here would attach this form's id to
+    // whatever form later reuses it.
+    await pool.query(
+      `DELETE FROM registration_form_batches WHERE form_id = $1 AND tenant_id = $2`,
+      [req.params.id, req.tenantId]
+    ).catch((err) => console.error("clear form box links:", err.message));
+
     const result = await pool.query(
       `DELETE FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2 RETURNING id`,
       [req.params.id, req.tenantId]

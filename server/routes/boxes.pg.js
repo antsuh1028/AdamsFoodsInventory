@@ -148,6 +148,36 @@ const migrate = async () => {
       PRIMARY KEY (group_id, batch_id)
     )
   `);
+
+  // Weighing sessions feeding one registration form. A form records what came
+  // in; box weighing is how that number is actually measured, so this ties the
+  // two together instead of having someone read a total off a manifest and
+  // retype it.
+  //
+  // References, not a copy — the same reasoning as manifest groups. The form's
+  // own original_weight stays a stable record, and the live total is compared
+  // against it so a correction made after the fact shows up as a discrepancy
+  // rather than silently rewriting a filed form.
+  //
+  // No foreign key to noblesse_registration_forms on purpose: that table is
+  // created by noblesse.pg.js, which fires its migrations without awaiting
+  // them, so it is not guaranteed to exist when this runs. An FK would fail
+  // here and the table would be missing for the whole boot. Orphans are handled
+  // explicitly instead — deleting a form clears its links, and deleting a
+  // session is refused while a form still points at it.
+  await step("registration_form_batches", `
+    CREATE TABLE IF NOT EXISTS registration_form_batches (
+      form_id   INT NOT NULL,
+      batch_id  INT NOT NULL REFERENCES box_batches(batch_id),
+      tenant_id UUID NOT NULL REFERENCES tenants(id),
+      position  INT NOT NULL DEFAULT 0,
+      PRIMARY KEY (form_id, batch_id)
+    )
+  `);
+
+  await step("registration_form_batches index",
+    `CREATE INDEX IF NOT EXISTS registration_form_batches_form_idx
+       ON registration_form_batches (form_id)`);
 };
 
 migrate();
@@ -757,6 +787,27 @@ router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req,
       });
     }
 
+    // Same reasoning as the manifest-group check: a registration form pointing
+    // at this session records what came in, and deleting the boxes out from
+    // under it would leave its weight unaccounted for.
+    const inForms = await client.query(
+      `SELECT f.id, f.lot_number
+         FROM registration_form_batches r
+         JOIN noblesse_registration_forms f ON f.id = r.form_id
+        WHERE r.batch_id = $1 AND r.tenant_id = $2`,
+      [batchId, req.tenantId]
+    );
+    if (inForms.rows.length) {
+      await client.query("ROLLBACK");
+      const names = inForms.rows.map((f) => f.lot_number || `form ${f.id}`).join(", ");
+      return res.status(409).json({
+        code: "IN_REGISTRATION_FORM",
+        error: `This session is tied to a registration form (${names}). ` +
+               `Untie it there before deleting the session.`,
+        forms: inForms.rows,
+      });
+    }
+
     // Children first: batch_items references box_batches, and there is no
     // ON DELETE CASCADE on that constraint.
     const items = await client.query(
@@ -1219,6 +1270,140 @@ router.delete("/manifest-groups/:id", verifyToken, requireRole("admin"), async (
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
+
+// ── Box weights feeding a registration form ──────────────────────────────────
+// A registration form records what came in; box weighing is how that figure is
+// actually measured. These endpoints tie the two together so nobody reads a
+// total off a manifest and retypes it into a form.
+//
+// They live here rather than in noblesse.pg.js because the arithmetic does —
+// weightInLb, the voided-row exclusion and the per-box rounding all have to
+// match what the manifest prints, and duplicating that elsewhere is how the two
+// drift apart.
+
+// The live figure for a form: every box across its linked sessions, converted
+// and rounded exactly as the tally is, with voided rows excluded.
+const boxTotalsForForm = async (formId, tenantId) => {
+  const sessions = await pool.query(
+    `SELECT b.batch_id, b.lot_number, b.vendor, b.status, b.source, b.created_at,
+            (SELECT COUNT(*)::int FROM batch_items i
+              WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL) AS box_count,
+            COALESCE((SELECT SUM(${weightInLb("i")})::text FROM batch_items i
+              WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL), '0') AS total
+       FROM registration_form_batches r
+       JOIN box_batches b ON b.batch_id = r.batch_id
+      WHERE r.form_id = $1 AND r.tenant_id = $2
+      ORDER BY r.position, b.batch_id`,
+    [formId, tenantId]
+  );
+
+  const totals = await pool.query(
+    `SELECT COUNT(*)::int AS box_count,
+            COALESCE(SUM(${weightInLb("i")})::text, '0') AS total
+       FROM batch_items i
+       JOIN registration_form_batches r ON r.batch_id = i.batch_id
+      WHERE r.form_id = $1 AND r.tenant_id = $2 AND i.voided_at IS NULL`,
+    [formId, tenantId]
+  );
+
+  return {
+    sessions: sessions.rows,
+    boxCount: totals.rows[0] ? totals.rows[0].box_count : 0,
+    totalWeight: totals.rows[0] ? totals.rows[0].total : "0",
+    weightUnit: "LB",
+  };
+};
+
+router.get("/noblesse-registration-forms/:id/box-batches", verifyToken, async (req, res) => {
+  const formId = Number(req.params.id);
+  if (!Number.isInteger(formId)) return res.status(400).json({ error: "Invalid form id" });
+  try {
+    res.json(await boxTotalsForForm(formId, req.tenantId));
+  } catch (err) {
+    console.error("read form box batches:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Tie one or more weighing sessions to a form.
+router.post("/noblesse-registration-forms/:id/box-batches", verifyToken, async (req, res) => {
+  const formId = Number(req.params.id);
+  if (!Number.isInteger(formId)) return res.status(400).json({ error: "Invalid form id" });
+
+  const { batchIds } = req.body || {};
+  if (!Array.isArray(batchIds) || batchIds.length === 0) {
+    return res.status(400).json({ error: "batchIds must be a non-empty array" });
+  }
+  if (!batchIds.every((id) => Number.isInteger(id))) {
+    return res.status(400).json({ error: "batchIds must all be integers" });
+  }
+  const ids = [...new Set(batchIds)];
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const form = await client.query(
+      `SELECT id FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2`,
+      [formId, req.tenantId]
+    );
+    if (!form.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Registration form not found" });
+    }
+
+    // Counted rather than trusted, so a session id from another tenant cannot
+    // be attached to this form.
+    const owned = await client.query(
+      `SELECT batch_id FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2`,
+      [ids, req.tenantId]
+    );
+    if (owned.rows.length !== ids.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "One or more sessions were not found" });
+    }
+
+    // Re-linking an already-linked session is not an error — it is what a
+    // double tap produces, and the link is the same either way.
+    await client.query(
+      `INSERT INTO registration_form_batches (form_id, batch_id, tenant_id, position)
+       SELECT $1, b, $2, p FROM UNNEST($3::int[], $4::int[]) AS t(b, p)
+       ON CONFLICT (form_id, batch_id) DO NOTHING`,
+      [formId, req.tenantId, ids, ids.map((_, i) => i)]
+    );
+
+    await client.query("COMMIT");
+    return res.status(201).json(await boxTotalsForForm(formId, req.tenantId));
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("link form box batches:", err);
+    return res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
+  }
+});
+
+// Untie one session. The session and its boxes are untouched — only the link
+// goes, which is why this one is a plain delete.
+router.delete("/noblesse-registration-forms/:id/box-batches/:batchId",
+  verifyToken, async (req, res) => {
+    const formId = Number(req.params.id);
+    const batchId = Number(req.params.batchId);
+    if (!Number.isInteger(formId) || !Number.isInteger(batchId)) {
+      return res.status(400).json({ error: "Invalid id" });
+    }
+    try {
+      await pool.query(
+        `DELETE FROM registration_form_batches
+          WHERE form_id = $1 AND batch_id = $2 AND tenant_id = $3`,
+        [formId, batchId, req.tenantId]
+      );
+      res.json(await boxTotalsForForm(formId, req.tenantId));
+    } catch (err) {
+      console.error("unlink form box batch:", err);
+      res.status(500).json({ error: "Internal Server Error" });
+    }
+  });
 
 module.exports = router;
 module.exports.validateItem = validateItem;

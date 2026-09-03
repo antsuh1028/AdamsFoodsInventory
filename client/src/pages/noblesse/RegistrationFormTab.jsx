@@ -7,6 +7,7 @@ import { DeleteIcon, ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, Th, Td } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
+import BoxWeightLink from "./BoxWeightLink";
 import ntiLogo from "../../assets/nti.jpg";
 import FloatingWindow from "../../components/FloatingWindow";
 import AllFormsTable from "./AllFormsTable";
@@ -215,6 +216,19 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             <SheetField label="Process Report Attached?" plain>
               <Checkbox isChecked={draft.processReportAttached} onChange={setCheck("processReportAttached")} px={2} />
             </SheetField>
+
+            {/* Where the Original Weight actually comes from. Sits above the
+                yield section because it is the measured input both that and
+                Total Quantity are derived from. */}
+            <SectionBar>Box Weights</SectionBar>
+            <Box gridColumn="1 / -1" p={2}>
+              <BoxWeightLink
+                formId={draft.id}
+                lotNumber={draft.lotNumber}
+                draft={draft}
+                setDraft={setDraft}
+              />
+            </Box>
 
             <SectionBar>Processing &amp; Yield</SectionBar>
             <Box gridColumn="1 / -1" />
