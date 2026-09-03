@@ -1,13 +1,13 @@
 # CLAUDE.md — working context
 
-> ## Branch `box-weighing-v2` — built, tested, NOT deployed (2026-09-02)
+> ## Box weighing v2 — DEPLOYED to production (2026-09-03)
 >
-> **`master` = `dd13b58` = what production runs.** This branch is four commits
-> ahead and has never been deployed. Don't deploy it without being asked.
+> **`master` = `da604e2` = what production runs**, deployed and verified on
+> 2026-09-03. `box-weighing-v2` is merged into it; the branch still exists.
 >
-> All four requested features are complete, plus a later round (keypad in its
-> own window, unit on corrections, admin erase). Suite **462 pass / 6
-> pre-existing fail**; client builds clean.
+> Suite **456 pass / 6 pre-existing fail**. Verified live after deploy: new PID,
+> all four new tables present, `batch_items` audit columns present, no migration
+> errors, new client bundle served.
 >
 > **1. KG→LB conversion.** Every weight is stored and printed in pounds.
 > `server/utils/weight.js` + byte-identical mirror `client/src/utils/weight.js`
@@ -58,13 +58,21 @@
 > goes up as typed and the server converts, so the client stays untrusted.
 > Correcting back to LB clears `converted_from`.
 >
-> **6. Admin erase** — `DELETE .../items/:itemId/permanent`, `requireRole("admin")`,
-> mutation-tested. Deliberately a **separate route** from the void, so a replayed
-> or mistyped void can never destroy a box; the DELETE carries `tenant_id` so a
-> guessed id from another tenant misses. Voiding remains the default.
-> **Offered on the Weight Manifest screen only, not during a live session** — the
-> scanning operator is moving fast and has undo and void; erasing is deliberate
-> cleanup done afterwards.
+> **6. Deleting.** A whole session: `DELETE /box-batches/:id`, admin-only,
+> refuses while a merged manifest or a registration form still references it and
+> names what to detach. There is **no single-row erase** — void covers it,
+> reversibly and with a record; that route existed briefly and was removed.
+>
+> **7. Removal history** — `box_removal_history` records voided / restored /
+> session deleted / manifest removed. **No FKs to box tables**: an audit row must
+> outlive what it describes. `details` holds the destroyed row in full. Logging
+> never fails the request.
+>
+> **8. Box weights → registration form** — `registration_form_batches` ties
+> sessions to a form; the panel shows the live total and fills Original Weight /
+> Total Quantity. A reference, not a copy, so drift is shown rather than applied.
+> No FK to `noblesse_registration_forms` (that table is created by
+> `noblesse.pg.js`, which does not await its migrations).
 >
 > ### Not done
 > - The tally-sheet **date is still discarded** on import — see §4 Known gap.
@@ -97,11 +105,8 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 
 ## 2. Branch / deploy state
 
-- Working branch: `box-weighing-v2` (see the block at the top of this file).
-- **Production runs `master`.** Box weighing (scanning + tally import) was
-  deployed on 2026-09-02 as `dd13b58` and verified live. The KG conversion, row
-  editing, merged manifests and keypad are NOT deployed — they sit on
-  `box-weighing-v2`. Don't merge or deploy without being asked.
+- **Production runs `master` = `da604e2`**, deployed 2026-09-03 and verified.
+  Don't deploy without being asked.
 - Historical note: `master` once deliberately excluded box weighing and was built
   by removing barcode-only files rather than cherry-picking. `barcode-integration`
   is that now-merged branch.
