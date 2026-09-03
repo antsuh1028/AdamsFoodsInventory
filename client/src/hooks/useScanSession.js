@@ -17,6 +17,12 @@ const api = {
     axiosInstance.post(`/box-batches/${batchId}/items`, { items }).then((r) => r.data),
   closeBatch: (batchId) =>
     axiosInstance.post(`/box-batches/${batchId}/close`).then((r) => r.data),
+  patchItem: (batchId, itemId, weight) =>
+    axiosInstance.patch(`/box-batches/${batchId}/items/${itemId}`,
+      { weight, weightUnit: "LB" }).then((r) => r.data),
+  voidItem: (batchId, itemId, reason) =>
+    axiosInstance.delete(`/box-batches/${batchId}/items/${itemId}`,
+      { data: { reason } }).then((r) => r.data),
 };
 
 const newUuid = () =>
@@ -137,6 +143,30 @@ export const useScanSession = () => {
     return result;
   }, [refreshPending]);
 
+  // Correcting a row that has already reached the server goes through the
+  // server first; scanQueue leaves the local copy alone if that call fails, so
+  // the grid never shows a weight the database does not hold.
+  const editScan = useCallback(async (localId, weight) => {
+    if (!queueRef.current) return { edited: false, reason: "not-ready" };
+    const batchId = session?.batchId;
+    const result = await queueRef.current.editScan(localId, weight, {
+      patchServer: (itemId, value) => api.patchItem(batchId, itemId, value),
+    });
+    await refreshPending();
+    return result;
+  }, [session, refreshPending]);
+
+  const voidScan = useCallback(async (localId, reason) => {
+    if (!queueRef.current) return { voided: false, reason: "not-ready" };
+    const batchId = session?.batchId;
+    const result = await queueRef.current.voidScan(localId, {
+      voidServer: (itemId, why) => api.voidItem(batchId, itemId, why),
+      reason,
+    });
+    await refreshPending();
+    return result;
+  }, [session, refreshPending]);
+
   const stop = useCallback(async () => {
     if (!queueRef.current) return null;
     const result = await queueRef.current.stop();
@@ -186,7 +216,7 @@ export const useScanSession = () => {
 
   return {
     ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
-    start, resume, stop, flush, addScan, undoLast,
+    start, resume, stop, flush, addScan, undoLast, editScan, voidScan,
   };
 };
 

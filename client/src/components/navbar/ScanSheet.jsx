@@ -1,5 +1,7 @@
-import React, { useEffect, useRef } from "react";
-import { Box, Flex, Text, Badge } from "@chakra-ui/react";
+import React, { useEffect, useRef, useState } from "react";
+import { Box, Flex, Text, Badge, IconButton, Tooltip } from "@chakra-ui/react";
+import { EditIcon, DeleteIcon, RepeatIcon } from "@chakra-ui/icons";
+import NumericKeypad from "./NumericKeypad";
 import { fmtDate } from "../../pages/noblesse/shared";
 
 // The scanned weights as a spreadsheet: one row per box, filling downward as
@@ -18,6 +20,10 @@ const COLS = [
   { key: "time",     label: "Scanned",   w: "90px",  align: "center" },
   { key: "_status",  label: "Synced",    w: "90px",  align: "center" },
 ];
+
+// Only shown when the caller supplies handlers, so the read-only uses of this
+// grid stay exactly as they were.
+const ACTIONS_COL = { key: "_actions", label: "", w: "96px", align: "center" };
 
 const headStyle = {
   position: "sticky", top: 0, zIndex: 1,
@@ -39,11 +45,14 @@ const StatusCell = ({ status }) => {
   if (status === "rejected") return <Badge colorScheme="red" fontSize="10px">Rejected</Badge>;
   // Not counted: the server already held this box, so it is not a second one.
   if (status === "duplicate") return <Badge colorScheme="purple" fontSize="10px">Duplicate</Badge>;
+  // Taken off the tally on purpose. Still shown, because a soft void that hid
+  // the row would tell a reviewer nothing.
+  if (status === "voided") return <Badge colorScheme="gray" fontSize="10px">Voided</Badge>;
   if (status === "pending") return <Badge colorScheme="orange" fontSize="10px">Sending</Badge>;
   return <Badge colorScheme="green" fontSize="10px">Saved</Badge>;
 };
 
-const NOT_A_BOX = new Set(["duplicate", "rejected"]);
+const NOT_A_BOX = new Set(["duplicate", "rejected", "voided"]);
 
 // A live session row keeps the scanned weight and its converted twin; a row
 // read back from the server is already stored in pounds. The grid shows the
@@ -52,10 +61,31 @@ const NOT_A_BOX = new Set(["duplicate", "rejected"]);
 const weightOf = (s) => s.displayWeight || s.weight;
 const unitOf = (s) => (s.displayWeight ? "LB" : s.weightUnit);
 
-const ScanSheet = ({ scans = [], totals = [] }) => {
+const ScanSheet = ({
+  scans = [], totals = [],
+  // Supplying these turns the grid editable. Left out, it renders exactly as
+  // before — the manifest tab uses it read-only for non-admins.
+  onEditWeight, onVoid, onRestore, busyId = null,
+}) => {
   const endRef = useRef(null);
+  const [editing, setEditing] = useState(null);   // localId being corrected
+  const [draft, setDraft] = useState("");
   const counted = scans.filter((s) => !NOT_A_BOX.has(s.status)).length;
   const skipped = scans.length - counted;
+  const editable = Boolean(onEditWeight || onVoid);
+  const cols = editable ? [...COLS, ACTIONS_COL] : COLS;
+
+  const startEdit = (row) => {
+    setEditing(row.localId);
+    setDraft(weightOf(row));
+  };
+
+  const commitEdit = async (row) => {
+    const value = draft.trim();
+    if (!value || value === weightOf(row)) { setEditing(null); return; }
+    await onEditWeight(row, value);
+    setEditing(null);
+  };
 
   // Follow the newest row, the way a spreadsheet does as you fill it.
   useEffect(() => {
@@ -68,7 +98,7 @@ const ScanSheet = ({ scans = [], totals = [] }) => {
         <table style={{ width: "100%", minWidth: "820px", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              {COLS.map((c) => (
+              {cols.map((c) => (
                 <th key={c.key} style={{ ...headStyle, textAlign: c.align || "left", width: c.w }}>
                   {c.label}
                 </th>
@@ -78,7 +108,7 @@ const ScanSheet = ({ scans = [], totals = [] }) => {
           <tbody>
             {scans.length === 0 ? (
               <tr>
-                <td colSpan={COLS.length}
+                <td colSpan={cols.length}
                   style={{ ...cellStyle, textAlign: "center", color: "#A0AEC0", padding: "28px 10px" }}>
                   Scan a box to begin — weights appear here as you go.
                 </td>
@@ -87,15 +117,32 @@ const ScanSheet = ({ scans = [], totals = [] }) => {
               scans.map((s, i) => {
                 const rejected = s.status === "rejected";
                 const dup = s.status === "duplicate";
-                return (
+                const voided = s.status === "voided";
+                const struck = dup || voided;
+                const isEditing = editing === s.localId;
+                const busy = busyId === s.localId;
+                const rowEl = (
                   <tr key={s.localId ?? i}
-                    style={{ background: rejected ? "#FFF5F5" : dup ? "#FAF5FF" : i % 2 ? "#F7FAFC" : "white" }}>
+                    style={{ background: rejected ? "#FFF5F5" : dup ? "#FAF5FF"
+                      : voided ? "#F7F7F7" : i % 2 ? "#F7FAFC" : "white",
+                      opacity: voided ? 0.65 : 1 }}>
                     <td style={{ ...cellStyle, textAlign: "center", color: "#A0AEC0",
                       background: "#EDF2F7", fontSize: "13px" }}>{i + 1}</td>
                     <td style={{ ...cellStyle, textAlign: "right", fontWeight: 700,
-                      fontSize: "17px", color: rejected ? "#C53030" : dup ? "#805AD5" : "#1A365D",
-                      textDecoration: dup ? "line-through" : undefined }}>
+                      fontSize: "17px", color: rejected ? "#C53030" : dup ? "#805AD5"
+                        : voided ? "#718096" : "#1A365D",
+                      textDecoration: struck ? "line-through" : undefined }}>
                       {weightOf(s)}
+                      {/* What the label said, before someone corrected it. The
+                          point of keeping the original is that it stays visible. */}
+                      {s.originalWeight && s.originalWeight !== weightOf(s) && (
+                        <Tooltip label={`Scanned as ${s.originalWeight}, corrected by hand`}>
+                          <Text as="span" fontSize="11px" color="orange.500"
+                            fontWeight="400" ml={1} textDecoration="line-through">
+                            {s.originalWeight}
+                          </Text>
+                        </Tooltip>
+                      )}
                     </td>
                     <td style={{ ...cellStyle, textAlign: "center", color: "#718096" }}>
                       {unitOf(s)}
@@ -118,9 +165,68 @@ const ScanSheet = ({ scans = [], totals = [] }) => {
                     </td>
                     <td style={{ ...cellStyle, textAlign: "center" }}>
                       <StatusCell status={s.status} />
+                      {voided && s.voidReason && (
+                        <Text fontSize="10px" color="gray.500" mt={0.5}>{s.voidReason}</Text>
+                      )}
                     </td>
+                    {editable && (
+                      <td style={{ ...cellStyle, textAlign: "center" }}>
+                        <Flex gap={1} justify="center">
+                          {voided ? (
+                            onRestore && (
+                              <Tooltip label="Put this box back on the tally">
+                                <IconButton aria-label="Restore" icon={<RepeatIcon />}
+                                  size="xs" variant="ghost" colorScheme="blue" isLoading={busy}
+                                  onClick={() => onRestore(s)} />
+                              </Tooltip>
+                            )
+                          ) : (
+                            <>
+                              {onEditWeight && (
+                                <Tooltip label="Correct this weight">
+                                  <IconButton aria-label="Edit" icon={<EditIcon />}
+                                    size="xs" variant="ghost" isLoading={busy}
+                                    onClick={() => startEdit(s)} />
+                                </Tooltip>
+                              )}
+                              {onVoid && (
+                                <Tooltip label="Take this box off the tally">
+                                  <IconButton aria-label="Void" icon={<DeleteIcon />}
+                                    size="xs" variant="ghost" colorScheme="red" isLoading={busy}
+                                    onClick={() => onVoid(s)} />
+                                </Tooltip>
+                              )}
+                            </>
+                          )}
+                        </Flex>
+                      </td>
+                    )}
                   </tr>
                 );
+                return isEditing ? (
+                  <React.Fragment key={s.localId ?? i}>
+                    {rowEl}
+                    <tr>
+                      <td colSpan={cols.length} style={{ padding: 0, background: "#EBF8FF" }}>
+                        <Box p={3} maxW="320px">
+                          {/* Keyed in on a keypad drawn in the page: a paired
+                              scanner is an HID keyboard, so iPadOS will not
+                              show its own for a normal input. */}
+                          <NumericKeypad
+                            value={draft}
+                            onChange={setDraft}
+                            onSubmit={() => commitEdit(s)}
+                            onCancel={() => setEditing(null)}
+                            label={`Correct box ${i + 1}`}
+                            unit={unitOf(s)}
+                            submitLabel="Save weight"
+                            isDisabled={busy}
+                          />
+                        </Box>
+                      </td>
+                    </tr>
+                  </React.Fragment>
+                ) : rowEl;
               })
             )}
             <tr ref={endRef} />

@@ -35,9 +35,11 @@ const printWeightManifest = ({
   const win = window.open("", "_blank");
   if (!win) return;
 
-  // A rejected scan was never recorded and a duplicate is one box scanned
-  // twice; neither is product arriving, so neither belongs on a tally.
-  const boxes = scans.filter((s) => s.status !== "rejected" && s.status !== "duplicate");
+  // A rejected scan was never recorded, a duplicate is one box scanned twice,
+  // and a voided one was taken off the tally on purpose. None of the three is
+  // product arriving, so none belongs on the form.
+  const OFF_THE_TALLY = new Set(["rejected", "duplicate", "voided"]);
+  const boxes = scans.filter((s) => !OFF_THE_TALLY.has(s.status));
 
   // Everything on a manifest is pounds. A live session row carries the scanned
   // weight plus displayWeight, its converted twin; a row read back from the

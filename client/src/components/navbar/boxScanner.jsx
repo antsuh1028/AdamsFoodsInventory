@@ -11,6 +11,7 @@ import { createScanAssembler } from "../../utils/scanInput";
 import { parseGs1 } from "../../utils/gs1";
 import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import ScanSheet from "./ScanSheet";
+import NumericKeypad from "./NumericKeypad";
 import { lotNumberForDate, today, fmtDate } from "../../pages/noblesse/shared";
 import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 
@@ -59,32 +60,44 @@ const ManualEntry = ({ onAdd, disabled }) => {
       <Text fontSize="sm" fontWeight="bold" color="orange.800" mb={2}>
         Manual entry — damaged or unbarcoded label
       </Text>
-      <Flex gap={2} wrap="wrap" align="flex-end">
-        <Box flex="1 1 140px">
-          <Text fontSize="xs" color="gray.600" mb={1}>Weight</Text>
-          <Input
-            {...rawInputProps}
-            size={{ base: "md", md: "lg" }} inputMode="decimal" placeholder="76.20"
-            value={weight} onChange={(e) => setWeight(e.target.value)}
-            isInvalid={weight.length > 0 && !valid}
+      <Flex gap={3} wrap="wrap" align="flex-start">
+        {/* The weight is entered on a keypad drawn in the page rather than a
+            text input. A paired Bluetooth scanner is an HID keyboard, and
+            iPadOS suppresses the on-screen keyboard whenever one is connected —
+            so an <input> here is untypable without unpairing the scanner the
+            operator is holding. */}
+        <Box flex="0 0 240px" maxW="100%">
+          <NumericKeypad
+            value={weight}
+            onChange={setWeight}
+            onSubmit={submit}
+            label="Weight"
+            unit={unit}
+            submitLabel="Add box"
+            isDisabled={disabled}
           />
         </Box>
-        <Box flex="0 0 110px">
-          <Text fontSize="xs" color="gray.600" mb={1}>Unit</Text>
-          <Select size={{ base: "md", md: "lg" }} value={unit} onChange={(e) => setUnit(e.target.value)}>
-            <option value="LB">LB</option>
-            <option value="KG">KG</option>
-          </Select>
-        </Box>
-        <Box flex="2 1 200px">
-          <Text fontSize="xs" color="gray.600" mb={1}>Note (optional)</Text>
-          <Input {...rawInputProps} size={{ base: "md", md: "lg" }} placeholder="torn label"
-            value={note} onChange={(e) => setNote(e.target.value)} />
-        </Box>
-        <Button size={{ base: "md", md: "lg" }} colorScheme="orange" onClick={submit} flex={{ base: "1 1 100%", md: "0 0 auto" }}
-          isDisabled={!valid || disabled}>
-          Add
-        </Button>
+
+        <Flex direction="column" gap={2} flex="1 1 200px">
+          <Box>
+            <Text fontSize="xs" color="gray.600" mb={1}>Unit</Text>
+            <Select size={{ base: "md", md: "lg" }} value={unit}
+              onChange={(e) => setUnit(e.target.value)}>
+              <option value="LB">LB</option>
+              <option value="KG">KG</option>
+            </Select>
+            {unit === "KG" && (
+              <Text fontSize="xs" color="purple.600" mt={1}>
+                Stored in pounds — converted on save.
+              </Text>
+            )}
+          </Box>
+          <Box>
+            <Text fontSize="xs" color="gray.600" mb={1}>Note (optional)</Text>
+            <Input {...rawInputProps} size={{ base: "md", md: "lg" }} placeholder="torn label"
+              value={note} onChange={(e) => setNote(e.target.value)} />
+          </Box>
+        </Flex>
       </Flex>
     </Box>
   );
@@ -93,7 +106,7 @@ const ManualEntry = ({ onAdd, disabled }) => {
 const BoxScanner = ({ isOpen, onClose }) => {
   const {
     ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
-    start, resume, stop, flush, addScan, undoLast,
+    start, resume, stop, flush, addScan, undoLast, editScan, voidScan,
   } = useScanSession();
 
   // One session is one lot, so the manifest produced at Stop covers exactly
@@ -113,6 +126,7 @@ const BoxScanner = ({ isOpen, onClose }) => {
   const [rejection, setRejection] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showManual, setShowManual] = useState(false);
+  const [rowBusy, setRowBusy] = useState(null);
   const toast = useToast();
   const assemblerRef = useRef(null);
 
@@ -228,6 +242,24 @@ const BoxScanner = ({ isOpen, onClose }) => {
       toast({ title: "Nothing to undo",
         description: "Boxes already sent to the server cannot be removed here.",
         status: "warning", position: "top", duration: 4000 });
+    }
+  };
+
+  // Correcting a row without stopping the session: a misread label or a box
+  // weighed twice used to mean finishing the pallet and fixing it afterwards.
+  const onRowChange = (run, title) => async (row, ...rest) => {
+    setRowBusy(row.localId);
+    try {
+      await run(row, ...rest);
+      if (title) toast({ title, status: "success", duration: 2000, position: "top" });
+    } catch (err) {
+      toast({
+        title: "Could not change that box",
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 5000, position: "top",
+      });
+    } finally {
+      setRowBusy(null);
     }
   };
 
@@ -368,7 +400,17 @@ const BoxScanner = ({ isOpen, onClose }) => {
         )}
       </Box>
 
-      <ScanSheet scans={scans} totals={stats.totals} />
+      <ScanSheet
+        scans={scans}
+        totals={stats.totals}
+        busyId={rowBusy}
+        onEditWeight={session
+          ? onRowChange((row, weight) => editScan(row.localId, weight), "Weight corrected")
+          : undefined}
+        onVoid={session
+          ? onRowChange((row) => voidScan(row.localId), "Box taken off the tally")
+          : undefined}
+      />
 
       {lastError && (
         <Alert status="warning" borderRadius="md" mb={3} fontSize="sm">

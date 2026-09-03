@@ -154,6 +154,72 @@ const createScanQueue = ({
     return { undone: true, record: last };
   };
 
+  // Correct a weight mid-session. The running total is adjusted by the
+  // difference rather than recomputed, keeping it exact in integer thousandths.
+  //
+  // A row that has already synced must be corrected on the server FIRST: if that
+  // call fails, the local copy is left alone, so the grid never shows a figure
+  // the database does not hold. patchServer is injected by the caller because
+  // this module deliberately knows nothing about HTTP.
+  const editScan = async (localId, newWeight, { patchServer } = {}) => {
+    const rows = await backend.listAll();
+    const row = rows.find((r) => r.localId === localId);
+    if (!row) return { edited: false, reason: "not-found" };
+
+    const asLb = toPounds(newWeight, "LB");
+    const before = displayOf(row);
+    if (asLb.weight === before) return { edited: false, reason: "unchanged" };
+
+    if (row.serverItemId && patchServer) await patchServer(row.serverItemId, asLb.weight);
+
+    const patched = await backend.patchScan(localId, {
+      displayWeight: asLb.weight,
+      weight: asLb.weight,
+      weightUnit: "LB",
+      convertedFrom: null,
+      // What the label originally said, captured once so a second correction
+      // does not overwrite it with the first correction.
+      originalWeight: row.originalWeight || before,
+      // A corrected row that has NOT yet been sent has to go up as a manual
+      // entry. The server re-derives the weight from raw_barcode and refuses
+      // any disagreement, so sending a hand-typed weight with the original
+      // barcode attached would have the box rejected outright. Keeping the
+      // barcode here would not preserve verification — it would destroy the
+      // scan. The payload is retained under originalBarcode for the record.
+      ...(row.serverItemId ? {} : {
+        isManual: true,
+        rawBarcode: null,
+        originalBarcode: row.originalBarcode || row.rawBarcode || null,
+      }),
+    });
+
+    // Out with the old figure, in with the new. The two calls move the count by
+    // -1 then +1, so it lands where it started — a correction changes a box's
+    // weight, not how many boxes arrived.
+    await bumpStats(before, STORED_UNIT, -1);
+    await bumpStats(asLb.weight, STORED_UNIT, +1);
+    return { edited: true, record: patched };
+  };
+
+  // Take a box off the tally. Soft, like the server: the row stays visible and
+  // struck through, but stops counting toward the total.
+  const voidScan = async (localId, { voidServer, reason = null } = {}) => {
+    const rows = await backend.listAll();
+    const row = rows.find((r) => r.localId === localId);
+    if (!row) return { voided: false, reason: "not-found" };
+    if (row.status === "voided") return { voided: true, record: row };
+
+    if (row.serverItemId && voidServer) await voidServer(row.serverItemId, reason);
+
+    const patched = await backend.patchScan(localId, { status: "voided", voidReason: reason });
+    // A duplicate never counted toward the total, so voiding one must not
+    // subtract a second time.
+    if (row.status !== "duplicate" && row.status !== "rejected") {
+      await bumpStats(displayOf(row), STORED_UNIT, -1);
+    }
+    return { voided: true, record: patched };
+  };
+
   const getStats = async () => {
     const session = await backend.getSession();
     return formatStats(session && session.stats);
@@ -213,7 +279,11 @@ const createScanQueue = ({
 
           if (result.status === "inserted") {
             summary.accepted += 1;
-            confirmed.push(record.localId);
+            // The server's row id is carried back so this box can still be
+            // corrected or voided later — a row that has synced is no longer
+            // reachable through undo, and without the id it is unreachable
+            // altogether until the session is reopened from the manifest tab.
+            confirmed.push({ localId: record.localId, itemId: result.itemId ?? null });
           } else if (result.status === "duplicate") {
             // The same physical box scanned twice — the server kept the first
             // and refused this one. It must NOT be counted as a saved box: the
@@ -297,6 +367,8 @@ const createScanQueue = ({
   return {
     enqueue,
     undoLast,
+    editScan,
+    voidScan,
     getStats,
     listSession,
     clearSession,

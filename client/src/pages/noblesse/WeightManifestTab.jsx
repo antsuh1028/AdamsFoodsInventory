@@ -10,6 +10,7 @@ import BoxScanner from "../../components/navbar/boxScanner";
 import printWeightManifest from "./printWeightManifest";
 import ImportTally from "./ImportTally";
 import { fmtDate, today } from "./shared";
+import getRole from "../../utils/getRole";
 
 // Past weighing sessions, one row per session. Expanding a row pulls its boxes
 // and shows them in the same sheet they were scanned into, so a manifest can be
@@ -31,6 +32,9 @@ const totalsText = (totals) =>
     : "—";
 
 export const WeightManifestTab = ({ refreshSignal = 0 }) => {
+  // An open session can be corrected by whoever is running it; a closed one is
+  // an admin act. The server enforces both — this only decides what to draw.
+  const isAdmin = getRole() === "admin";
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -40,6 +44,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const [expandedId, setExpandedId] = useState(null);
   const [details, setDetails] = useState({});   // batch_id -> full batch
   const [loadingId, setLoadingId] = useState(null);
+  const [rowBusy, setRowBusy] = useState(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const toast = useToast();
@@ -107,6 +112,51 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       date: fmtDate(String(full.created_at).slice(0, 10)),
       scans: full.items,
     });
+  };
+
+  // Re-reads the batch after a correction rather than patching state by hand,
+  // so what is displayed is always what the server actually holds.
+  const afterRowChange = async (batch) => {
+    const { data } = await axiosInstance.get(`/box-batches/${batch.batch_id}`);
+    setDetails((prev) => ({ ...prev, [batch.batch_id]: data }));
+    fetchBatches();   // counts and totals on the summary row have moved
+  };
+
+  // Extra arguments are forwarded: onEditWeight is called as (row, newWeight),
+  // while onVoid and onRestore take the row alone.
+  const rowAction = (batch, run, successTitle) => async (row, ...rest) => {
+    setRowBusy(row.localId);
+    try {
+      await run(row, ...rest);
+      await afterRowChange(batch);
+      if (successTitle) {
+        toast({ title: successTitle, status: "success", duration: 2500, position: "top" });
+      }
+    } catch (err) {
+      toast({
+        title: "Could not change that row",
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 5000, position: "top",
+      });
+    } finally {
+      setRowBusy(null);
+    }
+  };
+
+  const handlersFor = (batch) => {
+    // A closed session is only editable by an admin. Handing back no handlers
+    // renders the grid read-only, exactly as it was before.
+    if (batch.status !== "open" && !isAdmin) return {};
+    const base = `/box-batches/${batch.batch_id}/items`;
+    return {
+      onEditWeight: rowAction(batch,
+        (row, weight) => axiosInstance.patch(`${base}/${row.localId}`,
+          { weight, weightUnit: "LB" }), "Weight corrected"),
+      onVoid: rowAction(batch,
+        (row) => axiosInstance.delete(`${base}/${row.localId}`), "Box taken off the tally"),
+      onRestore: rowAction(batch,
+        (row) => axiosInstance.post(`${base}/${row.localId}/restore`), "Box put back"),
+    };
   };
 
   const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
@@ -317,7 +367,8 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                             {loadingId === b.batch_id ? (
                               <Flex justify="center" py={6}><Spinner size="sm" color="blue.500" /></Flex>
                             ) : detail ? (
-                              <ScanSheet scans={detail.items} totals={b.totals || []} />
+                              <ScanSheet scans={detail.items} totals={b.totals || []}
+                                busyId={rowBusy} {...handlersFor(b)} />
                             ) : null}
                           </Box>
                         </Box>

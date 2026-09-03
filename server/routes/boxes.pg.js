@@ -70,6 +70,25 @@ pool.query(`ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS source TEXT NOT NUL
 pool.query(`ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS converted_from TEXT`)
   .catch((err) => console.error("batch_items converted_from migration error:", err.message));
 
+// Corrections. A weight that came off a barcode was verified against that
+// barcode; once a person overtypes it that is no longer true, so the row has to
+// carry its own history rather than quietly becoming indistinguishable from a
+// scanned one. original_weight holds what the label actually said.
+//
+// Removal is a soft void. A box that was scanned and then taken off the tally is
+// a fact about the shipment, and hard-deleting the row would erase the only
+// record that it ever happened.
+for (const ddl of [
+  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS original_weight NUMERIC(8,3)`,
+  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`,
+  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS edited_by UUID`,
+  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ`,
+  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS voided_by UUID`,
+  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS void_reason TEXT`,
+]) {
+  pool.query(ddl).catch((err) => console.error("batch_items audit migration error:", err.message));
+}
+
 // Free duplicate-scan protection: the same serial cannot land in a batch twice.
 pool.query(`
   CREATE UNIQUE INDEX IF NOT EXISTS batch_items_batch_serial_uniq
@@ -401,7 +420,7 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
     // drift from the real row count.
     const totals = await pool.query(
       `SELECT weight_unit, COUNT(*)::int AS count, SUM(weight)::text AS total
-       FROM batch_items WHERE batch_id = $1 AND tenant_id = $2
+       FROM batch_items WHERE batch_id = $1 AND tenant_id = $2 AND voided_at IS NULL
        GROUP BY weight_unit ORDER BY weight_unit`,
       [batchId, req.tenantId]
     );
@@ -417,6 +436,152 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
     });
   } catch (err) {
     console.error("close box batch:", err);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ── Correcting rows ──────────────────────────────────────────────────────────
+// Two audiences. An operator fixes their own session as they go — a box weighed
+// twice, a damaged label read wrong — while the batch is still open. An admin
+// fixes a batch that was closed days ago, which is a different act and is gated
+// accordingly. The gate is here on the server: a disabled button is a courtesy,
+// not a control.
+
+const rowGate = async (batchId, req) => {
+  const batch = await pool.query(
+    `SELECT batch_id, status FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
+    [batchId, req.tenantId]
+  );
+  if (!batch.rows.length) return { ok: false, status: 404, error: "Batch not found" };
+  if (batch.rows[0].status !== "open" && req.role !== "admin") {
+    return { ok: false, status: 403,
+      error: "This session is closed — only an admin can change it" };
+  }
+  return { ok: true, batch: batch.rows[0] };
+};
+
+const rowIds = (req) => ({
+  batchId: Number(req.params.id),
+  itemId: Number(req.params.itemId),
+});
+
+// Correct a weight. The row keeps what the barcode originally said, so a
+// manifest can still show which figures a person changed and to what.
+router.patch("/box-batches/:id/items/:itemId", verifyToken, scanLimiter, async (req, res) => {
+  const { batchId, itemId } = rowIds(req);
+  if (!Number.isInteger(batchId) || !Number.isInteger(itemId)) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  const { weight, weightUnit = "LB" } = req.body || {};
+  if (typeof weight !== "string" || !DECIMAL_RE.test(weight)) {
+    return res.status(400).json({ error: "weight must be a decimal string with at most 3 decimal places" });
+  }
+  if (!UNITS.has(String(weightUnit).toUpperCase())) {
+    return res.status(400).json({ error: "weightUnit must be LB or KG" });
+  }
+
+  let asLb;
+  try {
+    asLb = toPounds(weight, weightUnit);
+  } catch (err) {
+    return res.status(400).json({ error: err.message, code: err.code || "BAD_WEIGHT" });
+  }
+  const thousandths = toThousandths(asLb.weight);
+  if (thousandths <= 0n) {
+    return res.status(400).json({ error: "weight must be greater than zero" });
+  }
+  if (thousandths > MAX_WEIGHT_THOUSANDTHS) {
+    return res.status(400).json({ code: "IMPLAUSIBLE_WEIGHT", error: "weight exceeds plausible range" });
+  }
+
+  try {
+    const gate = await rowGate(batchId, req);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+
+    // COALESCE means the FIRST edit captures what the label said and every later
+    // edit leaves it alone. Without it, a second correction would overwrite the
+    // original with the first correction and the audit trail would be a lie.
+    const updated = await pool.query(
+      `UPDATE batch_items
+          SET original_weight = COALESCE(original_weight, weight),
+              weight          = $1,
+              converted_from  = $2,
+              edited_at       = now(),
+              edited_by       = $3
+        WHERE item_id = $4 AND batch_id = $5 AND tenant_id = $6
+      RETURNING item_id, weight::text AS weight, original_weight::text AS original_weight,
+                weight_unit, converted_from, edited_at`,
+      [asLb.weight, asLb.convertedFrom, req.userId, itemId, batchId, req.tenantId]
+    );
+    if (!updated.rows.length) return res.status(404).json({ error: "Row not found" });
+
+    return res.json({ ...updated.rows[0], editedBy: req.username || req.userId });
+  } catch (err) {
+    console.error("edit batch item:", err);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Take a box off the tally. Soft, deliberately: that a box was scanned and then
+// removed is a fact about the shipment, and a hard DELETE would erase the only
+// record it ever happened. Voided rows are excluded from every count, total and
+// printed manifest, but stay visible to whoever is reconciling.
+router.delete("/box-batches/:id/items/:itemId", verifyToken, scanLimiter, async (req, res) => {
+  const { batchId, itemId } = rowIds(req);
+  if (!Number.isInteger(batchId) || !Number.isInteger(itemId)) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 200) : null;
+
+  try {
+    const gate = await rowGate(batchId, req);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+
+    // Voiding twice is not an error — a retried request after a dropped response
+    // must not report failure for work that already succeeded.
+    const voided = await pool.query(
+      `UPDATE batch_items
+          SET voided_at = COALESCE(voided_at, now()),
+              voided_by = COALESCE(voided_by, $1),
+              void_reason = COALESCE(void_reason, $2)
+        WHERE item_id = $3 AND batch_id = $4 AND tenant_id = $5
+      RETURNING item_id, voided_at, void_reason`,
+      [req.userId, reason, itemId, batchId, req.tenantId]
+    );
+    if (!voided.rows.length) return res.status(404).json({ error: "Row not found" });
+
+    return res.json({ ...voided.rows[0], voided: true });
+  } catch (err) {
+    console.error("void batch item:", err);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Undo a void. Without this a mis-click is permanent, which would make voiding
+// more dangerous than the hard delete it replaced.
+router.post("/box-batches/:id/items/:itemId/restore", verifyToken, scanLimiter, async (req, res) => {
+  const { batchId, itemId } = rowIds(req);
+  if (!Number.isInteger(batchId) || !Number.isInteger(itemId)) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  try {
+    const gate = await rowGate(batchId, req);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+
+    const restored = await pool.query(
+      `UPDATE batch_items
+          SET voided_at = NULL, voided_by = NULL, void_reason = NULL
+        WHERE item_id = $1 AND batch_id = $2 AND tenant_id = $3
+      RETURNING item_id`,
+      [itemId, batchId, req.tenantId]
+    );
+    if (!restored.rows.length) return res.status(404).json({ error: "Row not found" });
+
+    return res.json({ itemId: restored.rows[0].item_id, voided: false });
+  } catch (err) {
+    console.error("restore batch item:", err);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -582,14 +747,14 @@ router.get("/box-batches", verifyToken, async (req, res) => {
               b.status, b.created_at, b.closed_at,
               (SELECT COUNT(*)::int
                  FROM batch_items i
-                WHERE i.batch_id = b.batch_id) AS box_count,
+                WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL) AS box_count,
               COALESCE((
                 SELECT json_agg(json_build_object('unit', g.weight_unit, 'total', g.total)
                                 ORDER BY g.weight_unit)
                   FROM (
                     SELECT weight_unit, SUM(weight)::text AS total
                       FROM batch_items
-                     WHERE batch_id = b.batch_id
+                     WHERE batch_id = b.batch_id AND voided_at IS NULL
                      GROUP BY weight_unit
                   ) g
               ), '[]'::json) AS totals
@@ -623,7 +788,9 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
 
     const items = await pool.query(
       `SELECT item_id, weight::text AS weight, weight_unit, gtin,
-              production_date, serial, is_manual, converted_from, scanned_at
+              production_date, serial, is_manual, converted_from, scanned_at,
+              original_weight::text AS original_weight, edited_at, edited_by,
+              voided_at, voided_by, void_reason
          FROM batch_items
         WHERE batch_id = $1 AND tenant_id = $2
         ORDER BY item_id`,
@@ -643,7 +810,15 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
         isManual: r.is_manual,
         convertedFrom: r.converted_from,
         scannedAt: r.scanned_at,
-        status: "synced", // it is in the database, so by definition it synced
+        // The audit trail travels with the row: a reviewer needs to see that a
+        // figure was changed, and from what, without running a query.
+        originalWeight: r.original_weight,
+        editedAt: r.edited_at,
+        voidedAt: r.voided_at,
+        voidReason: r.void_reason,
+        // A voided box is still shown — it is excluded from totals and from the
+        // printed manifest, but hiding it would defeat the point of a soft void.
+        status: r.voided_at ? "voided" : "synced",
       })),
     });
   } catch (err) {

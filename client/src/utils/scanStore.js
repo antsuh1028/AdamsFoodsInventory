@@ -19,6 +19,14 @@ const promisify = (request) =>
     request.onerror = () => reject(request.error);
   });
 
+// markSynced takes { localId, itemId }. A bare id is still accepted so records
+// confirmed by an older build — which had no server id to record — keep working
+// rather than being skipped on a resume.
+const normaliseSynced = (entry) =>
+  (entry && typeof entry === "object")
+    ? { localId: entry.localId, itemId: entry.itemId ?? null }
+    : { localId: entry, itemId: null };
+
 const openDb = () =>
   new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined" || !indexedDB) {
@@ -81,11 +89,20 @@ const createIndexedDbBackend = (db) => {
 
     // Confirmed by the server, so out of the flush queue — but kept on disk so
     // the operator's session grid can still show it.
-    markSynced: async (localIds) => {
+    // Entries are { localId, itemId } — the server id is kept so a row already
+    // sent can still be corrected or voided later without closing the session.
+    // Plain ids are accepted too, for records marked before that id existed.
+    markSynced: async (entries) => {
       const store = tx(SCANS, "readwrite").objectStore(SCANS);
-      await Promise.all(localIds.map(async (id) => {
-        const existing = await promisify(store.get(id));
-        if (existing) await promisify(store.put({ ...existing, status: "synced" }));
+      await Promise.all(entries.map(async (entry) => {
+        const { localId, itemId } = normaliseSynced(entry);
+        const existing = await promisify(store.get(localId));
+        if (existing) {
+          await promisify(store.put({
+            ...existing, status: "synced",
+            serverItemId: itemId ?? existing.serverItemId ?? null,
+          }));
+        }
       }));
     },
 
@@ -103,6 +120,18 @@ const createIndexedDbBackend = (db) => {
       const store = tx(SCANS, "readonly").objectStore(SCANS);
       const rows = await promisify(store.getAll());
       return rows.sort((a, b) => a.localId - b.localId);
+    },
+
+    // Amend one stored row in place. Used when a weight is corrected or a box
+    // is taken off the tally mid-session, both of which have to survive a
+    // reload the same way the original scan does.
+    patchScan: async (localId, changes) => {
+      const store = tx(SCANS, "readwrite").objectStore(SCANS);
+      const existing = await promisify(store.get(localId));
+      if (!existing) return null;
+      const next = { ...existing, ...changes };
+      await promisify(store.put(next));
+      return next;
     },
 
     markRejected: async (localId, reason) => {
@@ -147,10 +176,13 @@ const createMemoryBackend = () => {
     countPending: async () => byStatus("pending").length,
     listAll: async () => [...scans.values()].sort((a, b) => a.localId - b.localId),
     deleteScans: async (ids) => { ids.forEach((id) => scans.delete(id)); },
-    markSynced: async (ids) => {
-      ids.forEach((id) => {
-        const s = scans.get(id);
-        if (s) scans.set(id, { ...s, status: "synced" });
+    markSynced: async (entries) => {
+      entries.forEach((entry) => {
+        const { localId, itemId } = normaliseSynced(entry);
+        const s = scans.get(localId);
+        if (s) scans.set(localId, {
+          ...s, status: "synced", serverItemId: itemId ?? s.serverItemId ?? null,
+        });
       });
     },
     markDuplicate: async (ids) => {
@@ -159,6 +191,14 @@ const createMemoryBackend = () => {
         if (s) scans.set(id, { ...s, status: "duplicate" });
       });
     },
+    patchScan: async (localId, changes) => {
+      const s = scans.get(localId);
+      if (!s) return null;
+      const next = { ...s, ...changes };
+      scans.set(localId, next);
+      return next;
+    },
+
     markRejected: async (localId, reason) => {
       const s = scans.get(localId);
       if (s) scans.set(localId, { ...s, status: "rejected", reason });

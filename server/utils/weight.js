@@ -1,5 +1,3 @@
-"use strict";
-
 /* global BigInt */
 // ^ Create React App lints the mirrored copy of this file against an older
 // ecmaVersion that predates BigInt. It exists in every browser this app runs on
