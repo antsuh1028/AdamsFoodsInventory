@@ -250,8 +250,8 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                     <Input
                       {...sheetInputProps}
                       bg="white"
-                      size="xs"
-                      flex="1 1 0"
+                      size="sm"
+                      flex="1 1 30%"
                       type="number"
                       placeholder="lbs"
                       title="Processed weight (lbs)"
@@ -265,8 +265,8 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                     <Input
                       {...sheetInputProps}
                       bg="white"
-                      size="xs"
-                      flex="1 1 0"
+                      size="sm"
+                      flex="1 1 30%"
                       type="number"
                       placeholder="c/s"
                       title="Processed quantity (cases)"
@@ -280,8 +280,8 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                     <Input
                       {...sheetInputProps}
                       bg="white"
-                      size="xs"
-                      flex="1 1 0" minW="118px"
+                      size="sm"
+                      flex="1 1 30%" minW="118px"
                       type="date"
                       title="Processing date"
                       value={pd.date || ""}
