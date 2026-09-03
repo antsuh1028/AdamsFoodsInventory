@@ -1,3 +1,5 @@
+import { kgToLb } from "../../utils/weight";
+
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
 ));
@@ -41,16 +43,31 @@ const printWeightManifest = ({
   const OFF_THE_TALLY = new Set(["rejected", "duplicate", "voided"]);
   const boxes = scans.filter((s) => !OFF_THE_TALLY.has(s.status));
 
-  // Everything on a manifest is pounds. A live session row carries the scanned
-  // weight plus displayWeight, its converted twin; a row read back from the
-  // server is already stored converted. Printing s.weight directly would put
-  // kilograms on the page for non-American boxes while the total said pounds.
-  const weightOf = (s) => s.displayWeight || s.weight;
-  const unitOf = (s) => (s.displayWeight ? "LB" : s.weightUnit);
+  // A tally is always in pounds. Rows reach this function in three shapes and
+  // only one of them can be trusted to be converted already:
+  //
+  //   1. a live session row  — carries displayWeight, its converted twin
+  //   2. a row stored since conversion shipped — weight in LB, converted_from set
+  //   3. a row stored BEFORE it shipped — weight still in kilograms
+  //
+  // The third is why this converts here rather than trusting weightUnit.
+  // Production ran without conversion for a while, so those rows are real, and
+  // printing them as-is put kilograms in a column headed pounds.
+  //
+  // Converted per box, then summed — never summed then converted. Each box
+  // rounds independently, so the two orders disagree by a thousandth or so and
+  // the column would not add up to its own printed subtotal, which is precisely
+  // what someone reconciling a shipment checks.
+  const inKg = (s) => String(s.weightUnit || "").toUpperCase() === "KG";
+  const weightOf = (s) => {
+    if (s.displayWeight) return s.displayWeight;      // already converted
+    return inKg(s) ? kgToLb(s.weight) : s.weight;
+  };
 
-  const units = [...new Set(boxes.map(unitOf).filter(Boolean))];
-  const unit = units.length === 1 ? units[0] : "";
-  const convertedCount = boxes.filter((s) => s.convertedFrom).length;
+  const unit = "LB";
+  // Flagged on the row, or still carrying a kilogram unit because it predates
+  // the conversion — either way the operator should see it was converted.
+  const convertedCount = boxes.filter((s) => s.convertedFrom || inKg(s)).length;
 
   const rows = [];
   for (let i = 0; i < boxes.length; i += PER_ROW) rows.push(boxes.slice(i, i + PER_ROW));
@@ -162,13 +179,10 @@ const printWeightManifest = ({
             ${rowHtml.join("")}
             <tr>
               <td class="foot" colspan="6">Total Boxes:&nbsp;&nbsp;${boxes.length}</td>
-              <td class="foot-r" colspan="6">Subtotal:&nbsp;&nbsp;${fromThousandths(grand)}${unit ? " " + unit : ""}</td>
+              <td class="foot-r" colspan="6">Subtotal:&nbsp;&nbsp;${fromThousandths(grand)} ${unit}</td>
             </tr>
           </table>
 
-          ${units.length > 1
-            ? `<div style="margin-top:6px;font-size:10px;">Mixed units on this tally: ${units.join(", ")} — subtotal is not meaningful.</div>`
-            : ""}
           ${convertedCount
             ? `<div style="margin-top:6px;font-size:10px;">${convertedCount} box${
                 convertedCount === 1 ? "" : "es"} labelled in kilograms, converted to pounds.</div>`

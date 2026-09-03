@@ -6,6 +6,7 @@ import {
 } from "@chakra-ui/react";
 import { EditIcon, DeleteIcon, RepeatIcon, WarningTwoIcon } from "@chakra-ui/icons";
 import NumericKeypad from "./NumericKeypad";
+import { kgToLb } from "../../utils/weight";
 import { fmtDate } from "../../pages/noblesse/shared";
 
 // The scanned weights as a spreadsheet: one row per box, filling downward as
@@ -58,12 +59,23 @@ const StatusCell = ({ status }) => {
 
 const NOT_A_BOX = new Set(["duplicate", "rejected", "voided"]);
 
-// A live session row keeps the scanned weight and its converted twin; a row
-// read back from the server is already stored in pounds. The grid shows the
-// pound figure either way, so what the operator watches during the session is
-// the same number that ends up on the manifest.
-const weightOf = (s) => s.displayWeight || s.weight;
-const unitOf = (s) => (s.displayWeight ? "LB" : s.weightUnit);
+// The grid shows pounds, always — it is the on-screen preview of the tally, so
+// it has to agree with the paper box for box.
+//
+// Rows arrive in three shapes: a live session row (carries displayWeight, its
+// converted twin), a row stored since conversion shipped (already LB), and a
+// row stored BEFORE it shipped (still kilograms). The last is why this converts
+// rather than trusting weightUnit — production ran without conversion for a
+// while, so those rows are real.
+const inKg = (s) => String(s.weightUnit || "").toUpperCase() === "KG";
+const weightOf = (s) => {
+  if (s.displayWeight) return s.displayWeight;
+  return inKg(s) ? kgToLb(s.weight) : s.weight;
+};
+const unitOf = () => "LB";
+// What the label actually said, for the ←KG marker. A row that predates the
+// conversion has no convertedFrom flag but is still a kilogram box.
+const kgOrigin = (s) => (s.convertedFrom || (inKg(s) ? "KG" : null));
 
 const ScanSheet = ({
   scans = [], totals = [],
@@ -172,10 +184,10 @@ const ScanSheet = ({
                     </td>
                     <td style={{ ...cellStyle, textAlign: "center", color: "#718096" }}>
                       {unitOf(s)}
-                      {s.convertedFrom && (
+                      {kgOrigin(s) && (
                         <span style={{ fontSize: "10px", color: "#805AD5", marginLeft: "4px" }}
-                          title={`Label read ${s.weight} ${s.convertedFrom}`}>
-                          ←{s.convertedFrom}
+                          title={`Label read ${s.weight} ${kgOrigin(s)}`}>
+                          ←{kgOrigin(s)}
                         </span>
                       )}
                     </td>

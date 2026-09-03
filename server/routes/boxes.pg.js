@@ -163,6 +163,22 @@ const scanLimiter = rateLimit({
   message: { error: "Too many scan requests, slow down" },
 });
 
+// Every weight is reported in pounds, converted per box at read time.
+//
+// Rows written before the KG conversion shipped are still stored in kilograms —
+// production ran that way for a while — so a total that trusted weight_unit
+// would report a kilogram figure beside a manifest printed in pounds.
+//
+// ROUND per row, THEN SUM. Never SUM then convert: each box rounds
+// independently, so the two orders disagree by a thousandth or so and the
+// printed column would not add up to its own subtotal, which is exactly what
+// someone reconciling a shipment checks. NUMERIC arithmetic here is exact
+// decimal and ROUND is half-away-from-zero, matching utils/weight.js.
+const weightInLb = (t = "") => {
+  const col = t ? `${t}.` : "";
+  return `ROUND(CASE WHEN ${col}weight_unit = 'KG' THEN ${col}weight / 0.45359237 ELSE ${col}weight END, 3)`;
+};
+
 // ── Validation helpers ───────────────────────────────────────────────────────
 
 const UNITS = new Set(["LB", "KG"]);
@@ -472,13 +488,15 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
       );
     }
 
-    // Totals are grouped by unit. Summing LB and KG into one number would be
-    // meaningless, and total_boxes is derived rather than stored so it cannot
-    // drift from the real row count.
+    // One total, in pounds: kilogram rows are converted per box on the way out,
+    // so a session mixing units still closes with a figure that matches its
+    // manifest. total_boxes is derived rather than stored so it cannot drift
+    // from the real row count. HAVING keeps an empty batch returning no totals
+    // row rather than one reading null.
     const totals = await pool.query(
-      `SELECT weight_unit, COUNT(*)::int AS count, SUM(weight)::text AS total
+      `SELECT 'LB' AS weight_unit, COUNT(*)::int AS count, SUM(${weightInLb()})::text AS total
        FROM batch_items WHERE batch_id = $1 AND tenant_id = $2 AND voided_at IS NULL
-       GROUP BY weight_unit ORDER BY weight_unit`,
+       HAVING COUNT(*) > 0`,
       [batchId, req.tenantId]
     );
 
@@ -930,10 +948,10 @@ router.get("/box-batches", verifyToken, async (req, res) => {
                 SELECT json_agg(json_build_object('unit', g.weight_unit, 'total', g.total)
                                 ORDER BY g.weight_unit)
                   FROM (
-                    SELECT weight_unit, SUM(weight)::text AS total
+                    SELECT 'LB' AS weight_unit, SUM(${weightInLb()})::text AS total
                       FROM batch_items
                      WHERE batch_id = b.batch_id AND voided_at IS NULL
-                     GROUP BY weight_unit
+                    HAVING COUNT(*) > 0
                   ) g
               ), '[]'::json) AS totals
          FROM box_batches b
@@ -1095,7 +1113,7 @@ router.get("/manifest-groups", verifyToken, async (req, res) => {
                  JOIN manifest_group_batches m ON m.batch_id = i.batch_id
                 WHERE m.group_id = g.group_id AND i.voided_at IS NULL) AS box_count,
               COALESCE((
-                SELECT SUM(i.weight)::text
+                SELECT SUM(${weightInLb("i")})::text
                   FROM batch_items i
                   JOIN manifest_group_batches m ON m.batch_id = i.batch_id
                  WHERE m.group_id = g.group_id AND i.voided_at IS NULL
