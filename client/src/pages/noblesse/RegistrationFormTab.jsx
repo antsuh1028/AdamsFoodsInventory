@@ -162,7 +162,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
 
             <SectionBar>Product Identification</SectionBar>
             <SheetField label="Product Description" full><Input {...sheetInputProps} value={draft.productDescription} onChange={set("productDescription")} /></SheetField>
-            <SheetField label="Processing Type">
+            <SheetField label="Processing Type" full>
               {/* Styled like the Status select rather than with sheetInputProps,
                   which strips the border and makes a dropdown look like a
                   plain text field. */}
@@ -179,6 +179,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
               </Select>
             </SheetField>
             <SheetField label="Original Weight (lbs)"><Input {...sheetInputProps} type="number" value={draft.originalWeight} onChange={set("originalWeight")} /></SheetField>
+            <SheetField label="Total Quantity (c/s)"><Input {...sheetInputProps} value={draft.totalQuantity} onChange={set("totalQuantity")} /></SheetField>
             <SheetField label="Spec. ">
               <Flex gap={1} align="center">
                 <Input
@@ -218,9 +219,9 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
               <Checkbox isChecked={draft.processReportAttached} onChange={setCheck("processReportAttached")} px={2} />
             </SheetField>
 
-            {/* Where the Original Weight actually comes from. Sits above the
-                yield section because it is the measured input both that and
-                Total Quantity are derived from. */}
+            {/* Where Original Weight and Total Quantity actually come from —
+                both live in Product Identification above, since they describe
+                what arrived rather than what processing did to it. */}
             <SectionBar>Box Weights</SectionBar>
             <Box gridColumn="1 / -1" p={2}>
               <BoxWeightLink
@@ -232,9 +233,6 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             </Box>
 
             <SectionBar>Processing &amp; Yield</SectionBar>
-            <Box gridColumn="1 / -1" />
-            <SheetField label="Total Quantity (c/s)"><Input {...sheetInputProps} value={draft.totalQuantity} onChange={set("totalQuantity")} /></SheetField>
-            <Box gridColumn="3 / -1" />
 
             {Array.isArray(draft.processingDates) && draft.processingDates.map((pd, idx) => (
               <React.Fragment key={idx}>
