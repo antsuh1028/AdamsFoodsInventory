@@ -51,6 +51,10 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const [selected, setSelected] = useState(() => new Set());
   const [groups, setGroups] = useState([]);
   const [confirmMerge, setConfirmMerge] = useState(false);
+  // The whole session, not one box inside it.
+  const [confirmDeleteBatch, setConfirmDeleteBatch] = useState(null);
+  const [deletingBatch, setDeletingBatch] = useState(false);
+  const cancelDeleteBatchRef = useRef(null);
   const [merging, setMerging] = useState(false);
   const cancelMergeRef = useRef(null);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -253,6 +257,45 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       toast({ title: "Could not remove it",
         description: err.response?.data?.error || err.message,
         status: "error", duration: 4000, position: "top" });
+    }
+  };
+
+  // Deletes the session and every box in it. The server refuses when the
+  // session belongs to a merged manifest and says which one, so that message is
+  // surfaced verbatim rather than flattened into a generic failure.
+  const deleteBatch = async () => {
+    const batch = confirmDeleteBatch;
+    if (!batch) return;
+    setDeletingBatch(true);
+    try {
+      const { data } = await axiosInstance.delete(`/box-batches/${batch.batch_id}`);
+      toast({
+        title: "Session deleted",
+        description: `${batch.lot_number || `Batch ${batch.batch_id}`} and its ${data.boxesDeleted} box(es) are gone.`,
+        status: "success", duration: 4000, position: "top",
+      });
+      setConfirmDeleteBatch(null);
+      if (expandedId === batch.batch_id) setExpandedId(null);
+      setDetails((prev) => {
+        const next = { ...prev };
+        delete next[batch.batch_id];
+        return next;
+      });
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(batch.batch_id);
+        return next;
+      });
+      fetchBatches();
+    } catch (err) {
+      toast({
+        title: "Could not delete that session",
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 8000, position: "top", isClosable: true,
+      });
+      setConfirmDeleteBatch(null);
+    } finally {
+      setDeletingBatch(false);
     }
   };
 
@@ -513,11 +556,21 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                         </Flex>
                       </Box>
                       <Box as="td" px={3} py={2} borderBottom="1px solid" borderColor="gray.100" textAlign="right">
-                        <Button size="xs" variant="outline" colorScheme="blue"
-                          isDisabled={!b.box_count}
-                          onClick={(e) => { e.stopPropagation(); print(b); }}>
-                          Print
-                        </Button>
+                        <Flex gap={2} justify="flex-end">
+                          <Button size="xs" variant="outline" colorScheme="blue"
+                            isDisabled={!b.box_count}
+                            onClick={(e) => { e.stopPropagation(); print(b); }}>
+                            Print
+                          </Button>
+                          {/* Deletes the whole session, boxes and all. Admin
+                              only, and gated server-side too. */}
+                          {isAdmin && (
+                            <Button size="xs" variant="ghost" colorScheme="red"
+                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteBatch(b); }}>
+                              Delete
+                            </Button>
+                          )}
+                        </Flex>
                       </Box>
                     </Box>
 
@@ -581,6 +634,64 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
               </Button>
               <Button colorScheme="purple" onClick={createGroup} isLoading={merging}>
                 Combine
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
+
+      {/* Deleting a whole session destroys every weight in it, so the dialog
+          states the count rather than asking "are you sure". leastDestructiveRef
+          keeps focus on the safe button. */}
+      <AlertDialog
+        isOpen={Boolean(confirmDeleteBatch)}
+        leastDestructiveRef={cancelDeleteBatchRef}
+        onClose={() => setConfirmDeleteBatch(null)}
+        isCentered
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Delete this whole session?
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              {confirmDeleteBatch && (
+                <>
+                  <Text fontSize="sm" mb={3}>
+                    This removes the session and every box weighed in it. It cannot
+                    be undone.
+                  </Text>
+                  <Box px={3} py={2} bg="gray.50" borderRadius="md"
+                    border="1px solid" borderColor="gray.200">
+                    <Flex gap={3} align="baseline" wrap="wrap">
+                      <Text fontSize="sm" fontWeight="bold" color="red.800">
+                        {confirmDeleteBatch.lot_number || `Batch ${confirmDeleteBatch.batch_id}`}
+                      </Text>
+                      {confirmDeleteBatch.vendor && (
+                        <Text fontSize="sm" color="gray.600">{confirmDeleteBatch.vendor}</Text>
+                      )}
+                    </Flex>
+                    <Text fontSize="sm" color="gray.700" mt={1}>
+                      {confirmDeleteBatch.box_count} box
+                      {confirmDeleteBatch.box_count === 1 ? "" : "es"}
+                      {" · "}{totalsText(confirmDeleteBatch.totals)}
+                    </Text>
+                  </Box>
+                  {confirmDeleteBatch.status === "open" && (
+                    <Text fontSize="sm" color="orange.700" mt={3}>
+                      This session is still open. If someone is scanning into it
+                      right now, their work goes too.
+                    </Text>
+                  )}
+                </>
+              )}
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelDeleteBatchRef} onClick={() => setConfirmDeleteBatch(null)}>
+                Go back
+              </Button>
+              <Button colorScheme="red" onClick={deleteBatch} isLoading={deletingBatch}>
+                Delete session
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -685,6 +685,85 @@ router.delete("/box-batches/:id/items/:itemId/permanent",
     }
   });
 
+// Delete an entire weighing session and every box in it.
+//
+// The row-level erase above is for one bad box; this is for a session that
+// should not exist at all — a start pressed by accident, a test run, a lot
+// weighed under the wrong number. Admin only, and it takes the boxes with it,
+// so it is confirmed in the UI against the lot and the box count.
+//
+// It REFUSES when the session is part of a merged manifest. A group stores
+// references, so deleting a session out from under one would silently shrink a
+// manifest somebody has already printed and filed — the exact fork-the-truth
+// problem merged manifests exist to avoid. Remove it from the group first; the
+// error names the groups so that is actionable rather than a dead end.
+router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req, res) => {
+  const batchId = Number(req.params.id);
+  if (!Number.isInteger(batchId)) return res.status(400).json({ error: "Invalid batch id" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const batch = await client.query(
+      `SELECT batch_id, lot_number, status FROM box_batches
+        WHERE batch_id = $1 AND tenant_id = $2`,
+      [batchId, req.tenantId]
+    );
+    if (!batch.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    const inGroups = await client.query(
+      `SELECT g.group_id, g.name, g.lot_number
+         FROM manifest_group_batches m
+         JOIN manifest_groups g ON g.group_id = m.group_id
+        WHERE m.batch_id = $1 AND g.tenant_id = $2`,
+      [batchId, req.tenantId]
+    );
+    if (inGroups.rows.length) {
+      await client.query("ROLLBACK");
+      const names = inGroups.rows
+        .map((g) => g.name || g.lot_number || `Manifest ${g.group_id}`)
+        .join(", ");
+      return res.status(409).json({
+        code: "IN_MANIFEST_GROUP",
+        error: `This session is part of a merged manifest (${names}). ` +
+               `Remove it from that manifest before deleting the session.`,
+        groups: inGroups.rows,
+      });
+    }
+
+    // Children first: batch_items references box_batches, and there is no
+    // ON DELETE CASCADE on that constraint.
+    const items = await client.query(
+      `DELETE FROM batch_items WHERE batch_id = $1 AND tenant_id = $2`,
+      [batchId, req.tenantId]
+    );
+    await client.query(
+      `DELETE FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
+      [batchId, req.tenantId]
+    );
+
+    await client.query("COMMIT");
+
+    // Logged deliberately: this destroys a whole session's worth of weights.
+    console.warn(
+      `box_batches delete: batch ${batchId} (lot ${batch.rows[0].lot_number || "none"}) ` +
+      `with ${items.rowCount} boxes by user ${req.userId}`
+    );
+
+    return res.json({ deleted: true, batchId, boxesDeleted: items.rowCount });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("delete box batch:", err);
+    return res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
+  }
+});
+
 // ── Importing a hand-entered tally sheet ─────────────────────────────────────
 // The path for lots whose labels carry no barcode: the weights are written
 // into the Excel form on an iPad and the file is uploaded here.
