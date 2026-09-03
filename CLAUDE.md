@@ -76,10 +76,14 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 
 ## 2. Branch / deploy state
 
-- Working branch: `barcode-integration` (~34 commits ahead of `master`).
-- **Production runs `master` and deliberately excludes the box-weighing feature.**
-  Master was built by branching and removing barcode-only files, not by
-  cherry-picking. Do not merge the branch to master without being asked.
+- Working branch: `box-weighing-v2` (see the block at the top of this file).
+- **Production runs `master`.** Box weighing (scanning + tally import) was
+  deployed on 2026-09-02 as `dd13b58` and verified live. The KG conversion, row
+  editing, merged manifests and keypad are NOT deployed — they sit on
+  `box-weighing-v2`. Don't merge or deploy without being asked.
+- Historical note: `master` once deliberately excluded box weighing and was built
+  by removing barcode-only files rather than cherry-picking. `barcode-integration`
+  is that now-merged branch.
 - `npm run deploy` = `deploy:server` (ssh + git pull + npm install + pm2 restart)
   then `deploy:client` (react build + scp).
 
