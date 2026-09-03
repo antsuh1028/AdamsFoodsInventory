@@ -11,6 +11,7 @@ import ScanSheet from "../../components/navbar/ScanSheet";
 import BoxScanner from "../../components/navbar/boxScanner";
 import printWeightManifest from "./printWeightManifest";
 import ImportTally from "./ImportTally";
+import FloatingWindow from "../../components/FloatingWindow";
 import { fmtDate, today } from "./shared";
 import getRole from "../../utils/getRole";
 
@@ -439,61 +440,15 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         </Alert>
       )}
 
-      {/* Everything taken off a tally. Voids and restores sit alongside the
-          permanent deletions on purpose: a trail showing only removals, and
-          not the ones that were undone, overstates what actually left. */}
-      <Box mb={5}>
-        <Flex align="baseline" gap={2} wrap="wrap">
-          <Button size="xs" variant="ghost" colorScheme="gray"
-            onClick={() => {
-              const next = !showRemovals;
-              setShowRemovals(next);
-              if (next && removals === null) loadRemovals();
-            }}>
-            {showRemovals ? "Hide removal history" : "Removal history"}
-          </Button>
-          {showRemovals && (
-            <Button size="xs" variant="link" colorScheme="blue" onClick={loadRemovals}>
-              Refresh
-            </Button>
-          )}
-        </Flex>
-
-        {showRemovals && (
-          <Box mt={2} borderWidth="1px" borderColor="gray.200" borderRadius="md"
-            overflow="hidden" maxH="260px" overflowY="auto">
-            {removals === null ? (
-              <Flex justify="center" py={4}><Spinner size="sm" color="blue.500" /></Flex>
-            ) : removals.length === 0 ? (
-              <Text fontSize="sm" color="gray.500" p={3}>
-                Nothing has been removed yet. From here on, every void, erased box
-                and deleted session is recorded.
-              </Text>
-            ) : (
-              removals.map((r, i) => (
-                <Flex key={r.id} px={3} py={2} gap={3} align="baseline" wrap="wrap"
-                  bg={i % 2 ? "gray.50" : "white"}
-                  borderBottom="1px solid" borderColor="gray.100">
-                  <Badge fontSize="9px" colorScheme={REMOVAL_COLOR[r.action] || "gray"}>
-                    {REMOVAL_LABEL[r.action] || r.action}
-                  </Badge>
-                  {r.lot_number && (
-                    <Text fontSize="sm" fontWeight="600" color="gray.700">{r.lot_number}</Text>
-                  )}
-                  <Text fontSize="sm" color="gray.700">{r.summary}</Text>
-                  {r.reason && (
-                    <Text fontSize="xs" color="gray.500" fontStyle="italic">“{r.reason}”</Text>
-                  )}
-                  <Text fontSize="xs" color="gray.500" ml="auto" whiteSpace="nowrap">
-                    {r.performed_by ? `${r.performed_by} · ` : ""}
-                    {new Date(r.created_at).toLocaleString()}
-                  </Text>
-                </Flex>
-              ))
-            )}
-          </Box>
-        )}
-      </Box>
+      <Flex mb={4}>
+        <Button size="xs" variant="outline" colorScheme="gray"
+          onClick={() => {
+            setShowRemovals(true);
+            if (removals === null) loadRemovals();
+          }}>
+          Removal history
+        </Button>
+      </Flex>
 
       {/* Saved merges. Each one is a reference to its sessions, so reprinting
           picks up any correction made since — it is not a frozen copy. */}
@@ -841,6 +796,57 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
           </AlertDialogContent>
         </AlertDialogOverlay>
       </AlertDialog>
+
+      {/* Everything taken off a tally. Voids and restores sit alongside the
+          permanent deletions on purpose: a trail showing only removals, and
+          not the ones that were undone, overstates what actually left. */}
+      <FloatingWindow
+        isOpen={showRemovals}
+        onClose={() => setShowRemovals(false)}
+        title="Removal history"
+        width={860}
+        footer={
+          <Flex justify="space-between" width="100%" gap={2} wrap="wrap">
+            <Button size="sm" variant="outline" onClick={loadRemovals}>Refresh</Button>
+            <Button size="sm" onClick={() => setShowRemovals(false)}>Close</Button>
+          </Flex>
+        }
+      >
+        {removals === null ? (
+          <Flex justify="center" py={8}><Spinner size="md" color="blue.500" /></Flex>
+        ) : removals.length === 0 ? (
+          <Box p={4} bg="gray.50" borderRadius="md" border="1px dashed" borderColor="gray.300">
+            <Text fontSize="sm" color="gray.600">
+              Nothing has been removed yet. From here on, every void, erased box,
+              deleted session and removed manifest is recorded here.
+            </Text>
+          </Box>
+        ) : (
+          <Box borderWidth="1px" borderColor="gray.200" borderRadius="md" overflow="hidden">
+            {removals.map((r, i) => (
+              <Flex key={r.id} px={3} py={2} gap={3} align="baseline" wrap="wrap"
+                bg={i % 2 ? "gray.50" : "white"}
+                borderBottom={i === removals.length - 1 ? "none" : "1px solid"}
+                borderColor="gray.100">
+                <Badge fontSize="9px" colorScheme={REMOVAL_COLOR[r.action] || "gray"}>
+                  {REMOVAL_LABEL[r.action] || r.action}
+                </Badge>
+                {r.lot_number && (
+                  <Text fontSize="sm" fontWeight="600" color="gray.700">{r.lot_number}</Text>
+                )}
+                <Text fontSize="sm" color="gray.700">{r.summary}</Text>
+                {r.reason && (
+                  <Text fontSize="xs" color="gray.500" fontStyle="italic">“{r.reason}”</Text>
+                )}
+                <Text fontSize="xs" color="gray.500" ml="auto" whiteSpace="nowrap">
+                  {r.performed_by ? `${r.performed_by} · ` : ""}
+                  {new Date(r.created_at).toLocaleString()}
+                </Text>
+              </Flex>
+            ))}
+          </Box>
+        )}
+      </FloatingWindow>
 
       <BoxScanner isOpen={scannerOpen} onClose={onScannerClose} />
       <ImportTally isOpen={importOpen} onClose={() => setImportOpen(false)} onImported={fetchBatches} />
