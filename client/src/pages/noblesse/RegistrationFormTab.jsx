@@ -246,12 +246,12 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       reads as weight / cases / date rather than one long strip.
                       Every other field on the sheet is a lone input filling its
                       cell, which is why only this row needs it. */}
-                  <Flex gap={2} align="center" px={2} py={1}>
+                  <Flex gap={3} align="center" px={2} py={1}>
                     <Input
                       {...sheetInputProps}
                       bg="white"
                       size="xs"
-                      flex="0 1 96px"
+                      flex="1 1 0"
                       type="number"
                       placeholder="lbs"
                       title="Processed weight (lbs)"
@@ -266,7 +266,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       {...sheetInputProps}
                       bg="white"
                       size="xs"
-                      flex="0 1 80px"
+                      flex="1 1 0"
                       type="number"
                       placeholder="c/s"
                       title="Processed quantity (cases)"
@@ -281,7 +281,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       {...sheetInputProps}
                       bg="white"
                       size="xs"
-                      flex="0 1 130px"
+                      flex="1 1 0" minW="118px"
                       type="date"
                       title="Processing date"
                       value={pd.date || ""}
@@ -297,6 +297,8 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       colorScheme="red"
                       minW="auto"
                       px={1}
+                      ml={1}
+                      flexShrink={0}
                       isDisabled={draft.processingDates.length <= 1}
                       title={draft.processingDates.length <= 1 ? "Cannot delete last row" : "Delete this row"}
                       onClick={() => {
@@ -313,6 +315,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                         colorScheme="blue"
                         minW="auto"
                         px={2}
+                        flexShrink={0}
                         title="Add another processing date"
                         onClick={() => {
                           const newDates = Array.isArray(draft.processingDates) ? [...draft.processingDates] : [];
