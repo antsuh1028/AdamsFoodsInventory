@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Button, Flex, Text, SimpleGrid, ButtonGroup } from "@chakra-ui/react";
-import { kgToLb } from "../../utils/weight";
+import { kgToLb, toDisplay } from "../../utils/weight";
 
 // An on-screen keypad drawn in the page, not summoned from the OS.
 //
@@ -111,7 +111,7 @@ const NumericKeypad = ({
           that gets stored — and the manifest is in pounds either way. */}
       {unit === "KG" && valid && (
         <Text fontSize="xs" color="teal.600" mb={2} textAlign="right">
-          Stored as {kgToLb(value)} LB
+          Stored as {toDisplay(kgToLb(value))} LB
         </Text>
       )}
 

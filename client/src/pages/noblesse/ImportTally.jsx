@@ -5,6 +5,7 @@ import {
 } from "@chakra-ui/react";
 import FloatingWindow from "../../components/FloatingWindow";
 import axiosInstance from "../../utils/axiosInstance";
+import { toDisplay } from "../../utils/weight";
 
 // Imports a hand-entered tally sheet for lots whose labels carry no barcode.
 //
@@ -48,6 +49,10 @@ const ReadOnlyField = ({ label, value }) => (
     <Text fontSize="sm" fontWeight="medium" color="gray.800">{value}</Text>
   </Flex>
 );
+
+// Two decimals, zeros included, matching the grid and the printed tally. The
+// sheet's own figures stay visible via asWritten for comparison against paper.
+const show = (w) => (w === null || w === undefined || w === "" ? "—" : toDisplay(w));
 
 const ImportTally = ({ isOpen, onClose, onImported }) => {
   const [file, setFile] = useState(null);
@@ -215,7 +220,7 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
                 open to editing — that is the guarantee the import rests on. */}
             <ReadOnlyField label="Date" value={preview.date || "—"} />
             <ReadOnlyField label="Boxes" value={String(preview.boxes)} />
-            <ReadOnlyField label="Total" value={`${preview.subtotal} ${preview.weightUnit}`} />
+            <ReadOnlyField label="Total" value={`${show(preview.subtotal)} ${preview.weightUnit}`} />
           </Box>
 
           <Text fontSize="xs" color="gray.500" mb={1} textTransform="uppercase" letterSpacing="wide">
@@ -229,7 +234,7 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
                   border="1px solid" borderColor="gray.200" fontSize="sm"
                   style={{ fontVariantNumeric: "tabular-nums" }}>
                   <Text as="span" color="gray.400" fontSize="xs" mr={1}>{i + 1}</Text>
-                  {w}
+                  {show(w)}
                 </Box>
               ))}
             </Flex>

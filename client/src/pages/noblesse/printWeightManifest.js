@@ -1,5 +1,5 @@
 import {
-  kgToLb, toDisplayHundredths, fromHundredths, trimTrailingZeros,
+  kgToLb, toDisplayHundredths, fromHundredths,
 } from "../../utils/weight";
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
@@ -24,10 +24,11 @@ const MIN_ROWS = 16; // the paper form always shows this many, blank or not
 // first and rounding the total would leave a column that does not add up to
 // its own printed subtotal.
 //
-// Trailing zeros are dropped to match the form, where 63.00 is written "63"
-// and 76.20 stays "76.2".
+// Always two decimals, zeros included: 63 is written "63.00". A column of
+// weights is read down the page, and ragged decimals ("63" above "76.2" above
+// "150.58") are far harder to scan than an aligned one.
 const cents = (s) => Number(toDisplayHundredths(s ?? "0"));
-const show = (n) => trimTrailingZeros(fromHundredths(n));
+const show = (n) => fromHundredths(n);
 
 const printWeightManifest = ({
   lotNumber, date, vendor, shipTo, billOfLading, itemDescription,
