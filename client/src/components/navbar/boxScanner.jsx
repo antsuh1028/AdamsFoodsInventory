@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Input, Divider,
+  Box, Flex, Text, Button, Badge, Input,
   Alert, AlertIcon, Stat, StatLabel, StatNumber, StatHelpText, useToast,
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
   AlertDialogContent, AlertDialogOverlay,
@@ -12,7 +12,6 @@ import { parseGs1 } from "../../utils/gs1";
 import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import ScanSheet from "./ScanSheet";
 import NumericKeypad from "./NumericKeypad";
-import getRole from "../../utils/getRole";
 import { lotNumberForDate, today, fmtDate } from "../../pages/noblesse/shared";
 import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 
@@ -69,10 +68,10 @@ const KeypadPanel = ({ onAdd, disabled }) => {
   };
 
   return (
-    <Box p={3} bg="orange.50" borderRadius="md" border="1px solid" borderColor="orange.200">
+    <Box>
       <Flex justify="space-between" align="baseline" mb={2} gap={2} wrap="wrap">
-        <Text fontSize="sm" fontWeight="bold" color="orange.800">
-          Type a weight — damaged or unbarcoded label
+        <Text fontSize="xs" color="orange.700">
+          For damaged or unbarcoded labels
         </Text>
         <Button size="xs" variant="ghost" colorScheme="orange" tabIndex={-1}
           onMouseDown={(e) => e.preventDefault()}
@@ -82,7 +81,7 @@ const KeypadPanel = ({ onAdd, disabled }) => {
       </Flex>
 
       <Flex gap={3} wrap="wrap" align="flex-start">
-        <Box flex="0 0 240px" maxW="100%">
+        <Box flex="1 1 240px" maxW="100%">
           <NumericKeypad
             value={weight}
             onChange={setWeight}
@@ -95,7 +94,7 @@ const KeypadPanel = ({ onAdd, disabled }) => {
           />
         </Box>
 
-        <Box flex="1 1 200px">
+        <Box flex="1 1 100%">
           {showNote ? (
             <>
               <Text fontSize="xs" color="gray.600" mb={1}>Note (optional)</Text>
@@ -122,12 +121,8 @@ const KeypadPanel = ({ onAdd, disabled }) => {
 const BoxScanner = ({ isOpen, onClose }) => {
   const {
     ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
-    start, resume, stop, flush, addScan, undoLast, editScan, voidScan, eraseScan,
+    start, resume, stop, flush, addScan, undoLast, editScan, voidScan,
   } = useScanSession();
-
-  // Erasing a row outright is admin-only. The server enforces it; this only
-  // decides whether to draw the control.
-  const isAdmin = getRole() === "admin";
 
   // One session is one lot, so the manifest produced at Stop covers exactly
   // these boxes. Defaults to today's lot; editable before the session opens.
@@ -300,6 +295,7 @@ const BoxScanner = ({ isOpen, onClose }) => {
 
 
   return (
+    <>
     <FloatingWindow
       isOpen={isOpen}
       onClose={onClose}
@@ -434,9 +430,6 @@ const BoxScanner = ({ isOpen, onClose }) => {
         onVoid={session
           ? onRowChange((row) => voidScan(row.localId), "Box taken off the tally")
           : undefined}
-        onHardDelete={session && isAdmin
-          ? onRowChange((row) => eraseScan(row.localId), "Row erased")
-          : undefined}
       />
 
       {lastError && (
@@ -490,12 +483,6 @@ const BoxScanner = ({ isOpen, onClose }) => {
         </Box>
       )}
 
-      {showManual && session && (
-        <>
-          <Divider my={3} />
-          <KeypadPanel onAdd={onManualAdd} disabled={busy} />
-        </>
-      )}
 
       <AlertDialog
         isOpen={confirmStart}
@@ -558,6 +545,26 @@ const BoxScanner = ({ isOpen, onClose }) => {
         </AlertDialogOverlay>
       </AlertDialog>
     </FloatingWindow>
+
+    {/* The keypad is its own window so it is reachable without scrolling the
+        session window past the grid. It is a sibling rather than a child, but
+        its isOpen is ANDed with the session window's — closing the session
+        closes this with it, and it can never be left floating over a screen
+        that has nothing to do with weighing.
+
+        Placed right rather than centred: it would otherwise land on top of the
+        grid's left-hand columns, which are the weight and unit being read. */}
+    <FloatingWindow
+      isOpen={isOpen && Boolean(session) && showManual}
+      onClose={() => setShowManual(false)}
+      title="Keypad"
+      width={320}
+      placement="right"
+      zIndex={1401}
+    >
+      <KeypadPanel onAdd={onManualAdd} disabled={busy} />
+    </FloatingWindow>
+    </>
   );
 };
 

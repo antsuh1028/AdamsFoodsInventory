@@ -5,9 +5,9 @@
 > **`master` = `dd13b58` = what production runs.** This branch is four commits
 > ahead and has never been deployed. Don't deploy it without being asked.
 >
-> All four requested features are complete, plus a later round (keypad always
-> on, unit on corrections, admin erase). Suite **466 pass / 6 pre-existing
-> fail**; client builds clean.
+> All four requested features are complete, plus a later round (keypad in its
+> own window, unit on corrections, admin erase). Suite **462 pass / 6
+> pre-existing fail**; client builds clean.
 >
 > **1. KG→LB conversion.** Every weight is stored and printed in pounds.
 > `server/utils/weight.js` + byte-identical mirror `client/src/utils/weight.js`
@@ -45,11 +45,14 @@
 > its own; the readout is a `div`, not an `input`, because focusing an input is
 > what triggers the OS keyboard. Buttons are `tabIndex={-1}` with
 > `onMouseDown` prevented so a scan's Enter cannot re-press the last button.
-> - **The keypad panel is open by default for the whole session** and nothing on
->   it is focusable. That is load-bearing: the global keydown handler in
->   `boxScanner.jsx` returns early when `e.target` is an INPUT/TEXTAREA/SELECT,
->   so a field left focused there **silently swallows scans**. The unit is
->   buttons on the keypad; the note field collapses and warns while open.
+> - **The keypad is its own `FloatingWindow`**, a sibling of the session window
+>   whose `isOpen` is ANDed with it — so it closes with the session and can never
+>   be left floating over an unrelated screen. `placement="right"` keeps it off
+>   the grid's left-hand columns (the weight and unit being read).
+> - **Nothing on the panel is focusable.** Load-bearing: the global keydown
+>   handler in `boxScanner.jsx` returns early when `e.target` is an
+>   INPUT/TEXTAREA/SELECT, so a field left focused there **silently swallows
+>   scans**. The unit is buttons on the keypad; the note collapses and warns.
 >
 > **5. Corrections carry a unit.** A KG label is correctable as KG — the figure
 > goes up as typed and the server converts, so the client stays untrusted.
@@ -59,6 +62,9 @@
 > mutation-tested. Deliberately a **separate route** from the void, so a replayed
 > or mistyped void can never destroy a box; the DELETE carries `tenant_id` so a
 > guessed id from another tenant misses. Voiding remains the default.
+> **Offered on the Weight Manifest screen only, not during a live session** — the
+> scanning operator is moving fast and has undo and void; erasing is deliberate
+> cleanup done afterwards.
 >
 > ### Not done
 > - The tally-sheet **date is still discarded** on import — see §4 Known gap.

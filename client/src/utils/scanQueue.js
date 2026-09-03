@@ -231,28 +231,6 @@ const createScanQueue = ({
     return { voided: true, record: patched };
   };
 
-  // Erase a row outright. Voiding is the normal path and keeps the audit trail;
-  // this is for a row that should never have existed — a test scan, a box from
-  // another lot. The server gates it to admins; this only carries it out.
-  const deleteScan = async (localId, { deleteServer } = {}) => {
-    const rows = await backend.listAll();
-    const row = rows.find((r) => r.localId === localId);
-    if (!row) return { deleted: false, reason: "not-found" };
-
-    // Server first: if it refuses, the local copy stays, so the grid never
-    // hides a box the database still holds.
-    if (row.serverItemId && deleteServer) await deleteServer(row.serverItemId);
-
-    await backend.deleteScans([localId]);
-    // Only back the weight out if it was still counting. A voided, duplicate or
-    // rejected row was already excluded, and subtracting again would understate
-    // the shipment.
-    if (!["voided", "duplicate", "rejected"].includes(row.status)) {
-      await bumpStats(displayOf(row), STORED_UNIT, -1);
-    }
-    return { deleted: true, record: row };
-  };
-
   const getStats = async () => {
     const session = await backend.getSession();
     return formatStats(session && session.stats);
@@ -402,7 +380,6 @@ const createScanQueue = ({
     undoLast,
     editScan,
     voidScan,
-    deleteScan,
     getStats,
     listSession,
     clearSession,

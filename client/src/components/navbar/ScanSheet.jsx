@@ -71,7 +71,9 @@ const ScanSheet = ({
   // before — the manifest tab uses it read-only for non-admins.
   onEditWeight, onVoid, onRestore, busyId = null,
   // Admin-only, and separate from onVoid on purpose: this one does not come
-  // back. Supplied only where an admin is actually looking at the grid.
+  // back. Supplied by the weight manifest screen only — during a live session
+  // the operator is moving fast and has undo and void; erasing is deliberate
+  // cleanup done afterwards, looking at the stored manifest.
   onHardDelete,
 }) => {
   const endRef = useRef(null);

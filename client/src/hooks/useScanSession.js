@@ -25,11 +25,6 @@ const api = {
   voidItem: (batchId, itemId, reason) =>
     axiosInstance.delete(`/box-batches/${batchId}/items/${itemId}`,
       { data: { reason } }).then((r) => r.data),
-  // Separate path from voidItem, admin-gated server-side. The row does not
-  // come back, so it must not be reachable by a replayed void request.
-  eraseItem: (batchId, itemId) =>
-    axiosInstance.delete(`/box-batches/${batchId}/items/${itemId}/permanent`)
-      .then((r) => r.data),
 };
 
 const newUuid = () =>
@@ -176,19 +171,6 @@ export const useScanSession = () => {
     return result;
   }, [session, refreshPending]);
 
-  // Admin-only escape hatch for a row that should never have existed. The
-  // server enforces the role; if it refuses, scanQueue leaves the local copy
-  // alone so the grid never hides a box the database still holds.
-  const eraseScan = useCallback(async (localId) => {
-    if (!queueRef.current) return { deleted: false, reason: "not-ready" };
-    const batchId = session?.batchId;
-    const result = await queueRef.current.deleteScan(localId, {
-      deleteServer: (itemId) => api.eraseItem(batchId, itemId),
-    });
-    await refreshPending();
-    return result;
-  }, [session, refreshPending]);
-
   const stop = useCallback(async () => {
     if (!queueRef.current) return null;
     const result = await queueRef.current.stop();
@@ -238,7 +220,7 @@ export const useScanSession = () => {
 
   return {
     ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
-    start, resume, stop, flush, addScan, undoLast, editScan, voidScan, eraseScan,
+    start, resume, stop, flush, addScan, undoLast, editScan, voidScan,
   };
 };
 

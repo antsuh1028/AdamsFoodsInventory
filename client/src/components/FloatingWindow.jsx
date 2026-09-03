@@ -21,6 +21,25 @@ const resolveWidth = (requested, viewportW) => {
   return Math.max(capped, Math.min(MIN_WIDTH, available));
 };
 
+// Where a window first appears. Centring is right for a primary window, but a
+// companion window opened alongside one would land straight on top of it —
+// "right" keeps it clear of the left-hand columns, which on the scan grid are
+// the weight and unit the operator is actually reading.
+const initialOrigin = (placement, vw, vh, w) => {
+  if (placement === "right") {
+    return {
+      x: Math.max(EDGE_MARGIN, vw - w - EDGE_MARGIN),
+      // The window is content-height and has not been measured yet, so this is
+      // a fraction of the viewport rather than a true vertical centring.
+      y: Math.max(EDGE_MARGIN, Math.round(vh * 0.22)),
+    };
+  }
+  return {
+    x: Math.max(EDGE_MARGIN, Math.round((vw - w) / 2)),
+    y: Math.max(EDGE_MARGIN, Math.round(vh * 0.06)),
+  };
+};
+
 // Invisible grab strip along one edge or corner of the window.
 const ResizeHandle = ({ edge, onStart }) => {
   const styles = {
@@ -40,6 +59,11 @@ const FloatingWindow = ({
   isOpen, onClose, title, children, footer,
   width = "70%", height, isFullScreen = false, onToggleFullScreen,
   bodyProps, dark = false,
+  // "center" (default) or "right". Only affects where the window first appears;
+  // the user can drag it anywhere afterwards.
+  placement = "center",
+  // Lets a companion window sit above the one it belongs to.
+  zIndex = 1400,
 }) => {
   const [position, setPosition] = useState(null);
   const [size, setSize] = useState(null); // null height = auto (content-driven) until user resizes
@@ -78,10 +102,7 @@ const FloatingWindow = ({
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         const liveWidth = resolveWidth(size?.width ?? width, vw);
-        return {
-          x: Math.max(EDGE_MARGIN, Math.round((vw - liveWidth) / 2)),
-          y: Math.max(EDGE_MARGIN, Math.round(vh * 0.06)),
-        };
+        return initialOrigin(placement, vw, vh, liveWidth);
       }
       const w = resolveWidth(size?.width ?? width, viewport.w);
       return {
@@ -181,7 +202,7 @@ const FloatingWindow = ({
         boxShadow="2xl"
         border="1px solid"
         borderColor={dark ? "gray.700" : "gray.400"}
-        zIndex={1400}
+        zIndex={zIndex}
         display="flex"
         flexDirection="column"
         overflow="hidden"
