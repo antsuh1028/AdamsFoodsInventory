@@ -10,124 +10,147 @@ const { upload } = require("../utils/aws");
 const readXlsxFile = require("read-excel-file/node");
 
 // ── Migrations (idempotent, applied on boot like the rest of this codebase) ───
-
-pool.query(`
-  CREATE TABLE IF NOT EXISTS box_batches (
-    batch_id     SERIAL PRIMARY KEY,
-    tenant_id    UUID NOT NULL REFERENCES tenants(id),
-    client_uuid  UUID NOT NULL UNIQUE,
-    status       TEXT NOT NULL DEFAULT 'open',
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    closed_at    TIMESTAMPTZ
-  )
-`).catch((err) => console.error("box_batches migration error:", err.message));
-
-// raw_barcode is nullable only because of the manual-entry fallback: a damaged
-// or unbarcoded label has no payload to store. The CHECK keeps the guarantee
-// that every *scanned* row carries the barcode it came from.
-pool.query(`
-  CREATE TABLE IF NOT EXISTS batch_items (
-    item_id         SERIAL PRIMARY KEY,
-    tenant_id       UUID NOT NULL REFERENCES tenants(id),
-    batch_id        INT NOT NULL REFERENCES box_batches(batch_id),
-    weight          NUMERIC(8,3) NOT NULL,
-    weight_unit     TEXT NOT NULL,
-    gtin            TEXT,
-    production_date DATE,
-    serial          TEXT,
-    raw_barcode     TEXT,
-    is_manual       BOOLEAN NOT NULL DEFAULT false,
-    scanned_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT batch_items_barcode_or_manual
-      CHECK (is_manual OR raw_barcode IS NOT NULL)
-  )
-`).catch((err) => console.error("batch_items migration error:", err.message));
-
-pool.query(`CREATE INDEX IF NOT EXISTS batch_items_batch_id_idx ON batch_items (batch_id)`)
-  .catch((err) => console.error("batch_items index migration error:", err.message));
-
-// A scanning session covers exactly one lot, so the lot belongs on the batch.
-// Without it a stored batch cannot be reprinted as a weight manifest.
-pool.query(`ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS lot_number TEXT`)
-  .catch((err) => console.error("box_batches lot_number migration error:", err.message));
-
-// The rest of the tally sheet heading. Stored on the batch so a past session
-// reprints as a complete form rather than one missing its header.
-for (const col of ["vendor", "ship_to", "bill_of_lading", "item_description"]) {
-  pool.query(`ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS ${col} TEXT`)
-    .catch((err) => console.error(`box_batches ${col} migration error:`, err.message));
-}
-
-// 'scanned' or 'imported'. A barcode-verified lot and one keyed in by hand on
-// an iPad are both legitimate, but they carry different confidence and anyone
-// reconciling a shipment needs to be able to tell them apart.
-pool.query(`ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'scanned'`)
-  .catch((err) => console.error("box_batches source migration error:", err.message));
-
-// Every weight is stored in pounds. Non-American suppliers label in kilograms,
-// so those are converted on the way in; this column records that it happened.
-// It is provenance, not a second weight — the original figure is recoverable
-// from raw_barcode, which still holds the kilogram payload it was read from.
-pool.query(`ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS converted_from TEXT`)
-  .catch((err) => console.error("batch_items converted_from migration error:", err.message));
-
-// Corrections. A weight that came off a barcode was verified against that
-// barcode; once a person overtypes it that is no longer true, so the row has to
-// carry its own history rather than quietly becoming indistinguishable from a
-// scanned one. original_weight holds what the label actually said.
 //
-// Removal is a soft void. A box that was scanned and then taken off the tally is
-// a fact about the shipment, and hard-deleting the row would erase the only
-// record that it ever happened.
-for (const ddl of [
-  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS original_weight NUMERIC(8,3)`,
-  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`,
-  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS edited_by UUID`,
-  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ`,
-  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS voided_by UUID`,
-  `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS void_reason TEXT`,
-]) {
-  pool.query(ddl).catch((err) => console.error("batch_items audit migration error:", err.message));
-}
-
-// Free duplicate-scan protection: the same serial cannot land in a batch twice.
-pool.query(`
-  CREATE UNIQUE INDEX IF NOT EXISTS batch_items_batch_serial_uniq
-  ON batch_items (batch_id, serial) WHERE serial IS NOT NULL
-`).catch((err) => console.error("batch_items unique index migration error:", err.message));
-
-// A lot is sometimes weighed across several sessions — two people on two
-// pallets, or a session stopped and restarted — but it ships on ONE manifest.
+// Run in SEQUENCE, not fired off together. These statements have dependencies —
+// batch_items references box_batches, manifest_group_batches references
+// manifest_groups — and a pool hands concurrent queries to different
+// connections, so firing them all at once races: the child table can reach the
+// server before the parent exists and dies with
+// `relation "manifest_groups" does not exist`. It then never retries, so the
+// table is simply missing until the next boot happens to win the race.
 //
-// The group stores which sessions it covers rather than copying their weights.
-// Copying would fork the truth: correcting a box afterwards would fix the
-// session and leave the manifest stale, which is exactly the disagreement this
-// whole feature exists to prevent.
-pool.query(`
-  CREATE TABLE IF NOT EXISTS manifest_groups (
-    group_id         SERIAL PRIMARY KEY,
-    tenant_id        UUID NOT NULL REFERENCES tenants(id),
-    name             TEXT,
-    lot_number       TEXT,
-    vendor           TEXT,
-    ship_to          TEXT,
-    bill_of_lading   TEXT,
-    item_description TEXT,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_by       UUID
-  )
-`).catch((err) => console.error("manifest_groups migration error:", err.message));
+// Each step still swallows its own error, so one failure cannot take the
+// process down or block the rest.
+const migrate = async () => {
+  const step = async (label, sql) => {
+    try {
+      await pool.query(sql);
+    } catch (err) {
+      console.error(`${label} migration error:`, err.message);
+    }
+  };
 
-// ON DELETE CASCADE on the group only. A batch is never deleted, and the
-// composite key means the same session cannot be added to one group twice.
-pool.query(`
-  CREATE TABLE IF NOT EXISTS manifest_group_batches (
-    group_id  INT NOT NULL REFERENCES manifest_groups(group_id) ON DELETE CASCADE,
-    batch_id  INT NOT NULL REFERENCES box_batches(batch_id),
-    position  INT NOT NULL DEFAULT 0,
-    PRIMARY KEY (group_id, batch_id)
-  )
-`).catch((err) => console.error("manifest_group_batches migration error:", err.message));
+  await step("box_batches", `
+    CREATE TABLE IF NOT EXISTS box_batches (
+      batch_id     SERIAL PRIMARY KEY,
+      tenant_id    UUID NOT NULL REFERENCES tenants(id),
+      client_uuid  UUID NOT NULL UNIQUE,
+      status       TEXT NOT NULL DEFAULT 'open',
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      closed_at    TIMESTAMPTZ
+    )
+  `);
+
+  // raw_barcode is nullable only because of the manual-entry fallback: a damaged
+  // or unbarcoded label has no payload to store. The CHECK keeps the guarantee
+  // that every *scanned* row carries the barcode it came from.
+  await step("batch_items", `
+    CREATE TABLE IF NOT EXISTS batch_items (
+      item_id         SERIAL PRIMARY KEY,
+      tenant_id       UUID NOT NULL REFERENCES tenants(id),
+      batch_id        INT NOT NULL REFERENCES box_batches(batch_id),
+      weight          NUMERIC(8,3) NOT NULL,
+      weight_unit     TEXT NOT NULL,
+      gtin            TEXT,
+      production_date DATE,
+      serial          TEXT,
+      raw_barcode     TEXT,
+      is_manual       BOOLEAN NOT NULL DEFAULT false,
+      scanned_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT batch_items_barcode_or_manual
+        CHECK (is_manual OR raw_barcode IS NOT NULL)
+    )
+  `);
+
+  await step("batch_items index",
+    `CREATE INDEX IF NOT EXISTS batch_items_batch_id_idx ON batch_items (batch_id)`);
+
+  // A scanning session covers exactly one lot, so the lot belongs on the batch.
+  // Without it a stored batch cannot be reprinted as a weight manifest.
+  await step("box_batches lot_number",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS lot_number TEXT`);
+
+  // The rest of the tally sheet heading. Stored on the batch so a past session
+  // reprints as a complete form rather than one missing its header.
+  for (const col of ["vendor", "ship_to", "bill_of_lading", "item_description"]) {
+    await step(`box_batches ${col}`,
+      `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS ${col} TEXT`);
+  }
+
+  // 'scanned' or 'imported'. A barcode-verified lot and one keyed in by hand on
+  // an iPad are both legitimate, but they carry different confidence and anyone
+  // reconciling a shipment needs to be able to tell them apart.
+  await step("box_batches source",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'scanned'`);
+
+  // Every weight is stored in pounds. Non-American suppliers label in kilograms,
+  // so those are converted on the way in; this column records that it happened.
+  // It is provenance, not a second weight — the original figure is recoverable
+  // from raw_barcode, which still holds the kilogram payload it was read from.
+  await step("batch_items converted_from",
+    `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS converted_from TEXT`);
+
+  // Corrections. A weight that came off a barcode was verified against that
+  // barcode; once a person overtypes it that is no longer true, so the row has to
+  // carry its own history rather than quietly becoming indistinguishable from a
+  // scanned one. original_weight holds what the label actually said.
+  //
+  // Removal is a soft void. A box that was scanned and then taken off the tally is
+  // a fact about the shipment, and hard-deleting the row would erase the only
+  // record that it ever happened.
+  for (const ddl of [
+    `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS original_weight NUMERIC(8,3)`,
+    `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`,
+    `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS edited_by UUID`,
+    `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ`,
+    `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS voided_by UUID`,
+    `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS void_reason TEXT`,
+  ]) {
+    await step("batch_items audit", ddl);
+  }
+
+  // Free duplicate-scan protection: the same serial cannot land in a batch twice.
+  await step("batch_items unique index", `
+    CREATE UNIQUE INDEX IF NOT EXISTS batch_items_batch_serial_uniq
+    ON batch_items (batch_id, serial) WHERE serial IS NOT NULL
+  `);
+
+  // A lot is sometimes weighed across several sessions — two people on two
+  // pallets, or a session stopped and restarted — but it ships on ONE manifest.
+  //
+  // The group stores which sessions it covers rather than copying their weights.
+  // Copying would fork the truth: correcting a box afterwards would fix the
+  // session and leave the manifest stale, which is exactly the disagreement this
+  // whole feature exists to prevent.
+  await step("manifest_groups", `
+    CREATE TABLE IF NOT EXISTS manifest_groups (
+      group_id         SERIAL PRIMARY KEY,
+      tenant_id        UUID NOT NULL REFERENCES tenants(id),
+      name             TEXT,
+      lot_number       TEXT,
+      vendor           TEXT,
+      ship_to          TEXT,
+      bill_of_lading   TEXT,
+      item_description TEXT,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_by       UUID
+    )
+  `);
+
+  // ON DELETE CASCADE on the group only. A batch is never deleted, and the
+  // composite key means the same session cannot be added to one group twice.
+  // Depends on manifest_groups above — hence the sequencing.
+  await step("manifest_group_batches", `
+    CREATE TABLE IF NOT EXISTS manifest_group_batches (
+      group_id  INT NOT NULL REFERENCES manifest_groups(group_id) ON DELETE CASCADE,
+      batch_id  INT NOT NULL REFERENCES box_batches(batch_id),
+      position  INT NOT NULL DEFAULT 0,
+      PRIMARY KEY (group_id, batch_id)
+    )
+  `);
+};
+
+migrate();
 
 // ── Rate limiting ────────────────────────────────────────────────────────────
 // The global 60/min limiter in index.js keys on IP, so every iPad behind the

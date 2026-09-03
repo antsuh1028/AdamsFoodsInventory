@@ -5,7 +5,8 @@
 > **`master` = `dd13b58` = what production runs.** This branch is four commits
 > ahead and has never been deployed. Don't deploy it without being asked.
 >
-> All four requested features are complete. Suite **449 pass / 6 pre-existing
+> All four requested features are complete, plus a later round (keypad always
+> on, unit on corrections, admin erase). Suite **466 pass / 6 pre-existing
 > fail**; client builds clean.
 >
 > **1. KG→LB conversion.** Every weight is stored and printed in pounds.
@@ -44,6 +45,20 @@
 > its own; the readout is a `div`, not an `input`, because focusing an input is
 > what triggers the OS keyboard. Buttons are `tabIndex={-1}` with
 > `onMouseDown` prevented so a scan's Enter cannot re-press the last button.
+> - **The keypad panel is open by default for the whole session** and nothing on
+>   it is focusable. That is load-bearing: the global keydown handler in
+>   `boxScanner.jsx` returns early when `e.target` is an INPUT/TEXTAREA/SELECT,
+>   so a field left focused there **silently swallows scans**. The unit is
+>   buttons on the keypad; the note field collapses and warns while open.
+>
+> **5. Corrections carry a unit.** A KG label is correctable as KG — the figure
+> goes up as typed and the server converts, so the client stays untrusted.
+> Correcting back to LB clears `converted_from`.
+>
+> **6. Admin erase** — `DELETE .../items/:itemId/permanent`, `requireRole("admin")`,
+> mutation-tested. Deliberately a **separate route** from the void, so a replayed
+> or mistyped void can never destroy a box; the DELETE carries `tenant_id` so a
+> guessed id from another tenant misses. Voiding remains the default.
 >
 > ### Not done
 > - The tally-sheet **date is still discarded** on import — see §4 Known gap.
@@ -243,6 +258,13 @@ claiming a change caused no regressions.
   `requireRole("admin")`; a client-side check is not a control.
 - `FloatingWindow` centring must read `window.innerWidth` **directly**, not from
   state — state is async and takes the clamp branch on first paint.
+- **Fire-and-forget migrations race.** `boxes.pg.js` used to fire every
+  `CREATE TABLE` at module load without awaiting. A pool hands concurrent
+  queries to different connections, so `manifest_group_batches` reached the
+  server before `manifest_groups` existed and died with `relation
+  "manifest_groups" does not exist` — then never retried, leaving the table
+  missing until a boot happened to win the race. Seen live. Migrations there now
+  run in a sequential `migrate()`; keep any new dependent DDL inside it.
 
 ### Tooling
 
