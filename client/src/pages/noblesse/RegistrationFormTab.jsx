@@ -241,9 +241,17 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                     happened. The date carries no label of its own — a date
                     input is self-evident, and the row reads left to right. */}
                 <SheetField label={`(${idx + 1}) Processed`} full>
-                  <Flex gap={1} align="center" px={1}>
+                  {/* Three fields share one cell, so they are white and spaced:
+                      the cell's own grey shows through as a gutter and the row
+                      reads as weight / cases / date rather than one long strip.
+                      Every other field on the sheet is a lone input filling its
+                      cell, which is why only this row needs it. */}
+                  <Flex gap={2} align="center" px={2} py={1}>
                     <Input
                       {...sheetInputProps}
+                      bg="white"
+                      size="xs"
+                      flex="0 1 96px"
                       type="number"
                       placeholder="lbs"
                       title="Processed weight (lbs)"
@@ -253,10 +261,12 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                         newDates[idx] = { ...newDates[idx], weight: e.target.value };
                         setDraft({ ...draft, processingDates: newDates });
                       }}
-                      flex={1}
                     />
                     <Input
                       {...sheetInputProps}
+                      bg="white"
+                      size="xs"
+                      flex="0 1 80px"
                       type="number"
                       placeholder="c/s"
                       title="Processed quantity (cases)"
@@ -266,10 +276,12 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                         newDates[idx] = { ...newDates[idx], cases: e.target.value };
                         setDraft({ ...draft, processingDates: newDates });
                       }}
-                      flex={1}
                     />
                     <Input
                       {...sheetInputProps}
+                      bg="white"
+                      size="xs"
+                      flex="0 1 130px"
                       type="date"
                       title="Processing date"
                       value={pd.date || ""}
@@ -278,7 +290,6 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                         newDates[idx] = { ...newDates[idx], date: e.target.value };
                         setDraft({ ...draft, processingDates: newDates });
                       }}
-                      flex={1}
                     />
                     <Button
                       size="xs"
