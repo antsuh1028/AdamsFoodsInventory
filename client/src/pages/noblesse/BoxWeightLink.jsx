@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Select, Spinner, Alert, AlertIcon, useToast,
+  Box, Flex, Text, Button, Badge, Checkbox, Spinner, Alert, AlertIcon, useToast,
 } from "@chakra-ui/react";
 import axiosInstance from "../../utils/axiosInstance";
 import { toDisplay, toDisplayHundredths } from "../../utils/weight";
@@ -29,7 +29,7 @@ const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
   const [linked, setLinked] = useState(null);
   const [available, setAvailable] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [picking, setPicking] = useState("");
+  const [picking, setPicking] = useState(() => new Set());
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -74,12 +74,14 @@ const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
       .sort((a, b) => (b.suggested ? 1 : 0) - (a.suggested ? 1 : 0));
   }, [available, linkedIds, lotNumber]);
 
+  const suggested = useMemo(() => options.filter((b) => b.suggested), [options]);
+
   const mutate = async (run) => {
     setLoading(true);
     try {
       const { data } = await run();
       setLinked(data);
-      setPicking("");
+      setPicking(new Set());
     } catch (err) {
       toast({
         title: "Could not change the link",
@@ -91,9 +93,18 @@ const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
     }
   };
 
-  const link = (batchId) => mutate(() =>
+  // Several at once: a lot weighed across two pallets, or a session stopped
+  // and restarted, is one delivery on one form. The endpoint has always taken
+  // an array.
+  const link = (batchIds) => mutate(() =>
     axiosInstance.post(`/noblesse-registration-forms/${formId}/box-batches`,
-      { batchIds: [Number(batchId)] }));
+      { batchIds: batchIds.map(Number) }));
+
+  const togglePick = (batchId) => setPicking((prev) => {
+    const next = new Set(prev);
+    if (next.has(batchId)) next.delete(batchId); else next.add(batchId);
+    return next;
+  });
 
   const unlink = (batchId) => mutate(() =>
     axiosInstance.delete(`/noblesse-registration-forms/${formId}/box-batches/${batchId}`));
@@ -206,27 +217,58 @@ const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
         </Text>
       )}
 
-      <Flex gap={2} align="center">
-        <Select size="sm" bg="white" placeholder="Tie a weighing session…"
-          value={picking} onChange={(e) => setPicking(e.target.value)}>
-          {options.map((b) => (
-            <option key={b.batch_id} value={b.batch_id}>
-              {b.suggested ? "★ " : ""}
-              {b.lot_number || `Batch ${b.batch_id}`}
-              {b.vendor ? ` — ${b.vendor}` : ""}
-              {` — ${b.box_count} boxes`}
-            </option>
-          ))}
-        </Select>
-        <Button size="sm" colorScheme="blue" isDisabled={!picking}
-          onClick={() => link(picking)}>
-          Tie
-        </Button>
-      </Flex>
-      {options.some((b) => b.suggested) && (
-        <Text fontSize="xs" color="gray.500" mt={1}>
-          ★ marks sessions whose lot matches this form.
+      {options.length === 0 ? (
+        <Text fontSize="xs" color="gray.500">
+          {available.length
+            ? "Every weighing session is already tied to this form."
+            : "No weighing sessions to tie yet."}
         </Text>
+      ) : (
+        <>
+          <Flex justify="space-between" align="baseline" mb={1} gap={2} wrap="wrap">
+            <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
+              Tie weighing sessions
+            </Text>
+            {suggested.length > 0 && (
+              <Button size="xs" variant="link" colorScheme="blue"
+                onClick={() => setPicking(new Set(suggested.map((b) => b.batch_id)))}>
+                Select the {suggested.length} matching this lot
+              </Button>
+            )}
+          </Flex>
+
+          <Box maxH="132px" overflowY="auto" bg="white" borderRadius="md"
+            border="1px solid" borderColor="blue.100" px={2} py={1} mb={2}>
+            {options.map((b) => (
+              <Checkbox
+                key={b.batch_id}
+                size="sm"
+                width="100%"
+                py={1}
+                isChecked={picking.has(b.batch_id)}
+                onChange={() => togglePick(b.batch_id)}
+              >
+                <Flex align="baseline" gap={2} wrap="wrap" fontSize="sm">
+                  {b.suggested && (
+                    <Text as="span" color="blue.500" title="Lot matches this form">★</Text>
+                  )}
+                  <Text as="span" fontWeight="600" color="blue.700">
+                    {b.lot_number || `Batch ${b.batch_id}`}
+                  </Text>
+                  {b.vendor && <Text as="span" color="gray.600">{b.vendor}</Text>}
+                  <Text as="span" color="gray.500" fontSize="xs">
+                    {b.box_count} box{b.box_count === 1 ? "" : "es"}
+                  </Text>
+                </Flex>
+              </Checkbox>
+            ))}
+          </Box>
+
+          <Button size="sm" colorScheme="blue" isDisabled={picking.size === 0}
+            onClick={() => link([...picking])}>
+            {picking.size > 1 ? `Tie ${picking.size} sessions` : "Tie session"}
+          </Button>
+        </>
       )}
     </Box>
   );
