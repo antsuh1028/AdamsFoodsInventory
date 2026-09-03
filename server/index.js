@@ -22,7 +22,8 @@ const generalLimiter = rateLimit({
   skip: (req) =>
     req.path === "/login" ||
     req.path === "/refresh" ||
-    req.path.startsWith("/box-batches"),
+    req.path.startsWith("/box-batches") ||
+    req.path.startsWith("/manifest-groups"),
   message: { error: "Too many requests, please try again later" },
 });
 

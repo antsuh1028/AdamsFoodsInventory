@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Spinner, IconButton, Input, Select,
+  Box, Flex, Text, Button, Badge, Spinner, IconButton, Input, Select, Checkbox,
   Alert, AlertIcon, useToast,
+  AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogContent, AlertDialogOverlay,
 } from "@chakra-ui/react";
 import { ChevronDownIcon, ChevronUpIcon, SearchIcon, CloseIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
@@ -45,6 +47,12 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const [details, setDetails] = useState({});   // batch_id -> full batch
   const [loadingId, setLoadingId] = useState(null);
   const [rowBusy, setRowBusy] = useState(null);
+  // A lot weighed across several sessions ships on one manifest.
+  const [selected, setSelected] = useState(() => new Set());
+  const [groups, setGroups] = useState([]);
+  const [confirmMerge, setConfirmMerge] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const cancelMergeRef = useRef(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const toast = useToast();
@@ -61,7 +69,17 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
     }
   }, []);
 
-  useEffect(() => { fetchBatches(); }, [fetchBatches]);
+  const fetchGroups = useCallback(async () => {
+    try {
+      const { data } = await axiosInstance.get("/manifest-groups");
+      setGroups(data || []);
+    } catch {
+      // A merged-manifest listing failing must not blank the sessions table,
+      // which is the part people actually need to keep working.
+    }
+  }, []);
+
+  useEffect(() => { fetchBatches(); fetchGroups(); }, [fetchBatches, fetchGroups]);
 
   // Re-fetch on the parent's auto-refresh, compared against a ref so the
   // initial value does not cause a duplicate load alongside the mount effect.
@@ -70,7 +88,8 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
     if (lastSignal.current === refreshSignal) return;
     lastSignal.current = refreshSignal;
     fetchBatches();
-  }, [refreshSignal, fetchBatches]);
+    fetchGroups();
+  }, [refreshSignal, fetchBatches, fetchGroups]);
 
   // Closing the scanner means a session may have been opened or closed.
   const onScannerClose = () => { setScannerOpen(false); fetchBatches(); };
@@ -159,6 +178,76 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
     };
   };
 
+  const toggleSelected = (batchId) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(batchId)) next.delete(batchId); else next.add(batchId);
+    return next;
+  });
+
+  const createGroup = async () => {
+    setMerging(true);
+    try {
+      const batchIds = visible.filter((b) => selected.has(b.batch_id)).map((b) => b.batch_id);
+      const { data } = await axiosInstance.post("/manifest-groups", { batchIds });
+      toast({
+        title: "Merged manifest created",
+        description: `${batchIds.length} sessions on one form`,
+        status: "success", duration: 3500, position: "top",
+      });
+      setSelected(new Set());
+      setConfirmMerge(false);
+      await fetchGroups();
+      return data;
+    } catch (err) {
+      toast({
+        title: "Could not merge those sessions",
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 5000, position: "top",
+      });
+      setConfirmMerge(false);
+      return null;
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  // Pulled fresh every time rather than cached: the group references its
+  // sessions, so a weight corrected since the last print has to appear.
+  const printGroup = async (group) => {
+    try {
+      const { data } = await axiosInstance.get(`/manifest-groups/${group.group_id}`);
+      printWeightManifest({
+        lotNumber: data.lot_number,
+        vendor: data.vendor,
+        shipTo: data.ship_to,
+        billOfLading: data.bill_of_lading,
+        itemDescription: data.item_description,
+        date: fmtDate(String(data.created_at).slice(0, 10)),
+        scans: data.items,
+      });
+    } catch (err) {
+      toast({
+        title: "Could not load that manifest",
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 4000, position: "top",
+      });
+    }
+  };
+
+  const deleteGroup = async (group) => {
+    try {
+      await axiosInstance.delete(`/manifest-groups/${group.group_id}`);
+      toast({ title: "Merged manifest removed",
+        description: "The sessions and their boxes are untouched.",
+        status: "info", duration: 3000, position: "top" });
+      fetchGroups();
+    } catch (err) {
+      toast({ title: "Could not remove it",
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 4000, position: "top" });
+    }
+  };
+
   const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
   const clearFilters = () => setFilters({});
   const activeFilters = Object.entries(filters).filter(([, v]) => v);
@@ -233,7 +322,17 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
           </Text>
         </Flex>
 
-        <Flex gap={2}>
+        <Flex gap={2} wrap="wrap">
+          {selected.size >= 2 && (
+            <Button size="xs" colorScheme="purple" onClick={() => setConfirmMerge(true)}>
+              Combine {selected.size} sessions
+            </Button>
+          )}
+          {selected.size === 1 && (
+            <Text fontSize="xs" color="gray.500" alignSelf="center">
+              Pick one more to combine
+            </Text>
+          )}
           <Button size="xs" variant="outline" colorScheme="teal" onClick={() => setImportOpen(true)}>
             Import tally sheet
           </Button>
@@ -249,6 +348,51 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         </Alert>
       )}
 
+      {/* Saved merges. Each one is a reference to its sessions, so reprinting
+          picks up any correction made since — it is not a frozen copy. */}
+      {groups.length > 0 && (
+        <Box mb={5}>
+          <Text fontSize="sm" fontWeight="semibold" color="gray.600" mb={2}
+            textTransform="uppercase" letterSpacing="wide">
+            Merged manifests
+          </Text>
+          <Flex direction="column" gap={2}>
+            {groups.map((g) => (
+              <Flex key={g.group_id} align="center" gap={3} wrap="wrap"
+                px={3} py={2} bg="purple.50" borderRadius="md"
+                border="1px solid" borderColor="purple.200">
+                <Text fontSize="sm" fontWeight="bold" color="purple.800">
+                  {g.name || g.lot_number || `Manifest ${g.group_id}`}
+                </Text>
+                <Badge colorScheme="purple" fontSize="10px">
+                  {g.session_count} session{g.session_count === 1 ? "" : "s"}
+                </Badge>
+                <Text fontSize="sm" color="gray.600">
+                  {g.box_count} boxes
+                </Text>
+                <Text fontSize="sm" color="gray.700" fontWeight="600"
+                  style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {g.total} LB
+                </Text>
+                {g.vendor && <Text fontSize="sm" color="gray.500">{g.vendor}</Text>}
+                <Flex gap={2} ml="auto">
+                  <Button size="xs" variant="outline" colorScheme="blue"
+                    onClick={() => printGroup(g)}>
+                    Print
+                  </Button>
+                  {isAdmin && (
+                    <Button size="xs" variant="ghost" colorScheme="red"
+                      onClick={() => deleteGroup(g)}>
+                      Remove
+                    </Button>
+                  )}
+                </Flex>
+              </Flex>
+            ))}
+          </Flex>
+        </Box>
+      )}
+
       {visible.length === 0 ? (
         <Text fontSize="sm" color="gray.400">
           {batches.length === 0
@@ -260,6 +404,8 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
           <Box as="table" width="100%" style={{ minWidth: "980px", borderCollapse: "collapse" }}>
             <Box as="thead">
               <Box as="tr">
+                <Box as="th" bg="gray.100" borderBottom="1px solid" borderColor="gray.300"
+                  px={2} py={2} style={{ width: "40px" }} />
                 {COLUMNS.map((c) => (
                   <Box as="th" key={c.key} bg="gray.100" borderBottom="1px solid" borderColor="gray.300"
                     px={3} py={2} textAlign={c.align || "left"} style={{ width: c.width }}
@@ -274,6 +420,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
 
               {showFilters && (
                 <Box as="tr">
+                  <Box as="th" bg="gray.50" borderBottom="1px solid" borderColor="gray.200" />
                   {COLUMNS.map((c) => (
                     <Box as="th" key={c.key} bg="gray.50" borderBottom="1px solid"
                       borderColor="gray.200" px={2} py={1}>
@@ -305,6 +452,13 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                       bg={isToday(b) ? "green.50" : i % 2 ? "gray.50" : "white"}
                       _hover={{ bg: isToday(b) ? "green.100" : "blue.50" }}
                       cursor="pointer" onDoubleClick={() => toggleExpand(b)}>
+                      <Box as="td" px={2} py={2} borderBottom="1px solid" borderColor="gray.100"
+                        onClick={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}>
+                        <Checkbox size="sm" isChecked={selected.has(b.batch_id)}
+                          onChange={() => toggleSelected(b.batch_id)}
+                          aria-label={`Select ${b.lot_number || b.batch_id}`} />
+                      </Box>
                       <Box as="td" px={3} py={2} fontSize="sm" fontWeight="600" color="blue.700"
                         borderBottom="1px solid" borderColor="gray.100"
                         borderLeft={isToday(b) ? "4px solid" : undefined}
@@ -361,7 +515,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
 
                     {open && (
                       <Box as="tr">
-                        <Box as="td" colSpan={COLUMNS.length + 1} style={{ padding: 0 }}
+                        <Box as="td" colSpan={COLUMNS.length + 2} style={{ padding: 0 }}
                           bg="blue.50" borderTop="2px solid" borderColor="blue.300">
                           <Box p={4}>
                             {loadingId === b.batch_id ? (
@@ -384,6 +538,46 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
           </Text>
         </Box>
       )}
+
+      <AlertDialog isOpen={confirmMerge} leastDestructiveRef={cancelMergeRef}
+        onClose={() => setConfirmMerge(false)} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Combine these into one manifest
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              <Text fontSize="sm" mb={3}>
+                These sessions will print as a single tally sheet. The heading is
+                taken from the first one. Nothing is copied — correcting a box in
+                a session afterwards will show on the next print of this manifest.
+              </Text>
+              <Box borderWidth="1px" borderColor="gray.200" borderRadius="md" overflow="hidden">
+                {visible.filter((b) => selected.has(b.batch_id)).map((b, i) => (
+                  <Flex key={b.batch_id} px={3} py={2} gap={3} align="baseline"
+                    bg={i % 2 ? "gray.50" : "white"} wrap="wrap">
+                    <Text fontSize="sm" fontWeight="bold" color="red.800">
+                      {b.lot_number || `Batch ${b.batch_id}`}
+                    </Text>
+                    <Text fontSize="sm" color="gray.600">{b.vendor || "—"}</Text>
+                    <Text fontSize="sm" color="gray.700" ml="auto">
+                      {b.box_count} boxes · {totalsText(b.totals)}
+                    </Text>
+                  </Flex>
+                ))}
+              </Box>
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelMergeRef} onClick={() => setConfirmMerge(false)}>
+                Go back
+              </Button>
+              <Button colorScheme="purple" onClick={createGroup} isLoading={merging}>
+                Combine
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
 
       <BoxScanner isOpen={scannerOpen} onClose={onScannerClose} />
       <ImportTally isOpen={importOpen} onClose={() => setImportOpen(false)} onImported={fetchBatches} />

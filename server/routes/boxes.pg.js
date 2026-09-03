@@ -2,6 +2,7 @@ const router = require("express").Router();
 const rateLimit = require("express-rate-limit");
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
+const requireRole = require("../middleware/requireRole");
 const { parseGs1 } = require("../utils/gs1");
 const { parseTallySheet } = require("../utils/tallySheet");
 const { toPounds, kgToLb, sumWeights, trimTrailingZeros } = require("../utils/weight");
@@ -94,6 +95,39 @@ pool.query(`
   CREATE UNIQUE INDEX IF NOT EXISTS batch_items_batch_serial_uniq
   ON batch_items (batch_id, serial) WHERE serial IS NOT NULL
 `).catch((err) => console.error("batch_items unique index migration error:", err.message));
+
+// A lot is sometimes weighed across several sessions — two people on two
+// pallets, or a session stopped and restarted — but it ships on ONE manifest.
+//
+// The group stores which sessions it covers rather than copying their weights.
+// Copying would fork the truth: correcting a box afterwards would fix the
+// session and leave the manifest stale, which is exactly the disagreement this
+// whole feature exists to prevent.
+pool.query(`
+  CREATE TABLE IF NOT EXISTS manifest_groups (
+    group_id         SERIAL PRIMARY KEY,
+    tenant_id        UUID NOT NULL REFERENCES tenants(id),
+    name             TEXT,
+    lot_number       TEXT,
+    vendor           TEXT,
+    ship_to          TEXT,
+    bill_of_lading   TEXT,
+    item_description TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by       UUID
+  )
+`).catch((err) => console.error("manifest_groups migration error:", err.message));
+
+// ON DELETE CASCADE on the group only. A batch is never deleted, and the
+// composite key means the same session cannot be added to one group twice.
+pool.query(`
+  CREATE TABLE IF NOT EXISTS manifest_group_batches (
+    group_id  INT NOT NULL REFERENCES manifest_groups(group_id) ON DELETE CASCADE,
+    batch_id  INT NOT NULL REFERENCES box_batches(batch_id),
+    position  INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (group_id, batch_id)
+  )
+`).catch((err) => console.error("manifest_group_batches migration error:", err.message));
 
 // ── Rate limiting ────────────────────────────────────────────────────────────
 // The global 60/min limiter in index.js keys on IP, so every iPad behind the
@@ -823,6 +857,199 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
     });
   } catch (err) {
     console.error("read box batch:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ── Merged manifests ─────────────────────────────────────────────────────────
+// Several weighing sessions printed as one tally sheet. The group holds
+// references, never copies: a weight corrected in a session afterwards shows up
+// on the next reprint of the manifest rather than leaving the two disagreeing.
+
+// Create a group. The heading defaults to the first session's, since in practice
+// these are sessions covering one lot.
+router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
+  const { batchIds, name, lotNumber, vendor, shipTo, billOfLading, itemDescription } = req.body || {};
+
+  if (!Array.isArray(batchIds) || batchIds.length === 0) {
+    return res.status(400).json({ error: "batchIds must be a non-empty array" });
+  }
+  if (!batchIds.every((id) => Number.isInteger(id))) {
+    return res.status(400).json({ error: "batchIds must all be integers" });
+  }
+  // De-duplicated before insert: the same session listed twice would otherwise
+  // trip the primary key and roll back the whole group.
+  const ids = [...new Set(batchIds)];
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Every session must belong to this tenant. Checked by counting rather than
+    // trusting the request, so a batch id from another tenant cannot be folded
+    // into a manifest.
+    const owned = await client.query(
+      `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description
+         FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2`,
+      [ids, req.tenantId]
+    );
+    if (owned.rows.length !== ids.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "One or more sessions were not found" });
+    }
+
+    const first = owned.rows.find((b) => b.batch_id === ids[0]) || owned.rows[0];
+    const pick = (given, fallback) => {
+      const v = typeof given === "string" ? given.trim() : "";
+      return v || fallback || null;
+    };
+
+    const group = await client.query(
+      `INSERT INTO manifest_groups
+         (tenant_id, name, lot_number, vendor, ship_to, bill_of_lading, item_description, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING group_id, name, lot_number, vendor, ship_to, bill_of_lading,
+                 item_description, created_at`,
+      [req.tenantId, pick(name, null), pick(lotNumber, first.lot_number),
+       pick(vendor, first.vendor), pick(shipTo, first.ship_to),
+       pick(billOfLading, first.bill_of_lading),
+       pick(itemDescription, first.item_description), req.userId]
+    );
+    const groupId = group.rows[0].group_id;
+
+    // Position preserves the order the operator picked, which is the order the
+    // boxes are written down the printed form.
+    await client.query(
+      `INSERT INTO manifest_group_batches (group_id, batch_id, position)
+       SELECT $1, b, p FROM UNNEST($2::int[], $3::int[]) AS t(b, p)`,
+      [groupId, ids, ids.map((_, i) => i)]
+    );
+
+    await client.query("COMMIT");
+    return res.status(201).json({ ...group.rows[0], batchIds: ids });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("create manifest group:", err);
+    return res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
+  }
+});
+
+// List groups, with the same derived counts the session list carries so the two
+// read alike. Voided boxes are excluded here exactly as they are everywhere.
+router.get("/manifest-groups", verifyToken, async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  try {
+    const result = await pool.query(
+      `SELECT g.group_id, g.name, g.lot_number, g.vendor, g.item_description,
+              g.created_at,
+              (SELECT COUNT(*)::int FROM manifest_group_batches m
+                WHERE m.group_id = g.group_id) AS session_count,
+              (SELECT COUNT(*)::int
+                 FROM batch_items i
+                 JOIN manifest_group_batches m ON m.batch_id = i.batch_id
+                WHERE m.group_id = g.group_id AND i.voided_at IS NULL) AS box_count,
+              COALESCE((
+                SELECT SUM(i.weight)::text
+                  FROM batch_items i
+                  JOIN manifest_group_batches m ON m.batch_id = i.batch_id
+                 WHERE m.group_id = g.group_id AND i.voided_at IS NULL
+              ), '0') AS total
+         FROM manifest_groups g
+        WHERE g.tenant_id = $1
+        ORDER BY g.created_at DESC
+        LIMIT $2`,
+      [req.tenantId, limit]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("list manifest groups:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// One group with every box across its sessions, in session order then scan
+// order — the sequence they are written down the printed form.
+router.get("/manifest-groups/:id", verifyToken, async (req, res) => {
+  const groupId = Number(req.params.id);
+  if (!Number.isInteger(groupId)) return res.status(400).json({ error: "Invalid group id" });
+
+  try {
+    const group = await pool.query(
+      `SELECT group_id, name, lot_number, vendor, ship_to, bill_of_lading,
+              item_description, created_at
+         FROM manifest_groups WHERE group_id = $1 AND tenant_id = $2`,
+      [groupId, req.tenantId]
+    );
+    if (!group.rows.length) return res.status(404).json({ error: "Manifest not found" });
+
+    const items = await pool.query(
+      `SELECT i.item_id, i.weight::text AS weight, i.weight_unit, i.gtin,
+              i.production_date, i.serial, i.is_manual, i.converted_from, i.scanned_at,
+              i.original_weight::text AS original_weight, i.edited_at,
+              i.voided_at, i.void_reason,
+              b.batch_id, b.lot_number AS batch_lot
+         FROM batch_items i
+         JOIN manifest_group_batches m ON m.batch_id = i.batch_id
+         JOIN box_batches b ON b.batch_id = i.batch_id
+        WHERE m.group_id = $1 AND i.tenant_id = $2
+        ORDER BY m.position, i.item_id`,
+      [groupId, req.tenantId]
+    );
+
+    const sessions = await pool.query(
+      `SELECT b.batch_id, b.lot_number, b.vendor, b.status, b.source, m.position
+         FROM manifest_group_batches m
+         JOIN box_batches b ON b.batch_id = m.batch_id
+        WHERE m.group_id = $1 AND b.tenant_id = $2
+        ORDER BY m.position`,
+      [groupId, req.tenantId]
+    );
+
+    res.json({
+      ...group.rows[0],
+      sessions: sessions.rows,
+      items: items.rows.map((r) => ({
+        localId: r.item_id,
+        weight: r.weight,
+        weightUnit: r.weight_unit,
+        gtin: r.gtin,
+        productionDate: r.production_date
+          ? new Date(r.production_date).toISOString().slice(0, 10) : null,
+        serial: r.serial,
+        isManual: r.is_manual,
+        convertedFrom: r.converted_from,
+        scannedAt: r.scanned_at,
+        originalWeight: r.original_weight,
+        editedAt: r.edited_at,
+        voidedAt: r.voided_at,
+        voidReason: r.void_reason,
+        batchId: r.batch_id,
+        batchLot: r.batch_lot,
+        status: r.voided_at ? "voided" : "synced",
+      })),
+    });
+  } catch (err) {
+    console.error("read manifest group:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Unmake a group. The sessions and their boxes are untouched — only the
+// grouping goes, which is why this one is a hard delete.
+router.delete("/manifest-groups/:id", verifyToken, requireRole("admin"), async (req, res) => {
+  const groupId = Number(req.params.id);
+  if (!Number.isInteger(groupId)) return res.status(400).json({ error: "Invalid group id" });
+  try {
+    const gone = await pool.query(
+      `DELETE FROM manifest_groups WHERE group_id = $1 AND tenant_id = $2 RETURNING group_id`,
+      [groupId, req.tenantId]
+    );
+    if (!gone.rows.length) return res.status(404).json({ error: "Manifest not found" });
+    res.json({ deleted: true, groupId });
+  } catch (err) {
+    console.error("delete manifest group:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
