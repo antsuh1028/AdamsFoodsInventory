@@ -18,6 +18,22 @@ const printRegistrationForm = (form = {}) => {
   };
   const checkbox = (checked) => `<span class="checkbox">${checked ? "&#10003;" : ""}</span>`;
 
+  // The paper form keeps two processing lines even when only one is used, so
+  // blank rows are padded rather than dropped.
+  const processingRow = (pd, i) => `
+    <tr>
+      <td class="label">(${i + 1}) Processed</td>
+      <td class="field">${wt(pd.weight)}${pd.weight ? " lbs" : ""}</td>
+      <td class="field">${val(pd.cases)}${pd.cases ? " c/s" : ""}</td>
+      <td class="field">${val(pd.date)}</td>
+    </tr>`;
+
+  const entries = Array.isArray(form.processingDates) ? form.processingDates : [];
+  const processingRows = Array.from(
+    { length: Math.max(2, entries.length) },
+    (_, i) => processingRow(entries[i] || {}, i)
+  ).join("");
+
   const row = (leftLabel, leftVal, rightLabel, rightVal, opts = {}) => `
     <tr>
       <td class="label">${leftLabel}</td>
@@ -131,8 +147,7 @@ const printRegistrationForm = (form = {}) => {
 
             ${sectionHeader("Processing &amp; Yield")}
             ${row("Total Quantity (c/s)", wt(form.totalQuantity), "", "")}
-            ${row("Processed Weight (lbs)", wt(form.processedWeight1), "(1)Processing Date(s)", val(form.processingDate1))}
-            ${row("Processed Weight (lbs)", wt(form.processedWeight2), "(2)Processing Date(s)", val(form.processingDate2))}
+            ${processingRows}
             ${row("Actual Yield (%)", wt(form.actualYield) + (form.actualYield ? "%" : ""), "Temp", val(form.temp))}
 
             ${sectionHeader("Additional")}

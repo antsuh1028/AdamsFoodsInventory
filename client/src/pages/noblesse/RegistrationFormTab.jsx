@@ -35,7 +35,7 @@ const emptyDraft = () => ({
   manifestBlAttached: false, processReportAttached: false,
   originalWeight: "", totalQuantity: "",
   processingDates: [
-    { date: "", weight: "" },
+    { date: "", weight: "", cases: "" },
   ],
   actualYield: "", temp: "", remarks: "", checkedBy: "",
   status: "in_progress",
@@ -52,7 +52,7 @@ const sampleDraft = () => ({
   manifestBlAttached: true, processReportAttached: false,
   originalWeight: "1842", totalQuantity: "24",
   processingDates: [
-    { date: today(), weight: "1695" },
+    { date: today(), weight: "1695", cases: "22" },
   ],
   actualYield: "92.0", temp: "27",
   remarks: "Sample record for print preview — no backend data behind this.",
@@ -237,15 +237,45 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
 
             {Array.isArray(draft.processingDates) && draft.processingDates.map((pd, idx) => (
               <React.Fragment key={idx}>
-                <SheetField label="Processed Weight (lbs)">
-                  <Flex gap={1} align="center">
+                {/* One processing event per row: weight, cases and the date it
+                    happened. The date carries no label of its own — a date
+                    input is self-evident, and the row reads left to right. */}
+                <SheetField label={`(${idx + 1}) Processed`} full>
+                  <Flex gap={1} align="center" px={1}>
                     <Input
                       {...sheetInputProps}
                       type="number"
+                      placeholder="lbs"
+                      title="Processed weight (lbs)"
                       value={pd.weight || ""}
                       onChange={(e) => {
                         const newDates = [...draft.processingDates];
-                        newDates[idx].weight = e.target.value;
+                        newDates[idx] = { ...newDates[idx], weight: e.target.value };
+                        setDraft({ ...draft, processingDates: newDates });
+                      }}
+                      flex={1}
+                    />
+                    <Input
+                      {...sheetInputProps}
+                      type="number"
+                      placeholder="c/s"
+                      title="Processed quantity (cases)"
+                      value={pd.cases || ""}
+                      onChange={(e) => {
+                        const newDates = [...draft.processingDates];
+                        newDates[idx] = { ...newDates[idx], cases: e.target.value };
+                        setDraft({ ...draft, processingDates: newDates });
+                      }}
+                      flex={1}
+                    />
+                    <Input
+                      {...sheetInputProps}
+                      type="date"
+                      title="Processing date"
+                      value={pd.date || ""}
+                      onChange={(e) => {
+                        const newDates = [...draft.processingDates];
+                        newDates[idx] = { ...newDates[idx], date: e.target.value };
                         setDraft({ ...draft, processingDates: newDates });
                       }}
                       flex={1}
@@ -272,9 +302,10 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                         colorScheme="blue"
                         minW="auto"
                         px={2}
+                        title="Add another processing date"
                         onClick={() => {
                           const newDates = Array.isArray(draft.processingDates) ? [...draft.processingDates] : [];
-                          newDates.push({ date: "", weight: "" });
+                          newDates.push({ date: "", weight: "", cases: "" });
                           setDraft({ ...draft, processingDates: newDates });
                         }}
                       >
@@ -282,18 +313,6 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       </Button>
                     )}
                   </Flex>
-                </SheetField>
-                <SheetField label={`(${idx + 1}) Processing Date`}>
-                  <Input
-                    {...sheetInputProps}
-                    type="date"
-                    value={pd.date || ""}
-                    onChange={(e) => {
-                      const newDates = [...draft.processingDates];
-                      newDates[idx].date = e.target.value;
-                      setDraft({ ...draft, processingDates: newDates });
-                    }}
-                  />
                 </SheetField>
               </React.Fragment>
             ))}

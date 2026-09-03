@@ -215,7 +215,11 @@ const fmtRegistrationForm = (row) => {
   if (row.processing_dates && Array.isArray(row.processing_dates)) {
     processingDates = row.processing_dates.map(pd => ({
       date: fmtDate(pd.date),
-      weight: pd.weight != null ? Number(pd.weight) : null
+      weight: pd.weight != null ? Number(pd.weight) : null,
+      // Cases processed. Rows written before this existed have no `cases` key,
+      // so it reads as null rather than 0 — nobody entered zero, it was never
+      // asked for.
+      cases: pd.cases != null && pd.cases !== "" ? Number(pd.cases) : null
     }));
   } else {
     // Fallback to legacy columns for existing data
@@ -1015,7 +1019,7 @@ router.patch("/noblesse-proc-orders/:id/status", verifyToken, async (req, res) =
 const regFormValues = (body) => {
   // Handle processingDates: convert array to JSON for storage
   const processingDatesJSON = body.processingDates && Array.isArray(body.processingDates)
-    ? JSON.stringify(body.processingDates.filter(pd => pd.date || pd.weight))
+    ? JSON.stringify(body.processingDates.filter(pd => pd.date || pd.weight || pd.cases))
     : null;
 
   return [
