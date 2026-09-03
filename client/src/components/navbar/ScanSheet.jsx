@@ -6,7 +6,9 @@ import {
 } from "@chakra-ui/react";
 import { EditIcon, DeleteIcon, RepeatIcon, WarningTwoIcon } from "@chakra-ui/icons";
 import NumericKeypad from "./NumericKeypad";
-import { kgToLb } from "../../utils/weight";
+import {
+  kgToLb, toDisplayHundredths, fromHundredths,
+} from "../../utils/weight";
 import { fmtDate } from "../../pages/noblesse/shared";
 
 // The scanned weights as a spreadsheet: one row per box, filling downward as
@@ -49,7 +51,7 @@ const cellStyle = {
 const StatusCell = ({ status }) => {
   if (status === "rejected") return <Badge colorScheme="red" fontSize="10px">Rejected</Badge>;
   // Not counted: the server already held this box, so it is not a second one.
-  if (status === "duplicate") return <Badge colorScheme="purple" fontSize="10px">Duplicate</Badge>;
+  if (status === "duplicate") return <Badge colorScheme="orange" fontSize="10px">Duplicate</Badge>;
   // Taken off the tally on purpose. Still shown, because a soft void that hid
   // the row would tell a reviewer nothing.
   if (status === "voided") return <Badge colorScheme="gray" fontSize="10px">Voided</Badge>;
@@ -77,8 +79,14 @@ const unitOf = () => "LB";
 // conversion has no convertedFrom flag but is still a kilogram box.
 const kgOrigin = (s) => (s.convertedFrom || (inKg(s) ? "KG" : null));
 
+// Shown to two decimal places, like the paper tally. Rounded per box before
+// anything is summed, so the column on screen adds up to the figure under it —
+// and to the one that prints.
+const cents = (s) => Number(toDisplayHundredths(weightOf(s)));
+const show = (n) => fromHundredths(n);
+
 const ScanSheet = ({
-  scans = [], totals = [],
+  scans = [],
   // Supplying these turns the grid editable. Left out, it renders exactly as
   // before — the manifest tab uses it read-only for non-admins.
   onEditWeight, onVoid, onRestore, busyId = null,
@@ -94,8 +102,14 @@ const ScanSheet = ({
   const [draftUnit, setDraftUnit] = useState("LB");
   const [confirmErase, setConfirmErase] = useState(null);   // row awaiting confirmation
   const cancelEraseRef = useRef(null);
-  const counted = scans.filter((s) => !NOT_A_BOX.has(s.status)).length;
+  const countedRows = scans.filter((s) => !NOT_A_BOX.has(s.status));
+  const counted = countedRows.length;
   const skipped = scans.length - counted;
+  // Derived from the rows on screen rather than taken from the caller's total,
+  // which is summed at storage precision. Displaying that beside per-box
+  // rounded figures would let the column disagree with its own footer by a
+  // cent — the disagreement a tally exists to rule out.
+  const displayTotal = countedRows.reduce((acc, s) => acc + cents(s), 0);
   const editable = Boolean(onEditWeight || onVoid || onHardDelete);
   const cols = editable ? [...COLS, ACTIONS_COL] : COLS;
 
@@ -167,10 +181,10 @@ const ScanSheet = ({
                     <td style={{ ...cellStyle, textAlign: "center", color: "#A0AEC0",
                       background: "#EDF2F7", fontSize: "13px" }}>{i + 1}</td>
                     <td style={{ ...cellStyle, textAlign: "right", fontWeight: 700,
-                      fontSize: "17px", color: rejected ? "#C53030" : dup ? "#805AD5"
+                      fontSize: "17px", color: rejected ? "#C53030" : dup ? "#C05621"
                         : voided ? "#718096" : "#1A365D",
                       textDecoration: struck ? "line-through" : undefined }}>
-                      {weightOf(s)}
+                      {show(cents(s))}
                       {/* What the label said, before someone corrected it. The
                           point of keeping the original is that it stays visible. */}
                       {s.originalWeight && s.originalWeight !== weightOf(s) && (
@@ -185,7 +199,7 @@ const ScanSheet = ({
                     <td style={{ ...cellStyle, textAlign: "center", color: "#718096" }}>
                       {unitOf(s)}
                       {kgOrigin(s) && (
-                        <span style={{ fontSize: "10px", color: "#805AD5", marginLeft: "4px" }}
+                        <span style={{ fontSize: "10px", color: "#2C7A7B", marginLeft: "4px" }}
                           title={`Label read ${s.weight} ${kgOrigin(s)}`}>
                           ←{kgOrigin(s)}
                         </span>
@@ -299,24 +313,22 @@ const ScanSheet = ({
             {counted} box{counted === 1 ? "" : "es"}
           </Text>
           {skipped > 0 && (
-            <Text fontSize="xs" color="purple.600">
+            <Text fontSize="xs" color="orange.600">
               {skipped} not counted
             </Text>
           )}
         </Flex>
         <Flex gap={5} wrap="wrap">
-          {totals.length === 0 ? (
+          {counted === 0 ? (
             <Text fontSize="lg" color="gray.400">—</Text>
           ) : (
-            totals.map((t) => (
-              <Flex key={t.unit} align="baseline" gap={2}>
-                <Text fontSize="xs" color="gray.500" textTransform="uppercase">Total {t.unit}</Text>
-                <Text fontSize="2xl" fontWeight="bold" color="blue.800"
-                  style={{ fontVariantNumeric: "tabular-nums" }}>
-                  {t.total}
-                </Text>
-              </Flex>
-            ))
+            <Flex align="baseline" gap={2}>
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase">Total LB</Text>
+              <Text fontSize="2xl" fontWeight="bold" color="blue.800"
+                style={{ fontVariantNumeric: "tabular-nums" }}>
+                {show(displayTotal)}
+              </Text>
+            </Flex>
           )}
         </Flex>
       </Flex>

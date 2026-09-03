@@ -553,7 +553,7 @@ export const NtiInventoryTab = ({ ntiInventory, procOrders = [], afItems, onAdd,
                     {history.map((h, i) => {
                       const snap   = h.snapshot || {};
                       const before = snap.before || {};
-                      const ACTION_COLOR = { added: "green", updated: "blue", deleted: "red", processed: "orange", received: "teal", returned: "purple" };
+                      const ACTION_COLOR = { added: "green", updated: "blue", deleted: "red", processed: "orange", received: "teal", returned: "cyan" };
                       const color  = ACTION_COLOR[h.action] || "gray";
                       const changedFields = h.action === "updated"
                         ? LEFT_COLS.filter((c) => String(snap[c.key] ?? "") !== String(before[c.key] ?? ""))

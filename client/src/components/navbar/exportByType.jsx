@@ -379,14 +379,14 @@ const ExportByType = ({ isOpen, onClose }) => {
             </Button>
             <Button
               onClick={() => handleTypeChange("prc")}
-              colorScheme={activeType === "prc" ? "purple" : "gray"}
+              colorScheme={activeType === "prc" ? "teal" : "gray"}
               variant={activeType === "prc" ? "solid" : "outline"}
             >
               Processed
             </Button>
           </ButtonGroup>
           {tabIndex === 0 && !loading && (
-            <Badge colorScheme={activeType === "raw" ? "green" : "purple"} fontSize="xs" px={2} py={1} borderRadius="md">
+            <Badge colorScheme={activeType === "raw" ? "green" : "teal"} fontSize="xs" px={2} py={1} borderRadius="md">
               {items.length} item{items.length !== 1 ? "s" : ""}
             </Badge>
           )}
@@ -437,7 +437,7 @@ const ExportByType = ({ isOpen, onClose }) => {
             <Button variant="outline" borderRadius="lg" onClick={onClose} size="sm">Cancel</Button>
             {tabIndex === 0 ? (
               <Button
-                colorScheme={activeType === "raw" ? "green" : "purple"}
+                colorScheme={activeType === "raw" ? "green" : "teal"}
                 borderRadius="lg"
                 size="sm"
                 leftIcon={downloading ? <Spinner size="xs" /> : <DownloadIcon />}

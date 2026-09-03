@@ -121,8 +121,37 @@ const toPounds = (weight, unit) => {
 const sumWeights = (weights) =>
   fromThousandths(weights.reduce((acc, w) => acc + toThousandths(w), 0n));
 
+// ── Display rounding ─────────────────────────────────────────────────────────
+// Weights are STORED in thousandths and SHOWN to two decimal places, which is
+// what the paper tally carries; the third decimal is storage precision, not
+// something a person writes in a column.
+//
+// Round per box, THEN sum — never sum then round. Three boxes at .005 are .01
+// each on the page and add to .03, while the true sum is .015 and rounds to
+// .02. A tally whose column does not add up to its own printed subtotal is
+// exactly what someone reconciling a shipment notices, so the printed figures
+// are the ones that must agree.
+const toDisplayHundredths = (w) => {
+  const t = toThousandths(w);
+  const negative = t < 0n;
+  const abs = negative ? -t : t;
+  const rounded = (abs + 5n) / 10n; // half-up, as a person rounds
+  return negative ? -rounded : rounded;
+};
+
+const fromHundredths = (n) => {
+  const v = BigInt(n);
+  const negative = v < 0n;
+  const abs = negative ? -v : v;
+  return `${negative ? "-" : ""}${abs / 100n}.${String(abs % 100n).padStart(2, "0")}`;
+};
+
+// "76.059" -> "76.06". Storage form in, display form out.
+const toDisplay = (w) => fromHundredths(toDisplayHundredths(w));
+
 module.exports = {
   toThousandths, fromThousandths, trimTrailingZeros,
+  toDisplayHundredths, fromHundredths, toDisplay,
   kgToLbThousandths, lbToKgThousandths, kgToLb, lbToKg,
   toPounds, sumWeights, WeightError,
   LB_NUM, LB_DEN,

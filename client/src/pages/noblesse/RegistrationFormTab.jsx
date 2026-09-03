@@ -112,7 +112,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
       onToggleFullScreen={() => setIsFullScreen((v) => !v)}
       width={900}
       footer={<Flex justify="space-between" width="100%" gap={2} wrap="wrap">
-        <Button size="sm" variant="outline" colorScheme="purple" onClick={() => setDraft({ ...draft, ...sampleDraft() })}>
+        <Button size="sm" variant="outline" colorScheme="teal" onClick={() => setDraft({ ...draft, ...sampleDraft() })}>
           Fill Sample Data
         </Button>
         <Flex gap={2} flex={{ base: "1 1 100%", md: "0 0 auto" }} justify="flex-end">
@@ -532,7 +532,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
             <Button
               size="xs"
               variant={statusFilter === null ? "solid" : "outline"}
-              colorScheme={statusFilter === null ? "purple" : "gray"}
+              colorScheme={statusFilter === null ? "teal" : "gray"}
               onClick={() => setStatusFilter(null)}
             >
               All
@@ -751,7 +751,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                       colorScheme={
                         entry.action === "created" ? "green" :
                         entry.action === "deleted" ? "red" :
-                        entry.action === "status_changed" ? "purple" :
+                        entry.action === "status_changed" ? "teal" :
                         "blue"
                       }
                       fontSize="xs"

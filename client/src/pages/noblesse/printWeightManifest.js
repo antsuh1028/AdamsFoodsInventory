@@ -1,4 +1,6 @@
-import { kgToLb } from "../../utils/weight";
+import {
+  kgToLb, toDisplayHundredths, fromHundredths, trimTrailingZeros,
+} from "../../utils/weight";
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
@@ -17,18 +19,15 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
 const PER_ROW = 10;
 const MIN_ROWS = 16; // the paper form always shows this many, blank or not
 
-const toThousandths = (s) => {
-  const [whole, frac = ""] = String(s ?? "0").split(".");
-  return (parseInt(whole, 10) || 0) * 1000 + (parseInt((frac + "000").slice(0, 3), 10) || 0);
-};
-
-// Trailing zeros are dropped to match the form, where 63.0 is written "63"
-// and 76.44 stays "76.44".
-const fromThousandths = (n) => {
-  const whole = Math.floor(n / 1000);
-  const frac = String(n % 1000).padStart(3, "0").replace(/0+$/, "");
-  return frac ? `${whole}.${frac}` : String(whole);
-};
+// The tally is written to two decimal places, and every figure on it is
+// rounded per box BEFORE anything is added up — see utils/weight.js. Summing
+// first and rounding the total would leave a column that does not add up to
+// its own printed subtotal.
+//
+// Trailing zeros are dropped to match the form, where 63.00 is written "63"
+// and 76.20 stays "76.2".
+const cents = (s) => Number(toDisplayHundredths(s ?? "0"));
+const show = (n) => trimTrailingZeros(fromHundredths(n));
 
 const printWeightManifest = ({
   lotNumber, date, vendor, shipTo, billOfLading, itemDescription,
@@ -76,12 +75,12 @@ const printWeightManifest = ({
   const rowHtml = [];
   for (let r = 0; r < Math.max(MIN_ROWS, rows.length); r += 1) {
     const row = rows[r] || [];
-    const sum = row.reduce((acc, s) => acc + toThousandths(weightOf(s)), 0);
+    const sum = row.reduce((acc, s) => acc + cents(weightOf(s)), 0);
     grand += sum;
 
     const cells = Array.from({ length: PER_ROW }, (_, c) => {
       const s = row[c];
-      return `<td class="w">${s ? esc(fromThousandths(toThousandths(weightOf(s)))) : ""}${
+      return `<td class="w">${s ? esc(show(cents(weightOf(s)))) : ""}${
         s && s.isManual ? '<span class="m">M</span>' : ""}</td>`;
     }).join("");
 
@@ -89,7 +88,7 @@ const printWeightManifest = ({
       `<tr>
          <td class="cnt">${row.length}</td>
          ${cells}
-         <td class="rowtot">${row.length ? esc(fromThousandths(sum)) : "0"}</td>
+         <td class="rowtot">${row.length ? esc(show(sum)) : "0"}</td>
        </tr>`
     );
   }
@@ -179,7 +178,7 @@ const printWeightManifest = ({
             ${rowHtml.join("")}
             <tr>
               <td class="foot" colspan="6">Total Boxes:&nbsp;&nbsp;${boxes.length}</td>
-              <td class="foot-r" colspan="6">Subtotal:&nbsp;&nbsp;${fromThousandths(grand)} ${unit}</td>
+              <td class="foot-r" colspan="6">Subtotal:&nbsp;&nbsp;${show(grand)} ${unit}</td>
             </tr>
           </table>
 

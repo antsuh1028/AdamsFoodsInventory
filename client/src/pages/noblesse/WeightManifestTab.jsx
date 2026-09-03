@@ -375,7 +375,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
 
         <Flex gap={2} wrap="wrap">
           {selected.size >= 2 && (
-            <Button size="xs" colorScheme="purple" onClick={() => setConfirmMerge(true)}>
+            <Button size="xs" colorScheme="teal" onClick={() => setConfirmMerge(true)}>
               Combine {selected.size} sessions
             </Button>
           )}
@@ -410,12 +410,12 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
           <Flex direction="column" gap={2}>
             {groups.map((g) => (
               <Flex key={g.group_id} align="center" gap={3} wrap="wrap"
-                px={3} py={2} bg="purple.50" borderRadius="md"
-                border="1px solid" borderColor="purple.200">
-                <Text fontSize="sm" fontWeight="bold" color="purple.800">
+                px={3} py={2} bg="teal.50" borderRadius="md"
+                border="1px solid" borderColor="teal.200">
+                <Text fontSize="sm" fontWeight="bold" color="teal.800">
                   {g.name || g.lot_number || `Manifest ${g.group_id}`}
                 </Text>
-                <Badge colorScheme="purple" fontSize="10px">
+                <Badge colorScheme="teal" fontSize="10px">
                   {g.session_count} session{g.session_count === 1 ? "" : "s"}
                 </Badge>
                 <Text fontSize="sm" color="gray.600">
@@ -551,7 +551,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                           {/* A barcode-verified lot and one keyed in by hand
                               carry different confidence. */}
                           {b.source === "imported" && (
-                            <Badge colorScheme="purple" fontSize="10px">Imported</Badge>
+                            <Badge colorScheme="teal" fontSize="10px">Imported</Badge>
                           )}
                         </Flex>
                       </Box>
@@ -582,7 +582,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                             {loadingId === b.batch_id ? (
                               <Flex justify="center" py={6}><Spinner size="sm" color="blue.500" /></Flex>
                             ) : detail ? (
-                              <ScanSheet scans={detail.items} totals={b.totals || []}
+                              <ScanSheet scans={detail.items}
                                 busyId={rowBusy} {...handlersFor(b)} />
                             ) : null}
                           </Box>
@@ -632,7 +632,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
               <Button ref={cancelMergeRef} onClick={() => setConfirmMerge(false)}>
                 Go back
               </Button>
-              <Button colorScheme="purple" onClick={createGroup} isLoading={merging}>
+              <Button colorScheme="teal" onClick={createGroup} isLoading={merging}>
                 Combine
               </Button>
             </AlertDialogFooter>

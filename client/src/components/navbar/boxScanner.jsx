@@ -12,6 +12,7 @@ import { parseGs1 } from "../../utils/gs1";
 import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import ScanSheet from "./ScanSheet";
 import NumericKeypad from "./NumericKeypad";
+import { toPounds, toDisplay } from "../../utils/weight";
 import { lotNumberForDate, today, fmtDate } from "../../pages/noblesse/shared";
 import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 
@@ -120,7 +121,7 @@ const KeypadPanel = ({ onAdd, disabled }) => {
 
 const BoxScanner = ({ isOpen, onClose }) => {
   const {
-    ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
+    ready, durable, session, pending, resumable, lastError, lastScan, scans,
     start, resume, stop, flush, addScan, undoLast, editScan, voidScan,
   } = useScanSession();
 
@@ -360,10 +361,15 @@ const BoxScanner = ({ isOpen, onClose }) => {
       )}
 
       <Flex gap={3} wrap="wrap" mb={3} align="stretch">
+        {/* Pounds, two decimals — the same figure the grid and the printed
+            tally show. Echoing the raw label instead would flash kilograms for
+            a non-American box and disagree with every other number on screen. */}
         <StatCard
           label="Last box"
-          value={lastScan ? lastScan.weight : "—"}
-          help={lastScan ? lastScan.weightUnit : "waiting for a scan"}
+          value={lastScan ? toDisplay(toPounds(lastScan.weight, lastScan.weightUnit).weight) : "—"}
+          help={lastScan
+            ? (lastScan.weightUnit === "KG" ? `LB — label read ${lastScan.weight} KG` : "LB")
+            : "waiting for a scan"}
           color={lastScan ? "blue.600" : "gray.400"}
         />
         <StatCard
@@ -421,7 +427,6 @@ const BoxScanner = ({ isOpen, onClose }) => {
 
       <ScanSheet
         scans={scans}
-        totals={stats.totals}
         busyId={rowBusy}
         onEditWeight={session
           ? onRowChange((row, weight, unit) => editScan(row.localId, weight, unit),

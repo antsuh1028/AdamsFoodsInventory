@@ -43,7 +43,7 @@ const getBadgeColor = (change = "") => {
   if (c.includes("add")) return "green";
   if (c.includes("field updated") || c === "updated") return "blue";
   if (c.includes("remov") || c.includes("delet")) return "red";
-  if (c.includes("noblesse") || c.includes("send")) return "purple";
+  if (c.includes("noblesse") || c.includes("send")) return "teal";
   return "gray";
 };
 
@@ -230,7 +230,7 @@ const HistoryRow = ({ item, onSet, onRestore }) => {
             </Badge>
           )}
           {item.changedBy && (
-            <Text fontSize="xs" color="purple.400" fontWeight="medium">
+            <Text fontSize="xs" color="teal.500" fontWeight="medium">
               {item.changedBy}
             </Text>
           )}
@@ -532,7 +532,7 @@ const HistorySpreadsheet = ({ items, onSet, hasMore, loadingMore, onLoadMore, to
                   </Td>
 
                   {/* Changed By */}
-                  <Td py={1.5} px={2} fontSize="xs" color="purple.500" fontWeight="medium" whiteSpace="nowrap">
+                  <Td py={1.5} px={2} fontSize="xs" color="teal.600" fontWeight="medium" whiteSpace="nowrap">
                     {item.changedBy}
                   </Td>
 
@@ -747,7 +747,7 @@ function ShowHistory({ isOpen, onClose }) {
                 { key: "added",      label: "Added",      color: "green"  },
                 { key: "updated",    label: "Updated",    color: "blue"   },
                 { key: "removed",    label: "Removed",    color: "red"    },
-                { key: "production", label: "Production", color: "purple" },
+                { key: "production", label: "Production", color: "teal"   },
                 { key: "box",        label: "Box",        color: "gray"   },
               ].map(({ key, label, color }) => (
                 <Button

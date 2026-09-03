@@ -110,7 +110,7 @@ const NumericKeypad = ({
       {/* Said plainly, because the number the operator types is not the number
           that gets stored — and the manifest is in pounds either way. */}
       {unit === "KG" && valid && (
-        <Text fontSize="xs" color="purple.600" mb={2} textAlign="right">
+        <Text fontSize="xs" color="teal.600" mb={2} textAlign="right">
           Stored as {kgToLb(value)} LB
         </Text>
       )}

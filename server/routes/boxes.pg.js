@@ -176,7 +176,11 @@ const scanLimiter = rateLimit({
 // decimal and ROUND is half-away-from-zero, matching utils/weight.js.
 const weightInLb = (t = "") => {
   const col = t ? `${t}.` : "";
-  return `ROUND(CASE WHEN ${col}weight_unit = 'KG' THEN ${col}weight / 0.45359237 ELSE ${col}weight END, 3)`;
+  // ROUND twice on purpose: to thousandths first, matching what the client's
+  // converter produces, then to the two decimals actually shown. Collapsing
+  // these into one step can land a cent away at a rounding boundary, and the
+  // screen would disagree with the paper.
+  return `ROUND(ROUND(CASE WHEN ${col}weight_unit = 'KG' THEN ${col}weight / 0.45359237 ELSE ${col}weight END, 3), 2)`;
 };
 
 // ── Validation helpers ───────────────────────────────────────────────────────

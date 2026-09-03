@@ -106,7 +106,7 @@ const EditableField = ({ label, value, fieldKey, onStage }) => {
       </Text>
       {fieldKey === "type" ? (
         <Badge
-          colorScheme={value === "raw" ? "green" : value === "prc" ? "purple" : "gray"}
+          colorScheme={value === "raw" ? "green" : value === "prc" ? "teal" : "gray"}
           fontSize="xs"
           cursor={isEditable ? "pointer" : "default"}
           onDoubleClick={isEditable ? startEdit : undefined}
