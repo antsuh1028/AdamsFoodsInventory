@@ -21,6 +21,17 @@ import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
 
+// Processing is dev-only for now, so the rest of the work can ship without it.
+// `npm start` is development and `react-scripts build` is production, so a
+// deploy hides the tab with no extra step. To turn it on in a real build later,
+// set REACT_APP_PROCESSING_TAB=on at build time — no code change needed.
+//
+// One flag drives the tab, the panel AND the two fetches: gating only the tab
+// would leave production polling endpoints nothing renders.
+const SHOW_PROCESSING =
+  process.env.REACT_APP_PROCESSING_TAB === "on" ||
+  process.env.NODE_ENV !== "production";
+
 const NoblesseScreen = () => {
   const navigate = useNavigate();
   const isAdmin  = getRole() === "admin";
@@ -78,18 +89,20 @@ const NoblesseScreen = () => {
       // so an empty tab is never mistaken for "no orders".
       const [receiptsRes, invRes, ordersRes] = await Promise.all([
         axiosInstance.get("/noblesse-receipts"),
-        axiosInstance.get("/nti-inventory").catch((e) => e),
-        axiosInstance.get("/noblesse-proc-orders").catch((e) => e),
+        SHOW_PROCESSING ? axiosInstance.get("/nti-inventory").catch((e) => e) : null,
+        SHOW_PROCESSING ? axiosInstance.get("/noblesse-proc-orders").catch((e) => e) : null,
       ]);
       setReceipts(receiptsRes.data || []);
 
-      const failed = [invRes, ordersRes].find((r) => r instanceof Error);
-      if (failed) {
-        setProcError(failed.response?.data?.error || failed.message);
-      } else {
-        setProcError(null);
-        setNtiInventory(invRes.data || []);
-        setProcOrders(ordersRes.data || []);
+      if (SHOW_PROCESSING) {
+        const failed = [invRes, ordersRes].find((r) => r instanceof Error);
+        if (failed) {
+          setProcError(failed.response?.data?.error || failed.message);
+        } else {
+          setProcError(null);
+          setNtiInventory(invRes.data || []);
+          setProcOrders(ordersRes.data || []);
+        }
       }
       // Tabs that load their own data watch this and re-fetch. Without it the
       // timestamp below ticks while their contents stay frozen at page load.
@@ -216,13 +229,18 @@ const NoblesseScreen = () => {
               {receipts.length > 0 && <Badge ml={2} colorScheme="blue" borderRadius="full">{receipts.length}</Badge>}
             </Tab>
             {/* Sits between Incoming and Outgoing because that is the order the
-                product actually moves through the building. */}
-            <Tab>
-              Processing
-              {pendingProcCount > 0 && (
-                <Badge ml={2} colorScheme="orange" borderRadius="full">{pendingProcCount}</Badge>
-              )}
-            </Tab>
+                product actually moves through the building. Gated with the
+                panel below on the SAME flag — Chakra pairs tabs to panels by
+                position, so hiding one without the other shifts every tab after
+                it onto the wrong panel. */}
+            {SHOW_PROCESSING && (
+              <Tab>
+                Processing
+                {pendingProcCount > 0 && (
+                  <Badge ml={2} colorScheme="orange" borderRadius="full">{pendingProcCount}</Badge>
+                )}
+              </Tab>
+            )}
             <Tab>Registration Forms</Tab>
             <Tab>Weight Manifests</Tab>
             <Tab>Outgoing</Tab>
@@ -241,6 +259,7 @@ const NoblesseScreen = () => {
                   canDelete={isAdmin}
                 />
               </TabPanel>
+              {SHOW_PROCESSING && (
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
                 {procError && (
                   <Alert status="error" borderRadius="md" mb={4} fontSize="sm">
@@ -260,6 +279,7 @@ const NoblesseScreen = () => {
                   canDelete={isAdmin}
                 />
               </TabPanel>
+              )}
               {/* NTI Inventory tab still disabled — NtiInventoryTab.jsx is
                   unused. Stock is visible through the picker here and through
                   Outgoing, so it has no screen of its own yet. */}
