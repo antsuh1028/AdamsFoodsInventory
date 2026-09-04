@@ -3,6 +3,7 @@ const pool   = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { lotColumns, lookupLot } = require("../utils/lotRegistry");
+const { syncProcessedStock } = require("../utils/processedStock");
 
 // Schema lives in ../db/migrate.js and is applied, in order, before this
 // module is ever required. Nothing here fires DDL at load any more — that
@@ -741,10 +742,15 @@ router.patch("/noblesse-proc-orders/:id/notes", verifyToken, async (req, res) =>
   }
 });
 
+// Editing the output of an already-completed order. Runs in a transaction now,
+// because it also has to move the processed stock the order put into inventory —
+// changing one without the other would leave the two disagreeing.
 router.patch("/noblesse-proc-orders/:id/output", verifyToken, async (req, res) => {
   const { outputWeight, outputCases } = req.body;
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    await client.query("BEGIN");
+    const result = await client.query(
       `UPDATE noblesse_processing_orders
        SET output_weight = $1, output_cases = $2
        WHERE id = $3 AND tenant_id = $4 RETURNING *`,
@@ -754,15 +760,26 @@ router.patch("/noblesse-proc-orders/:id/output", verifyToken, async (req, res) =
         req.params.id, req.tenantId,
       ]
     );
-    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
-    const itemsRes = await pool.query(
+    if (!result.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Not found" });
+    }
+    const itemsRes = await client.query(
       `SELECT * FROM noblesse_processing_order_items WHERE processing_order_id = $1 ORDER BY id`,
       [req.params.id]
     );
+
+    // Adjusts the row this order already has rather than adding a second one.
+    await syncProcessedStock(client, req.tenantId, req.params.id);
+
+    await client.query("COMMIT");
     res.json(fmtProcOrder(result.rows[0], itemsRes.rows));
   } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
     console.error(err);
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -849,6 +866,11 @@ router.patch("/noblesse-proc-orders/:id/partial-complete", verifyToken, async (r
       newOrder = fmtProcOrder(newOrderRow, newItems);
     }
 
+    // The output goes back into stock under the same lot it was cut from.
+    // Inside the transaction: if this fails, the completion fails with it
+    // rather than leaving an order marked done with nothing to show for it.
+    await syncProcessedStock(client, req.tenantId, req.params.id);
+
     await client.query("COMMIT");
 
     res.json({
@@ -894,6 +916,11 @@ router.patch("/noblesse-proc-orders/:id/status", verifyToken, async (req, res) =
       `SELECT * FROM noblesse_processing_order_items WHERE processing_order_id = $1 ORDER BY id`,
       [req.params.id]
     );
+
+    // Completing puts the output into stock; reverting to pending takes it back
+    // out, because the product is no longer processed. sync works out which.
+    await syncProcessedStock(client, req.tenantId, req.params.id);
+
     await client.query("COMMIT");
     res.json(fmtProcOrder(result.rows[0], itemsRes.rows));
   } catch (err) {

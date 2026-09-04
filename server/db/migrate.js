@@ -475,6 +475,24 @@ const steps = async () => {
   await run("noblesse_receipts source_name",
     `ALTER TABLE noblesse_receipts ADD COLUMN IF NOT EXISTS source_name TEXT`);
 
+  // Ties a processed stock row back to the order that produced it.
+  //
+  // Processing used to deduct raw and record output_weight ON THE ORDER, so
+  // after NTI processed a lot there was nothing in stock to ship. The output
+  // now comes back as its own nti_inventory row, and this column is what makes
+  // that idempotent: editing the output later adjusts the existing row instead
+  // of adding a second one.
+  await run("nti_inventory source_processing_order_id",
+    `ALTER TABLE nti_inventory ADD COLUMN IF NOT EXISTS source_processing_order_id INT`);
+
+  // One processed row per order, enforced by the database rather than trusted
+  // to the code. Partial index because every raw row leaves it null.
+  await run("nti_inventory processed order uniq", `
+    CREATE UNIQUE INDEX IF NOT EXISTS nti_inventory_source_order_uniq
+      ON nti_inventory (source_processing_order_id)
+      WHERE source_processing_order_id IS NOT NULL
+  `);
+
   // ══════════════════════════════════════════════════════════════════════════
   // Adams side. `history` and `inventory` predate this repo, like `tenants` —
   // they are never created here, only altered. These two columns used to be
