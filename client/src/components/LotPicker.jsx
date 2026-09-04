@@ -140,10 +140,16 @@ const LotPicker = ({
 
         {loading && <Spinner size="xs" color="blue.500" />}
 
+        {/* Secondary to picking an existing lot: most of the time the lot is
+            already there, and issuing a new one is the exception. Ghost and
+            small so it reads as an offer rather than the default action. */}
         {allowCreate && (
           <Button
-            size={size}
+            size="xs"
+            variant="ghost"
             colorScheme="blue"
+            fontWeight="500"
+            px={2}
             onClick={issueNext}
             isLoading={busy}
             isDisabled={isDisabled || Boolean(nextLot && nextLot.exhausted)}
@@ -151,7 +157,7 @@ const LotPicker = ({
               ? `Issue ${nextLot.lotNumber}`
               : "Issue the next lot number"}
           >
-            {nextLot && nextLot.lotNumber ? `Issue ${nextLot.lotNumber}` : "Issue lot"}
+            {nextLot && nextLot.lotNumber ? `+ ${nextLot.lotNumber}` : "+ New lot"}
           </Button>
         )}
       </Flex>
@@ -183,8 +189,11 @@ const LotPicker = ({
             onKeyDown={(e) => { if (e.key === "Enter" && typed.trim()) adoptTyped(); }}
           />
           <Button
-            size={size}
-            variant="outline"
+            size="xs"
+            variant="ghost"
+            colorScheme="blue"
+            fontWeight="500"
+            px={2}
             onClick={adoptTyped}
             isLoading={busy}
             isDisabled={isDisabled || !typed.trim()}
