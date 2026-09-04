@@ -954,6 +954,24 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
       return res.status(404).json({ error: "One or more sessions were not found" });
     }
 
+    // One manifest covers ONE lot. Merging sessions from different lots would
+    // print a tally whose lot number is true of only some of its boxes, and
+    // nothing downstream could tell which. Compared on lot_id where both have
+    // one — exact — and on the text otherwise, for sessions predating the
+    // registry.
+    const lotKey = (b) => (b.lot_id != null ? `id:${b.lot_id}` : `txt:${b.lot_number || ""}`);
+    const distinctLots = [...new Set(owned.rows.map(lotKey))];
+    if (distinctLots.length > 1) {
+      await client.query("ROLLBACK");
+      const names = [...new Set(owned.rows.map((b) => b.lot_number || `batch ${b.batch_id}`))];
+      return res.status(409).json({
+        code: "LOT_MISMATCH",
+        error: `These sessions are not all the same lot (${names.join(", ")}). ` +
+               `A manifest covers one lot.`,
+        lots: names,
+      });
+    }
+
     const first = owned.rows.find((b) => b.batch_id === ids[0]) || owned.rows[0];
     const pick = (given, fallback) => {
       const v = typeof given === "string" ? given.trim() : "";

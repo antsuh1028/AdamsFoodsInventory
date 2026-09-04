@@ -12,7 +12,7 @@ import BoxScanner from "../../components/navbar/boxScanner";
 import printWeightManifest from "./printWeightManifest";
 import ImportTally from "./ImportTally";
 import FloatingWindow from "../../components/FloatingWindow";
-import { fmtDate, today } from "./shared";
+import { fmtDate, today, upper } from "./shared";
 import getRole from "../../utils/getRole";
 
 // Past weighing sessions, one row per session. Expanding a row pulls its boxes
@@ -70,6 +70,11 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const [selected, setSelected] = useState(() => new Set());
   const [groups, setGroups] = useState([]);
   const [confirmMerge, setConfirmMerge] = useState(false);
+  // The heading the merged manifest will carry. Pre-filled from the sessions
+  // and editable, because merging used to take the first session's values
+  // silently — so a vendor or BOL that disagreed between sessions vanished
+  // without anyone seeing which one won.
+  const [mergeHeader, setMergeHeader] = useState(null);
   // The whole session, not one box inside it.
   const [confirmDeleteBatch, setConfirmDeleteBatch] = useState(null);
   // Removing a merged manifest destroys a saved, filed form — it gets the same
@@ -215,11 +220,52 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
     return next;
   });
 
+  // What the chosen sessions say for each heading field. One distinct value is
+  // agreement; more than one is a conflict the operator has to settle.
+  const headerFor = (chosen) => {
+    const field = (key) => {
+      const values = [...new Set(chosen.map((b) => (b[key] || "").trim()).filter(Boolean))];
+      return { value: values[0] || "", values, conflict: values.length > 1 };
+    };
+    return {
+      lot_number: field("lot_number"),
+      vendor: field("vendor"),
+      item_description: field("item_description"),
+      bill_of_lading: field("bill_of_lading"),
+      ship_to: field("ship_to"),
+    };
+  };
+
+  const openMerge = () => {
+    const chosen = visible.filter((b) => selected.has(b.batch_id));
+    const h = headerFor(chosen);
+    setMergeHeader({
+      name: "",
+      lotNumber: h.lot_number.value,
+      vendor: h.vendor.value,
+      itemDescription: h.item_description.value,
+      billOfLading: h.bill_of_lading.value,
+      shipTo: h.ship_to.value,
+      conflicts: h,
+    });
+    setConfirmMerge(true);
+  };
+
   const createGroup = async () => {
     setMerging(true);
     try {
       const batchIds = visible.filter((b) => selected.has(b.batch_id)).map((b) => b.batch_id);
-      const { data } = await axiosInstance.post("/manifest-groups", { batchIds });
+      const { data } = await axiosInstance.post("/manifest-groups", {
+        batchIds,
+        // Sent explicitly rather than left to the server's "first session wins"
+        // default, so what prints is what was confirmed on screen.
+        name: mergeHeader?.name || null,
+        lotNumber: mergeHeader?.lotNumber || null,
+        vendor: mergeHeader?.vendor || null,
+        itemDescription: mergeHeader?.itemDescription || null,
+        billOfLading: mergeHeader?.billOfLading || null,
+        shipTo: mergeHeader?.shipTo || null,
+      });
       toast({
         title: "Merged manifest created",
         description: `${batchIds.length} sessions on one form`,
@@ -231,9 +277,11 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       return data;
     } catch (err) {
       toast({
-        title: "Could not merge those sessions",
+        title: err.response?.data?.code === "LOT_MISMATCH"
+          ? "Those sessions are different lots"
+          : "Could not merge those sessions",
         description: err.response?.data?.error || err.message,
-        status: "error", duration: 5000, position: "top",
+        status: "error", duration: 8000, position: "top", isClosable: true,
       });
       setConfirmMerge(false);
       return null;
@@ -410,7 +458,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
 
         <Flex gap={2} wrap="wrap">
           {selected.size >= 2 && (
-            <Button size="xs" colorScheme="teal" onClick={() => setConfirmMerge(true)}>
+            <Button size="xs" colorScheme="teal" onClick={openMerge}>
               Combine {selected.size} sessions
             </Button>
           )}
@@ -654,10 +702,73 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
             </AlertDialogHeader>
             <AlertDialogBody>
               <Text fontSize="sm" mb={3}>
-                These sessions will print as a single tally sheet. The heading is
-                taken from the first one. Nothing is copied — correcting a box in
-                a session afterwards will show on the next print of this manifest.
+                These sessions will print as a single tally sheet. Nothing is
+                copied — correcting a box in a session afterwards will show on
+                the next print of this manifest.
               </Text>
+
+              {/* The heading, confirmed rather than assumed. Anywhere the
+                  sessions disagree is marked and the alternatives listed, so a
+                  vendor or BOL cannot be dropped without someone choosing. */}
+              {mergeHeader && (
+                <Box mb={3}>
+                  {Object.values(mergeHeader.conflicts).some((c) => c.conflict) && (
+                    <Alert status="warning" borderRadius="md" fontSize="xs" mb={2} py={2}>
+                      <AlertIcon boxSize={3} />
+                      These sessions do not agree on every field. Confirm what the
+                      manifest should say.
+                    </Alert>
+                  )}
+
+                  {[
+                    ["lotNumber", "Lot #", "lot_number"],
+                    ["vendor", "Vendor", "vendor"],
+                    ["itemDescription", "Item description", "item_description"],
+                    ["billOfLading", "Ship to / BOL", "bill_of_lading"],
+                  ].map(([key, label, conflictKey]) => {
+                    const c = mergeHeader.conflicts[conflictKey];
+                    return (
+                      <Box key={key} mb={2}>
+                        <Flex align="baseline" gap={2} mb={1}>
+                          <Text fontSize="xs" color="gray.500" textTransform="uppercase"
+                            letterSpacing="wide">{label}</Text>
+                          {c.conflict && (
+                            <Badge colorScheme="orange" fontSize="9px">
+                              {c.values.length} different values
+                            </Badge>
+                          )}
+                        </Flex>
+                        <Input
+                          size="sm"
+                          bg={c.conflict ? "orange.50" : "white"}
+                          borderColor={c.conflict ? "orange.300" : "gray.200"}
+                          value={mergeHeader[key]}
+                          onChange={(e) => setMergeHeader((h) => ({ ...h, [key]: upper(e.target.value) }))}
+                        />
+                        {c.conflict && (
+                          <Flex gap={1} mt={1} wrap="wrap">
+                            {c.values.map((v) => (
+                              <Button key={v} size="xs" variant="outline" colorScheme="orange"
+                                fontWeight="400"
+                                onClick={() => setMergeHeader((h) => ({ ...h, [key]: v }))}>
+                                {v}
+                              </Button>
+                            ))}
+                          </Flex>
+                        )}
+                      </Box>
+                    );
+                  })}
+
+                  <Box mb={2}>
+                    <Text fontSize="xs" color="gray.500" textTransform="uppercase"
+                      letterSpacing="wide" mb={1}>Name (optional)</Text>
+                    <Input size="sm" bg="white" placeholder="e.g. PALLETS 1-3"
+                      value={mergeHeader.name}
+                      onChange={(e) => setMergeHeader((h) => ({ ...h, name: upper(e.target.value) }))} />
+                  </Box>
+                </Box>
+              )}
               <Box borderWidth="1px" borderColor="gray.200" borderRadius="md" overflow="hidden">
                 {visible.filter((b) => selected.has(b.batch_id)).map((b, i) => (
                   <Flex key={b.batch_id} px={3} py={2} gap={3} align="baseline"
