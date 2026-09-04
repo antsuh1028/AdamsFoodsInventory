@@ -9,6 +9,7 @@ import { fmtDate, today, Th, Td } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
 import BoxWeightLink from "./BoxWeightLink";
 import LotPicker from "../../components/LotPicker";
+import LotTimeline from "../../components/LotTimeline";
 import ntiLogo from "../../assets/nti.jpg";
 import FloatingWindow from "../../components/FloatingWindow";
 import AllFormsTable from "./AllFormsTable";
@@ -492,6 +493,9 @@ const calculateRemainingCases = (draft) => {
 };
 
 export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = false, refreshSignal = 0 }) => {
+  // Which lot's history is open, or null. Keyed by the form's lot_id rather
+  // than its lot text, so it cannot land on the wrong lot.
+  const [timelineLot, setTimelineLot] = useState(null);
   const toast = useToast();
   const [forms, setForms]     = useState([]);
   const [loading, setLoading] = useState(true);
@@ -717,7 +721,25 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                         }}
                         onDoubleClick={(e) => e.stopPropagation()}
                       />
-                      <Text as="span">{f.lotNumber || "—"}</Text>
+                      {f.lotId ? (
+                        <Text
+                          as="span"
+                          color="blue.600"
+                          fontWeight="600"
+                          textDecoration="underline"
+                          cursor="pointer"
+                          title="Show this lot's history"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTimelineLot({ lotId: f.lotId, lotNumber: f.lotNumber });
+                          }}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                        >
+                          {f.lotNumber}
+                        </Text>
+                      ) : (
+                        <Text as="span">{f.lotNumber || "—"}</Text>
+                      )}
                     </Flex>
                   </Td>
                   <Td>{f.vendor || "—"}</Td>
@@ -905,6 +927,13 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
       {/* Rendered last on purpose. Every FloatingWindow sits at zIndex 1400, so
           at equal z-index DOM order decides what stacks on top — and the edit
           form has to sit above the list it was opened from. */}
+      <LotTimeline
+        lotId={timelineLot?.lotId}
+        lotNumber={timelineLot?.lotNumber}
+        isOpen={Boolean(timelineLot)}
+        onClose={() => setTimelineLot(null)}
+      />
+
       <RegistrationFormModal
         isOpen={!!draft} onClose={close}
         draft={draft} setDraft={setDraft}

@@ -2,6 +2,8 @@ const router = require("express").Router();
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const { parseLot, formatLot, pacificToday, dayOfYearFromDate } = require("../utils/lot");
+// Shared with routes/boxes.pg.js so a lot's totals and a manifest agree.
+const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
 
 // The lot registry.
 //
@@ -241,6 +243,173 @@ router.get("/lots/next", verifyToken, async (req, res) => {
   } catch (err) {
     if (/date/.test(err.message)) return res.status(400).json({ error: err.message });
     console.error("next lot:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ── One lot, and everything that has happened to it ─────────────────────────
+//
+// Registered AFTER /lots/next, or ":id" would swallow the literal "next".
+//
+// Every figure here is DERIVED. A stored status column drifts the first time
+// someone edits around it, and NtiInventoryTab already proved the point by
+// reconstructing in/out and yield from the orders because the stock row it was
+// reading had gone to zero. So the numbers are computed and the label follows
+// from them, rather than the other way round.
+
+const lotFigures = async (tenantId, lotId) => {
+  const { rows } = await pool.query(
+    `SELECT
+       COALESCE((SELECT SUM(${stockWeightInLb()}) FROM nti_inventory
+                  WHERE lot_id = $1 AND tenant_id = $2 AND stage = 'raw'), 0)::text        AS raw_on_hand,
+       COALESCE((SELECT SUM(${stockWeightInLb()}) FROM nti_inventory
+                  WHERE lot_id = $1 AND tenant_id = $2 AND stage = 'processed'), 0)::text  AS processed_on_hand,
+       COALESCE((SELECT SUM(qty_cases) FROM nti_inventory
+                  WHERE lot_id = $1 AND tenant_id = $2 AND stage = 'processed'), 0)::int   AS processed_cases,
+       -- Committed to a processing order that has not finished. The weight is
+       -- already out of stock, so it is neither on hand nor processed yet.
+       COALESCE((SELECT SUM(i.weight_in) FROM noblesse_processing_order_items i
+                   JOIN noblesse_processing_orders o ON o.id = i.processing_order_id
+                  WHERE i.lot_id = $1 AND o.tenant_id = $2 AND o.status <> 'completed'), 0)::text AS in_processing,
+       -- What the boxes actually weighed. Voided rows excluded, exactly as on
+       -- the manifest.
+       COALESCE((SELECT SUM(${weightInLb("bi")}) FROM batch_items bi
+                   JOIN box_batches b ON b.batch_id = bi.batch_id
+                  WHERE b.lot_id = $1 AND b.tenant_id = $2 AND bi.voided_at IS NULL), 0)::text AS weighed,
+       COALESCE((SELECT COUNT(*) FROM batch_items bi
+                   JOIN box_batches b ON b.batch_id = bi.batch_id
+                  WHERE b.lot_id = $1 AND b.tenant_id = $2 AND bi.voided_at IS NULL), 0)::int AS box_count,
+       COALESCE((SELECT COUNT(*) FROM noblesse_processing_orders o
+                   JOIN noblesse_processing_order_items i ON i.processing_order_id = o.id
+                  WHERE i.lot_id = $1 AND o.tenant_id = $2 AND o.status <> 'completed'), 0)::int AS open_orders,
+       COALESCE((SELECT COUNT(*) FROM noblesse_processing_orders o
+                   JOIN noblesse_processing_order_items i ON i.processing_order_id = o.id
+                  WHERE i.lot_id = $1 AND o.tenant_id = $2 AND o.status = 'completed'), 0)::int AS done_orders`,
+    [lotId, tenantId]
+  );
+  return rows[0];
+};
+
+// The label follows from the figures. Partial states are normal — half a lot
+// processed, half still raw — so this is a summary, and the numbers beside it
+// are the truth.
+const lotStatus = (f) => {
+  if (Number(f.processed_on_hand) > 0) return "processed";
+  if (Number(f.open_orders) > 0) return "processing";
+  if (Number(f.done_orders) > 0) return "processed";
+  return "received";
+};
+
+router.get("/lots/:id", verifyToken, async (req, res) => {
+  const lotId = Number(req.params.id);
+  if (!Number.isInteger(lotId)) return res.status(400).json({ error: "Invalid lot id" });
+
+  try {
+    const lot = await pool.query(
+      `SELECT * FROM lots WHERE lot_id = $1 AND tenant_id = $2`, [lotId, req.tenantId]);
+    if (!lot.rows.length) return res.status(404).json({ error: "Lot not found" });
+
+    const f = await lotFigures(req.tenantId, lotId);
+    res.json({
+      lot: fmtLot(lot.rows[0]),
+      status: lotStatus(f),
+      figures: {
+        rawOnHand: f.raw_on_hand,
+        processedOnHand: f.processed_on_hand,
+        processedCases: f.processed_cases,
+        inProcessing: f.in_processing,
+        weighed: f.weighed,
+        boxCount: f.box_count,
+        weightUnit: "LB",
+      },
+    });
+  } catch (err) {
+    console.error("read lot:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Everything that has happened to a lot, oldest first.
+//
+// A UNION over the tables that reference it. Before the registry this was five
+// text searches and some guessing; the whole point of giving a lot an identity
+// is that its history becomes a query.
+router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
+  const lotId = Number(req.params.id);
+  if (!Number.isInteger(lotId)) return res.status(400).json({ error: "Invalid lot id" });
+
+  try {
+    const lot = await pool.query(
+      `SELECT lot_id FROM lots WHERE lot_id = $1 AND tenant_id = $2`, [lotId, req.tenantId]);
+    if (!lot.rows.length) return res.status(404).json({ error: "Lot not found" });
+
+    const { rows } = await pool.query(
+      `
+      -- Stock arriving, raw or processed. A 'processed' row is NTI's own output
+      -- coming back under the same lot, which is why both live in one table.
+      SELECT s.created_at AS at,
+             CASE WHEN s.stage = 'processed' THEN 'processed' ELSE 'received' END AS kind,
+             CASE WHEN s.stage = 'processed'
+                  THEN 'Processed output back into stock'
+                  ELSE 'Received into stock' END AS label,
+             ${stockWeightInLb("s")}::text AS weight,
+             s.qty_cases::int AS cases,
+             s.notes AS detail,
+             s.id AS ref
+        FROM nti_inventory s
+       WHERE s.lot_id = $1 AND s.tenant_id = $2
+
+      UNION ALL
+      -- Weighing sessions.
+      SELECT b.created_at, 'weighed',
+             CASE WHEN b.source = 'imported' THEN 'Weighed (tally sheet imported)' ELSE 'Weighed' END,
+             COALESCE((SELECT SUM(${weightInLb("bi")}) FROM batch_items bi
+                        WHERE bi.batch_id = b.batch_id AND bi.voided_at IS NULL), 0)::text,
+             (SELECT COUNT(*)::int FROM batch_items bi
+               WHERE bi.batch_id = b.batch_id AND bi.voided_at IS NULL),
+             b.vendor, b.batch_id
+        FROM box_batches b
+       WHERE b.lot_id = $1 AND b.tenant_id = $2
+
+      UNION ALL
+      -- The registration form for the lot.
+      SELECT f.created_at, 'registered', 'Registered',
+             f.original_weight::text, NULL::int,
+             COALESCE(f.product_description, f.vendor), f.id
+        FROM noblesse_registration_forms f
+       WHERE f.lot_id = $1 AND f.tenant_id = $2
+
+      UNION ALL
+      -- Processing, raised and finished. completed_at is used when it exists so
+      -- the finish lands at the time it happened, not when the order was cut.
+      SELECT COALESCE(o.completed_at, o.created_at),
+             CASE WHEN o.status = 'completed' THEN 'processing_done' ELSE 'processing' END,
+             CASE WHEN o.status = 'completed' THEN 'Processing complete' ELSE 'Sent to processing' END,
+             CASE WHEN o.status = 'completed' THEN o.output_weight::text
+                  ELSE SUM(i.weight_in)::text END,
+             CASE WHEN o.status = 'completed' THEN o.output_cases ELSE NULL END,
+             o.notes, o.id
+        FROM noblesse_processing_orders o
+        JOIN noblesse_processing_order_items i ON i.processing_order_id = o.id
+       WHERE i.lot_id = $1 AND o.tenant_id = $2
+       GROUP BY o.id, o.completed_at, o.created_at, o.status, o.output_weight, o.output_cases, o.notes
+
+      ORDER BY at
+      `,
+      [lotId, req.tenantId]
+    );
+
+    res.json(rows.map((r) => ({
+      at: r.at,
+      kind: r.kind,
+      label: r.label,
+      weight: r.weight,
+      cases: r.cases,
+      detail: r.detail,
+      ref: r.ref,
+    })));
+  } catch (err) {
+    console.error("lot timeline:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });

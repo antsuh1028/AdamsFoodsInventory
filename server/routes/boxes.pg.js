@@ -27,25 +27,8 @@ const scanLimiter = rateLimit({
   message: { error: "Too many scan requests, slow down" },
 });
 
-// Every weight is reported in pounds, converted per box at read time.
-//
-// Rows written before the KG conversion shipped are still stored in kilograms —
-// production ran that way for a while — so a total that trusted weight_unit
-// would report a kilogram figure beside a manifest printed in pounds.
-//
-// ROUND per row, THEN SUM. Never SUM then convert: each box rounds
-// independently, so the two orders disagree by a thousandth or so and the
-// printed column would not add up to its own subtotal, which is exactly what
-// someone reconciling a shipment checks. NUMERIC arithmetic here is exact
-// decimal and ROUND is half-away-from-zero, matching utils/weight.js.
-const weightInLb = (t = "") => {
-  const col = t ? `${t}.` : "";
-  // ROUND twice on purpose: to thousandths first, matching what the client's
-  // converter produces, then to the two decimals actually shown. Collapsing
-  // these into one step can land a cent away at a rounding boundary, and the
-  // screen would disagree with the paper.
-  return `ROUND(ROUND(CASE WHEN ${col}weight_unit = 'KG' THEN ${col}weight / 0.45359237 ELSE ${col}weight END, 3), 2)`;
-};
+// Shared with routes/lots.pg.js so both report the same figure.
+const { weightInLb } = require("../utils/sqlWeight");
 
 // Records a removal. Never throws into the request path: failing to write the
 // audit row must not fail the operation the operator actually asked for — but
