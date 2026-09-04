@@ -128,6 +128,25 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   // Closing the scanner means a session may have been opened or closed.
   const onScannerClose = () => { setScannerOpen(false); fetchBatches(); };
 
+  const [expandedGroupId, setExpandedGroupId] = useState(null);
+  const [groupDetails, setGroupDetails] = useState({});
+
+  // Expanding a manifest shows every box across its sessions, in one sheet —
+  // which is the thing the merge exists to produce.
+  const toggleGroup = async (g) => {
+    if (expandedGroupId === g.group_id) { setExpandedGroupId(null); return; }
+    setExpandedGroupId(g.group_id);
+    if (groupDetails[g.group_id]) return;
+    try {
+      const { data } = await axiosInstance.get(`/manifest-groups/${g.group_id}`);
+      setGroupDetails((prev) => ({ ...prev, [g.group_id]: data }));
+    } catch (err) {
+      toast({ title: "Could not load that manifest", status: "error",
+        duration: 3000, position: "top" });
+      setExpandedGroupId(null);
+    }
+  };
+
   const toggleExpand = async (batch) => {
     if (expandedId === batch.batch_id) { setExpandedId(null); return; }
     setExpandedId(batch.batch_id);
@@ -398,19 +417,49 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
     [batches]
   );
 
-  const visible = useMemo(() => {
+  const matchesFilters = useCallback((row) => {
     const active = Object.entries(filters).filter(([, v]) => v);
-    return batches.filter((b) => {
-      if (statusFilter && b.status !== statusFilter) return false;
-      return active.every(([key, value]) => {
-        const col = COLUMNS.find((c) => c.key === key);
-        const cell = String(b[key] ?? "");
-        return col.filter === "select"
-          ? cell === value
-          : cell.toLowerCase().includes(value.toLowerCase());
-      });
+    return active.every(([key, value]) => {
+      const col = COLUMNS.find((c) => c.key === key);
+      const cell = String(row[key] ?? "");
+      return col.filter === "select"
+        ? cell === value
+        : cell.toLowerCase().includes(value.toLowerCase());
     });
-  }, [batches, filters, statusFilter]);
+  }, [filters]);
+
+  // Every session that belongs to a merged manifest. Those sessions do not
+  // appear on their own — the manifest stands in for them, which is what a
+  // merge means. Listing both showed the same boxes twice and made the totals
+  // look like they double-counted.
+  const mergedBatchIds = useMemo(
+    () => new Set(groups.flatMap((g) => g.batch_ids || [])),
+    [groups]
+  );
+
+  const visible = useMemo(() => batches.filter((b) => {
+    if (mergedBatchIds.has(b.batch_id)) return false;
+    if (statusFilter && b.status !== statusFilter) return false;
+    return matchesFilters(b);
+  }), [batches, statusFilter, matchesFilters, mergedBatchIds]);
+
+  // Merged manifests and loose sessions in one list, ordered by when the
+  // product was WEIGHED rather than when someone got round to merging it.
+  const rows = useMemo(() => {
+    const groupRows = groups
+      .filter((g) => matchesFilters(g))
+      .map((g) => ({
+        kind: "group",
+        key: `g${g.group_id}`,
+        at: g.first_opened || g.created_at,
+        group: g,
+      }));
+    const sessionRows = visible.map((b) => ({
+      kind: "session", key: `b${b.batch_id}`, at: b.created_at, batch: b,
+    }));
+    return [...groupRows, ...sessionRows]
+      .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+  }, [groups, visible, matchesFilters]);
 
   const todayStr = today();
   const isToday = (b) => String(b.created_at).slice(0, 10) === todayStr;
@@ -492,51 +541,6 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         </Button>
       </Flex>
 
-      {/* Saved merges. Each one is a reference to its sessions, so reprinting
-          picks up any correction made since — it is not a frozen copy. */}
-      {groups.length > 0 && (
-        <Box mb={5}>
-          <Text fontSize="sm" fontWeight="semibold" color="gray.600" mb={2}
-            textTransform="uppercase" letterSpacing="wide">
-            Merged manifests
-          </Text>
-          <Flex direction="column" gap={2}>
-            {groups.map((g) => (
-              <Flex key={g.group_id} align="center" gap={3} wrap="wrap"
-                px={3} py={2} bg="teal.50" borderRadius="md"
-                border="1px solid" borderColor="teal.200">
-                <Text fontSize="sm" fontWeight="bold" color="teal.800">
-                  {g.name || g.lot_number || `Manifest ${g.group_id}`}
-                </Text>
-                <Badge colorScheme="teal" fontSize="10px">
-                  {g.session_count} session{g.session_count === 1 ? "" : "s"}
-                </Badge>
-                <Text fontSize="sm" color="gray.600">
-                  {g.box_count} boxes
-                </Text>
-                <Text fontSize="sm" color="gray.700" fontWeight="600"
-                  style={{ fontVariantNumeric: "tabular-nums" }}>
-                  {g.total} LB
-                </Text>
-                {g.vendor && <Text fontSize="sm" color="gray.500">{g.vendor}</Text>}
-                <Flex gap={2} ml="auto">
-                  <Button size="xs" variant="outline" colorScheme="blue"
-                    onClick={() => printGroup(g)}>
-                    Print
-                  </Button>
-                  {isAdmin && (
-                    <Button size="xs" variant="ghost" colorScheme="red"
-                      onClick={() => setConfirmDeleteGroup(g)}>
-                      Remove
-                    </Button>
-                  )}
-                </Flex>
-              </Flex>
-            ))}
-          </Flex>
-        </Box>
-      )}
-
       {visible.length === 0 ? (
         <Text fontSize="sm" color="gray.400">
           {batches.length === 0
@@ -587,11 +591,97 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
             </Box>
 
             <Box as="tbody">
-              {visible.map((b, i) => {
+              {rows.map((row, i) => {
+                if (row.kind === "group") {
+                  const g = row.group;
+                  const gOpen = expandedGroupId === g.group_id;
+                  const gDetail = groupDetails[g.group_id];
+                  return (
+                    <React.Fragment key={row.key}>
+                      <Box as="tr" bg={i % 2 ? "teal.50" : "white"}
+                        _hover={{ bg: "teal.100" }} cursor="pointer"
+                        onDoubleClick={() => toggleGroup(g)}>
+                        <Box as="td" px={2} py={2} borderBottom="1px solid" borderColor="gray.100" />
+                        <Box as="td" px={3} py={2} fontSize="sm" fontWeight="600" color="teal.800"
+                          borderBottom="1px solid" borderColor="gray.100"
+                          borderLeft="4px solid" borderLeftColor="teal.500">
+                          <Flex align="center" gap={2}>
+                            <IconButton
+                              aria-label={gOpen ? "Collapse" : "Expand"}
+                              icon={gOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                              size="xs" variant="ghost" colorScheme={gOpen ? "teal" : "gray"}
+                              onClick={(e) => { e.stopPropagation(); toggleGroup(g); }}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                            />
+                            <Text as="span">{g.name || g.lot_number || `Manifest ${g.group_id}`}</Text>
+                          </Flex>
+                        </Box>
+                        <Box as="td" px={3} py={2} fontSize="sm" color="gray.700"
+                          borderBottom="1px solid" borderColor="gray.100">{g.vendor || "—"}</Box>
+                        <Box as="td" px={3} py={2} fontSize="sm" color="gray.700"
+                          borderBottom="1px solid" borderColor="gray.100">{g.item_description || "—"}</Box>
+                        <Box as="td" px={3} py={2} fontSize="sm" color="gray.700" whiteSpace="nowrap"
+                          borderBottom="1px solid" borderColor="gray.100">
+                          {row.at ? new Date(row.at).toLocaleString() : "—"}
+                        </Box>
+                        <Box as="td" px={3} py={2} fontSize="sm" textAlign="right" color="gray.700"
+                          borderBottom="1px solid" borderColor="gray.100">{g.box_count}</Box>
+                        <Box as="td" px={3} py={2} fontSize="sm" textAlign="right" color="gray.700"
+                          whiteSpace="nowrap" style={{ fontVariantNumeric: "tabular-nums" }}
+                          borderBottom="1px solid" borderColor="gray.100">{g.total} LB</Box>
+                        <Box as="td" px={3} py={2} borderBottom="1px solid" borderColor="gray.100">
+                          <Badge colorScheme="teal" fontSize="10px">
+                            Merged · {g.session_count}
+                          </Badge>
+                        </Box>
+                        <Box as="td" px={3} py={2} borderBottom="1px solid" borderColor="gray.100"
+                          textAlign="right">
+                          <Flex gap={2} justify="flex-end">
+                            <Button size="xs" variant="outline" colorScheme="blue"
+                              onClick={(e) => { e.stopPropagation(); printGroup(g); }}>
+                              Print
+                            </Button>
+                            {isAdmin && (
+                              <Button size="xs" variant="ghost" colorScheme="red"
+                                title="Unmerge — the sessions come back as their own rows"
+                                onClick={(e) => { e.stopPropagation(); setConfirmDeleteGroup(g); }}>
+                                Unmerge
+                              </Button>
+                            )}
+                          </Flex>
+                        </Box>
+                      </Box>
+
+                      {gOpen && (
+                        <Box as="tr">
+                          <Box as="td" colSpan={COLUMNS.length + 2} style={{ padding: 0 }}
+                            bg="teal.50" borderTop="2px solid" borderColor="teal.300">
+                            <Box p={4}>
+                              {!gDetail ? (
+                                <Flex justify="center" py={6}><Spinner size="sm" color="teal.500" /></Flex>
+                              ) : (
+                                <>
+                                  <Text fontSize="xs" color="gray.600" mb={2}>
+                                    {gDetail.sessions.length} session
+                                    {gDetail.sessions.length === 1 ? "" : "s"} merged —
+                                    {" "}{gDetail.sessions.map((x) => x.lot_number || `batch ${x.batch_id}`).join(", ")}
+                                  </Text>
+                                  <ScanSheet scans={gDetail.items} />
+                                </>
+                              )}
+                            </Box>
+                          </Box>
+                        </Box>
+                      )}
+                    </React.Fragment>
+                  );
+                }
+
+                const b = row.batch;
                 const open = expandedId === b.batch_id;
                 const detail = details[b.batch_id];
                 return (
-                  <React.Fragment key={b.batch_id}>
+                  <React.Fragment key={row.key}>
                     <Box as="tr"
                       bg={isToday(b) ? "green.50" : i % 2 ? "gray.50" : "white"}
                       _hover={{ bg: isToday(b) ? "green.100" : "blue.50" }}

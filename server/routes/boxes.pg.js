@@ -1023,6 +1023,16 @@ router.get("/manifest-groups", verifyToken, async (req, res) => {
     const result = await pool.query(
       `SELECT g.group_id, g.name, g.lot_number, g.vendor, g.item_description,
               g.created_at,
+              -- Which sessions it covers, so the list can show the group IN
+              -- PLACE OF its sessions rather than alongside them.
+              COALESCE((SELECT json_agg(m.batch_id ORDER BY m.position)
+                 FROM manifest_group_batches m
+                WHERE m.group_id = g.group_id), '[]'::json) AS batch_ids,
+              -- Sorted by when the product was weighed, not when someone got
+              -- round to merging it.
+              (SELECT MIN(b.created_at) FROM manifest_group_batches m
+                 JOIN box_batches b ON b.batch_id = m.batch_id
+                WHERE m.group_id = g.group_id) AS first_opened,
               (SELECT COUNT(*)::int FROM manifest_group_batches m
                 WHERE m.group_id = g.group_id) AS session_count,
               (SELECT COUNT(*)::int
