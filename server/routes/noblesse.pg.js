@@ -16,6 +16,8 @@ const fmtReceipt = (row) => ({
   bolNumber:       row.bol_number,
   driver:          row.driver,
   linkedOrderId:   row.linked_order_id,
+  sourceType:      row.source_type,
+  sourceName:      row.source_name,
   lines:           Array.isArray(row.lines) ? row.lines : [],
   status:          row.status,
   notes:           row.notes,
@@ -162,12 +164,28 @@ router.get("/noblesse-receipts", verifyToken, async (req, res) => {
   }
 });
 
+// AFDC distributes and NTI processes, so product arrives here from one of two
+// places: back from AFDC for another pass, or fresh from a packer. Without
+// recording which, the two are indistinguishable afterwards and a lot's history
+// cannot say where it came from.
+const SOURCE_TYPES = new Set(["afdc", "vendor"]);
+
 router.post("/noblesse-receipts", verifyToken, async (req, res) => {
-  const { shipmentDate, bolNumber, driver, linkedOrderId, lines, notes } = req.body;
+  const { shipmentDate, bolNumber, driver, linkedOrderId, lines, notes,
+          sourceType, sourceName } = req.body;
+
+  // Nullable rather than required: receipts predate the question, and rejecting
+  // one that omits it would break a screen that works today.
+  const source = typeof sourceType === "string" ? sourceType.trim().toLowerCase() : null;
+  if (source && !SOURCE_TYPES.has(source)) {
+    return res.status(400).json({ error: `sourceType must be one of: ${[...SOURCE_TYPES].join(", ")}` });
+  }
+
   try {
     const result = await pool.query(
-      `INSERT INTO noblesse_receipts (tenant_id, shipment_date, bol_number, driver, linked_order_id, lines, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO noblesse_receipts (tenant_id, shipment_date, bol_number, driver, linked_order_id, lines, notes,
+                                      source_type, source_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
         req.tenantId,
@@ -177,6 +195,9 @@ router.post("/noblesse-receipts", verifyToken, async (req, res) => {
         linkedOrderId || null,
         JSON.stringify(lines || []),
         notes         || null,
+        source        || null,
+        // AFDC is one place, so its name is fixed; a vendor's is whatever was typed.
+        source === "afdc" ? (sourceName || "AFDC") : (sourceName || null),
       ]
     );
     res.json(fmtReceipt(result.rows[0]));
@@ -237,14 +258,23 @@ router.post("/noblesse-receipts/:id/push-to-inventory", verifyToken, async (req,
 
     const insertedItems = [];
     for (const line of validLines) {
+      // Receiving is the incoming side, so each line's lot is created if new and
+      // resolved if it already exists. The resolve branch is the AFDC return:
+      // the same number comes back and the new stock attaches to the lot's
+      // existing history instead of starting a second one.
+      //
+      // Runs on the transaction client, so a failed push leaves no orphan lots.
+      const lot = await lotColumns(req.tenantId, req.userId, line.lot, client);
+
       const itemRes = await client.query(
         `INSERT INTO nti_inventory
-           (tenant_id, lot, description, brand, grade, species, est, pack_date, weight, qty_cases, received_date)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           (tenant_id, lot, description, brand, grade, species, est, pack_date, weight, qty_cases, received_date,
+            lot_id, stage)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'raw')
          RETURNING *`,
         [
           req.tenantId,
-          line.lot         || null,
+          lot.lotNumber    || null,
           line.description || null,
           line.brand       || null,
           line.grade       || null,
@@ -254,6 +284,7 @@ router.post("/noblesse-receipts/:id/push-to-inventory", verifyToken, async (req,
           line.weight      ? Number(line.weight) : null,
           line.qty         ? Number(line.qty)    : null,
           fmtDate(receipt.shipment_date),
+          lot.lotId,
         ]
       );
       insertedItems.push(itemRes.rows[0]);

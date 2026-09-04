@@ -779,15 +779,25 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
     try {
       await client.query("BEGIN");
 
+      // An imported tally is incoming-side, so its lot is created or resolved
+      // like any other. This is the path the messy cells arrive through —
+      // "P12 N26230-01", "N26244-3" — and it is where normalising them stops
+      // the sheets disagreeing with the sessions scanned for the same lot.
+      // Inside the transaction, so a failed import leaves no orphan lot.
+      const lot = await lotColumns(req.tenantId, req.userId, summary.lotNumber, client);
+      // Report it as STORED, not as the sheet spelled it, so the operator sees
+      // that "N26244-3" was filed as "N26244-03".
+      summary.lotNumber = lot.lotNumber;
+
       const batch = await client.query(
         `INSERT INTO box_batches
            (tenant_id, client_uuid, lot_number, vendor, ship_to, item_description,
-            source, status, closed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'imported', 'closed', now())
+            source, status, closed_at, lot_id)
+         VALUES ($1, $2, $3, $4, $5, $6, 'imported', 'closed', now(), $7)
          ON CONFLICT (client_uuid) DO NOTHING
          RETURNING batch_id`,
-        [req.tenantId, clientUuid, summary.lotNumber, summary.vendor,
-         summary.shipTo, summary.itemDescription]
+        [req.tenantId, clientUuid, lot.lotNumber, summary.vendor,
+         summary.shipTo, summary.itemDescription, lot.lotId]
       );
 
       // A retried upload finds its own batch rather than importing twice.
@@ -799,6 +809,7 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
         );
         if (!existing.rows.length) return res.status(409).json({ error: "clientUuid already used" });
         return res.json({ ...summary, batchId: existing.rows[0].batch_id, reused: true });
+
       }
 
       const batchId = batch.rows[0].batch_id;
