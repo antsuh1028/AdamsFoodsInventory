@@ -64,6 +64,7 @@ const boot = async () => {
   app.use("/", require("./routes/s3.pg"));
   app.use("/", require("./routes/production.pg"));
   app.use("/", require("./routes/lots.pg"));
+  app.use("/", require("./routes/shipments.pg"));
   app.use("/", require("./routes/noblesse.pg"));
   app.use("/", require("./routes/boxes.pg"));
 

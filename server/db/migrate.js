@@ -522,6 +522,80 @@ const steps = async () => {
   await run("history scan_image_key",
     `ALTER TABLE history ADD COLUMN IF NOT EXISTS scan_image_key TEXT`);
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // Outgoing. Product leaves NTI for one of two places: back to AdamsFoods for
+  // distribution, or straight to a customer. Until now neither was recorded at
+  // all — the right-hand side of the workflow simply did not exist, and the
+  // only trace of a load was ship_to / bill_of_lading on a weighing session.
+  //
+  // A shipment deducts stock when it ships, the way a processing order deducts
+  // when it is created. It is never edited or deleted once shipped; cancelling
+  // restores the stock and leaves the record, which is the audit-safe path.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  await run("noblesse_shipments", `
+    CREATE TABLE IF NOT EXISTS noblesse_shipments (
+      shipment_id      SERIAL PRIMARY KEY,
+      tenant_id        UUID NOT NULL REFERENCES tenants(id),
+      ship_date        DATE NOT NULL,
+      destination_type TEXT NOT NULL CHECK (destination_type IN ('adamsfoods', 'customer')),
+      destination_name TEXT NOT NULL,
+      ship_to          TEXT,
+      bill_of_lading   TEXT,
+      carrier          TEXT,
+      driver           TEXT,
+      status           TEXT NOT NULL DEFAULT 'draft'
+                       CHECK (status IN ('draft', 'shipped', 'cancelled')),
+      notes            TEXT,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_by       UUID,
+      shipped_at       TIMESTAMPTZ,
+      cancelled_at     TIMESTAMPTZ
+    )
+  `);
+
+  await run("noblesse_shipments index",
+    `CREATE INDEX IF NOT EXISTS noblesse_shipments_tenant_date_idx
+       ON noblesse_shipments (tenant_id, ship_date DESC)`);
+
+  // One line per lot on the load. nti_item_id is the stock row the weight comes
+  // out of — deduction is by id, never by matching lot text, so it cannot land
+  // on the wrong row. lot_id is NOT NULL: Outgoing is downstream, so it may only
+  // ever reference a lot that already exists.
+  await run("noblesse_shipment_items", `
+    CREATE TABLE IF NOT EXISTS noblesse_shipment_items (
+      item_id      SERIAL PRIMARY KEY,
+      shipment_id  INT NOT NULL REFERENCES noblesse_shipments(shipment_id) ON DELETE CASCADE,
+      tenant_id    UUID NOT NULL REFERENCES tenants(id),
+      lot_id       INT NOT NULL REFERENCES lots(lot_id),
+      nti_item_id  INT REFERENCES nti_inventory(id),
+      weight       NUMERIC(10,3) NOT NULL,
+      qty_cases    INTEGER,
+      description  TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  await run("noblesse_shipment_items index",
+    `CREATE INDEX IF NOT EXISTS noblesse_shipment_items_shipment_idx
+       ON noblesse_shipment_items (shipment_id)`);
+  await run("noblesse_shipment_items lot index",
+    `CREATE INDEX IF NOT EXISTS noblesse_shipment_items_lot_idx
+       ON noblesse_shipment_items (lot_id)`);
+
+  // Box weighing for an outgoing load. Same shape as registration_form_batches
+  // because it is the same idea: the paper tally already carries Ship To and a
+  // BOL, so it IS the outgoing manifest. References, never copies.
+  await run("shipment_batches", `
+    CREATE TABLE IF NOT EXISTS shipment_batches (
+      shipment_id INT NOT NULL REFERENCES noblesse_shipments(shipment_id) ON DELETE CASCADE,
+      batch_id    INT NOT NULL REFERENCES box_batches(batch_id),
+      tenant_id   UUID NOT NULL REFERENCES tenants(id),
+      position    INT NOT NULL DEFAULT 0,
+      PRIMARY KEY (shipment_id, batch_id)
+    )
+  `);
+
   // Two modules used to define `pdfs`, with DIFFERENT shapes: routes/s3.pg.js
   // (live, mounted in index.js) uses a uuid id and a tenants FK, while the
   // legacy routes/s3.js used a SERIAL id and a bare TEXT tenant. Both were
