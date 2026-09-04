@@ -6,6 +6,7 @@ const requireRole = require("../middleware/requireRole");
 const { parseGs1 } = require("../utils/gs1");
 const { parseTallySheet } = require("../utils/tallySheet");
 const { toPounds, kgToLb, sumWeights, trimTrailingZeros } = require("../utils/weight");
+const { lotColumns } = require("../utils/lotRegistry");
 const { upload } = require("../utils/aws");
 const readXlsxFile = require("read-excel-file/node");
 
@@ -173,15 +174,23 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
   }
 
   try {
+    // A weighing session opens on the dock, so this is the incoming side: the
+    // lot is created if it is new and resolved if it already exists. The
+    // canonical text is stored beside the id, so a session started as
+    // "N26244-3" is filed as "N26244-03" and stops disagreeing with the
+    // registration form for the same lot.
+    const lot = await lotColumns(req.tenantId, req.userId, lotNumber);
+
     const inserted = await pool.query(
       `INSERT INTO box_batches
-         (tenant_id, client_uuid, lot_number, vendor, ship_to, bill_of_lading, item_description)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (tenant_id, client_uuid, lot_number, vendor, ship_to, bill_of_lading,
+          item_description, lot_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (client_uuid) DO NOTHING
        RETURNING batch_id, status, created_at, lot_number,
-                 vendor, ship_to, bill_of_lading, item_description`,
-      [req.tenantId, clientUuid, lotNumber || null, vendor || null,
-       shipTo || null, billOfLading || null, itemDescription || null]
+                 vendor, ship_to, bill_of_lading, item_description, lot_id`,
+      [req.tenantId, clientUuid, lot.lotNumber, vendor || null,
+       shipTo || null, billOfLading || null, itemDescription || null, lot.lotId]
     );
 
     if (inserted.rows.length) {
@@ -192,7 +201,7 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
     // another tenant cannot be adopted.
     const existing = await pool.query(
       `SELECT batch_id, status, created_at, lot_number,
-              vendor, ship_to, bill_of_lading, item_description
+              vendor, ship_to, bill_of_lading, item_description, lot_id
          FROM box_batches
        WHERE client_uuid = $1 AND tenant_id = $2`,
       [clientUuid, req.tenantId]

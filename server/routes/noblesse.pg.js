@@ -2,6 +2,7 @@ const router = require("express").Router();
 const pool   = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
+const { lotColumns } = require("../utils/lotRegistry");
 
 // Schema lives in ../db/migrate.js and is applied, in order, before this
 // module is ever required. Nothing here fires DDL at load any more — that
@@ -834,14 +835,17 @@ router.patch("/noblesse-proc-orders/:id/status", verifyToken, async (req, res) =
 
 // ── Registration Forms ──────────────────────────────────────────────────────
 
-const regFormValues = (body) => {
+// `lot` comes from lotColumns(): the canonical lot_number plus its lot_id, or
+// the caller's original text with a null id when it is not a lot number. The
+// registration form is an incoming-side record, so it may create a lot.
+const regFormValues = (body, lot) => {
   // Handle processingDates: convert array to JSON for storage
   const processingDatesJSON = body.processingDates && Array.isArray(body.processingDates)
     ? JSON.stringify(body.processingDates.filter(pd => pd.date || pd.weight || pd.cases))
     : null;
 
   return [
-    body.lotNumber           || null,
+    lot.lotNumber            || null,
     body.formDate            || null,
     body.dateReceived        || null,
     body.timeReceived        || null,
@@ -920,15 +924,17 @@ router.get("/noblesse-registration-forms/:id", verifyToken, async (req, res) => 
 
 router.post("/noblesse-registration-forms", verifyToken, async (req, res) => {
   try {
+    const lot = await lotColumns(req.tenantId, req.userId, req.body.lotNumber);
     const result = await pool.query(
       `INSERT INTO noblesse_registration_forms
          (tenant_id, lot_number, form_date, date_received, time_received, vendor_lot, vendor,
           product_description, processing_type, spec, brand, est_number, grade,
           due_date, predicted_yield, manifest_bl_attached, process_report_attached,
-          original_weight, total_quantity, processing_dates, actual_yield, temp, remarks, checked_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+          original_weight, total_quantity, processing_dates, actual_yield, temp, remarks, checked_by,
+          lot_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
        RETURNING *`,
-      [req.tenantId, ...regFormValues(req.body)]
+      [req.tenantId, ...regFormValues(req.body, lot), lot.lotId]
     );
     const form = result.rows[0];
 
@@ -953,16 +959,17 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
     const oldData = fmtRegistrationForm(oldRes.rows[0]);
 
     const status = req.body.status && ["in_progress", "completed"].includes(req.body.status) ? req.body.status : null;
+    const lot = await lotColumns(req.tenantId, req.userId, req.body.lotNumber);
     const result = await pool.query(
       `UPDATE noblesse_registration_forms
        SET lot_number = $1, form_date = $2, date_received = $3, time_received = $4, vendor_lot = $5, vendor = $6,
            product_description = $7, processing_type = $8, spec = $9, brand = $10, est_number = $11, grade = $12,
            due_date = $13, predicted_yield = $14, manifest_bl_attached = $15, process_report_attached = $16,
            original_weight = $17, total_quantity = $18, processing_dates = $19, actual_yield = $20, temp = $21, remarks = $22,
-           checked_by = $23, status = $24, updated_at = NOW()
-       WHERE id = $25 AND tenant_id = $26
+           checked_by = $23, status = $24, lot_id = $25, updated_at = NOW()
+       WHERE id = $26 AND tenant_id = $27
        RETURNING *`,
-      [...regFormValues(req.body), status, req.params.id, req.tenantId]
+      [...regFormValues(req.body, lot), status, lot.lotId, req.params.id, req.tenantId]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });
 
