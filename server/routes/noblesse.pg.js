@@ -4,6 +4,7 @@ const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { lotColumns, lookupLot } = require("../utils/lotRegistry");
 const { syncProcessedStock } = require("../utils/processedStock");
+const { syncRegistrationStock } = require("../utils/registrationStock");
 
 // Schema lives in ../db/migrate.js and is applied, in order, before this
 // module is ever required. Nothing here fires DDL at load any more — that
@@ -135,6 +136,20 @@ const logRegistrationFormHistory = (tenantId, formId, action, lotNumber, changed
     [tenantId, formId, action, lotNumber, changedFields ? JSON.stringify(changedFields) : null,
      oldValues ? JSON.stringify(oldValues) : null, newValues ? JSON.stringify(newValues) : null, performedBy]
   ).catch((err) => console.error("registration form history log error:", err.message));
+};
+
+// Stock sync must not fail a form save. The form is the record of truth, and an
+// operator losing their entry to stock arithmetic is worse than stock lagging
+// by one save. The outcome is RETURNED rather than swallowed, so the screen can
+// say what happened instead of the divergence being silent.
+const syncStock = async (tenantId, formId) => {
+  try {
+    const { action, shortfall } = await syncRegistrationStock(pool, tenantId, formId);
+    return shortfall ? { action, shortfall } : { action };
+  } catch (err) {
+    console.error("registration stock sync error:", err.message);
+    return { action: "error", error: err.message };
+  }
 };
 
 const getChangedFields = (oldData, newData) => {
@@ -1044,7 +1059,9 @@ router.post("/noblesse-registration-forms", verifyToken, async (req, res) => {
     // Log creation
     logRegistrationFormHistory(req.tenantId, form.id, "created", form.lot_number, null, null, fmtRegistrationForm(form), req.username);
 
-    res.json(fmtRegistrationForm(form));
+    const stock = await syncStock(req.tenantId, form.id);
+
+    res.json({ ...fmtRegistrationForm(form), stock });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -1084,7 +1101,11 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
       logRegistrationFormHistory(req.tenantId, req.params.id, "updated", newForm.lotNumber, changedFields, oldData, newForm, req.username);
     }
 
-    res.json(newForm);
+    // Re-synced on every save, not just when the weight changed: the lot,
+    // description and case count all land on the stock row too.
+    const stock = await syncStock(req.tenantId, req.params.id);
+
+    res.json({ ...newForm, stock });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -1153,7 +1174,12 @@ router.delete("/noblesse-registration-forms/:id", verifyToken, requireRole("admi
     logRegistrationFormHistory(req.tenantId, req.params.id, "deleted", deletedForm.lotNumber,
       null, deletedForm, null, req.username);
 
-    res.json({ deleted: result.rows[0].id });
+    // Same reasoning as the box links above: nothing cleans up after this, and
+    // stock left behind would be credited to whatever form reuses the id. The
+    // sync sees a form that no longer exists and removes its row.
+    const stock = await syncStock(req.tenantId, req.params.id);
+
+    res.json({ deleted: result.rows[0].id, stock });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

@@ -508,6 +508,36 @@ const steps = async () => {
       WHERE source_processing_order_id IS NOT NULL
   `);
 
+  // Registering product is what puts it in stock.
+  //
+  // Until now nothing did. The only writer of nti_inventory was
+  // push-to-inventory off an Incoming receipt, and the work had long since
+  // moved to registration forms — so forms recorded real weights while stock
+  // sat empty and Outgoing had nothing to draw on.
+  await run("nti_inventory source_registration_form_id",
+    `ALTER TABLE nti_inventory ADD COLUMN IF NOT EXISTS source_registration_form_id INT`);
+
+  // The figure the FORM last claimed, kept apart from `weight`, which is what
+  // is actually on hand after shipping. Re-syncing an edited form applies the
+  // difference between these two rather than overwriting — otherwise editing a
+  // form after a load went out would resurrect the shipped stock.
+  await run("nti_inventory registered_weight",
+    `ALTER TABLE nti_inventory ADD COLUMN IF NOT EXISTS registered_weight NUMERIC`);
+  await run("nti_inventory registered_cases",
+    `ALTER TABLE nti_inventory ADD COLUMN IF NOT EXISTS registered_cases INT`);
+
+  // One stock row per form, enforced by the database. Partial for the same
+  // reason as the order index above.
+  //
+  // No FK to noblesse_registration_forms, matching registration_form_batches:
+  // the ordering guarantee now exists so it is possible, but adding it is a
+  // Phase D step and would fail on any pre-existing orphan.
+  await run("nti_inventory registration form uniq", `
+    CREATE UNIQUE INDEX IF NOT EXISTS nti_inventory_source_reg_form_uniq
+      ON nti_inventory (source_registration_form_id)
+      WHERE source_registration_form_id IS NOT NULL
+  `);
+
   // ══════════════════════════════════════════════════════════════════════════
   // Adams side. `history` and `inventory` predate this repo, like `tenants` —
   // they are never created here, only altered. These two columns used to be
