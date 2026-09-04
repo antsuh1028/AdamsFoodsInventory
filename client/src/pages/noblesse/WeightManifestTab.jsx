@@ -686,10 +686,15 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                       bg={isToday(b) ? "green.50" : i % 2 ? "gray.50" : "white"}
                       _hover={{ bg: isToday(b) ? "green.100" : "blue.50" }}
                       cursor="pointer" onDoubleClick={() => toggleExpand(b)}>
-                      <Box as="td" px={2} py={2} borderBottom="1px solid" borderColor="gray.100"
+                      {/* Centred on the td, not the Checkbox: Chakra renders the
+                          control as an inline-flex label, so textAlign is what
+                          moves it. alignSelf does nothing here — a table cell is
+                          not a flex container for it to align against. */}
+                      <Box as="td" px={2} py={2} textAlign="center"
+                        borderBottom="1px solid" borderColor="gray.100"
                         onClick={(e) => e.stopPropagation()}
                         onDoubleClick={(e) => e.stopPropagation()}>
-                        <Checkbox size="sm" isChecked={selected.has(b.batch_id)}
+                        <Checkbox size="sm" isChecked={selected.has(b.batch_id)} borderColor="gray.500"
                           onChange={() => toggleSelected(b.batch_id)}
                           aria-label={`Select ${b.lot_number || b.batch_id}`} />
                       </Box>
@@ -985,7 +990,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                 Go back
               </Button>
               <Button colorScheme="red" onClick={() => deleteGroup(confirmDeleteGroup)}>
-                Remove manifest
+                Unmerge manifest
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>
