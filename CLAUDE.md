@@ -76,6 +76,28 @@
 > guarantees the order, so the FK is *possible*; adding it is a Phase D step
 > (it fails if any orphan link exists) and has not been done.
 >
+> ### Lot registry + Outgoing (2026-09-04, committed, NOT deployed)
+> **NTI processes; AdamsFoods distributes.** A lot is issued once at Incoming
+> and only ever *referenced* afterwards — see [[project-domain-model]] in memory.
+> - `lots` owns lot identity. `POST /lots` creates, `POST /lots/resolve` never
+>   does — the split is structural so downstream cannot mint a lot from a typo.
+>   The `-NN` is allocated server-side against `UNIQUE (tenant_id, lot_date, seq)`.
+>   It used to be typed, which is why prod has `N26132-03` and `-08` with a gap.
+> - `utils/lot.js` normalises what is unambiguous and REFUSES what is not
+>   (`N26244` alone has no sequence, so it is never assumed to be `-01`).
+> - `utils/lotRegistry.js`: `ensureLot` (incoming) / `lookupLot` (downstream).
+>   Returns null rather than throwing on non-lot text, so Phase C could not break
+>   a save. Uses a SAVEPOINT inside a transaction.
+> - **Processing output re-stocks under the same lot** (`stage='processed'`,
+>   keyed by `source_processing_order_id` with a unique index). Before this,
+>   processing deducted raw and recorded output on the ORDER, so nothing was left
+>   in stock to ship — Outgoing had nothing to draw on.
+> - **Outgoing**: `noblesse_shipments` + items. Ship deducts stock with the rows
+>   locked and REFUSES an overage rather than flooring at zero; cancel restores
+>   and keeps the record; a shipped load is never edited or deleted.
+> - Phases A+B applied to prod; text columns still authoritative (Phase D — drop
+>   them — not done).
+>
 > ### Not done
 > - The tally-sheet **date is still discarded** on import — see §4 Known gap.
 > - iPad keyboard: the user should check whether their scanner has an *iOS
@@ -108,7 +130,12 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 ## 2. Branch / deploy state
 
 - **Production CODE runs `master` = `da604e2`**, deployed 2026-09-03 and verified.
-  Don't deploy without being asked.
+  Don't deploy without being asked. Everything since — the whole lot registry
+  and Outgoing — is committed but NOT deployed.
+- **The dev server points at the PRODUCTION database.** Running it locally
+  applies `db/migrate.js` to prod and writes real rows. "Not deployed" therefore
+  means the *code* on the server is old; schema and data changes made locally
+  are already live. Bear that in mind before running anything destructive.
 - **The production DATABASE is deliberately ahead of that code (2026-09-04).**
   Lot-registry Phase A + B were applied straight to Neon from a workstation —
   `migrate()` run against prod, then `scripts/backfill-lots.js --commit`. The
