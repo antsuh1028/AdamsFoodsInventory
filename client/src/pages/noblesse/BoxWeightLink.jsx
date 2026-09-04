@@ -25,7 +25,15 @@ const cents = (v) => {
   return Number(toDisplayHundredths(n));
 };
 
-const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
+// `pendingBatchIds` / `onPendingChange` are how this works BEFORE a form exists.
+// The boxes are weighed on the dock first and the form is written up afterwards,
+// so requiring a saved form before sessions could be picked had the real
+// sequence backwards. On a new form the picks are held on the draft and the
+// links are written straight after it saves.
+const BoxWeightLink = ({
+  formId, lotNumber, draft, setDraft,
+  pendingBatchIds = [], onPendingChange,
+}) => {
   const [linked, setLinked] = useState(null);
   const [available, setAvailable] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -33,11 +41,14 @@ const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
   const toast = useToast();
 
   const load = useCallback(async () => {
-    if (!formId) return;
     setLoading(true);
     try {
       const [{ data: links }, { data: batches }] = await Promise.all([
-        axiosInstance.get(`/noblesse-registration-forms/${formId}/box-batches`),
+        // A form that does not exist yet has nothing linked; the sessions still
+        // need listing so they can be picked.
+        formId
+          ? axiosInstance.get(`/noblesse-registration-forms/${formId}/box-batches`)
+          : Promise.resolve({ data: { sessions: [], boxCount: 0, totalWeight: "0", weightUnit: "LB" } }),
         axiosInstance.get("/box-batches"),
       ]);
       setLinked(links);
@@ -55,9 +66,31 @@ const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
 
   useEffect(() => { load(); }, [load]);
 
+  const pending = !formId;
+
+  // Before the form exists the picks live on the draft, so "linked" is derived
+  // from the same session list instead of coming back from the server.
+  const view = useMemo(() => {
+    if (!pending) return linked;
+    const chosen = available
+      .filter((b) => pendingBatchIds.includes(b.batch_id))
+      // /box-batches returns totals as [{unit,total}] while the linked endpoint
+      // returns a plain `total` string. Normalised here so one render path
+      // serves both, rather than the row silently showing an empty weight.
+      .map((b) => ({ ...b, total: b.totals?.[0]?.total ?? "0" }));
+    const totalWeight = chosen
+      .reduce((sum, b) => sum + Math.round(Number(b.total) * 1000), 0) / 1000;
+    return {
+      sessions: chosen,
+      boxCount: chosen.reduce((sum, b) => sum + (Number(b.box_count) || 0), 0),
+      totalWeight: String(totalWeight),
+      weightUnit: "LB",
+    };
+  }, [pending, linked, available, pendingBatchIds]);
+
   const linkedIds = useMemo(
-    () => new Set((linked?.sessions || []).map((s) => s.batch_id)),
-    [linked]
+    () => new Set((view?.sessions || []).map((s) => s.batch_id)),
+    [view]
   );
 
   // Sessions for this lot float to the top of the picker. Lot cells are often
@@ -96,9 +129,18 @@ const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
   // Several at once: a lot weighed across two pallets, or a session stopped
   // and restarted, is one delivery on one form. The endpoint has always taken
   // an array.
-  const link = (batchIds) => mutate(() =>
-    axiosInstance.post(`/noblesse-registration-forms/${formId}/box-batches`,
-      { batchIds: batchIds.map(Number) }));
+  const link = (batchIds) => {
+    if (pending) {
+      // Nothing to POST to yet. The parent writes these links the moment the
+      // form has an id.
+      onPendingChange([...new Set([...pendingBatchIds, ...batchIds.map(Number)])]);
+      setPicking(new Set());
+      return Promise.resolve();
+    }
+    return mutate(() =>
+      axiosInstance.post(`/noblesse-registration-forms/${formId}/box-batches`,
+        { batchIds: batchIds.map(Number) }));
+  };
 
   const togglePick = (batchId) => setPicking((prev) => {
     const next = new Set(prev);
@@ -106,38 +148,53 @@ const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
     return next;
   });
 
-  const unlink = (batchId) => mutate(() =>
-    axiosInstance.delete(`/noblesse-registration-forms/${formId}/box-batches/${batchId}`));
+  const unlink = (batchId) => {
+    if (pending) {
+      onPendingChange(pendingBatchIds.filter((id) => id !== batchId));
+      return Promise.resolve();
+    }
+    return mutate(() =>
+      axiosInstance.delete(`/noblesse-registration-forms/${formId}/box-batches/${batchId}`));
+  };
 
+  // The sessions do not just supply a weight — they are what the form is being
+  // written up FROM, so the heading comes across too. Only into fields still
+  // empty: whatever the operator already typed wins over anything inferred.
   const applyToForm = () => {
-    setDraft({
+    const first = view.sessions[0] || {};
+    const filled = {
       ...draft,
-      originalWeight: linked.totalWeight,
-      totalQuantity: String(linked.boxCount),
-    });
+      originalWeight: view.totalWeight,
+      totalQuantity: String(view.boxCount),
+    };
+    if (!draft.lotId && first.lot_id) {
+      filled.lotId = first.lot_id;
+      filled.lotNumber = first.lot_number || draft.lotNumber;
+    }
+    if (!String(draft.vendor || "").trim() && first.vendor) filled.vendor = first.vendor;
+    if (!String(draft.productDescription || "").trim() && first.item_description) {
+      filled.productDescription = first.item_description;
+    }
+    setDraft(filled);
+
+    const also = [
+      filled.lotNumber !== draft.lotNumber && "lot",
+      filled.vendor !== draft.vendor && "vendor",
+      filled.productDescription !== draft.productDescription && "description",
+    ].filter(Boolean);
+
     toast({
-      title: "Weights applied",
-      description: `${toDisplay(linked.totalWeight)} lb across ${linked.boxCount} boxes.`,
+      title: "Boxes applied",
+      description: `${toDisplay(view.totalWeight)} lb across ${view.boxCount} boxes` +
+        (also.length ? `, plus ${also.join(", ")}.` : "."),
       status: "success", duration: 3000, position: "top",
     });
   };
 
-  // A form saved before this existed has no id to hang links on.
-  if (!formId) {
-    return (
-      <Box p={3} bg="gray.50" borderRadius="md" border="1px dashed" borderColor="gray.300">
-        <Text fontSize="sm" color="gray.600">
-          Save this form once, then weighing sessions can be tied to it and their
-          weights pulled in.
-        </Text>
-      </Box>
-    );
-  }
-
-  const live = linked ? cents(linked.totalWeight) : null;
+  const live = view ? cents(view.totalWeight) : null;
   const onForm = cents(draft.originalWeight);
   const drifted = live !== null && onForm !== null && live !== onForm;
-  const hasBoxes = Boolean(linked && linked.sessions.length);
+  const hasBoxes = Boolean(view && view.sessions.length);
 
   return (
     <Box p={3} bg="blue.50" borderRadius="md" border="1px solid" borderColor="blue.200">
@@ -145,6 +202,9 @@ const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
         <Text fontSize="sm" fontWeight="bold" color="blue.800">
           Box weights
         </Text>
+        {pending && hasBoxes && (
+          <Text fontSize="xs" color="gray.500">tied when you save</Text>
+        )}
         {loading && <Spinner size="xs" color="blue.500" />}
       </Flex>
 
@@ -155,15 +215,15 @@ const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
               <Text fontSize="xs" color="gray.500" textTransform="uppercase">Weighed</Text>
               <Text fontSize="2xl" fontWeight="bold" color="blue.800"
                 style={{ fontVariantNumeric: "tabular-nums" }}>
-                {toDisplay(linked.totalWeight)}
+                {toDisplay(view.totalWeight)}
               </Text>
               <Text fontSize="sm" color="gray.600">lb</Text>
             </Flex>
             <Text fontSize="sm" color="gray.700">
-              {linked.boxCount} box{linked.boxCount === 1 ? "" : "es"}
+              {view.boxCount} box{view.boxCount === 1 ? "" : "es"}
             </Text>
             <Button size="xs" colorScheme="blue" onClick={applyToForm} ml="auto">
-              Use these weights
+              Use these boxes
             </Button>
           </Flex>
 
@@ -174,14 +234,14 @@ const BoxWeightLink = ({ formId, lotNumber, draft, setDraft }) => {
               <AlertIcon boxSize={3} />
               <Box>
                 The form says {toDisplay(draft.originalWeight)} lb but the boxes now
-                weigh {toDisplay(linked.totalWeight)} lb. A box was probably corrected
+                weigh {toDisplay(view.totalWeight)} lb. A box was probably corrected
                 or voided since this was filled in.
               </Box>
             </Alert>
           )}
 
           <Flex direction="column" gap={1} mb={2}>
-            {linked.sessions.map((s) => (
+            {view.sessions.map((s) => (
               <Flex key={s.batch_id} align="baseline" gap={2} wrap="wrap"
                 px={2} py={1} bg="white" borderRadius="sm"
                 border="1px solid" borderColor="blue.100">

@@ -30,7 +30,7 @@ const PROCESSING_TYPES = [
 
 const emptyDraft = () => ({
   id: null,
-  lotNumber: "", lotId: null, formDate: "", dateReceived: "", timeReceived: "",
+  lotNumber: "", lotId: null, pendingBatchIds: [], formDate: "", dateReceived: "", timeReceived: "",
   vendorLot: "", vendor: "", productDescription: "", processingType: "",
   spec: "", brand: "", estNumber: "", grade: "",
   dueDate: "", predictedYield: "",
@@ -244,6 +244,8 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                 lotNumber={draft.lotNumber}
                 draft={draft}
                 setDraft={setDraft}
+                pendingBatchIds={draft.pendingBatchIds || []}
+                onPendingChange={(ids) => setDraft({ ...draft, pendingBatchIds: ids })}
               />
             </Box>
 
@@ -578,6 +580,27 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
         setForms((prev) => prev.map((f) => (f.id === res.data.id ? res.data : f)));
       } else {
         const res = await axiosInstance.post("/noblesse-registration-forms", payload);
+
+        // The boxes are weighed before the form is written up, so sessions can
+        // be picked on a form that does not exist yet. They are held on the
+        // draft and tied here, the moment there is an id to tie them to.
+        const pending = draft.pendingBatchIds || [];
+        if (pending.length) {
+          try {
+            await axiosInstance.post(
+              `/noblesse-registration-forms/${res.data.id}/box-batches`,
+              { batchIds: pending }
+            );
+          } catch (err) {
+            // The form itself saved. Say what did not, rather than letting the
+            // whole save read as a failure.
+            toast({
+              status: "warning", duration: 6000, isClosable: true,
+              title: "Form saved, but the weighing sessions were not tied",
+              description: err.response?.data?.error || err.message,
+            });
+          }
+        }
         setForms((prev) => [res.data, ...prev]);
       }
       toast({ status: "success", title: "Registration form saved", duration: 2000 });

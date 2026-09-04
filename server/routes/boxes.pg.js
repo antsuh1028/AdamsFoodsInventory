@@ -833,7 +833,7 @@ router.get("/box-batches", verifyToken, async (req, res) => {
     // same total, and with two units it would also have doubled box_count.
     // A scalar subquery returns exactly one value and cannot fan out.
     const result = await pool.query(
-      `SELECT b.batch_id, b.lot_number, b.vendor, b.item_description, b.source,
+      `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description, b.source,
               b.status, b.created_at, b.closed_at,
               (SELECT COUNT(*)::int
                  FROM batch_items i
