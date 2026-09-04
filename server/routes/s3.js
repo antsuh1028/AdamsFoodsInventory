@@ -6,18 +6,10 @@ const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { s3Client, upload } = require("../utils/aws");
 
-// Auto-create pdfs table if it doesn't exist
-pool.query(`
-  CREATE TABLE IF NOT EXISTS pdfs (
-    id        SERIAL PRIMARY KEY,
-    tenant_id TEXT,
-    file_name TEXT,
-    file_key  TEXT,
-    file_url  TEXT,
-    upload_date TIMESTAMPTZ DEFAULT NOW(),
-    created_at  TIMESTAMPTZ DEFAULT NOW()
-  )
-`).catch(() => {});
+// Schema lives in ../db/migrate.js. This file used to create `pdfs` itself, at
+// load, with a swallowed .catch() AND a different shape from routes/s3.pg.js —
+// a SERIAL id and a TEXT tenant against that file's uuid id and tenants FK.
+// Both were IF NOT EXISTS, so on a fresh database whichever ran first won.
 
 router.post("/upload-pdf", verifyToken, requireRole("admin"), upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });

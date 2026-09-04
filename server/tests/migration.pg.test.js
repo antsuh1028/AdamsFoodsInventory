@@ -681,7 +681,7 @@ describe("POST /inventoryFind — query construction", () => {
     await request(app).post("/inventoryFind").set("Authorization", userToken)
       .send({ inputs: { location: "a101" } });
     const [sql, params] = pool.query.mock.calls[0];
-    expect(params).toContain("A101");
+    expect(params).toContain("A101%");
   });
 
   it("empty string filters are ignored", async () => {
@@ -704,10 +704,12 @@ describe("POST /inventoryFind — query construction", () => {
     await request(app).post("/inventoryFind").set("Authorization", userToken)
       .send({ inputs: { location: "A101", lot: "12345-01", species: "Beef", grade: "Choice" } });
     const [sql, params] = pool.query.mock.calls[0];
-    expect(params).toContain("A101");
-    expect(params).toContain("12345-01");
-    expect(params).toContain("Beef");
-    expect(params).toContain("Choice");
+    // Location is a prefix match; everything else is a contains match. All of
+    // them reach the query as LIKE patterns, not raw values.
+    expect(params).toContain("A101%");
+    expect(params).toContain("%12345-01%");
+    expect(params).toContain("%Beef%");
+    expect(params).toContain("%Choice%");
   });
 });
 

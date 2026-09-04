@@ -270,10 +270,30 @@ one line in the INSERT, if it ever matters.
 **`server/tests/` and `server/scripts/` are gitignored** — tests are local-only by
 request. So is `2026/` (real shipment workbooks used for parser accuracy checks).
 
-**Baseline: 6 pre-existing failures** (proc-orders partial-complete ×3, proc-orders
-status ×1, S3 admin routes ×2 — the last from `routes.pg.test.js` failing to load
-because its `pool.query` mock returns `undefined`). Establish this baseline before
-claiming a change caused no regressions.
+**Baseline: 0 failures, 722 passing (2026-09-04).** Anything red is yours.
+
+It was 6 failures / 583 tests for a long time. Both numbers were wrong in the
+same way: **two suites never loaded at all**, so ~140 tests were dead and their
+assertions had silently gone stale.
+
+- `routes/history.pg.js` and `routes/s3.js` fired DDL at import with a swallowed
+  `.catch()`. A mocked `pool.query` returns `undefined`, and `.catch` of
+  `undefined` throws before the suite can load. That DDL now lives in
+  `db/migrate.js`; nothing fires schema at import any more.
+- The proc-order failures were tests describing a design that had been REPLACED:
+  they asserted that a partial completion credits the unprocessed remainder back
+  to `nti_inventory`, when the route spins it into a new pending order and says
+  so in a comment. Response shape had also moved to `{ order, newOrder }`, which
+  is what the client reads.
+- `inventoryFind` moved to LIKE patterns (`"A101%"`, `"%Beef%"`); assertions
+  still expected raw values.
+- `getHistory` returns `{ items, total, offset, hasMore }`, not a bare array.
+- `routes.test.js` signed tokens with no `tenantId`; `verifyToken.pg` 401s on
+  those, so the admin-only tests never reached the role check they exist to
+  prove.
+
+Lesson worth keeping: a suite that fails to LOAD hides every test in it, and jest
+reports that as one failure. Check suite counts, not just test counts.
 
 ---
 

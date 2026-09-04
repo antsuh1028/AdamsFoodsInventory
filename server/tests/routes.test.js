@@ -9,8 +9,15 @@ process.env.AWS_REGION = "us-east-1";
 process.env.OPENAI_API_KEY = "test-key";
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
+// tenantId is required even though most routes in this file are the Mongo-era
+// ones that ignore it: routes/s3.js uses verifyToken.pg, which 401s outright on
+// a token without a tenant. Without it the admin-only tests below returned 401
+// and never reached the role check they exist to prove.
 const makeToken = (role = "admin", username = "testuser") =>
-  jwt.sign({ userId: "user123", role, username }, process.env.JWT_SECRET, { expiresIn: "1h" });
+  jwt.sign(
+    { userId: "user123", role, username, tenantId: "23a57670-bc2d-487a-bab8-d05cf10acbc8" },
+    process.env.JWT_SECRET, { expiresIn: "1h" }
+  );
 
 const adminToken = makeToken("admin", "admin@af.com");
 const managerToken = makeToken("manager", "manager@af.com");

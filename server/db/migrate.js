@@ -474,6 +474,37 @@ const steps = async () => {
   `);
   await run("noblesse_receipts source_name",
     `ALTER TABLE noblesse_receipts ADD COLUMN IF NOT EXISTS source_name TEXT`);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Adams side. `history` and `inventory` predate this repo, like `tenants` —
+  // they are never created here, only altered. These two columns used to be
+  // fired at module load from routes/history.pg.js with a swallowed .catch();
+  // that is the pattern this file exists to remove, and it also broke a whole
+  // test suite, because a mocked pool returns undefined and `.catch` of
+  // undefined throws before the suite can even load.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  await run("history old_data",
+    `ALTER TABLE history ADD COLUMN IF NOT EXISTS old_data JSONB`);
+  await run("history scan_image_key",
+    `ALTER TABLE history ADD COLUMN IF NOT EXISTS scan_image_key TEXT`);
+
+  // Two modules used to define `pdfs`, with DIFFERENT shapes: routes/s3.pg.js
+  // (live, mounted in index.js) uses a uuid id and a tenants FK, while the
+  // legacy routes/s3.js used a SERIAL id and a bare TEXT tenant. Both were
+  // CREATE TABLE IF NOT EXISTS, so on a fresh database whichever ran first
+  // silently won. This is the live shape, which is what production has.
+  await run("pdfs", `
+    CREATE TABLE IF NOT EXISTS pdfs (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id   UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      file_name   TEXT,
+      file_key    TEXT,
+      file_url    TEXT,
+      upload_date TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the

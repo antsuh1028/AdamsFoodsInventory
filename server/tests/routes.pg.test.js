@@ -332,7 +332,10 @@ describe("POST /inventoryFind", () => {
     const [sql, params] = pool.query.mock.calls[0];
     expect(sql).toContain("WHERE");
     expect(params).toContain(TENANT_ID);
-    expect(params).toContain("A101");
+    // Location is a prefix match and the rest are contains matches, so the
+    // parameters are LIKE patterns rather than the raw values.
+    expect(params).toContain("A101%");
+    expect(params).toContain("%12345-01%");
   });
 
   it("returns 500 on DB error", async () => {
@@ -619,7 +622,8 @@ describe("GET /getHistory", () => {
     pool.query.mockResolvedValueOnce({ rows: [{ id: "h1", change: "Added", _id: "h1" }] });
     const res = await request(app).get("/getHistory").set("Authorization", adminToken);
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
+    // Paginated envelope, not a bare array — { items, total, offset, hasMore }.
+    expect(res.body.items).toHaveLength(1);
   });
 
   it("returns history rows for manager", async () => {
@@ -636,7 +640,7 @@ describe("GET /getHistory", () => {
   it("maps id to _id on returned rows", async () => {
     pool.query.mockResolvedValueOnce({ rows: [{ id: "h1", change: "Added" }] });
     const res = await request(app).get("/getHistory").set("Authorization", adminToken);
-    expect(res.body[0]._id).toBe("h1");
+    expect(res.body.items[0]._id).toBe("h1");
   });
 });
 

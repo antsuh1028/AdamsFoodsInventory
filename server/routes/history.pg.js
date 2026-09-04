@@ -3,9 +3,10 @@ const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 
-// Auto-migrate
-pool.query(`ALTER TABLE history ADD COLUMN IF NOT EXISTS old_data JSONB`).catch(() => {});
-pool.query(`ALTER TABLE history ADD COLUMN IF NOT EXISTS scan_image_key TEXT`).catch(() => {});
+// Schema lives in ../db/migrate.js and is applied, in order, before this module
+// is ever required. The two ALTERs that used to run here fired at load with a
+// swallowed .catch() -- the pattern that let the migration race go unnoticed in
+// production, and which also broke this file's test suite outright.
 
 router.post("/addHistory", verifyToken, requireRole("admin", "manager"), async (req, res) => {
   const { change, location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est } = req.body;
