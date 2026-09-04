@@ -135,8 +135,12 @@ const printWeightManifest = ({
             width: 62px; text-align: right; padding: 7px 6px;
             font-variant-numeric: tabular-nums;
           }
-          td.foot { padding: 4px 6px; font-size: 11px; font-weight: 700; }
-          td.foot-r { padding: 4px 6px; font-size: 11px; font-weight: 700; text-align: right; }
+          /* The two figures anyone checking this sheet looks for first, so the
+             numbers are set well above the body text and the labels stay small
+             enough not to compete with them. */
+          td.foot { padding: 8px 6px; font-size: 12px; font-weight: 700; }
+          td.foot-r { padding: 8px 6px; font-size: 12px; font-weight: 700; text-align: right; }
+          .foot-n { font-size: 19px; font-variant-numeric: tabular-nums; }
 
           table.sign { width: 100%; border-collapse: collapse; margin-top: 16px; }
           table.sign td { padding: 10px 4px 2px; font-size: 11px; border-bottom: 1px solid #000; }
@@ -179,8 +183,8 @@ const printWeightManifest = ({
             </tr>
             ${rowHtml.join("")}
             <tr>
-              <td class="foot" colspan="6">Total Boxes:&nbsp;&nbsp;${boxes.length}</td>
-              <td class="foot-r" colspan="6">Subtotal:&nbsp;&nbsp;${show(grand)} ${unit}</td>
+              <td class="foot" colspan="6">Total Boxes:&nbsp;&nbsp;<span class="foot-n">${boxes.length}</span></td>
+              <td class="foot-r" colspan="6">Subtotal:&nbsp;&nbsp;<span class="foot-n">${show(grand)} ${unit}</span></td>
             </tr>
           </table>
 
