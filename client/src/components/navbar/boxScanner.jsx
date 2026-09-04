@@ -24,8 +24,12 @@ import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 // Inputs must not be "helped" by iPadOS — autocorrect on a lot number is
 // silent data corruption.
 const rawInputProps = {
+  textTransform: "uppercase",
   autoCorrect: "off",
-  autoCapitalize: "off",
+  // "characters" so the iPad keyboard itself is in caps, matching what the
+  // field stores — a lowercase keyboard producing uppercase text is a jarring
+  // thing to type into.
+  autoCapitalize: "characters",
   spellCheck: false,
   style: { touchAction: "manipulation" },
 };

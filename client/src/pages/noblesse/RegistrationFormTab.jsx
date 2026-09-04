@@ -5,7 +5,7 @@ import {
 } from "@chakra-ui/react";
 import { DeleteIcon, ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
-import { fmtDate, today, Th, Td, timeNow } from "./shared";
+import { fmtDate, today, Th, Td, timeNow, upper } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
 import BoxWeightLink from "./BoxWeightLink";
 import LotPicker from "../../components/LotPicker";
@@ -96,7 +96,11 @@ const SheetField = ({ label, full, plain, children }) => (
   </>
 );
 
-const sheetInputProps = { size: "sm", bg: "transparent", border: "none", borderRadius: 0, px: 2, _focus: { boxShadow: "none", bg: "white" } };
+// The paper forms this mirrors are filled in block capitals, so the app does
+// the same. textTransform makes it look right while typing; the value itself is
+// uppercased in the change handler, so it is STORED and printed that way rather
+// than only appearing so on screen.
+const sheetInputProps = { size: "sm", bg: "transparent", border: "none", borderRadius: 0, px: 2, textTransform: "uppercase", _focus: { boxShadow: "none", bg: "white" } };
 
 const SectionBar = ({ children }) => (
   <GridItem colSpan={{ base: 1, md: 4 }} bg="#ccd3db" px={3} py={2} fontSize="xs" fontWeight="bold" color="gray.800">
@@ -107,7 +111,7 @@ const SectionBar = ({ children }) => (
 const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, saving }) => {
   const [isFullScreen, setIsFullScreen] = useState(false);
   if (!draft) return null;
-  const set = (key) => (e) => setDraft({ ...draft, [key]: e.target.value });
+  const set = (key) => (e) => setDraft({ ...draft, [key]: upper(e.target.value) });
   const setCheck = (key) => (e) => setDraft({ ...draft, [key]: e.target.checked });
   const remainingCases = calculateRemainingCases(draft);
 
@@ -207,7 +211,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                   value={draft.spec ? draft.spec.split("X")[0] || "" : ""}
                   onChange={(e) => {
                     const parts = draft.spec ? draft.spec.split("X") : ["", ""];
-                    setDraft({ ...draft, spec: `${e.target.value}X${parts[1] || ""}`.replace(/^X/, "") });
+                    setDraft({ ...draft, spec: upper(`${e.target.value}X${parts[1] || ""}`.replace(/^X/, "")) });
                   }}
                   flex={1}
                 />
@@ -218,7 +222,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                   value={draft.spec ? draft.spec.split("X")[1] || "" : ""}
                   onChange={(e) => {
                     const parts = draft.spec ? draft.spec.split("X") : ["", ""];
-                    setDraft({ ...draft, spec: `${parts[0] || ""}X${e.target.value}`.replace(/X$/, "") });
+                    setDraft({ ...draft, spec: upper(`${parts[0] || ""}X${e.target.value}`.replace(/X$/, "")) });
                   }}
                   flex={1}
                 />
@@ -278,7 +282,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       value={pd.weight || ""}
                       onChange={(e) => {
                         const newDates = [...draft.processingDates];
-                        newDates[idx] = { ...newDates[idx], weight: e.target.value };
+                        newDates[idx] = { ...newDates[idx], weight: upper(e.target.value) };
                         setDraft({ ...draft, processingDates: newDates });
                       }}
                     />
@@ -293,7 +297,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       value={pd.cases || ""}
                       onChange={(e) => {
                         const newDates = [...draft.processingDates];
-                        newDates[idx] = { ...newDates[idx], cases: e.target.value };
+                        newDates[idx] = { ...newDates[idx], cases: upper(e.target.value) };
                         setDraft({ ...draft, processingDates: newDates });
                       }}
                     />
@@ -307,7 +311,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       value={pd.date || ""}
                       onChange={(e) => {
                         const newDates = [...draft.processingDates];
-                        newDates[idx] = { ...newDates[idx], date: e.target.value };
+                        newDates[idx] = { ...newDates[idx], date: upper(e.target.value) };
                         setDraft({ ...draft, processingDates: newDates });
                       }}
                     />

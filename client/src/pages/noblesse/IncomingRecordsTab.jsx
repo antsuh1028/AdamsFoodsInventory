@@ -6,7 +6,7 @@ import {
 } from "@chakra-ui/react";
 import { DeleteIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
-import { fmtDate, today, cellInputStyle } from "./shared";
+import { fmtDate, today, cellInputStyle , upper } from "./shared";
 import FloatingWindow from "../../components/FloatingWindow";
 
 export const RECEIPT_LINE_COLS = [
@@ -35,7 +35,9 @@ const xlInput = {
 };
 
 // Input style for header fields (Date, BOL, Driver)
+// Same rule as the registration sheet: block capitals, stored not just shown.
 const hdInput = (w) => ({
+  textTransform: "uppercase",
   border: "1px solid #CBD5E0", borderRadius: "4px",
   padding: "6px 10px", fontSize: "15px", fontFamily: "inherit",
   outline: "none", background: "white",
@@ -412,12 +414,12 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
             </Box>
             <Box>
               <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">BOL #</Text>
-              <input value={draftBol} onChange={(e) => setDraftBol(e.target.value)}
+              <input value={draftBol} onChange={(e) => setDraftBol(upper(e.target.value))}
                 style={hdInput("90px")} placeholder="BOL #" />
             </Box>
             <Box>
               <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Driver</Text>
-              <input value={draftDriver} onChange={(e) => setDraftDriver(e.target.value)}
+              <input value={draftDriver} onChange={(e) => setDraftDriver(upper(e.target.value))}
                 style={hdInput("160px")} placeholder="Name" />
             </Box>
           </Flex>
@@ -810,12 +812,12 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
                 </Box>
                 <Box>
                   <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">BOL #</Text>
-                  <input placeholder="e.g. 8289" value={newBol} onChange={(e) => setNewBol(e.target.value)}
+                  <input placeholder="e.g. 8289" value={newBol} onChange={(e) => setNewBol(upper(e.target.value))}
                     style={hdInput("90px")} />
                 </Box>
                 <Box>
                   <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Driver</Text>
-                  <input placeholder="Name" value={newDriver} onChange={(e) => setNewDriver(e.target.value)}
+                  <input placeholder="Name" value={newDriver} onChange={(e) => setNewDriver(upper(e.target.value))}
                     style={hdInput("160px")} />
                 </Box>
                 <Box>
@@ -831,7 +833,7 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
                   <Box>
                     <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Vendor</Text>
                     <input placeholder="e.g. Creekstone" value={newSourceName}
-                      onChange={(e) => setNewSourceName(e.target.value)} style={hdInput("160px")} />
+                      onChange={(e) => setNewSourceName(upper(e.target.value))} style={hdInput("160px")} />
                   </Box>
                 )}
               </Flex>

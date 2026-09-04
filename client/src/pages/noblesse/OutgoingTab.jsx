@@ -6,7 +6,7 @@ import {
 } from "@chakra-ui/react";
 import axiosInstance from "../../utils/axiosInstance";
 import { toDisplay } from "../../utils/weight";
-import { fmtDate, today } from "./shared";
+import { fmtDate, today, upper } from "./shared";
 import getRole from "../../utils/getRole";
 import printPackingList from "./printPackingList";
 
@@ -499,7 +499,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                   {draft.destinationType === "customer" && (
                     <Field label="Customer" w="220px">
                       <Input size="sm" placeholder="e.g. Sysco" value={draft.destinationName}
-                        onChange={(e) => setDraft({ ...draft, destinationName: e.target.value })} />
+                        onChange={(e) => setDraft({ ...draft, destinationName: upper(e.target.value) })} />
                     </Field>
                   )}
                   <Field label="Ship date" w="150px">
@@ -508,15 +508,15 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                   </Field>
                   <Field label="BOL #" w="120px">
                     <Input size="sm" value={draft.billOfLading}
-                      onChange={(e) => setDraft({ ...draft, billOfLading: e.target.value })} />
+                      onChange={(e) => setDraft({ ...draft, billOfLading: upper(e.target.value) })} />
                   </Field>
                   <Field label="Carrier" w="150px">
                     <Input size="sm" value={draft.carrier}
-                      onChange={(e) => setDraft({ ...draft, carrier: e.target.value })} />
+                      onChange={(e) => setDraft({ ...draft, carrier: upper(e.target.value) })} />
                   </Field>
                   <Field label="Driver" w="150px">
                     <Input size="sm" value={draft.driver}
-                      onChange={(e) => setDraft({ ...draft, driver: e.target.value })} />
+                      onChange={(e) => setDraft({ ...draft, driver: upper(e.target.value) })} />
                   </Field>
                 </Flex>
               )}

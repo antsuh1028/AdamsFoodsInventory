@@ -7,6 +7,16 @@ import { Box } from "@chakra-ui/react";
 // This previously used toISOString(), which is UTC and flipped to tomorrow at
 // 4pm or 5pm Pacific, so anything received in the afternoon was dated a day
 // ahead. Intl handles the DST offset, so there is no fixed -8/-7 to maintain.
+// The paper forms these screens mirror are filled in block capitals, so typed
+// values are stored that way rather than merely displayed that way.
+//
+// Safe to apply blanket: a date input yields "2026-09-04", a time "14:30", a
+// number "1695.5" — none contains a letter, so this is a no-op for them and
+// only text is affected. Nulls pass through untouched so an empty field stays
+// empty rather than becoming "".
+export const upper = (v) =>
+  (typeof v === "string" ? v.toUpperCase() : v);
+
 export const PACIFIC_TZ = "America/Los_Angeles";
 
 const pacificParts = (date = new Date()) => {
@@ -76,6 +86,10 @@ export const cellInputStyle = {
   width: "100%", fontSize: "14px", padding: "3px 6px",
   border: "1px solid #A0AEC0", borderRadius: "3px",
   outline: "none", background: "white", fontFamily: "inherit",
+  // The receipt grid is data entry against a paper sheet, so block capitals
+  // like the rest. The value is uppercased on change too, so this only keeps
+  // the display honest while typing.
+  textTransform: "uppercase",
 };
 
 export const Th = ({ children, ...props }) => (
