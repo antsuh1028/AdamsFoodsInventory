@@ -6,8 +6,8 @@ const { parseLot, formatLot, pacificToday, dayOfYearFromDate } = require("../uti
 // The lot registry.
 //
 // A lot is issued ONCE, when product arrives at NTI, and only ever referenced
-// afterwards — through processing, out to AFDC or a customer, and back in again
-// if AFDC returns it. That rule is enforced by the shape of this file rather
+// afterwards — through processing, out to AdamsFoods or a customer, and back in again
+// if AdamsFoods returns it. That rule is enforced by the shape of this file rather
 // than by a flag a caller could set:
 //
 //   POST /lots          CREATES. Incoming-side screens call this.
@@ -90,7 +90,7 @@ const issueNextForDate = async (tenantId, lotDate, userId, notes) => {
 //   { }                     issue the next sequence for today (Pacific)
 //   { date }                issue the next sequence for that day
 //   { lotNumber }           adopt a specific number — for a lot that arrives on
-//                           paper, or comes back from AFDC and already exists
+//                           paper, or comes back from AdamsFoods and already exists
 //
 // The third is create-OR-return: a lot coming back for a second pass resolves
 // to the record it already has, which is the whole "stored, not re-created"

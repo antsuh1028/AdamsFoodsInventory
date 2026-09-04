@@ -171,7 +171,7 @@ const LotPicker = ({
       )}
 
       {/* Hand entry, incoming side only: lots arrive on paper, and a lot coming
-          back from AFDC already has a number. Typing one that exists selects it
+          back from AdamsFoods already has a number. Typing one that exists selects it
           rather than making a second — "stored, not re-created". */}
       {allowCreate && (
         <Flex gap={2} align="center" mt={2}>

@@ -9,11 +9,11 @@ const { syncProcessedStock } = require("../utils/processedStock");
 // module is ever required. Nothing here fires DDL at load any more — that
 // was the fire-and-forget race documented in CLAUDE.md §8.
 
-// AFDC distributes and NTI processes, so product arrives here from one of two
-// places: back from AFDC for another pass, or fresh from a packer. Without
+// AdamsFoods distributes and NTI processes, so product arrives here from one of two
+// places: back from AdamsFoods for another pass, or fresh from a packer. Without
 // recording which, the two are indistinguishable afterwards and a lot's history
 // cannot say where it came from.
-const SOURCE_TYPES = new Set(["afdc", "vendor"]);
+const SOURCE_TYPES = new Set(["adamsfoods", "vendor"]);
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -199,8 +199,8 @@ router.post("/noblesse-receipts", verifyToken, async (req, res) => {
         JSON.stringify(lines || []),
         notes         || null,
         source        || null,
-        // AFDC is one place, so its name is fixed; a vendor's is whatever was typed.
-        source === "afdc" ? (sourceName || "AFDC") : (sourceName || null),
+        // AdamsFoods is one place, so its name is fixed; a vendor's is whatever was typed.
+        source === "adamsfoods" ? (sourceName || "AdamsFoods") : (sourceName || null),
       ]
     );
     res.json(fmtReceipt(result.rows[0]));
@@ -231,7 +231,7 @@ router.patch("/noblesse-receipts/:id", verifyToken, async (req, res) => {
       [shipmentDate || null, bolNumber || null, driver || null,
        JSON.stringify(lines || []), req.params.id, req.tenantId,
        source || null,
-       source === "afdc" ? (sourceName || "AFDC") : (sourceName || null)]
+       source === "adamsfoods" ? (sourceName || "AdamsFoods") : (sourceName || null)]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });
     res.json(fmtReceipt(result.rows[0]));
@@ -275,7 +275,7 @@ router.post("/noblesse-receipts/:id/push-to-inventory", verifyToken, async (req,
     const insertedItems = [];
     for (const line of validLines) {
       // Receiving is the incoming side, so each line's lot is created if new and
-      // resolved if it already exists. The resolve branch is the AFDC return:
+      // resolved if it already exists. The resolve branch is the AdamsFoods return:
       // the same number comes back and the new stock attaches to the lot's
       // existing history instead of starting a second one.
       //

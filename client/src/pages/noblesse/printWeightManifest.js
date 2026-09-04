@@ -81,8 +81,7 @@ const printWeightManifest = ({
 
     const cells = Array.from({ length: PER_ROW }, (_, c) => {
       const s = row[c];
-      return `<td class="w">${s ? esc(show(cents(weightOf(s)))) : ""}${
-        s && s.isManual ? '<span class="m">M</span>' : ""}</td>`;
+      return `<td class="w">${s ? esc(show(cents(weightOf(s)))) : ""}</td>`;
     }).join("");
 
     rowHtml.push(
@@ -122,8 +121,9 @@ const printWeightManifest = ({
 
           table.grid { width: 100%; border-collapse: collapse; border: 1.5px solid #000; }
           table.grid td, table.grid th { border: 1px solid #000; }
-          .desc-lbl { padding: 4px 6px; font-size: 12px; white-space: nowrap; border-right: none !important; }
-          .desc-val { padding: 4px 6px; font-size: 12px; text-align: center; border-left: none !important; }
+          .desc { position: relative; padding: 4px 6px; font-size: 12px; text-align: center; }
+          .desc-lbl { position: absolute; left: 6px; top: 4px; white-space: nowrap; }
+          .desc-val { display: inline-block; font-weight: 600; }
           th.h { padding: 3px; font-size: 11px; font-weight: 400; text-align: center; }
           td.cnt { width: 52px; text-align: right; padding: 7px 6px; }
           td.w {
@@ -135,7 +135,6 @@ const printWeightManifest = ({
             width: 62px; text-align: right; padding: 7px 6px;
             font-variant-numeric: tabular-nums;
           }
-          .m { font-size: 7px; vertical-align: super; margin-left: 2px; }
           td.foot { padding: 4px 6px; font-size: 11px; font-weight: 700; }
           td.foot-r { padding: 4px 6px; font-size: 11px; font-weight: 700; text-align: right; }
 
@@ -168,8 +167,10 @@ const printWeightManifest = ({
 
           <table class="grid">
             <tr>
-              <td class="desc-lbl" colspan="4">Item Description:</td>
-              <td class="desc-val" colspan="8">${esc(itemDescription || "")}</td>
+              <td class="desc" colspan="12">
+                <span class="desc-lbl">Item Description:</span>
+                <span class="desc-val">${esc(itemDescription || "")}</span>
+              </td>
             </tr>
             <tr>
               <th class="h">Box/Pcs.</th>
@@ -186,9 +187,6 @@ const printWeightManifest = ({
           ${convertedCount
             ? `<div style="margin-top:6px;font-size:10px;">${convertedCount} box${
                 convertedCount === 1 ? "" : "es"} labelled in kilograms, converted to pounds.</div>`
-            : ""}
-          ${boxes.some((b) => b.isManual)
-            ? '<div style="margin-top:6px;font-size:9px;">M = entered manually (damaged or unbarcoded label)</div>'
             : ""}
 
           <table class="sign">

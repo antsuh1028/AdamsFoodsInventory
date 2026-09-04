@@ -671,8 +671,8 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
   const [newDate, setNewDate]   = useState(today());
   const [newBol, setNewBol]     = useState("");
   const [newDriver, setNewDriver] = useState("");
-  // AFDC distributes; a vendor is a packer. Recorded because a lot coming back
-  // from AFDC and a fresh delivery are otherwise indistinguishable afterwards.
+  // AdamsFoods distributes; a vendor is a packer. Recorded because a lot coming back
+  // from AdamsFoods and a fresh delivery are otherwise indistinguishable afterwards.
   const [newSourceType, setNewSourceType] = useState("");
   const [newSourceName, setNewSourceName] = useState("");
   const [newLines, setNewLines] = useState([emptyLine()]);
@@ -823,7 +823,7 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
                   <select value={newSourceType} onChange={(e) => setNewSourceType(e.target.value)}
                     style={hdInput("130px")}>
                     <option value="">—</option>
-                    <option value="afdc">AFDC</option>
+                    <option value="adamsfoods">AdamsFoods</option>
                     <option value="vendor">Vendor</option>
                   </select>
                 </Box>

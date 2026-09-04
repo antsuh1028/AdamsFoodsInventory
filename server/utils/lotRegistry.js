@@ -54,7 +54,7 @@ const insertLot = async (client, inTransaction, tenantId, userId, parsed) => {
  * Incoming side. Resolves the text to a lot, creating the record when the lot
  * is genuinely new.
  *
- * A lot coming back from AFDC for a second pass hits the resolve path and
+ * A lot coming back from AdamsFoods for a second pass hits the resolve path and
  * returns its EXISTING record — stored, not re-created, which is the whole
  * point of the registry.
  *

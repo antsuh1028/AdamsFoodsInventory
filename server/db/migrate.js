@@ -405,9 +405,9 @@ const steps = async () => {
   // ══════════════════════════════════════════════════════════════════════════
   // Lot registry — Phase A. Additive, nullable, zero behaviour change.
   //
-  // NTI is the processor, AFDC the distributor. A lot is issued once when
+  // NTI is the processor, AdamsFoods the distributor. A lot is issued once when
   // product arrives at NTI and only ever *referenced* after that — through
-  // processing, out to AFDC or a customer, and back in again if AFDC returns
+  // processing, out to AdamsFoods or a customer, and back in again if AdamsFoods returns
   // it. Six free-text lot columns across five tables cannot express that; this
   // table is the one thing that owns a lot's identity. It is deliberately thin:
   // the registration form stays the lot's descriptor and nti_inventory keeps
@@ -463,17 +463,32 @@ const steps = async () => {
       CHECK (stage IN ('raw', 'processed'))
   `);
 
-  // Where a receipt came from. Without it, a lot returning from AFDC for a
+  // Where a receipt came from. Without it, a lot returning from AdamsFoods for a
   // second pass and a fresh delivery from a packer look identical, and the
   // timeline cannot say which it was. Nullable: existing receipts predate the
   // question.
   await run("noblesse_receipts source_type", `
     ALTER TABLE noblesse_receipts
       ADD COLUMN IF NOT EXISTS source_type TEXT
-      CHECK (source_type IN ('afdc', 'vendor'))
+      CHECK (source_type IN ('adamsfoods', 'vendor'))
   `);
   await run("noblesse_receipts source_name",
     `ALTER TABLE noblesse_receipts ADD COLUMN IF NOT EXISTS source_name TEXT`);
+
+  // The stored value was 'afdc' before the business name was settled. The
+  // column already exists, so the ADD COLUMN above never revisits its CHECK —
+  // the constraint has to be replaced on its own. Drop, migrate any rows, then
+  // re-add: idempotent in that order, and the rows have to move BEFORE the new
+  // constraint exists or adding it would fail on them.
+  await run("noblesse_receipts source_type check drop",
+    `ALTER TABLE noblesse_receipts DROP CONSTRAINT IF EXISTS noblesse_receipts_source_type_check`);
+  await run("noblesse_receipts source_type rename",
+    `UPDATE noblesse_receipts SET source_type = 'adamsfoods' WHERE source_type = 'afdc'`);
+  await run("noblesse_receipts source_type check add", `
+    ALTER TABLE noblesse_receipts
+      ADD CONSTRAINT noblesse_receipts_source_type_check
+      CHECK (source_type IN ('adamsfoods', 'vendor'))
+  `);
 
   // Ties a processed stock row back to the order that produced it.
   //
