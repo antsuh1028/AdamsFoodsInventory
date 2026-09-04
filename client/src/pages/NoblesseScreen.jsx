@@ -11,6 +11,7 @@ import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
+import { OutgoingTab } from "./noblesse/OutgoingTab";
 import { WeightManifestTab } from "./noblesse/WeightManifestTab";
 import { lotNumberForDate, fmtLongDate } from "./noblesse/shared";
 import ScannerDiagnostic from "../components/navbar/scannerDiagnostic";
@@ -172,6 +173,7 @@ const NoblesseScreen = () => {
             </Tab>
             <Tab>Registration Forms</Tab>
             <Tab>Weight Manifests</Tab>
+            <Tab>Outgoing</Tab>
           </TabList>
 
           <Box bg="white" borderRadius="lg" boxShadow="sm" border="1px" borderColor="gray.200"
@@ -194,6 +196,9 @@ const NoblesseScreen = () => {
               </TabPanel>
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
                 <WeightManifestTab refreshSignal={refreshSignal} />
+              </TabPanel>
+              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
+                <OutgoingTab refreshSignal={refreshSignal} />
               </TabPanel>
             </TabPanels>
           </Box>
