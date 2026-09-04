@@ -2,7 +2,7 @@ const router = require("express").Router();
 const pool   = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
-const { lotColumns } = require("../utils/lotRegistry");
+const { lotColumns, lookupLot } = require("../utils/lotRegistry");
 
 // Schema lives in ../db/migrate.js and is applied, in order, before this
 // module is ever required. Nothing here fires DDL at load any more — that
@@ -612,15 +612,37 @@ router.post("/noblesse-proc-orders", verifyToken, async (req, res) => {
     const order = orderRes.rows[0];
     const insertedItems = [];
     for (const it of (items || [])) {
+      // Processing is DOWNSTREAM, so it references a lot and never creates one.
+      //
+      // The lot is taken from the stock row this item draws on rather than
+      // re-matched from text: the item already points at that row by id, and a
+      // direct reference cannot drift the way two strings can. lookupLot is
+      // only the fallback for an item with no stock row behind it, and it
+      // returns null rather than inventing a lot.
+      let lotId = null;
+      if (it.ntiItemId) {
+        const stock = await client.query(
+          `SELECT lot_id FROM nti_inventory WHERE id = $1 AND tenant_id = $2`,
+          [it.ntiItemId, req.tenantId]
+        );
+        lotId = stock.rows.length ? stock.rows[0].lot_id : null;
+      }
+      if (!lotId) {
+        const found = await lookupLot(req.tenantId, it.lot, client);
+        lotId = found ? found.lotId : null;
+      }
+
       const itRes = await client.query(
         `INSERT INTO noblesse_processing_order_items
-           (processing_order_id, receipt_id, nti_item_id, lot, description, brand, species, grade, weight_in, cases_in)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+           (processing_order_id, receipt_id, nti_item_id, lot, description, brand, species, grade, weight_in, cases_in,
+            lot_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
         [order.id, it.receiptId || null, it.ntiItemId || null,
          it.lot || null, it.description || null,
          it.brand || null, it.species || null, it.grade || null,
          it.weightIn != null ? Number(it.weightIn) : null,
-         it.casesIn  != null ? Number(it.casesIn)  : null]
+         it.casesIn  != null ? Number(it.casesIn)  : null,
+         lotId]
       );
       insertedItems.push(itRes.rows[0]);
     }
@@ -810,13 +832,17 @@ router.patch("/noblesse-proc-orders/:id/partial-complete", verifyToken, async (r
       const newOrderRow = newOrderRes.rows[0];
       const newItems = [];
       for (const rem of remainders) {
+        // The remainder is the SAME lot, carried across from the item it came
+        // from — not re-resolved. This is the "stored, not re-created" rule
+        // applied to a split: half a lot processed now, half later, one lot.
         const newItemRes = await client.query(
           `INSERT INTO noblesse_processing_order_items
-             (processing_order_id, receipt_id, nti_item_id, lot, description, brand, species, grade, weight_in, cases_in)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+             (processing_order_id, receipt_id, nti_item_id, lot, description, brand, species, grade, weight_in, cases_in,
+              lot_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
           [newOrderRow.id, rem.receipt_id, rem.nti_item_id,
            rem.lot, rem.description, rem.brand, rem.species, rem.grade,
-           rem.weight_in, rem.cases_in || null]
+           rem.weight_in, rem.cases_in || null, rem.lot_id ?? null]
         );
         newItems.push(newItemRes.rows[0]);
       }

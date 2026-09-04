@@ -962,7 +962,7 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
     // trusting the request, so a batch id from another tenant cannot be folded
     // into a manifest.
     const owned = await client.query(
-      `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description
+      `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description, lot_id
          FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2`,
       [ids, req.tenantId]
     );
@@ -977,16 +977,21 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
       return v || fallback || null;
     };
 
+    // A merged manifest is downstream — it references the lot its sessions
+    // already carry rather than resolving text of its own. Taken from the first
+    // session, the same one the heading comes from.
     const group = await client.query(
       `INSERT INTO manifest_groups
-         (tenant_id, name, lot_number, vendor, ship_to, bill_of_lading, item_description, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         (tenant_id, name, lot_number, vendor, ship_to, bill_of_lading, item_description, created_by,
+          lot_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING group_id, name, lot_number, vendor, ship_to, bill_of_lading,
-                 item_description, created_at`,
+                 item_description, created_at, lot_id`,
       [req.tenantId, pick(name, null), pick(lotNumber, first.lot_number),
        pick(vendor, first.vendor), pick(shipTo, first.ship_to),
        pick(billOfLading, first.bill_of_lading),
-       pick(itemDescription, first.item_description), req.userId]
+       pick(itemDescription, first.item_description), req.userId,
+       first.lot_id ?? null]
     );
     const groupId = group.rows[0].group_id;
 
