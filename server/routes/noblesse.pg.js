@@ -8,6 +8,12 @@ const { lotColumns } = require("../utils/lotRegistry");
 // module is ever required. Nothing here fires DDL at load any more — that
 // was the fire-and-forget race documented in CLAUDE.md §8.
 
+// AFDC distributes and NTI processes, so product arrives here from one of two
+// places: back from AFDC for another pass, or fresh from a packer. Without
+// recording which, the two are indistinguishable afterwards and a lot's history
+// cannot say where it came from.
+const SOURCE_TYPES = new Set(["afdc", "vendor"]);
+
 // ── Formatters ────────────────────────────────────────────────────────────────
 
 const fmtReceipt = (row) => ({
@@ -61,6 +67,8 @@ const fmtRegistrationForm = (row) => {
   return {
     id:                     row.id,
     lotNumber:              row.lot_number,
+    // So the lot picker shows what is already selected when a form is reopened.
+    lotId:                  row.lot_id ?? null,
     formDate:               fmtDate(row.form_date),
     dateReceived:           fmtDate(row.date_received),
     timeReceived:           row.time_received,
@@ -164,12 +172,6 @@ router.get("/noblesse-receipts", verifyToken, async (req, res) => {
   }
 });
 
-// AFDC distributes and NTI processes, so product arrives here from one of two
-// places: back from AFDC for another pass, or fresh from a packer. Without
-// recording which, the two are indistinguishable afterwards and a lot's history
-// cannot say where it came from.
-const SOURCE_TYPES = new Set(["afdc", "vendor"]);
-
 router.post("/noblesse-receipts", verifyToken, async (req, res) => {
   const { shipmentDate, bolNumber, driver, linkedOrderId, lines, notes,
           sourceType, sourceName } = req.body;
@@ -208,14 +210,27 @@ router.post("/noblesse-receipts", verifyToken, async (req, res) => {
 });
 
 router.patch("/noblesse-receipts/:id", verifyToken, async (req, res) => {
-  const { shipmentDate, bolNumber, driver, lines } = req.body;
+  const { shipmentDate, bolNumber, driver, lines, sourceType, sourceName } = req.body;
+
+  // Editable, because existing receipts have no source and someone has to be
+  // able to fill it in. COALESCE below leaves it alone when it is not sent, so
+  // a client that does not know about the field cannot blank it.
+  const source = typeof sourceType === "string" ? sourceType.trim().toLowerCase() : null;
+  if (source && !SOURCE_TYPES.has(source)) {
+    return res.status(400).json({ error: `sourceType must be one of: ${[...SOURCE_TYPES].join(", ")}` });
+  }
+
   try {
     const result = await pool.query(
       `UPDATE noblesse_receipts
-       SET shipment_date = $1, bol_number = $2, driver = $3, lines = $4
+       SET shipment_date = $1, bol_number = $2, driver = $3, lines = $4,
+           source_type = COALESCE($7, source_type),
+           source_name = COALESCE($8, source_name)
        WHERE id = $5 AND tenant_id = $6 RETURNING *`,
       [shipmentDate || null, bolNumber || null, driver || null,
-       JSON.stringify(lines || []), req.params.id, req.tenantId]
+       JSON.stringify(lines || []), req.params.id, req.tenantId,
+       source || null,
+       source === "afdc" ? (sourceName || "AFDC") : (sourceName || null)]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });
     res.json(fmtReceipt(result.rows[0]));

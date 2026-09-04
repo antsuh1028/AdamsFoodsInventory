@@ -12,8 +12,9 @@ import { parseGs1 } from "../../utils/gs1";
 import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import ScanSheet from "./ScanSheet";
 import NumericKeypad from "./NumericKeypad";
+import LotPicker from "../LotPicker";
 import { toPounds, toDisplay } from "../../utils/weight";
-import { lotNumberForDate, today, fmtDate } from "../../pages/noblesse/shared";
+import { today, fmtDate } from "../../pages/noblesse/shared";
 import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 
 // Operator-facing scanning screen. Designed to be read across a bench by
@@ -127,8 +128,12 @@ const BoxScanner = ({ isOpen, onClose }) => {
 
   // One session is one lot, so the manifest produced at Stop covers exactly
   // these boxes. Defaults to today's lot; editable before the session opens.
+  // The lot used to default to lotNumberForDate() — the DAY PREFIX only,
+  // "N26247" — leaving the operator to type the "-01". That is how two people
+  // both took -01 on the same morning. It now starts empty and the picker
+  // offers the real next number from the server.
   const [header, setHeader] = useState({
-    lotNumber: lotNumberForDate(), vendor: "", billOfLading: "", itemDescription: "",
+    lotNumber: "", lotId: null, vendor: "", billOfLading: "", itemDescription: "",
   });
   const setField = (key) => (e) => {
     const { value } = e.target;
@@ -434,10 +439,21 @@ const BoxScanner = ({ isOpen, onClose }) => {
           </Flex>
         ) : (
           <Flex gap={3} wrap="wrap">
-            <Box flex="1 1 150px">
+            <Box flex="1 1 220px">
               <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Lot #</Text>
-              <Input {...rawInputProps} size="md" value={header.lotNumber}
-                onChange={setField("lotNumber")} placeholder="N26244-01" />
+              {/* Starting a session is incoming-side, so this may issue a lot.
+                  Safe to hold focusable fields: the header only renders before
+                  the session opens, and nothing is being scanned yet. */}
+              <LotPicker
+                size="md"
+                allowCreate
+                value={header.lotId}
+                onChange={(lot) => setHeader((h) => ({
+                  ...h,
+                  lotId: lot ? lot.lotId : null,
+                  lotNumber: lot ? lot.lotNumber : "",
+                }))}
+              />
             </Box>
             <Box flex="1 1 150px">
               <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Vendor</Text>

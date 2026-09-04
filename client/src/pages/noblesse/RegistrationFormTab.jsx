@@ -8,6 +8,7 @@ import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, Th, Td } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
 import BoxWeightLink from "./BoxWeightLink";
+import LotPicker from "../../components/LotPicker";
 import ntiLogo from "../../assets/nti.jpg";
 import FloatingWindow from "../../components/FloatingWindow";
 import AllFormsTable from "./AllFormsTable";
@@ -28,7 +29,7 @@ const PROCESSING_TYPES = [
 
 const emptyDraft = () => ({
   id: null,
-  lotNumber: "", formDate: "", dateReceived: "", timeReceived: "",
+  lotNumber: "", lotId: null, formDate: "", dateReceived: "", timeReceived: "",
   vendorLot: "", vendor: "", productDescription: "", processingType: "",
   spec: "", brand: "", estNumber: "", grade: "",
   dueDate: "", predictedYield: "",
@@ -138,7 +139,20 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             <Flex direction="column" gap={2} align={{ base: "stretch", md: "flex-end" }}>
               <Flex align="center" gap={2}>
                 <Text fontSize="sm" fontWeight="bold" color="blue.700" minW="40px">Lot#:</Text>
-                <Input size="sm" width={{ base: "100%", md: "150px" }} value={draft.lotNumber} onChange={set("lotNumber")} placeholder="N26124-01" />
+                {/* A registration form is an incoming-side record, so it may
+                    issue a lot. Picking one here is also what makes the box
+                    weights below findable — they are matched by lot. */}
+                <Box width={{ base: "100%", md: "260px" }}>
+                  <LotPicker
+                    allowCreate
+                    value={draft.lotId ?? null}
+                    onChange={(lot) => setDraft({
+                      ...draft,
+                      lotId: lot ? lot.lotId : null,
+                      lotNumber: lot ? lot.lotNumber : "",
+                    })}
+                  />
+                </Box>
               </Flex>
               <Flex align="center" gap={2}>
                 <Text fontSize="sm" fontWeight="bold" color="blue.700" minW="40px">Date:</Text>

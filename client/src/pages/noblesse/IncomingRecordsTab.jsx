@@ -671,6 +671,10 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
   const [newDate, setNewDate]   = useState(today());
   const [newBol, setNewBol]     = useState("");
   const [newDriver, setNewDriver] = useState("");
+  // AFDC distributes; a vendor is a packer. Recorded because a lot coming back
+  // from AFDC and a fresh delivery are otherwise indistinguishable afterwards.
+  const [newSourceType, setNewSourceType] = useState("");
+  const [newSourceName, setNewSourceName] = useState("");
   const [newLines, setNewLines] = useState([emptyLine()]);
   const [submitting, setSubmitting] = useState(false);
   const toast = useToast();
@@ -683,6 +687,7 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
   const cancelNewRecord = () => {
     setNewRecordOpen(false);
     setNewDate(today()); setNewBol(""); setNewDriver(""); setNewLines([emptyLine()]);
+    setNewSourceType(""); setNewSourceName("");
   };
 
   const submitNewRecord = async () => {
@@ -691,6 +696,8 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
     try {
       const res = await axiosInstance.post("/noblesse-receipts", {
         shipmentDate: newDate, bolNumber: newBol, driver: newDriver, lines: validLines,
+        sourceType: newSourceType || null,
+        sourceName: newSourceType === "vendor" ? (newSourceName || null) : null,
       });
       toast({ title: "Record logged", status: "success", position: "top", duration: 2000, isClosable: true });
       onReceiptAdded(res.data);
@@ -811,6 +818,22 @@ export const IncomingRecordsTab = ({ receipts, onReceiptAdded, onReceiptUpdate, 
                   <input placeholder="Name" value={newDriver} onChange={(e) => setNewDriver(e.target.value)}
                     style={hdInput("160px")} />
                 </Box>
+                <Box>
+                  <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">From</Text>
+                  <select value={newSourceType} onChange={(e) => setNewSourceType(e.target.value)}
+                    style={hdInput("130px")}>
+                    <option value="">—</option>
+                    <option value="afdc">AFDC</option>
+                    <option value="vendor">Vendor</option>
+                  </select>
+                </Box>
+                {newSourceType === "vendor" && (
+                  <Box>
+                    <Text fontSize="sm" color="gray.500" mb="2px" textTransform="uppercase" letterSpacing="wide">Vendor</Text>
+                    <input placeholder="e.g. Creekstone" value={newSourceName}
+                      onChange={(e) => setNewSourceName(e.target.value)} style={hdInput("160px")} />
+                  </Box>
+                )}
               </Flex>
             </Box>
 
