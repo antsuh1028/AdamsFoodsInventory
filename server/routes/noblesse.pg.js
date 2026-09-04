@@ -112,6 +112,10 @@ const fmtNtiItem = (row) => ({
   qtyPallets:   row.qty_pallets,
   receivedDate: fmtDate(row.received_date),
   notes:        row.notes,
+  // Raw stock and processing output share a lot number, so without the stage
+  // the two are indistinguishable in the picker and output gets reprocessed.
+  // Defaulted here because rows predating the column read back NULL.
+  stage:        row.stage || "raw",
   createdAt:    row.created_at,
 });
 

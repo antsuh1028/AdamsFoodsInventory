@@ -113,7 +113,14 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
     });
   })();
 
-  const availableItems  = ntiInventory;
+  // Raw first. Processing output re-stocks under the SAME lot number, so both
+  // stages sit in this list reading identically — ordering raw first and
+  // badging the rest is what stops someone reprocessing their own output.
+  // Processed stock stays selectable: a second cut is a real thing, just never
+  // the default.
+  const availableItems = [...ntiInventory].sort(
+    (a, b) => (a.stage === "processed" ? 1 : 0) - (b.stage === "processed" ? 1 : 0)
+  );
   const selectedNtiItem = availableItems.find((n) => String(n.id) === String(selectedItemId)) || null;
 
   const weightNum   = parseFloat(weightIn);
@@ -371,6 +378,9 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                               onMouseDown={() => selectItem(item)}>
                               <Flex align="center" gap={2}>
                                 <Text fontWeight="medium" color={noWeight ? "gray.400" : "blue.700"}>{item.lot}</Text>
+                                {item.stage === "processed" && (
+                                  <Badge colorScheme="teal" fontSize="9px">Processed</Badge>
+                                )}
                                 {noWeight && <Text fontSize="xs" color="orange.500" fontWeight="semibold">0 lb</Text>}
                               </Flex>
                               <Text color="gray.500" fontSize="xs">

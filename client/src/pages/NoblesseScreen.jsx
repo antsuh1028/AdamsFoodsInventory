@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Box, Flex, Text, Spinner, Badge, IconButton, Tooltip, Image, Button,
+  Alert, AlertIcon,
   Tabs, TabList, TabPanels, Tab, TabPanel,
   Drawer, DrawerOverlay, DrawerContent, DrawerHeader, DrawerFooter,
   Stack, Divider, useDisclosure,
@@ -10,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
+import { ProcessingReportTab } from "./noblesse/ProcessingReportTab";
 import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
 import { OutgoingTab } from "./noblesse/OutgoingTab";
 import { WeightManifestTab } from "./noblesse/WeightManifestTab";
@@ -45,6 +47,9 @@ const NoblesseScreen = () => {
   );
 
   const [receipts, setReceipts]           = useState([]);
+  const [ntiInventory, setNtiInventory]   = useState([]);
+  const [procOrders, setProcOrders]       = useState([]);
+  const [procError, setProcError]         = useState(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
@@ -66,8 +71,26 @@ const NoblesseScreen = () => {
   const fetchData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
-      const receiptsRes = await axiosInstance.get("/noblesse-receipts");
+      // Receipts stay the load-bearing fetch: if they fail the screen says so.
+      // The two processing fetches are tolerated instead, because a failure
+      // there should not take Incoming Records and the manifests down with it.
+      // Tolerated, NOT swallowed — procError renders in the Processing panel,
+      // so an empty tab is never mistaken for "no orders".
+      const [receiptsRes, invRes, ordersRes] = await Promise.all([
+        axiosInstance.get("/noblesse-receipts"),
+        axiosInstance.get("/nti-inventory").catch((e) => e),
+        axiosInstance.get("/noblesse-proc-orders").catch((e) => e),
+      ]);
       setReceipts(receiptsRes.data || []);
+
+      const failed = [invRes, ordersRes].find((r) => r instanceof Error);
+      if (failed) {
+        setProcError(failed.response?.data?.error || failed.message);
+      } else {
+        setProcError(null);
+        setNtiInventory(invRes.data || []);
+        setProcOrders(ordersRes.data || []);
+      }
       // Tabs that load their own data watch this and re-fetch. Without it the
       // timestamp below ticks while their contents stay frozen at page load.
       setRefreshSignal((n) => n + 1);
@@ -94,6 +117,27 @@ const NoblesseScreen = () => {
   const handleReceiptAdded  = (r) => setReceipts((prev) => [r, ...prev]);
   const handleReceiptUpdate = (r) => setReceipts((prev) => prev.map((x) => x.id === r.id ? r : x));
   const handleReceiptDelete = (id) => setReceipts((prev) => prev.filter((x) => x.id !== id));
+
+  // Any order change moves stock — creating one claims raw, completing one
+  // deducts it and puts the output back under the same lot. So the picker's
+  // figures are stale the moment an order changes. The 60s poll would catch up
+  // eventually; refetching here means the next pick is against real numbers.
+  const refreshInventory = useCallback(async () => {
+    try {
+      const res = await axiosInstance.get("/nti-inventory");
+      setNtiInventory(res.data || []);
+    } catch (err) {
+      console.error("Could not refresh NTI inventory", err);
+    }
+  }, []);
+
+  const handleProcOrderAdded  = (o) => { setProcOrders((prev) => [o, ...prev]); refreshInventory(); };
+  const handleProcOrderUpdate = (o) => { setProcOrders((prev) => prev.map((x) => x.id === o.id ? o : x)); refreshInventory(); };
+  const handleProcOrderDelete = (id) => { setProcOrders((prev) => prev.filter((x) => x.id !== id)); refreshInventory(); };
+
+  // Orders still open. Badged so the tab says there is work outstanding
+  // without anyone having to open it.
+  const pendingProcCount = procOrders.filter((o) => o.status === "pending").length;
 
   if (loading) {
     return (
@@ -171,6 +215,14 @@ const NoblesseScreen = () => {
               Incoming Records
               {receipts.length > 0 && <Badge ml={2} colorScheme="blue" borderRadius="full">{receipts.length}</Badge>}
             </Tab>
+            {/* Sits between Incoming and Outgoing because that is the order the
+                product actually moves through the building. */}
+            <Tab>
+              Processing
+              {pendingProcCount > 0 && (
+                <Badge ml={2} colorScheme="orange" borderRadius="full">{pendingProcCount}</Badge>
+              )}
+            </Tab>
             <Tab>Registration Forms</Tab>
             <Tab>Weight Manifests</Tab>
             <Tab>Outgoing</Tab>
@@ -189,7 +241,28 @@ const NoblesseScreen = () => {
                   canDelete={isAdmin}
                 />
               </TabPanel>
-              {/* Processing Report & NTI Inventory tabs disabled for now */}
+              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
+                {procError && (
+                  <Alert status="error" borderRadius="md" mb={4} fontSize="sm">
+                    <AlertIcon />
+                    <Box>
+                      <Text fontWeight="600">Processing data could not be loaded</Text>
+                      <Text fontSize="xs" color="gray.700">{procError}</Text>
+                    </Box>
+                  </Alert>
+                )}
+                <ProcessingReportTab
+                  ntiInventory={ntiInventory}
+                  procOrders={procOrders}
+                  onProcOrderAdded={handleProcOrderAdded}
+                  onProcOrderUpdate={handleProcOrderUpdate}
+                  onProcOrderDelete={handleProcOrderDelete}
+                  canDelete={isAdmin}
+                />
+              </TabPanel>
+              {/* NTI Inventory tab still disabled — NtiInventoryTab.jsx is
+                  unused. Stock is visible through the picker here and through
+                  Outgoing, so it has no screen of its own yet. */}
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
                 <RegistrationFormTab isAdmin={canEdit} canDelete={isAdmin}
                   isAdminUser={isAdmin} refreshSignal={refreshSignal} />
