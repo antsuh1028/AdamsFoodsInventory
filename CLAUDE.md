@@ -71,8 +71,10 @@
 > **8. Box weights → registration form** — `registration_form_batches` ties
 > sessions to a form; the panel shows the live total and fills Original Weight /
 > Total Quantity. A reference, not a copy, so drift is shown rather than applied.
-> No FK to `noblesse_registration_forms` (that table is created by
-> `noblesse.pg.js`, which does not await its migrations).
+> No FK to `noblesse_registration_forms` — originally because that table was
+> created by a different module with no ordering guarantee. `db/migrate.js` now
+> guarantees the order, so the FK is *possible*; adding it is a Phase D step
+> (it fails if any orphan link exists) and has not been done.
 >
 > ### Not done
 > - The tally-sheet **date is still discarded** on import — see §4 Known gap.
@@ -205,8 +207,21 @@ one line in the INSERT, if it ever matters.
 
 ## 5. Postgres notes
 
-- Migrations are **idempotent, at module load**: `CREATE TABLE IF NOT EXISTS`,
-  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`. No migration tool — a deliberate call.
+- **All Noblesse and box-weighing DDL lives in `server/db/migrate.js`** and runs
+  sequentially, awaited, before `app.listen` (`index.js` requires the route
+  modules only after `migrate()` resolves). Idempotent statements only
+  (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` / `DROP ... IF EXISTS`), so a
+  retry restarts from the top safely. **A failing statement throws and boot
+  aborts** — pm2 restarts it; three attempts cover a Neon connection drop.
+  No migration tool — a deliberate call. **Put any new DDL there, in dependency
+  order; never fire DDL from a route module.** `tenants` predates the repo and is
+  never created here — `migrate()` checks it exists and refuses to boot without
+  it. Adams-side modules (production, snapshots, history, s3) still carry their
+  own small `IF NOT EXISTS` statements; they reference nothing Noblesse-side and
+  run after `migrate()`, so they cannot race it.
+  `server/tests/migrate.test.js` pins the ordering (lots before every FK to it,
+  every parent before its child, strictly one statement in flight) and the
+  loudness (errors reject, retries restart from the preflight).
 - Everything is tenant-scoped on `tenant_id`. Every lookup filters by it, including
   the "already exists" branches, so a UUID from another tenant cannot be adopted.
 - **Neon drops idle connections.** `server/utils/pg.js` sets
@@ -269,13 +284,16 @@ claiming a change caused no regressions.
   `requireRole("admin")`; a client-side check is not a control.
 - `FloatingWindow` centring must read `window.innerWidth` **directly**, not from
   state — state is async and takes the clamp branch on first paint.
-- **Fire-and-forget migrations race.** `boxes.pg.js` used to fire every
+- **Fire-and-forget migrations race.** Route modules used to fire every
   `CREATE TABLE` at module load without awaiting. A pool hands concurrent
   queries to different connections, so `manifest_group_batches` reached the
   server before `manifest_groups` existed and died with `relation
   "manifest_groups" does not exist` — then never retried, leaving the table
-  missing until a boot happened to win the race. Seen live. Migrations there now
-  run in a sequential `migrate()`; keep any new dependent DDL inside it.
+  missing until a boot happened to win the race. Seen live. The first fix was a
+  sequential `migrate()` inside `boxes.pg.js`, which still *swallowed* each
+  step's error. Now structurally fixed: one ordered, awaited, loud
+  `server/db/migrate.js` (see §5). The lot registry's FKs from Noblesse tables
+  are what forced the full fix — they would have hit the same race.
 
 ### Tooling
 
