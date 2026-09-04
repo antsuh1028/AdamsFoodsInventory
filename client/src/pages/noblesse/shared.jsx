@@ -82,6 +82,18 @@ export const fmtDate = (val) => {
   return `${mo}/${d}/${y} - ${h}:${min} ${ampm}`;
 };
 
+// Weights always carry two decimals, whole numbers included — on a sheet where
+// every other figure shows cents, a bare "2357" reads as a different kind of
+// number from "2357.00".
+//
+// Display only. The stored value stays the decimal string it arrived as; this
+// never feeds arithmetic, which is why a float here is harmless.
+export const fmtWeight = (v) => {
+  if (v == null || String(v).trim() === "") return "—";
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(2) : String(v);
+};
+
 export const cellInputStyle = {
   width: "100%", fontSize: "14px", padding: "3px 6px",
   border: "1px solid #A0AEC0", borderRadius: "3px",

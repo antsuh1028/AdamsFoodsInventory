@@ -6,7 +6,7 @@ import {
   TriangleUpIcon, TriangleDownIcon, ChevronLeftIcon, ChevronRightIcon,
   ChevronUpIcon, ChevronDownIcon, CloseIcon, SearchIcon,
 } from "@chakra-ui/icons";
-import { fmtDate, today } from "./shared";
+import { fmtDate, today, fmtWeight } from "./shared";
 
 // Sortable, filterable view of every registration form.
 //
@@ -23,6 +23,8 @@ const COLUMNS = [
   { key: "processingType",     label: "Type",            filter: "select", width: "170px" },
   { key: "spec",               label: "Spec",            filter: "text",   width: "80px",  align: "center" },
   { key: "originalWeight",     label: "Weight",          filter: "none",   width: "100px", align: "right", kind: "number" },
+  // Paired with the weight, the way the paper form reads them.
+  { key: "totalQuantity",      label: "Qty",             filter: "none",   width: "70px",  align: "right", kind: "number" },
   { key: "actualYield",        label: "Yield %",         filter: "none",   width: "85px",  align: "right", kind: "number" },
   { key: "status",             label: "Status",          filter: "select", width: "110px", align: "center" },
   { key: "remarks",            label: "Remarks",         filter: "text",   width: "200px" },
@@ -267,7 +269,9 @@ const AllFormsTable = ({ forms = [], onEdit }) => {
                             )}
                           </Flex>
                         ) : col.key === "originalWeight" ? (
-                          form.originalWeight ? `${form.originalWeight} lb` : "—"
+                          form.originalWeight ? `${fmtWeight(form.originalWeight)} lb` : "—"
+                        ) : col.key === "totalQuantity" ? (
+                          form.totalQuantity || "—"
                         ) : col.key === "actualYield" ? (
                           form.actualYield ? `${form.actualYield}%` : "—"
                         ) : (

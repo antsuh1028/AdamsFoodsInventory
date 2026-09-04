@@ -5,7 +5,7 @@ import {
 } from "@chakra-ui/react";
 import { DeleteIcon, ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
-import { fmtDate, today, Th, Td, timeNow, upper } from "./shared";
+import { fmtDate, today, Th, Td, timeNow, upper, fmtWeight } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
 import BoxWeightLink from "./BoxWeightLink";
 import LotPicker from "../../components/LotPicker";
@@ -708,6 +708,10 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
               <Th>Lot #</Th>
               <Th>Vendor</Th>
               <Th>Product Description</Th>
+              {/* Weight and quantity sit together, matching the paper form —
+                  Original Weight and Total Quantity are read as a pair. */}
+              <Th textAlign="right">Weight</Th>
+              <Th textAlign="right">Qty</Th>
               <Th>Date Received</Th>
               <Th>Status</Th>
               <Th>Actions</Th>
@@ -775,6 +779,15 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                   </Td>
                   <Td>{f.vendor || "—"}</Td>
                   <Td>{f.productDescription || "—"}</Td>
+                  {/* tabular-nums so the decimal points line up down the
+                      column; without it proportional digits make the figures
+                      ragged and hard to compare at a glance. */}
+                  <Td textAlign="right" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {f.originalWeight ? `${fmtWeight(f.originalWeight)} lb` : "—"}
+                  </Td>
+                  <Td textAlign="right" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {f.totalQuantity || "—"}
+                  </Td>
                   <Td>{fmtDate(f.dateReceived)}</Td>
                   <Td>
                     <Menu>
@@ -825,7 +838,10 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                 </tr>
                 {expandedId === f.id && (
                   <tr style={{ backgroundColor: "rgb(230, 240, 255)", borderTop: "2px solid rgb(66, 153, 225)" }}>
-                    <td colSpan={6} style={{ padding: 0 }}>
+                    {/* 8, not 6: Weight and Qty were added above. A colSpan
+                        that undercounts leaves the detail panel short and the
+                        table's last columns collapse. */}
+                    <td colSpan={8} style={{ padding: 0 }}>
                       <Box p={4} width="100%">
                         <Grid templateColumns={{ base: "1fr", md: "repeat(2, 1fr)" }} gap={4} fontSize="sm">
                           <GridItem>
