@@ -107,8 +107,20 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 
 ## 2. Branch / deploy state
 
-- **Production runs `master` = `da604e2`**, deployed 2026-09-03 and verified.
+- **Production CODE runs `master` = `da604e2`**, deployed 2026-09-03 and verified.
   Don't deploy without being asked.
+- **The production DATABASE is deliberately ahead of that code (2026-09-04).**
+  Lot-registry Phase A + B were applied straight to Neon from a workstation —
+  `migrate()` run against prod, then `scripts/backfill-lots.js --commit`. The
+  running server has never seen this schema and does not need to: every new
+  column is nullable, has a default, or is unread, so the old code ignores them.
+  In prod now: `lots` (11 rows), `lot_id` populated on 15 rows across four
+  tables, `nti_inventory.stage` = 'raw' on all 8 rows, `noblesse_receipts`
+  `source_type`/`source_name` present and null.
+  Two rows keep `lot_id NULL` on purpose — both are the `"TEST"` sentinel.
+  **Deploying the code later is a no-op for the schema** (`migrate()` is
+  idempotent) but DOES change boot behaviour: a failed migration now exits the
+  process instead of logging and carrying on.
 - Historical note: `master` once deliberately excluded box weighing and was built
   by removing barcode-only files rather than cherry-picking. `barcode-integration`
   is that now-merged branch.
