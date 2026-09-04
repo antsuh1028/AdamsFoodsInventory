@@ -123,4 +123,45 @@ const parseLot = (input) => {
 // to tell "clean" apart from "cleaned up".
 const isCanonicalLot = (text) => LOT_SHAPE.test(String(text ?? "").trim());
 
-module.exports = { parseLot, formatLot, isCanonicalLot, dateFromDayOfYear, daysInYear };
+// ── Issuing a new lot ────────────────────────────────────────────────────────
+// Everything below has to agree exactly with `lotNumberForDate` in
+// client/src/pages/noblesse/shared.jsx. A lot issued by the server and a lot
+// the operator sees suggested on screen must be the same number, so both
+// compute the day the same way and both do it in Pacific — the warehouse's
+// clock, not the viewer's and not the server's.
+
+const PACIFIC_TZ = "America/Los_Angeles";
+
+// "2026-09-04" for whatever "today" is in Pacific. en-CA formats as
+// YYYY-MM-DD, which is the shape Postgres wants for a DATE.
+const pacificToday = (now = new Date()) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: PACIFIC_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(now);
+
+// "2026-09-04" -> 247. Date.UTC(year, 0, 0) is 31 December of the year before,
+// so 1 January comes out as day 1 — the same arithmetic as shared.jsx.
+const dayOfYearFromDate = (dateStr) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr).trim());
+  if (!m) throw new Error(`not a YYYY-MM-DD date: "${dateStr}"`);
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const utc = Date.UTC(year, month - 1, day);
+  // Rejects 2026-02-30 and friends, which Date.UTC would silently roll over.
+  const back = new Date(utc);
+  if (back.getUTCMonth() !== month - 1 || back.getUTCDate() !== day) {
+    throw new Error(`not a real date: "${dateStr}"`);
+  }
+  return { year, dayOfYear: Math.floor((utc - Date.UTC(year, 0, 0)) / 86400000) };
+};
+
+// "2026-09-04" -> "N26247". The day prefix only; the sequence is allocated by
+// the server against the lots table, never guessed here.
+const lotPrefixForDate = (dateStr) => {
+  const { year, dayOfYear } = dayOfYearFromDate(dateStr);
+  return `N${pad(year % 100, 2)}${pad(dayOfYear, 3)}`;
+};
+
+module.exports = {
+  parseLot, formatLot, isCanonicalLot, dateFromDayOfYear, daysInYear,
+  pacificToday, dayOfYearFromDate, lotPrefixForDate, PACIFIC_TZ,
+};
