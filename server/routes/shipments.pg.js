@@ -2,7 +2,7 @@ const router = require("express").Router();
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
-const { stockWeightInLb } = require("../utils/sqlWeight");
+const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
 
 // Outgoing. Product leaving NTI, either back to AdamsFoods for distribution or
 // straight to a customer.
@@ -34,7 +34,7 @@ const fmtItem = (r) => ({
   stage: r.stage,
 });
 
-const fmtShipment = (r, items = []) => ({
+const fmtShipment = (r, items = [], sessions = []) => ({
   shipmentId: r.shipment_id,
   shipDate: r.ship_date instanceof Date ? r.ship_date.toISOString().slice(0, 10) : r.ship_date,
   destinationType: r.destination_type,
@@ -54,6 +54,21 @@ const fmtShipment = (r, items = []) => ({
   totalWeight: items
     .reduce((sum, i) => sum + Math.round(Number(i.weight) * 1000), 0) / 1000,
   totalCases: items.reduce((sum, i) => sum + (Number(i.qty_cases) || 0), 0),
+  sessions: sessions.map((b) => ({
+    batchId: b.batch_id,
+    lotNumber: b.lot_number,
+    vendor: b.vendor,
+    status: b.status,
+    source: b.source,
+    createdAt: b.created_at,
+    boxCount: b.box_count,
+    total: b.total,
+  })),
+  // What the boxes actually weighed, against what the lines claim. Kept apart
+  // rather than reconciled automatically: a difference is something a person
+  // should see, not something the screen quietly papers over.
+  weighedTotal: sessions
+    .reduce((sum, b) => sum + Math.round(Number(b.total) * 1000), 0) / 1000,
 });
 
 const itemsFor = (shipmentId, tenantId, client = pool) =>
@@ -67,6 +82,23 @@ const itemsFor = (shipmentId, tenantId, client = pool) =>
     [shipmentId, tenantId]
   );
 
+// Weighing sessions tied to a load. References, never copies — the same choice
+// merged manifests and registration forms make, so a box corrected after the
+// fact shows up here rather than leaving a stale number behind.
+const sessionsFor = (shipmentId, tenantId, client = pool) =>
+  client.query(
+    `SELECT b.batch_id, b.lot_number, b.vendor, b.status, b.source, b.created_at,
+            (SELECT COUNT(*)::int FROM batch_items i
+              WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL) AS box_count,
+            COALESCE((SELECT SUM(${weightInLb("i")})::text FROM batch_items i
+              WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL), '0') AS total
+       FROM shipment_batches sb
+       JOIN box_batches b ON b.batch_id = sb.batch_id
+      WHERE sb.shipment_id = $1 AND sb.tenant_id = $2
+      ORDER BY sb.position, b.batch_id`,
+    [shipmentId, tenantId]
+  );
+
 const loadShipment = async (shipmentId, tenantId, client = pool) => {
   const head = await client.query(
     `SELECT * FROM noblesse_shipments WHERE shipment_id = $1 AND tenant_id = $2`,
@@ -74,7 +106,8 @@ const loadShipment = async (shipmentId, tenantId, client = pool) => {
   );
   if (!head.rows.length) return null;
   const items = await itemsFor(shipmentId, tenantId, client);
-  return { row: head.rows[0], items: items.rows };
+  const sessions = await sessionsFor(shipmentId, tenantId, client);
+  return { row: head.rows[0], items: items.rows, sessions: sessions.rows };
 };
 
 const normaliseDestination = (type, name) => {
@@ -168,7 +201,7 @@ router.get("/shipments/:id", verifyToken, async (req, res) => {
   try {
     const found = await loadShipment(id, req.tenantId);
     if (!found) return res.status(404).json({ error: "Shipment not found" });
-    res.json(fmtShipment(found.row, found.items));
+    res.json(fmtShipment(found.row, found.items, found.sessions));
   } catch (err) {
     console.error("read shipment:", err);
     res.status(500).json({ error: "Internal Server Error" });
@@ -261,7 +294,8 @@ router.patch("/shipments/:id", verifyToken, async (req, res) => {
        notes || null, id, req.tenantId]
     );
     const items = await itemsFor(id, req.tenantId);
-    res.json(fmtShipment(upd.rows[0], items.rows));
+    const sessions = await sessionsFor(id, req.tenantId);
+    res.json(fmtShipment(upd.rows[0], items.rows, sessions.rows));
   } catch (err) {
     console.error("update shipment:", err);
     res.status(500).json({ error: "Internal Server Error" });
@@ -307,7 +341,7 @@ router.post("/shipments/:id/items", verifyToken, async (req, res) => {
     );
 
     const found = await loadShipment(id, req.tenantId);
-    res.status(201).json(fmtShipment(found.row, found.items));
+    res.status(201).json(fmtShipment(found.row, found.items, found.sessions));
   } catch (err) {
     console.error("add shipment item:", err);
     res.status(500).json({ error: "Internal Server Error" });
@@ -330,9 +364,83 @@ router.delete("/shipments/:id/items/:itemId", verifyToken, async (req, res) => {
       [itemId, id, req.tenantId]
     );
     const found = await loadShipment(id, req.tenantId);
-    res.json(fmtShipment(found.row, found.items));
+    res.json(fmtShipment(found.row, found.items, found.sessions));
   } catch (err) {
     console.error("remove shipment item:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ── Weighing sessions on a load ──────────────────────────────────────────────
+// The paper tally already carries Ship To and a BOL, so a weighed load already
+// HAS an outgoing manifest — tying the session to the shipment is what connects
+// the two instead of leaving someone to match them by eye.
+//
+// Optional, deliberately: type the totals when the load was not weighed.
+
+router.post("/shipments/:id/box-batches", verifyToken, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid shipment id" });
+
+  const { batchIds } = req.body || {};
+  if (!Array.isArray(batchIds) || batchIds.length === 0) {
+    return res.status(400).json({ error: "batchIds must be a non-empty array" });
+  }
+  if (!batchIds.every((b) => Number.isInteger(b))) {
+    return res.status(400).json({ error: "batchIds must all be integers" });
+  }
+  const ids = [...new Set(batchIds)];
+
+  try {
+    const gate = await draftOnly(id, req.tenantId);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+
+    // Counted rather than trusted, so a session id from another tenant cannot
+    // be attached to this load.
+    const owned = await pool.query(
+      `SELECT batch_id FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2`,
+      [ids, req.tenantId]
+    );
+    if (owned.rows.length !== ids.length) {
+      return res.status(404).json({ error: "One or more sessions were not found" });
+    }
+
+    // Tying the same session twice is what a double tap produces, not an error.
+    await pool.query(
+      `INSERT INTO shipment_batches (shipment_id, batch_id, tenant_id, position)
+       SELECT $1, b, $2, p FROM UNNEST($3::int[], $4::int[]) AS t(b, p)
+       ON CONFLICT (shipment_id, batch_id) DO NOTHING`,
+      [id, req.tenantId, ids, ids.map((_, i) => i)]
+    );
+
+    const found = await loadShipment(id, req.tenantId);
+    res.status(201).json(fmtShipment(found.row, found.items, found.sessions));
+  } catch (err) {
+    console.error("tie shipment batches:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+router.delete("/shipments/:id/box-batches/:batchId", verifyToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const batchId = Number(req.params.batchId);
+  if (!Number.isInteger(id) || !Number.isInteger(batchId)) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+  try {
+    const gate = await draftOnly(id, req.tenantId);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+
+    // Only the link goes; the session and its boxes are untouched.
+    await pool.query(
+      `DELETE FROM shipment_batches
+        WHERE shipment_id = $1 AND batch_id = $2 AND tenant_id = $3`,
+      [id, batchId, req.tenantId]
+    );
+    const found = await loadShipment(id, req.tenantId);
+    res.json(fmtShipment(found.row, found.items, found.sessions));
+  } catch (err) {
+    console.error("untie shipment batch:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -435,7 +543,7 @@ router.post("/shipments/:id/ship", verifyToken, async (req, res) => {
     }
 
     const found = await loadShipment(id, req.tenantId);
-    res.json(fmtShipment(found.row, found.items));
+    res.json(fmtShipment(found.row, found.items, found.sessions));
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     console.error("ship shipment:", err);
@@ -508,7 +616,7 @@ router.post("/shipments/:id/cancel", verifyToken, requireRole("admin"), async (r
     }
 
     const found = await loadShipment(id, req.tenantId);
-    res.json(fmtShipment(cancelled.rows[0], found.items));
+    res.json(fmtShipment(cancelled.rows[0], found.items, found.sessions));
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     console.error("cancel shipment:", err);

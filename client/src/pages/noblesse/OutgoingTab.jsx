@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Spinner, Input, Select, Alert, AlertIcon,
+  Box, Flex, Text, Button, Badge, Spinner, Input, Select, Checkbox, Alert, AlertIcon,
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
   AlertDialogContent, AlertDialogOverlay, useToast,
 } from "@chakra-ui/react";
@@ -52,6 +52,10 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // A new line being added to the open draft.
   const [line, setLine] = useState({ stockKey: "", weight: "", qtyCases: "" });
 
+  // Weighing sessions that could be tied to the open draft.
+  const [batches, setBatches] = useState([]);
+  const [pickedBatches, setPickedBatches] = useState(() => new Set());
+
   const [confirmShip, setConfirmShip] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const cancelRef = useRef(null);
@@ -79,7 +83,19 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     }
   }, []);
 
-  useEffect(() => { fetchShipments(); fetchAvailable(); }, [fetchShipments, fetchAvailable]);
+  const fetchBatches = useCallback(async () => {
+    try {
+      const { data } = await axiosInstance.get("/box-batches");
+      setBatches(data || []);
+    } catch {
+      // Tying a session is optional, so failing to list them must not stop a
+      // load being built by typing its totals.
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchShipments(); fetchAvailable(); fetchBatches();
+  }, [fetchShipments, fetchAvailable, fetchBatches]);
 
   // The parent polls every 60s and bumps this. Compared against a ref so the
   // mount effect and the signal effect do not both fire on first render — a tab
@@ -139,6 +155,18 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     }
   };
 
+  const tieSessions = () => run(async () => {
+    await axiosInstance.post(`/shipments/${openId}/box-batches`,
+      { batchIds: [...pickedBatches] });
+    setPickedBatches(new Set());
+    await refreshOpen(openId);
+  }, "Weighing sessions tied");
+
+  const untieSession = (batchId) => run(async () => {
+    await axiosInstance.delete(`/shipments/${openId}/box-batches/${batchId}`);
+    await refreshOpen(openId);
+  });
+
   const startDraft = () => {
     setDraft({
       shipDate: today(), destinationType: "adamsfoods", destinationName: "",
@@ -188,6 +216,8 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   }, "Cancelled — stock restored");
 
   const selectedStock = available.find((a) => String(a.ntiItemId) === String(line.stockKey));
+  const tiedIds = new Set((detail?.sessions || []).map((b) => b.batchId));
+  const untiedBatches = batches.filter((b) => !tiedIds.has(b.batch_id));
   const isDraft = detail && detail.status === "draft";
 
   return (
@@ -332,6 +362,88 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                             </Alert>
                           )}
                         </Flex>
+                      )}
+
+                      {/* What the boxes actually weighed, beside what the
+                          lines claim. Deliberately NOT reconciled for you: a
+                          difference between the two is the thing worth seeing. */}
+                      {detail.sessions && detail.sessions.length > 0 && (
+                        <Box mb={3} p={3} bg="blue.50" borderRadius="md"
+                          border="1px solid" borderColor="blue.200">
+                          <Flex align="baseline" gap={3} wrap="wrap" mb={2}>
+                            <Text fontSize="sm" fontWeight="bold" color="blue.800">
+                              Weighed on the dock
+                            </Text>
+                            <Text fontSize="lg" fontWeight="bold" color="blue.800"
+                              style={{ fontVariantNumeric: "tabular-nums" }}>
+                              {lb(detail.weighedTotal)} lb
+                            </Text>
+                            {detail.items.length > 0 &&
+                              Math.abs(Number(detail.weighedTotal) - Number(detail.totalWeight)) > 0.004 && (
+                              <Badge colorScheme="orange" fontSize="9px">
+                                differs from the {lb(detail.totalWeight)} lb being shipped
+                              </Badge>
+                            )}
+                          </Flex>
+                          {detail.sessions.map((b) => (
+                            <Flex key={b.batchId} align="baseline" gap={2} wrap="wrap"
+                              px={2} py={1} bg="white" borderRadius="sm" mb={1}
+                              border="1px solid" borderColor="blue.100">
+                              <Text fontSize="sm" fontWeight="600" color="blue.700">
+                                {b.lotNumber || `Batch ${b.batchId}`}
+                              </Text>
+                              {b.source === "imported" && (
+                                <Badge colorScheme="teal" fontSize="9px">Imported</Badge>
+                              )}
+                              <Text fontSize="sm" color="gray.700" ml="auto"
+                                style={{ fontVariantNumeric: "tabular-nums" }}>
+                                {b.boxCount} × {lb(b.total)} lb
+                              </Text>
+                              {isDraft && (
+                                <Button size="xs" variant="ghost" colorScheme="red"
+                                  isLoading={busy} onClick={() => untieSession(b.batchId)}>
+                                  Untie
+                                </Button>
+                              )}
+                            </Flex>
+                          ))}
+                        </Box>
+                      )}
+
+                      {isDraft && untiedBatches.length > 0 && (
+                        <Box mb={3}>
+                          <Text fontSize="xs" color="gray.500" textTransform="uppercase"
+                            letterSpacing="wide" mb={1}>
+                            Tie a weighing session (optional)
+                          </Text>
+                          <Box maxH="120px" overflowY="auto" bg="white" borderRadius="md"
+                            border="1px solid" borderColor="gray.200" px={2} py={1} mb={2}>
+                            {untiedBatches.map((b) => (
+                              <Checkbox key={b.batch_id} size="sm" width="100%" py={1}
+                                isChecked={pickedBatches.has(b.batch_id)}
+                                onChange={() => setPickedBatches((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(b.batch_id)) next.delete(b.batch_id);
+                                  else next.add(b.batch_id);
+                                  return next;
+                                })}>
+                                <Flex align="baseline" gap={2} wrap="wrap" fontSize="sm">
+                                  <Text as="span" fontWeight="600" color="blue.700">
+                                    {b.lot_number || `Batch ${b.batch_id}`}
+                                  </Text>
+                                  <Text as="span" color="gray.500" fontSize="xs">
+                                    {b.box_count} boxes
+                                  </Text>
+                                </Flex>
+                              </Checkbox>
+                            ))}
+                          </Box>
+                          <Button size="xs" variant="ghost" colorScheme="blue" px={2}
+                            isLoading={busy} isDisabled={pickedBatches.size === 0}
+                            onClick={tieSessions}>
+                            Tie {pickedBatches.size || ""} session{pickedBatches.size === 1 ? "" : "s"}
+                          </Button>
+                        </Box>
                       )}
 
                       <Flex gap={2} wrap="wrap">
