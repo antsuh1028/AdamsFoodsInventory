@@ -5,7 +5,7 @@ import {
 } from "@chakra-ui/react";
 import { DeleteIcon, ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
-import { fmtDate, today, Th, Td } from "./shared";
+import { fmtDate, today, Th, Td, timeNow } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
 import BoxWeightLink from "./BoxWeightLink";
 import LotPicker from "../../components/LotPicker";
@@ -30,7 +30,11 @@ const PROCESSING_TYPES = [
 
 const emptyDraft = () => ({
   id: null,
-  lotNumber: "", lotId: null, pendingBatchIds: [], formDate: "", dateReceived: "", timeReceived: "",
+  lotNumber: "", lotId: null, pendingBatchIds: [], formDate: "",
+  // Product is registered when it arrives, so "now" is right far more often
+  // than blank. Both stay editable, and an existing form always loads its own
+  // stored values over these.
+  dateReceived: today(), timeReceived: timeNow(),
   vendorLot: "", vendor: "", productDescription: "", processingType: "",
   spec: "", brand: "", estNumber: "", grade: "",
   dueDate: "", predictedYield: "",

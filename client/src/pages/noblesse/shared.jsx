@@ -25,6 +25,15 @@ export const today = (date = new Date()) => {
   return `${year}-${pad(month)}-${pad(day)}`;
 };
 
+// "HH:MM" for the current Pacific time, which is what an <input type="time">
+// expects. Pacific for the same reason the dates are: it is the warehouse's
+// clock, and a device left on another timezone would otherwise stamp a receipt
+// with an hour nobody was on the dock.
+export const timeNow = (date = new Date()) =>
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: PACIFIC_TZ, hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(date);
+
 // Lot numbers are N{YY}{JJJ} — two-digit year plus zero-padded day of the year —
 // with a per-record sequence appended downstream. 2026-09-01 is N26244.
 //
