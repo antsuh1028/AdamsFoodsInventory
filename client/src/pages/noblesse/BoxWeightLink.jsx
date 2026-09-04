@@ -93,19 +93,25 @@ const BoxWeightLink = ({
     [view]
   );
 
-  // Sessions for this lot float to the top of the picker. Lot cells are often
-  // messy ("P12 N26230-01"), so this is a contains match used only for ordering
-  // — every session stays selectable.
+  // Sessions for this lot float to the top of the picker.
+  //
+  // Matched on lot_id when both sides have one — exact, and it cannot pair the
+  // wrong lot. The text contains-match stays as the fallback for sessions that
+  // predate the registry or whose lot cell never resolved ("P12 N26230-01").
+  // Every session stays selectable either way.
   const options = useMemo(() => {
     const lot = String(lotNumber || "").trim().toUpperCase();
+    const formLotId = draft?.lotId ?? null;
     return available
       .filter((b) => !linkedIds.has(b.batch_id))
       .map((b) => ({
         ...b,
-        suggested: Boolean(lot) && String(b.lot_number || "").toUpperCase().includes(lot),
+        suggested: (formLotId != null && b.lot_id === formLotId)
+          || (formLotId == null && Boolean(lot)
+              && String(b.lot_number || "").toUpperCase().includes(lot)),
       }))
       .sort((a, b) => (b.suggested ? 1 : 0) - (a.suggested ? 1 : 0));
-  }, [available, linkedIds, lotNumber]);
+  }, [available, linkedIds, lotNumber, draft]);
 
   const suggested = useMemo(() => options.filter((b) => b.suggested), [options]);
 
@@ -117,9 +123,11 @@ const BoxWeightLink = ({
       setPicking(new Set());
     } catch (err) {
       toast({
-        title: "Could not change the link",
+        title: err.response?.data?.code === "SESSION_ALREADY_TIED"
+          ? "Those boxes belong to another form"
+          : "Could not change the link",
         description: err.response?.data?.error || err.message,
-        status: "error", duration: 5000, position: "top",
+        status: "error", duration: 8000, position: "top", isClosable: true,
       });
     } finally {
       setLoading(false);
@@ -226,6 +234,27 @@ const BoxWeightLink = ({
               Use these boxes
             </Button>
           </Flex>
+
+          {/* A lot is often weighed across two sessions — one pallet, then
+              another. Tie one and the drift warning below stays quiet, because
+              it compares the form against what is LINKED and those agree. So
+              the untied ones have to be pointed at explicitly. */}
+          {suggested.length > 0 && (
+            <Alert status="warning" borderRadius="md" fontSize="xs" mb={2} py={2}>
+              <AlertIcon boxSize={3} />
+              <Box flex={1}>
+                {suggested.length} more weighing session{suggested.length === 1 ? "" : "s"} for
+                this lot {suggested.length === 1 ? "is" : "are"} not tied
+                {" — "}
+                {suggested.reduce((n, b) => n + (Number(b.box_count) || 0), 0)} more boxes.
+              </Box>
+              <Button size="xs" variant="ghost" colorScheme="orange" fontWeight="500"
+                isLoading={loading}
+                onClick={() => link(suggested.map((b) => b.batch_id))}>
+                Tie {suggested.length === 1 ? "it" : "them"}
+              </Button>
+            </Alert>
+          )}
 
           {/* The point of keeping the link a reference: a box corrected after
               this form was filled shows up here instead of quietly changing it. */}

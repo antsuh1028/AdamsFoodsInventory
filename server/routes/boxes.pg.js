@@ -1251,8 +1251,32 @@ router.post("/noblesse-registration-forms/:id/box-batches", verifyToken, async (
       return res.status(404).json({ error: "One or more sessions were not found" });
     }
 
-    // Re-linking an already-linked session is not an error — it is what a
-    // double tap produces, and the link is the same either way.
+    // A weighing session belongs to ONE delivery. Letting a second form claim
+    // the same boxes would double-count them in every lot total that adds the
+    // two forms up, and nothing downstream could tell which was right — so it
+    // is refused, naming the form that already has them.
+    const claimed = await client.query(
+      `SELECT r.batch_id, r.form_id, b.lot_number
+         FROM registration_form_batches r
+         JOIN box_batches b ON b.batch_id = r.batch_id
+        WHERE r.batch_id = ANY($1::int[]) AND r.tenant_id = $2 AND r.form_id <> $3`,
+      [ids, req.tenantId, formId]
+    );
+    if (claimed.rows.length) {
+      await client.query("ROLLBACK");
+      const names = claimed.rows
+        .map((c) => `${c.lot_number || `batch ${c.batch_id}`} (form ${c.form_id})`)
+        .join(", ");
+      return res.status(409).json({
+        code: "SESSION_ALREADY_TIED",
+        error: `Already tied to another registration form: ${names}. ` +
+               `Untie it there first.`,
+        sessions: claimed.rows,
+      });
+    }
+
+    // Re-linking to the SAME form is not an error — it is what a double tap
+    // produces, and the link is identical either way.
     await client.query(
       `INSERT INTO registration_form_batches (form_id, batch_id, tenant_id, position)
        SELECT $1, b, $2, p FROM UNNEST($3::int[], $4::int[]) AS t(b, p)
