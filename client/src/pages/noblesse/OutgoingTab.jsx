@@ -58,6 +58,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
 
   const [confirmShip, setConfirmShip] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const cancelRef = useRef(null);
 
   const fetchShipments = useCallback(async () => {
@@ -214,6 +215,16 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     await axiosInstance.post(`/shipments/${openId}/cancel`);
     await refreshOpen(openId);
   }, "Cancelled — stock restored");
+
+  // The draft is gone afterwards, so unlike cancel there is nothing to refresh
+  // into — the open row is collapsed and the list reloaded instead.
+  const deleteDraft = () => run(async () => {
+    setConfirmDelete(false);
+    await axiosInstance.delete(`/shipments/${openId}`);
+    setOpenId(null);
+    setDetail(null);
+    await fetchShipments();
+  }, "Draft deleted");
 
   const selectedStock = available.find((a) => String(a.ntiItemId) === String(line.stockKey));
   const tiedIds = new Set((detail?.sessions || []).map((b) => b.batchId));
@@ -465,6 +476,18 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                             Cancel shipment
                           </Button>
                         )}
+                        {/* Deleting is for a draft that should not exist — a
+                            duplicate, or a test. It is not the same action as
+                            cancelling: nothing has moved yet, so there is no
+                            stock to restore and no record worth keeping. A
+                            shipped load never offers this; the server refuses
+                            it there regardless of what the UI shows. */}
+                        {isDraft && isAdmin && (
+                          <Button size="sm" variant="ghost" colorScheme="red"
+                            onClick={() => setConfirmDelete(true)}>
+                            Delete draft
+                          </Button>
+                        )}
                         {detail.shippedAt && (
                           <Text fontSize="xs" color="gray.500" alignSelf="center">
                             Shipped {new Date(detail.shippedAt).toLocaleString()}
@@ -590,6 +613,36 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
             <AlertDialogFooter gap={2}>
               <Button ref={cancelRef} onClick={() => setConfirmCancel(false)}>Go back</Button>
               <Button colorScheme="red" onClick={cancel} isLoading={busy}>Cancel shipment</Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
+
+      <AlertDialog isOpen={confirmDelete} leastDestructiveRef={cancelRef}
+        onClose={() => setConfirmDelete(false)} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">Delete this draft?</AlertDialogHeader>
+            <AlertDialogBody>
+              <Text fontSize="sm" mb={2}>
+                The draft and its lines are gone for good. Nothing has shipped
+                from it, so no stock moves and there is nothing to restore.
+              </Text>
+              {/* The reason someone is usually here. Deleting the draft is what
+                  frees a weighing session that cannot be deleted while a
+                  shipment still points at it. */}
+              {detail?.sessions?.length > 0 && (
+                <Text fontSize="sm" color="gray.600">
+                  {detail.sessions.length} weighing session
+                  {detail.sessions.length === 1 ? "" : "s"} tied to it
+                  {detail.sessions.length === 1 ? " is" : " are"} released — the
+                  sessions and their boxes are untouched.
+                </Text>
+              )}
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelRef} onClick={() => setConfirmDelete(false)}>Go back</Button>
+              <Button colorScheme="red" onClick={deleteDraft} isLoading={busy}>Delete draft</Button>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialogOverlay>

@@ -45,6 +45,42 @@ const logBoxRemoval = ({
    details ? JSON.stringify(details) : null, performedBy]
 ).catch((err) => console.error("box removal history log error:", err.message));
 
+// Everything that currently prevents a weighing session being deleted.
+//
+// ONE definition, read by both the DELETE guard and the endpoint the confirm
+// dialog calls, so the dialog can never offer a delete the route then refuses.
+// They were always going to drift if written twice — shipment_batches is proof:
+// it was added to the schema and to Outgoing, and the delete guard never heard
+// about it, so a shipped session died on a raw 23503 reported as a 500.
+//
+// Takes `q` rather than the pool so it can run on a transaction client mid
+// DELETE, or on the pool for a plain read.
+const batchBlockers = async (q, batchId, tenantId) => {
+  const groups = await q.query(
+    `SELECT g.group_id, g.name, g.lot_number
+       FROM manifest_group_batches m
+       JOIN manifest_groups g ON g.group_id = m.group_id
+      WHERE m.batch_id = $1 AND g.tenant_id = $2`,
+    [batchId, tenantId]
+  );
+  const forms = await q.query(
+    `SELECT f.id, f.lot_number
+       FROM registration_form_batches r
+       JOIN noblesse_registration_forms f ON f.id = r.form_id
+      WHERE r.batch_id = $1 AND r.tenant_id = $2`,
+    [batchId, tenantId]
+  );
+  const shipments = await q.query(
+    `SELECT s.shipment_id, s.destination_name, s.status,
+            s.ship_date, s.bill_of_lading
+       FROM shipment_batches sb
+       JOIN noblesse_shipments s ON s.shipment_id = sb.shipment_id
+      WHERE sb.batch_id = $1 AND s.tenant_id = $2`,
+    [batchId, tenantId]
+  );
+  return { groups: groups.rows, forms: forms.rows, shipments: shipments.rows };
+};
+
 // ── Validation helpers ───────────────────────────────────────────────────────
 
 const UNITS = new Set(["LB", "KG"]);
@@ -586,79 +622,59 @@ router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req,
       return res.status(404).json({ error: "Session not found" });
     }
 
-    const inGroups = await client.query(
-      `SELECT g.group_id, g.name, g.lot_number
-         FROM manifest_group_batches m
-         JOIN manifest_groups g ON g.group_id = m.group_id
-        WHERE m.batch_id = $1 AND g.tenant_id = $2`,
-      [batchId, req.tenantId]
-    );
-    if (inGroups.rows.length) {
+    // Read through the shared definition, so this guard and the endpoint the
+    // confirm dialog calls can never disagree about what is blocking.
+    const blockers = await batchBlockers(client, batchId, req.tenantId);
+
+    if (blockers.groups.length) {
       await client.query("ROLLBACK");
-      const names = inGroups.rows
+      const names = blockers.groups
         .map((g) => g.name || g.lot_number || `Manifest ${g.group_id}`)
         .join(", ");
       return res.status(409).json({
         code: "IN_MANIFEST_GROUP",
         error: `This session is part of a merged manifest (${names}). ` +
                `Remove it from that manifest before deleting the session.`,
-        groups: inGroups.rows,
+        groups: blockers.groups,
       });
     }
 
     // Same reasoning as the manifest-group check: a registration form pointing
     // at this session records what came in, and deleting the boxes out from
     // under it would leave its weight unaccounted for.
-    const inForms = await client.query(
-      `SELECT f.id, f.lot_number
-         FROM registration_form_batches r
-         JOIN noblesse_registration_forms f ON f.id = r.form_id
-        WHERE r.batch_id = $1 AND r.tenant_id = $2`,
-      [batchId, req.tenantId]
-    );
-    if (inForms.rows.length) {
+    if (blockers.forms.length) {
       await client.query("ROLLBACK");
-      const names = inForms.rows.map((f) => f.lot_number || `form ${f.id}`).join(", ");
+      const names = blockers.forms.map((f) => f.lot_number || `form ${f.id}`).join(", ");
       return res.status(409).json({
         code: "IN_REGISTRATION_FORM",
         error: `This session is tied to a registration form (${names}). ` +
                `Untie it there before deleting the session.`,
-        forms: inForms.rows,
+        forms: blockers.forms,
       });
     }
 
     // The THIRD table that points at a session, and the one this route did not
     // know about. shipment_batches arrived with Outgoing, after these guards
     // were written, and its batch_id FK has no ON DELETE CASCADE either — so a
-    // session that had been shipped fell past every check and died on a raw
-    // 23503 from Postgres, which this route reported as a bare 500.
-    //
-    // The lesson is the shape, not this one table: every guard here has to be
-    // revisited whenever something new references box_batches. There is no
-    // ordering rule that makes the next one announce itself.
-    const inShipments = await client.query(
-      `SELECT s.shipment_id, s.destination_name, s.status,
-              s.ship_date, s.bill_of_lading
-         FROM shipment_batches sb
-         JOIN noblesse_shipments s ON s.shipment_id = sb.shipment_id
-        WHERE sb.batch_id = $1 AND s.tenant_id = $2`,
-      [batchId, req.tenantId]
-    );
-    if (inShipments.rows.length) {
+    // session on a load fell past every check and died on a raw 23503 from
+    // Postgres, which this route reported as a bare 500.
+    if (blockers.shipments.length) {
       await client.query("ROLLBACK");
-      const names = inShipments.rows
+      const names = blockers.shipments
         .map((s) => `${s.destination_name || `shipment ${s.shipment_id}`} (${s.status})`)
         .join(", ");
-      // A shipped load is never edited or deleted, so unlike the other two this
-      // is not always something the operator can go and undo. Cancelling the
-      // shipment is the only route, and the message says so rather than sending
-      // someone to look for a detach button that is not there.
+      // A draft can simply be deleted or the session untied from it; a SHIPPED
+      // load is never edited or deleted, so there the only route is cancelling.
+      // The message says which applies rather than sending someone to look for
+      // a button that is not there.
+      const anyShipped = blockers.shipments.some((s) => s.status !== "draft");
       return res.status(409).json({
         code: "IN_SHIPMENT",
         error: `This session is on an outgoing shipment (${names}). ` +
-               `Remove it from that shipment — or cancel the shipment — before ` +
-               `deleting the session.`,
-        shipments: inShipments.rows,
+               (anyShipped
+                 ? `A shipped load cannot be edited — cancel it before deleting the session.`
+                 : `Untie it there, or delete the draft, before deleting the session.`),
+        shipments: blockers.shipments,
       });
     }
 
@@ -894,6 +910,32 @@ router.get("/box-batches", verifyToken, async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     console.error("list box batches:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// What is currently holding a session, so the confirm dialog can say so BEFORE
+// someone presses Delete rather than after it fails.
+//
+// Same helper the delete guard uses, so "deletable: true" here means the delete
+// really will go through. Read-only and not admin-gated: seeing why something
+// cannot be deleted is not itself a privileged act, and gating it would leave
+// an operator staring at a disabled button with no explanation.
+router.get("/box-batches/:id/references", verifyToken, async (req, res) => {
+  const batchId = Number(req.params.id);
+  if (!Number.isInteger(batchId)) {
+    return res.status(400).json({ error: "Invalid batch id" });
+  }
+  try {
+    const blockers = await batchBlockers(pool, batchId, req.tenantId);
+    res.json({
+      ...blockers,
+      deletable: blockers.groups.length === 0
+        && blockers.forms.length === 0
+        && blockers.shipments.length === 0,
+    });
+  } catch (err) {
+    console.error("batch references:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
