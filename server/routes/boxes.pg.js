@@ -627,6 +627,41 @@ router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req,
       });
     }
 
+    // The THIRD table that points at a session, and the one this route did not
+    // know about. shipment_batches arrived with Outgoing, after these guards
+    // were written, and its batch_id FK has no ON DELETE CASCADE either — so a
+    // session that had been shipped fell past every check and died on a raw
+    // 23503 from Postgres, which this route reported as a bare 500.
+    //
+    // The lesson is the shape, not this one table: every guard here has to be
+    // revisited whenever something new references box_batches. There is no
+    // ordering rule that makes the next one announce itself.
+    const inShipments = await client.query(
+      `SELECT s.shipment_id, s.destination_name, s.status,
+              s.ship_date, s.bill_of_lading
+         FROM shipment_batches sb
+         JOIN noblesse_shipments s ON s.shipment_id = sb.shipment_id
+        WHERE sb.batch_id = $1 AND s.tenant_id = $2`,
+      [batchId, req.tenantId]
+    );
+    if (inShipments.rows.length) {
+      await client.query("ROLLBACK");
+      const names = inShipments.rows
+        .map((s) => `${s.destination_name || `shipment ${s.shipment_id}`} (${s.status})`)
+        .join(", ");
+      // A shipped load is never edited or deleted, so unlike the other two this
+      // is not always something the operator can go and undo. Cancelling the
+      // shipment is the only route, and the message says so rather than sending
+      // someone to look for a detach button that is not there.
+      return res.status(409).json({
+        code: "IN_SHIPMENT",
+        error: `This session is on an outgoing shipment (${names}). ` +
+               `Remove it from that shipment — or cancel the shipment — before ` +
+               `deleting the session.`,
+        shipments: inShipments.rows,
+      });
+    }
+
     // Children first: batch_items references box_batches, and there is no
     // ON DELETE CASCADE on that constraint. Every box comes back with the
     // delete so the audit entry carries the session in full — after this there
