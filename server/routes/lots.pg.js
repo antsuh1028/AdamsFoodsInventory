@@ -252,7 +252,7 @@ router.get("/lots/next", verifyToken, async (req, res) => {
 // Registered AFTER /lots/next, or ":id" would swallow the literal "next".
 //
 // Every figure here is DERIVED. A stored status column drifts the first time
-// someone edits around it, and NtiInventoryTab already proved the point by
+// someone edits around it, and the old NTI inventory screen proved the point by
 // reconstructing in/out and yield from the orders because the stock row it was
 // reading had gone to zero. So the numbers are computed and the label follows
 // from them, rather than the other way round.

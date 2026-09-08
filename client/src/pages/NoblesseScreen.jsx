@@ -280,9 +280,11 @@ const NoblesseScreen = () => {
                 />
               </TabPanel>
               )}
-              {/* NTI Inventory tab still disabled — NtiInventoryTab.jsx is
-                  unused. Stock is visible through the picker here and through
-                  Outgoing, so it has no screen of its own yet. */}
+              {/* There is still no NTI Inventory tab. Stock is visible through
+                  the lot picker here and through Outgoing, so it has no screen
+                  of its own. The half-built NtiInventoryTab.jsx that used to sit
+                  unimported alongside this was deleted rather than left to rot;
+                  git history has it if it is ever wanted back. */}
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
                 <RegistrationFormTab isAdmin={canEdit} canDelete={isAdmin}
                   isAdminUser={isAdmin} refreshSignal={refreshSignal} />
