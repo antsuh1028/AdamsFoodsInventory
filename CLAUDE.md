@@ -129,9 +129,11 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 
 ## 2. Branch / deploy state
 
-- **Production CODE runs `master` = `da604e2`**, deployed 2026-09-03 and verified.
-  Don't deploy without being asked. Everything since — the whole lot registry
-  and Outgoing — is committed but NOT deployed.
+- **Production CODE runs `master` = `3235a37`** — verified 2026-09-08 by reading
+  `git log` in `~/AdamsFoodsInventory` on the box. Don't deploy without being
+  asked. The lot registry, Outgoing, merged manifests and the processing-tab
+  gating ARE deployed; the note that said prod was still on `da604e2` with all of
+  that undeployed was stale.
 - **The dev server points at the PRODUCTION database.** Running it locally
   applies `db/migrate.js` to prod and writes real rows. "Not deployed" therefore
   means the *code* on the server is old; schema and data changes made locally
@@ -156,13 +158,39 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 
 ### Deploy landmines
 
-1. **Two PM2 daemons.** A root daemon (`pm2-root.service`) holds port 3001;
-   `deploy:server` restarts *admin's* copy, which dies on `EADDRINUSE` — and still
-   prints a tick. **Every server deploy silently no-opped for a while.**
-   Permanent fix (not yet applied): `sudo pm2 delete adamsfoodsinventory && sudo pm2 save`,
-   then disable `pm2-root.service`. A reboot restores the conflict.
+1. **Two PM2 daemons — and it is the ADMIN one that serves.** Checked
+   2026-09-08: `ss -lntp` shows pid 1215788 (`node`, user admin) owning :3001,
+   and admin's `pm2 list` has `adamsfoodsinventory` online. So `deploy:server`
+   restarting admin's copy is correct, and deploys DO land. This entry used to
+   say the opposite — that root held the port and admin's copy died on
+   `EADDRINUSE`. Whatever was true once, it is not true now; check `ss -lntp`
+   before believing either version.
+   The root daemon holds two **dead** entries that lose the race for :3001:
+   `adamsfoodsinventory` (stopped, ~962k restarts) and `nodeapp` (errored,
+   1.6M restarts, `/var/www/nodeapp/server.js` — an unrelated leftover).
+   Harmless while stopped, but root's `dump.pm2` still lists them, so a reboot
+   resurrects both into a crash-loop. Not yet cleaned:
+   `sudo pm2 delete nodeapp adamsfoodsinventory && sudo pm2 save` **in the root
+   daemon only** (admin's is separate; its copy must survive).
 2. `deploy:server` uses `npm install`, which dirties `server/package-lock.json` on
    the box and makes the next `git pull` refuse. Should be `npm ci`.
+   **It is dirty right now** (confirmed 2026-09-08) — the next commit that
+   touches that file will make the deploy's pull fail. Clear it on the box with
+   `git checkout -- server/package-lock.json`.
+3. **The TLS cert renews through Apache, not standalone.** Apache2 owns :80 and
+   :443. The renewal conf was set to `authenticator = standalone`, which binds
+   :80 itself, so every renewal failed with `Could not bind TCP port 80` — daily,
+   silently, for a month — and the cert **expired on 2026-09-06**, taking the
+   whole site down for browsers while the app itself stayed healthy. Fixed
+   2026-09-08 by reissuing with `certbot certonly --apache` (one cert, SANs
+   `client.` + `server.afdcstorage.com`), which rewrote the conf to
+   `authenticator = apache`. `certbot renew --dry-run` passes.
+   A `deploy` hook that ran `pm2 restart nodeapp` — the dead leftover — was moved
+   out to `/root/restart-nodeapp.sh.disabled`. Nothing needs restarting on
+   renewal: Apache terminates TLS and the Node app never reads the certs.
+   **The lesson is the failure mode, not the plugin:** a renewal timer that is
+   `enabled` and `active` tells you nothing. `systemctl status certbot.service`
+   shows whether the last run actually succeeded.
 
 ---
 
