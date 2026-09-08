@@ -52,6 +52,179 @@ const totalsText = (totals) =>
     ? totals.map((t) => `${t.total} ${t.unit}`).join("  ·  ")
     : "—";
 
+// ── Removal history detail ───────────────────────────────────────────────────
+// The audit row carries the destroyed record in full (`details`), because for a
+// deleted session that JSON is the only copy of those weights that still
+// exists. It is rendered generically rather than field-by-field: a column added
+// to batch_items later must show up here on its own, not silently drop out of
+// the one place the box is still written down.
+
+const DETAIL_LABELS = {
+  batch_id: "Session #", item_id: "Box #", group_id: "Manifest #",
+  lot_number: "Lot #", lot_id: "Lot record", name: "Manifest name",
+  vendor: "Vendor", item_description: "Item", ship_to: "Ship to",
+  bill_of_lading: "Bill of lading", source: "Source", status: "Status",
+  created_at: "Opened", closed_at: "Closed", scanned_at: "Scanned",
+  weight: "Weight", weight_unit: "Unit", original_weight: "Weight on the label",
+  converted_from: "Converted from", gtin: "GTIN", production_date: "Production date",
+  serial: "Serial", raw_barcode: "Barcode", is_manual: "Entered by hand",
+  edited_at: "Corrected", edited_by: "Corrected by", position: "Position",
+  voided_at: "Voided", voided_by: "Voided by", void_reason: "Void reason",
+  box_count: "Boxes",
+};
+
+// tenant_id is identical on every row here and says nothing about what happened.
+const SKIP_DETAIL_KEYS = new Set(["tenant_id"]);
+
+const detailLabel = (k) =>
+  DETAIL_LABELS[k] || k.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+
+const detailValue = (key, value) => {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (key === "production_date") return fmtDate(value);
+  if (/_at$/.test(key)) return new Date(value).toLocaleString();
+  return String(value);
+};
+
+// Integer thousandths, never floats — the same rule the scanner, the server and
+// the printed manifest follow, so a total shown here cannot disagree with the
+// one that was on the tally. Parsed off the decimal string directly: no
+// Number(weight) ever happens, so "76.20" and "76.2" add up identically.
+const sumByUnit = (items) => {
+  const totals = new Map();
+  for (const it of items || []) {
+    if (!it || it.weight == null || it.voided_at) continue;
+    const [whole, frac = ""] = String(it.weight).split(".");
+    const th = (Number(whole) || 0) * 1000 + Number((frac + "000").slice(0, 3));
+    const unit = it.weight_unit || "LB";
+    totals.set(unit, (totals.get(unit) || 0) + th);
+  }
+  return [...totals.entries()].map(([unit, th]) => `${(th / 1000).toFixed(2)} ${unit}`);
+};
+
+const DetailGrid = ({ data }) => {
+  const pairs = Object.entries(data || {})
+    .filter(([k]) => !SKIP_DETAIL_KEYS.has(k))
+    .map(([k, v]) => [detailLabel(k), detailValue(k, v)])
+    .filter(([, v]) => v !== null);
+  if (!pairs.length) return null;
+  return (
+    <Box display="grid" gridTemplateColumns={{ base: "auto 1fr", md: "auto 1fr auto 1fr" }}
+      columnGap={4} rowGap={1} fontSize="xs" mb={3}>
+      {pairs.map(([label, value]) => (
+        <React.Fragment key={label}>
+          <Text color="gray.500" whiteSpace="nowrap">{label}</Text>
+          <Text color="gray.800" style={{ wordBreak: "break-word" }}>{value}</Text>
+        </React.Fragment>
+      ))}
+    </Box>
+  );
+};
+
+// Every box that went with a deleted session. Voided rows are kept and struck
+// through rather than dropped — what was on the tally and what counted are
+// different questions, and the audit trail has to answer both.
+const BOX_COLUMNS = [
+  ["item_id", "Box #", "left"],
+  ["weight", "Weight", "right"],
+  ["weight_unit", "Unit", "left"],
+  ["original_weight", "Label", "right"],
+  ["converted_from", "From", "left"],
+  ["serial", "Serial", "left"],
+  ["gtin", "GTIN", "left"],
+  ["production_date", "Prod. date", "left"],
+  ["is_manual", "Manual", "left"],
+  ["raw_barcode", "Barcode", "left"],
+];
+
+const DeletedBoxes = ({ items }) => {
+  const voided = items.filter((it) => it.voided_at).length;
+  const totals = sumByUnit(items);
+  return (
+    <Box>
+      <Flex align="baseline" gap={2} mb={1} wrap="wrap">
+        <Text fontSize="xs" fontWeight="600" color="gray.600"
+          textTransform="uppercase" letterSpacing="wide">
+          {items.length} box{items.length === 1 ? "" : "es"}
+        </Text>
+        {totals.length > 0 && (
+          <Text fontSize="xs" color="gray.700" fontWeight="600">
+            {totals.join("  ·  ")}
+          </Text>
+        )}
+        {voided > 0 && (
+          <Text fontSize="xs" color="gray.500">
+            ({voided} voided, not in that total)
+          </Text>
+        )}
+      </Flex>
+      {/* A scroll container with no floor lets the table crush to nothing. */}
+      <Box overflowX="auto" width="100%" borderWidth="1px" borderColor="gray.200"
+        borderRadius="md">
+        <Box as="table" width="100%" style={{ minWidth: "760px", borderCollapse: "collapse" }}>
+          <Box as="thead">
+            <Box as="tr">
+              {BOX_COLUMNS.map(([key, label, align]) => (
+                <Box as="th" key={key} bg="gray.100" px={2} py={1} textAlign={align}
+                  fontSize="9px" fontWeight="bold" color="gray.600"
+                  textTransform="uppercase" letterSpacing="wide"
+                  borderBottom="1px solid" borderColor="gray.300">
+                  {label}
+                </Box>
+              ))}
+            </Box>
+          </Box>
+          <Box as="tbody">
+            {items.map((it, i) => (
+              <Box as="tr" key={it.item_id ?? i} bg={i % 2 ? "gray.50" : "white"}>
+                {BOX_COLUMNS.map(([key, , align]) => (
+                  <Box as="td" key={key} px={2} py={1} textAlign={align} fontSize="11px"
+                    color={it.voided_at ? "gray.400" : "gray.800"}
+                    borderBottom="1px solid" borderColor="gray.100"
+                    style={{
+                      textDecoration: it.voided_at ? "line-through" : "none",
+                      fontFamily: key === "raw_barcode" || key === "gtin" ? "monospace" : undefined,
+                      whiteSpace: "nowrap",
+                    }}>
+                    {detailValue(key, it[key]) ?? "—"}
+                  </Box>
+                ))}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+  );
+};
+
+// The sessions a removed manifest covered. They are untouched by the removal,
+// so this is a reference list rather than a copy.
+const MemberSessions = ({ rows }) => (
+  <Box>
+    <Text fontSize="xs" fontWeight="600" color="gray.600" mb={1}
+      textTransform="uppercase" letterSpacing="wide">
+      Sessions it covered
+    </Text>
+    <Flex direction="column" gap={1}>
+      {rows.map((m) => (
+        <Flex key={m.batch_id} gap={3} align="baseline" wrap="wrap" fontSize="xs">
+          <Text color="gray.500">#{m.batch_id}</Text>
+          <Text color="gray.800" fontWeight="600">{m.lot_number || "—"}</Text>
+          <Text color="gray.700">{m.vendor || "—"}</Text>
+          <Text color="gray.600">{m.item_description || ""}</Text>
+          {m.box_count != null && (
+            <Text color="gray.500" ml="auto">
+              {m.box_count} box{m.box_count === 1 ? "" : "es"}
+            </Text>
+          )}
+        </Flex>
+      ))}
+    </Flex>
+  </Box>
+);
+
 export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   // An open session can be corrected by whoever is running it; a closed one is
   // an admin act. The server enforces both — this only decides what to draw.
@@ -83,6 +256,9 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const cancelDeleteGroupRef = useRef(null);
   const [removals, setRemovals] = useState(null);
   const [showRemovals, setShowRemovals] = useState(false);
+  // One entry open at a time: these expand into a full box table, and several
+  // open at once turns the window into a scroll of tables with no context.
+  const [expandedRemovalId, setExpandedRemovalId] = useState(null);
   const [deletingBatch, setDeletingBatch] = useState(false);
   const cancelDeleteBatchRef = useRef(null);
   const [merging, setMerging] = useState(false);
@@ -461,6 +637,14 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
   }, [groups, visible, matchesFilters]);
 
+  // The denominator for the count beside the filters. A merged session is
+  // represented by its manifest, so counting it again would read "2 of 7" on a
+  // tab that is showing everything it has.
+  const totalRows = useMemo(
+    () => batches.filter((b) => !mergedBatchIds.has(b.batch_id)).length + groups.length,
+    [batches, groups, mergedBatchIds]
+  );
+
   const todayStr = today();
   const isToday = (b) => String(b.created_at).slice(0, 10) === todayStr;
 
@@ -501,7 +685,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
             </Button>
           )}
           <Text fontSize="sm" color="gray.500">
-            {visible.length}{visible.length !== batches.length && ` of ${batches.length}`}
+            {rows.length}{rows.length !== totalRows && ` of ${totalRows}`}
           </Text>
         </Flex>
 
@@ -541,9 +725,14 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         </Button>
       </Flex>
 
-      {visible.length === 0 ? (
+      {/* Gated on `rows`, which is what the table below actually renders —
+          merged manifests AND loose sessions. Gating on `visible` (sessions
+          only) blanked the entire tab the moment the last unmerged session went
+          away: deleting one session hid every manifest too, and the data was
+          still there. */}
+      {rows.length === 0 ? (
         <Text fontSize="sm" color="gray.400">
-          {batches.length === 0
+          {batches.length === 0 && groups.length === 0
             ? "No weighing sessions yet. Start one to begin scanning boxes."
             : "Nothing matches these filters."}
         </Text>
@@ -1022,29 +1211,71 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
             </Text>
           </Box>
         ) : (
+          <>
           <Box borderWidth="1px" borderColor="gray.200" borderRadius="md" overflow="hidden">
-            {removals.map((r, i) => (
-              <Flex key={r.id} px={3} py={2} gap={3} align="baseline" wrap="wrap"
-                bg={i % 2 ? "gray.50" : "white"}
-                borderBottom={i === removals.length - 1 ? "none" : "1px solid"}
-                borderColor="gray.100">
-                <Badge fontSize="9px" colorScheme={REMOVAL_COLOR[r.action] || "gray"}>
-                  {REMOVAL_LABEL[r.action] || r.action}
-                </Badge>
-                {r.lot_number && (
-                  <Text fontSize="sm" fontWeight="600" color="gray.700">{r.lot_number}</Text>
-                )}
-                <Text fontSize="sm" color="gray.700">{r.summary}</Text>
-                {r.reason && (
-                  <Text fontSize="xs" color="gray.500" fontStyle="italic">“{r.reason}”</Text>
-                )}
-                <Text fontSize="xs" color="gray.500" ml="auto" whiteSpace="nowrap">
-                  {r.performed_by ? `${r.performed_by} · ` : ""}
-                  {new Date(r.created_at).toLocaleString()}
-                </Text>
-              </Flex>
-            ))}
+            {removals.map((r, i) => {
+              const d = r.details || null;
+              // Three shapes reach this: a session delete logs
+              // { batch, items }, a manifest removal { group, batches }, and a
+              // single box logs the row itself.
+              const items  = Array.isArray(d?.items) ? d.items : null;
+              const members = Array.isArray(d?.batches) ? d.batches : null;
+              const head = d?.batch || d?.group || (items || members ? null : d);
+              const open = expandedRemovalId === r.id;
+              return (
+                <Box key={r.id} bg={i % 2 ? "gray.50" : "white"}
+                  borderBottom={i === removals.length - 1 ? "none" : "1px solid"}
+                  borderColor="gray.100">
+                  <Flex px={3} py={2} gap={3} align="baseline" wrap="wrap"
+                    cursor={d ? "pointer" : "default"}
+                    onClick={() => d && setExpandedRemovalId(open ? null : r.id)}>
+                    {d ? (
+                      <IconButton
+                        aria-label={open ? "Hide what was recorded" : "Show what was recorded"}
+                        icon={open ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                        size="xs" variant="ghost" alignSelf="center"
+                        colorScheme={open ? "blue" : "gray"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedRemovalId(open ? null : r.id);
+                        }}
+                      />
+                    ) : (
+                      <Box width="24px" />
+                    )}
+                    <Badge fontSize="9px" colorScheme={REMOVAL_COLOR[r.action] || "gray"}>
+                      {REMOVAL_LABEL[r.action] || r.action}
+                    </Badge>
+                    {r.lot_number && (
+                      <Text fontSize="sm" fontWeight="600" color="gray.700">{r.lot_number}</Text>
+                    )}
+                    <Text fontSize="sm" color="gray.700">{r.summary}</Text>
+                    {r.reason && (
+                      <Text fontSize="xs" color="gray.500" fontStyle="italic">“{r.reason}”</Text>
+                    )}
+                    <Text fontSize="xs" color="gray.500" ml="auto" whiteSpace="nowrap">
+                      {r.performed_by ? `${r.performed_by} · ` : ""}
+                      {new Date(r.created_at).toLocaleString()}
+                    </Text>
+                  </Flex>
+
+                  {open && d && (
+                    <Box px={4} pb={3} pt={2} bg="white"
+                      borderTop="1px solid" borderColor="gray.200">
+                      {head && <DetailGrid data={head} />}
+                      {items && <DeletedBoxes items={items} />}
+                      {members && <MemberSessions rows={members} />}
+                    </Box>
+                  )}
+                </Box>
+              );
+            })}
           </Box>
+          <Text fontSize="xs" color="gray.400" mt={2}>
+            Expand an entry to see everything that was recorded — for a deleted
+            session, that includes every box weight, and it is the only copy left.
+          </Text>
+          </>
         )}
       </FloatingWindow>
 

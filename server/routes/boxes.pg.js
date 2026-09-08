@@ -495,8 +495,7 @@ router.delete("/box-batches/:id/items/:itemId", verifyToken, scanLimiter, async 
               voided_by = COALESCE(voided_by, $1),
               void_reason = COALESCE(void_reason, $2)
         WHERE item_id = $3 AND batch_id = $4 AND tenant_id = $5
-      RETURNING item_id, voided_at, void_reason,
-                weight::text AS weight, weight_unit, serial, is_manual`,
+      RETURNING *, weight::text AS weight, original_weight::text AS original_weight`,
       [req.userId, reason, itemId, batchId, req.tenantId]
     );
     if (!voided.rows.length) return res.status(404).json({ error: "Row not found" });
@@ -533,7 +532,7 @@ router.post("/box-batches/:id/items/:itemId/restore", verifyToken, scanLimiter, 
       `UPDATE batch_items
           SET voided_at = NULL, voided_by = NULL, void_reason = NULL
         WHERE item_id = $1 AND batch_id = $2 AND tenant_id = $3
-      RETURNING item_id, weight::text AS weight, weight_unit, serial`,
+      RETURNING *, weight::text AS weight, original_weight::text AS original_weight`,
       [itemId, batchId, req.tenantId]
     );
     if (!restored.rows.length) return res.status(404).json({ error: "Row not found" });
@@ -574,8 +573,11 @@ router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req,
   try {
     await client.query("BEGIN");
 
+    // The whole row, not just the three fields the guards below need: this is
+    // what goes into the audit entry, and after the delete it is the only
+    // record that the vendor, item, ship-to and BOL were ever on this session.
     const batch = await client.query(
-      `SELECT batch_id, lot_number, status FROM box_batches
+      `SELECT * FROM box_batches
         WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]
     );
@@ -1133,8 +1135,17 @@ router.delete("/manifest-groups/:id", verifyToken, requireRole("admin"), async (
   try {
     // The member list is read first: the CASCADE takes it with the group, and
     // which sessions the manifest covered is the part worth keeping.
+    // Named, not just numbered. The sessions themselves survive a manifest
+    // removal, but a trail that says "covered sessions 41, 42" is unreadable a
+    // month later — the lot and vendor are what anyone reading this looks for.
     const members = await pool.query(
-      `SELECT batch_id, position FROM manifest_group_batches WHERE group_id = $1`,
+      `SELECT m.batch_id, m.position, b.lot_number, b.vendor, b.item_description,
+              (SELECT COUNT(*)::int FROM batch_items i
+                WHERE i.batch_id = m.batch_id AND i.voided_at IS NULL) AS box_count
+         FROM manifest_group_batches m
+         LEFT JOIN box_batches b ON b.batch_id = m.batch_id
+        WHERE m.group_id = $1
+        ORDER BY m.position`,
       [groupId]
     );
     const gone = await pool.query(
