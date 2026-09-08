@@ -253,6 +253,27 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const [mergeHeader, setMergeHeader] = useState(null);
   // The whole session, not one box inside it.
   const [confirmDeleteBatch, setConfirmDeleteBatch] = useState(null);
+  // What is holding this session, read when the dialog opens. null while it is
+  // still loading — which is why the Delete button waits rather than assuming
+  // "nothing found yet" means "nothing holds it".
+  const [deleteBlockers, setDeleteBlockers] = useState(null);
+
+  // Opening the dialog asks the server what would refuse the delete, so the
+  // answer is on screen BEFORE the button is pressed instead of arriving as a
+  // failed request afterwards.
+  const askToDelete = useCallback(async (batch) => {
+    setConfirmDeleteBatch(batch);
+    setDeleteBlockers(null);
+    try {
+      const { data } = await axiosInstance.get(`/box-batches/${batch.batch_id}/references`);
+      setDeleteBlockers(data);
+    } catch {
+      // The dialog still works without this: the delete itself is guarded
+      // server-side and will say no. Falling back to "deletable" keeps the
+      // button live rather than trapping someone behind a failed lookup.
+      setDeleteBlockers({ groups: [], forms: [], shipments: [], deletable: true, unknown: true });
+    }
+  }, []);
   // Removing a merged manifest destroys a saved, filed form — it gets the same
   // confirmation the session delete does.
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(null);
@@ -946,7 +967,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                               only, and gated server-side too. */}
                           {isAdmin && (
                             <Button size="xs" variant="ghost" colorScheme="red"
-                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteBatch(b); }}>
+                              onClick={(e) => { e.stopPropagation(); askToDelete(b); }}>
                               Delete
                             </Button>
                           )}
@@ -1126,6 +1147,44 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                       right now, their work goes too.
                     </Text>
                   )}
+
+                  {/* What is holding it, and where to go and undo that. Closing
+                      the session does NOT clear any of these — the session's own
+                      status and what references it are separate questions, and
+                      conflating them is what sends people looking in the wrong
+                      place. */}
+                  {deleteBlockers && !deleteBlockers.deletable && (
+                    <Alert status="warning" borderRadius="md" mt={3}
+                      alignItems="flex-start" py={2}>
+                      <AlertIcon />
+                      <Box minW={0}>
+                        <Text fontSize="sm" fontWeight="600" mb={1}>
+                          This cannot be deleted yet
+                        </Text>
+                        {deleteBlockers.groups.map((g) => (
+                          <Text key={`g${g.group_id}`} fontSize="xs" color="gray.700">
+                            On merged manifest <b>{g.name || g.lot_number || `#${g.group_id}`}</b>
+                            {" "}— remove it from that manifest first.
+                          </Text>
+                        ))}
+                        {deleteBlockers.forms.map((f) => (
+                          <Text key={`f${f.id}`} fontSize="xs" color="gray.700">
+                            Tied to registration form <b>{f.lot_number || `#${f.id}`}</b>
+                            {" "}— untie it there first.
+                          </Text>
+                        ))}
+                        {deleteBlockers.shipments.map((s) => (
+                          <Text key={`s${s.shipment_id}`} fontSize="xs" color="gray.700">
+                            On shipment <b>#{s.shipment_id} {s.destination_name}</b>
+                            {" "}({s.status}) —{" "}
+                            {s.status === "draft"
+                              ? "untie it in Outgoing, or delete that draft."
+                              : "a shipped load must be cancelled first."}
+                          </Text>
+                        ))}
+                      </Box>
+                    </Alert>
+                  )}
                 </>
               )}
             </AlertDialogBody>
@@ -1133,7 +1192,9 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
               <Button ref={cancelDeleteBatchRef} onClick={() => setConfirmDeleteBatch(null)}>
                 Go back
               </Button>
-              <Button colorScheme="red" onClick={deleteBatch} isLoading={deletingBatch}>
+              <Button colorScheme="red" onClick={deleteBatch}
+                isLoading={deletingBatch || deleteBlockers === null}
+                isDisabled={Boolean(deleteBlockers && !deleteBlockers.deletable)}>
                 Delete session
               </Button>
             </AlertDialogFooter>
