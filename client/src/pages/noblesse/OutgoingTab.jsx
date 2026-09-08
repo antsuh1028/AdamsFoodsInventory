@@ -216,15 +216,19 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     await refreshOpen(openId);
   }, "Cancelled — stock restored");
 
-  // The draft is gone afterwards, so unlike cancel there is nothing to refresh
+  // The load is gone afterwards, so unlike cancel there is nothing to refresh
   // into — the open row is collapsed and the list reloaded instead.
+  //
+  // fetchAvailable too: deleting a SHIPPED load puts its weight back, so the
+  // stock the picker offers is stale the moment this returns.
   const deleteDraft = () => run(async () => {
     setConfirmDelete(false);
-    await axiosInstance.delete(`/shipments/${openId}`);
+    const { data } = await axiosInstance.delete(`/shipments/${openId}`);
     setOpenId(null);
     setDetail(null);
     await fetchShipments();
-  }, "Draft deleted");
+    if (data?.stockRestored) await fetchAvailable();
+  }, "Shipment deleted");
 
   const selectedStock = available.find((a) => String(a.ntiItemId) === String(line.stockKey));
   const tiedIds = new Set((detail?.sessions || []).map((b) => b.batchId));
@@ -476,16 +480,15 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                             Cancel shipment
                           </Button>
                         )}
-                        {/* Deleting is for a draft that should not exist — a
-                            duplicate, or a test. It is not the same action as
-                            cancelling: nothing has moved yet, so there is no
-                            stock to restore and no record worth keeping. A
-                            shipped load never offers this; the server refuses
-                            it there regardless of what the UI shows. */}
-                        {isDraft && isAdmin && (
+                        {/* Deleting is for a load that should not exist at all —
+                            a duplicate, or a test. Admin only, in any state.
+                            Cancel remains the right action for a real load that
+                            came back: it restores stock AND keeps the record,
+                            where this destroys it. */}
+                        {isAdmin && (
                           <Button size="sm" variant="ghost" colorScheme="red"
                             onClick={() => setConfirmDelete(true)}>
-                            Delete draft
+                            {isDraft ? "Delete draft" : "Delete shipment"}
                           </Button>
                         )}
                         {detail.shippedAt && (
@@ -622,12 +625,41 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
         onClose={() => setConfirmDelete(false)} isCentered>
         <AlertDialogOverlay>
           <AlertDialogContent>
-            <AlertDialogHeader fontSize="lg" fontWeight="bold">Delete this draft?</AlertDialogHeader>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              {isDraft ? "Delete this draft?" : "Delete this shipment?"}
+            </AlertDialogHeader>
             <AlertDialogBody>
               <Text fontSize="sm" mb={2}>
-                The draft and its lines are gone for good. Nothing has shipped
-                from it, so no stock moves and there is nothing to restore.
+                {isDraft
+                  ? "The draft and its lines are gone for good. Nothing has shipped from it, so no stock moves and there is nothing to restore."
+                  : "The shipment and its lines are gone for good — it will not appear on any record afterwards."}
               </Text>
+
+              {/* A shipped load deducted stock. Deleting puts that weight back
+                  first, or inventory would stay short with nothing left to say
+                  why — but cancelling is still the action that keeps a record,
+                  so it is offered here rather than assumed against. */}
+              {detail?.status === "shipped" && (
+                <Alert status="warning" borderRadius="md" fontSize="sm" mb={2} py={2}
+                  alignItems="flex-start">
+                  <AlertIcon />
+                  <Box>
+                    <Text fontWeight="600">This load has already shipped.</Text>
+                    <Text fontSize="xs" color="gray.700">
+                      Its weight goes back into stock first, so inventory stays
+                      right. But the load itself is destroyed — if you want what
+                      went out and came back to stay visible,{" "}
+                      <b>cancel it instead</b>.
+                    </Text>
+                  </Box>
+                </Alert>
+              )}
+              {detail?.status === "cancelled" && (
+                <Text fontSize="xs" color="gray.600" mb={2}>
+                  Already cancelled, so its stock went back at that point. Nothing
+                  moves now — this only removes the record.
+                </Text>
+              )}
               {/* The reason someone is usually here. Deleting the draft is what
                   frees a weighing session that cannot be deleted while a
                   shipment still points at it. */}
@@ -642,7 +674,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
             </AlertDialogBody>
             <AlertDialogFooter gap={2}>
               <Button ref={cancelRef} onClick={() => setConfirmDelete(false)}>Go back</Button>
-              <Button colorScheme="red" onClick={deleteDraft} isLoading={busy}>Delete draft</Button>
+              <Button colorScheme="red" onClick={deleteDraft} isLoading={busy}>
+                {isDraft ? "Delete draft" : "Delete shipment"}
+              </Button>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialogOverlay>

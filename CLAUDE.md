@@ -94,7 +94,18 @@
 >   in stock to ship — Outgoing had nothing to draw on.
 > - **Outgoing**: `noblesse_shipments` + items. Ship deducts stock with the rows
 >   locked and REFUSES an overage rather than flooring at zero; cancel restores
->   and keeps the record; a shipped load is never edited or deleted.
+>   and keeps the record; a shipped load is never *edited*.
+> - **An admin may DELETE a load in any state** (2026-09-08). This relaxed the
+>   older "shipped is cancelled, never deleted" rule, for the case it was
+>   written against: a registration deleted for some lot, leaving an outgoing
+>   load behind that should not exist. Cancel is still right for a real load
+>   that came back — it restores stock AND keeps the record. Delete destroys it.
+>   **The stock rule is the load-bearing part**: restoring is keyed strictly on
+>   `status === 'shipped'`. A draft never deducted; a cancelled load already had
+>   its weight put back, so restoring either INVENTS weight that never left.
+>   Both directions are mutation-tested. The destroyed load is written to
+>   `nti_inventory_history` as `shipment_deleted` with the head and every line,
+>   since after this that snapshot is the only copy.
 > - Phases A+B applied to prod; text columns still authoritative (Phase D — drop
 >   them — not done).
 >

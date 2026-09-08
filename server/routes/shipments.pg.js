@@ -626,27 +626,117 @@ router.post("/shipments/:id/cancel", verifyToken, requireRole("admin"), async (r
   }
 });
 
-// A draft never moved stock, so deleting one destroys nothing. Anything shipped
-// is cancelled, not deleted.
+// Delete an outgoing load outright. ADMIN ONLY, and available in every state.
+//
+// This deliberately relaxes the older rule that a shipped load could only ever
+// be cancelled. Cancel is still the right action nearly always — it restores
+// stock AND leaves the load on the record, so what went out and came back stays
+// visible. Delete is for a load that should never have existed at all.
+//
+// THE PART THAT MUST NOT GO WRONG IS STOCK. Shipping deducts from
+// nti_inventory, so deleting a shipped load without putting that weight back
+// would leave the deduction standing with nothing left to explain it — stock
+// quietly short, and no record of why. So a shipped load restores exactly what
+// cancel restores before it is destroyed.
+//
+// A draft never deducted anything, and a cancelled load already had its weight
+// put back at cancel time. Restoring either would INVENT weight that never
+// left, so the restore is keyed strictly on 'shipped'.
 router.delete("/shipments/:id", verifyToken, requireRole("admin"), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid shipment id" });
+
+  const client = await pool.connect();
   try {
-    const gone = await pool.query(
-      `DELETE FROM noblesse_shipments
-        WHERE shipment_id = $1 AND tenant_id = $2 AND status = 'draft'
-      RETURNING shipment_id`,
+    await client.query("BEGIN");
+
+    // Locked for the same reason ship and cancel lock: two admins pressing at
+    // once must not both restore the same weight.
+    const head = await client.query(
+      `SELECT * FROM noblesse_shipments WHERE shipment_id = $1 AND tenant_id = $2 FOR UPDATE`,
       [id, req.tenantId]
     );
-    if (!gone.rows.length) {
-      return res.status(409).json({
-        error: "Only a draft can be deleted — cancel a shipped load instead",
-      });
+    if (!head.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Shipment not found" });
     }
-    res.json({ deleted: true, shipmentId: id });
+    const shipment = head.rows[0];
+
+    // Read before the delete: the rows cascade away with the shipment, and this
+    // is the only chance to capture them for the audit entry.
+    const items = await client.query(
+      `SELECT si.*, l.lot_number FROM noblesse_shipment_items si
+         JOIN lots l ON l.lot_id = si.lot_id
+        WHERE si.shipment_id = $1 AND si.tenant_id = $2`,
+      [id, req.tenantId]
+    );
+
+    const restoresStock = shipment.status === "shipped";
+    if (restoresStock) {
+      for (const item of items.rows) {
+        if (!item.nti_item_id) continue;
+        await client.query(
+          `UPDATE nti_inventory SET weight = weight + $1 WHERE id = $2 AND tenant_id = $3`,
+          [Number(item.weight), item.nti_item_id, req.tenantId]
+        );
+      }
+    }
+
+    // noblesse_shipment_items and shipment_batches both cascade on
+    // shipment_id, so the lines and the weighing-session links go with it —
+    // and releasing those links is what lets a tied session be deleted after.
+    await client.query(
+      `DELETE FROM noblesse_shipments WHERE shipment_id = $1 AND tenant_id = $2`,
+      [id, req.tenantId]
+    );
+
+    await client.query("COMMIT");
+
+    console.warn(
+      `shipment delete: #${id} (${shipment.status}, ${shipment.destination_name}) ` +
+      `with ${items.rowCount} line(s) by user ${req.userId}` +
+      (restoresStock ? " — stock restored" : "")
+    );
+
+    // Logged after COMMIT and never allowed to fail the request, matching
+    // cancel. nti_inventory_history has no FK to shipments precisely so an
+    // audit row can outlive the thing it describes — which here it always does.
+    if (restoresStock) {
+      for (const item of items.rows) {
+        pool.query(
+          `INSERT INTO nti_inventory_history (tenant_id, action, item_id, lot, snapshot, performed_by)
+           VALUES ($1, 'unshipped', $2, $3, $4, $5)`,
+          [req.tenantId, item.nti_item_id ?? null, item.lot_number,
+           JSON.stringify({ shipmentId: id, weight: item.weight, restored: true,
+                            reason: "shipment deleted" }),
+           req.username]
+        ).catch((err) => console.error("nti history log error:", err.message));
+      }
+    }
+
+    // The load itself, in full. After this the snapshot is the only copy that
+    // exists anywhere, so it carries the head AND every line.
+    pool.query(
+      `INSERT INTO nti_inventory_history (tenant_id, action, item_id, lot, snapshot, performed_by)
+       VALUES ($1, 'shipment_deleted', NULL, NULL, $2, $3)`,
+      [req.tenantId,
+       JSON.stringify({ shipment, items: items.rows, stockRestored: restoresStock }),
+       req.username]
+    ).catch((err) => console.error("nti history log error:", err.message));
+
+    res.json({
+      deleted: true,
+      shipmentId: id,
+      status: shipment.status,
+      itemsDeleted: items.rowCount,
+      stockRestored: restoresStock,
+    });
   } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
     console.error("delete shipment:", err);
     res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
   }
 });
 
