@@ -6,8 +6,9 @@
 // nti_inventory. Completing one recorded `output_weight` on the ORDER and
 // stopped there — nothing ever went back into stock. So once NTI had processed
 // a lot there was nothing in inventory to ship, and Outgoing had nothing to
-// draw on. (NtiInventoryTab already worked around it, reconstructing in/out and
-// yield from the orders because the stock row itself had gone to zero.)
+// draw on. (The old NTI inventory screen worked around it, reconstructing
+// in/out and yield from the orders because the stock row itself had gone to
+// zero.)
 //
 // The output is now its own nti_inventory row: `stage = 'processed'`, carrying
 // the SAME lot_id as the raw it was cut from. Same lot on and off the line —
