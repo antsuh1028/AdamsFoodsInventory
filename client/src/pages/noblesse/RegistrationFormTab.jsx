@@ -650,6 +650,9 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
 
   const filteredForms = forms.filter((f) => !statusFilter || f.status === statusFilter);
 
+  // Pacific business date, never the browser's local one — see shared.jsx.
+  const todayStr = today();
+
   return (
     <Box>
       <Flex justify="space-between" align={{ base: "stretch", md: "center" }} mb={4}
@@ -718,16 +721,28 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
             </tr>
           </thead>
           <tbody>
-            {filteredForms.map((f, i) => (
+            {filteredForms.map((f, i) => {
+              // Today's intake in green, matching the weight-manifest list and
+              // the All Forms window. This table sets its hover colour
+              // imperatively, so the two states are computed together — hovering
+              // a green row and leaving it must not repaint it grey.
+              const isToday = f.dateReceived === todayStr;
+              const rowBg = isToday
+                ? "rgb(240, 255, 244)"                                   // green.50
+                : i % 2 === 0 ? "white" : "rgb(245, 245, 245)";
+              const rowHoverBg = isToday
+                ? "rgb(198, 246, 213)"                                   // green.100
+                : i % 2 === 0 ? "rgb(245, 245, 245)" : "rgb(230, 230, 230)";
+              return (
               <React.Fragment key={f.id}>
                 <tr
                   style={{
-                    backgroundColor: i % 2 === 0 ? "white" : "rgb(245, 245, 245)",
+                    backgroundColor: rowBg,
                     cursor: "pointer",
                     transition: "background-color 0.2s",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? "rgb(245, 245, 245)" : "rgb(230, 230, 230)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? "white" : "rgb(245, 245, 245)"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = rowHoverBg; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = rowBg; }}
                   onDoubleClick={() => {
                     if (expandedId === f.id) {
                       setExpandedId(null);
@@ -736,7 +751,11 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                     }
                   }}
                 >
-                  <Td fontWeight="medium" color="blue.700">
+                  {/* A green left edge makes today's intake scannable down the
+                      column without reading a single date. */}
+                  <Td fontWeight="medium" color="blue.700"
+                    borderLeft={isToday ? "4px solid" : undefined}
+                    borderLeftColor={isToday ? "green.500" : undefined}>
                     <Flex align="center" gap={2}>
                       {/* Inside the first cell rather than its own column, so
                           the expanded row's colSpan does not have to change. */}
@@ -788,7 +807,16 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                   <Td textAlign="right" style={{ fontVariantNumeric: "tabular-nums" }}>
                     {f.totalQuantity || "—"}
                   </Td>
-                  <Td>{fmtDate(f.dateReceived)}</Td>
+                  <Td>
+                    <Flex align="center" gap={2}>
+                      <Text as="span">{fmtDate(f.dateReceived)}</Text>
+                      {isToday && (
+                        <Badge colorScheme="green" fontSize="9px" px={1.5} borderRadius="full">
+                          TODAY
+                        </Badge>
+                      )}
+                    </Flex>
+                  </Td>
                   <Td>
                     <Menu>
                       <MenuButton
@@ -878,7 +906,8 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                   </tr>
                 )}
               </React.Fragment>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         </Box>

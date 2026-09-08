@@ -6,7 +6,7 @@ import {
   Drawer, DrawerOverlay, DrawerContent, DrawerHeader, DrawerFooter,
   Stack, Divider, useDisclosure,
 } from "@chakra-ui/react";
-import { RepeatIcon, WarningIcon, HamburgerIcon } from "@chakra-ui/icons";
+import { RepeatIcon, WarningIcon, HamburgerIcon, CloseIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
@@ -58,6 +58,11 @@ const NoblesseScreen = () => {
   );
 
   const [receipts, setReceipts]           = useState([]);
+  // Weighed, closed, and on no registration form yet — the work waiting on
+  // someone. Drives the tab badge and the notice below the tabs.
+  const [unregistered, setUnregistered]   = useState([]);
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
+  const [tabIndex, setTabIndex]           = useState(0);
   const [ntiInventory, setNtiInventory]   = useState([]);
   const [procOrders, setProcOrders]       = useState([]);
   const [procError, setProcError]         = useState(null);
@@ -87,12 +92,16 @@ const NoblesseScreen = () => {
       // there should not take Incoming Records and the manifests down with it.
       // Tolerated, NOT swallowed — procError renders in the Processing panel,
       // so an empty tab is never mistaken for "no orders".
-      const [receiptsRes, invRes, ordersRes] = await Promise.all([
+      // The unregistered list is tolerated the same way: it is a prompt, not
+      // the screen's content, and losing it must not blank Incoming Records.
+      const [receiptsRes, invRes, ordersRes, unregRes] = await Promise.all([
         axiosInstance.get("/noblesse-receipts"),
         SHOW_PROCESSING ? axiosInstance.get("/nti-inventory").catch((e) => e) : null,
         SHOW_PROCESSING ? axiosInstance.get("/noblesse-proc-orders").catch((e) => e) : null,
+        axiosInstance.get("/box-batches/unregistered").catch((e) => e),
       ]);
       setReceipts(receiptsRes.data || []);
+      if (!(unregRes instanceof Error)) setUnregistered(unregRes.data || []);
 
       if (SHOW_PROCESSING) {
         const failed = [invRes, ordersRes].find((r) => r instanceof Error);
@@ -151,6 +160,11 @@ const NoblesseScreen = () => {
   // Orders still open. Badged so the tab says there is work outstanding
   // without anyone having to open it.
   const pendingProcCount = procOrders.filter((o) => o.status === "pending").length;
+
+  // Chakra pairs tabs to panels BY POSITION and the Processing tab is
+  // conditional, so this has to be derived from the same flag that hides it.
+  // Hardcoding 2 lands on Weight Manifests in a production build.
+  const REGISTRATION_TAB = SHOW_PROCESSING ? 2 : 1;
 
   if (loading) {
     return (
@@ -221,9 +235,17 @@ const NoblesseScreen = () => {
       )}
 
       <Flex flex={1} overflow="hidden" direction="column" p={4} gap={0}>
+        {/* Controlled so the notice below can send someone to the right tab.
+            The index it uses is derived, never hardcoded — see REGISTRATION_TAB. */}
         <Tabs colorScheme="blue" variant="line" size="sm"
+          index={tabIndex} onChange={setTabIndex}
           display="flex" flexDirection="column" flex={1} overflow="hidden">
-          <TabList mb={3} gap={2} flexWrap="wrap" flexShrink={0}>
+          {/* The notice rides on the tab row itself. TabList keeps only Tab
+              children — Chakra registers those as descendants to pair them with
+              panels by position, so a stray child in there is asking for the
+              off-by-one this file already carries a warning about. */}
+          <Flex align="center" gap={3} mb={3} flexShrink={0} flexWrap="wrap">
+          <TabList gap={2} flexWrap="wrap" flex="1 1 auto">
             <Tab>
               Incoming Records
               {receipts.length > 0 && <Badge ml={2} colorScheme="blue" borderRadius="full">{receipts.length}</Badge>}
@@ -241,10 +263,66 @@ const NoblesseScreen = () => {
                 )}
               </Tab>
             )}
-            <Tab>Registration Forms</Tab>
+            <Tab>
+              Registration Forms
+              {unregistered.length > 0 && (
+                <Badge ml={2} colorScheme="purple" borderRadius="full">{unregistered.length}</Badge>
+              )}
+            </Tab>
             <Tab>Weight Manifests</Tab>
             <Tab>Outgoing</Tab>
           </TabList>
+
+          {/* Weighed lots nobody has registered yet. Compact, because it sits on
+              the tab row — the lots themselves are in the tooltip so the row
+              cannot grow and push the panels down. Dismissible (the answer is
+              sometimes "not today") but it returns on reload, since the work
+              has not gone away. */}
+          {unregistered.length > 0 && !noticeDismissed && (
+            <Tooltip
+              hasArrow
+              placement="bottom-end"
+              label={
+                <Box>
+                  {unregistered.slice(0, 6).map((b) => (
+                    <Text key={b.batch_id} fontSize="xs">
+                      {b.lot_number || `Session ${b.batch_id}`}
+                      {b.vendor ? ` · ${b.vendor}` : ""}
+                      {` · ${b.box_count} box${b.box_count === 1 ? "" : "es"}`}
+                      {` · ${Number(b.total).toFixed(2)} lb`}
+                      {b.manifest_name ? ` · manifest "${b.manifest_name}"` : ""}
+                    </Text>
+                  ))}
+                  {unregistered.length > 6 && (
+                    <Text fontSize="xs" opacity={0.8}>
+                      …and {unregistered.length - 6} more
+                    </Text>
+                  )}
+                </Box>
+              }
+            >
+              <Flex align="center" gap={2} flexShrink={0}
+                bg="purple.50" border="1px solid" borderColor="purple.200"
+                borderRadius="full" pl={3} pr={1.5} py={1}>
+                <WarningIcon color="purple.500" boxSize={3} />
+                <Text fontSize="xs" fontWeight="600" color="purple.800" whiteSpace="nowrap">
+                  {unregistered.length} weighed lot{unregistered.length === 1 ? "" : "s"} need
+                  {unregistered.length === 1 ? "s" : ""} registering
+                </Text>
+                <Button size="xs" colorScheme="purple" borderRadius="full"
+                  onClick={() => setTabIndex(REGISTRATION_TAB)}>
+                  Register
+                </Button>
+                <IconButton
+                  aria-label="Dismiss until reload"
+                  icon={<CloseIcon boxSize={2} />}
+                  size="xs" variant="ghost" colorScheme="purple" borderRadius="full"
+                  onClick={() => setNoticeDismissed(true)}
+                />
+              </Flex>
+            </Tooltip>
+          )}
+          </Flex>
 
           <Box bg="white" borderRadius="lg" boxShadow="sm" border="1px" borderColor="gray.200"
             flex={1} overflow="hidden" display="flex" flexDirection="column">

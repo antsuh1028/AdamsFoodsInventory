@@ -863,6 +863,57 @@ router.get("/box-batches", verifyToken, async (req, res) => {
   }
 });
 
+// Weighed and closed, but on no registration form — the work that is sitting
+// waiting for someone to register it.
+//
+// A session belongs to exactly ONE form (POST .../box-batches refuses a second
+// claim), so "has no registration_form_batches row" is the whole definition.
+// Open sessions are excluded: they are still being scanned and there is nothing
+// final to register yet.
+//
+// MUST be declared before "/box-batches/:id" below. Express matches in
+// declaration order, so the other way round "unregistered" is read as an :id,
+// fails Number.isInteger and answers 400.
+router.get("/box-batches/unregistered", verifyToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      // Independent scalar subqueries, never a second join onto batch_items —
+      // joining it for the count and again for the total cross-products them.
+      `SELECT b.batch_id, b.lot_number, b.vendor, b.item_description, b.closed_at,
+              (SELECT COUNT(*)::int
+                 FROM batch_items i
+                WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL) AS box_count,
+              COALESCE((SELECT SUM(${weightInLb("i")})::text
+                 FROM batch_items i
+                WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL), '0') AS total,
+              -- Named if it was merged, so the notice does not list sessions
+              -- the operator only ever sees as one combined manifest.
+              (SELECT g.name FROM manifest_group_batches m
+                 JOIN manifest_groups g ON g.group_id = m.group_id
+                WHERE m.batch_id = b.batch_id LIMIT 1) AS manifest_name
+         FROM box_batches b
+        WHERE b.tenant_id = $1
+          AND b.status = 'closed'
+          AND NOT EXISTS (
+                SELECT 1 FROM registration_form_batches r
+                 WHERE r.batch_id = b.batch_id AND r.tenant_id = $1)
+          -- An empty session is a start pressed by accident, not work waiting
+          -- on anyone. Prod has one of these (#26, no lot, no boxes) and it
+          -- would have nagged from this notice permanently.
+          AND EXISTS (
+                SELECT 1 FROM batch_items i
+                 WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL)
+        ORDER BY b.closed_at DESC NULLS LAST, b.batch_id DESC
+        LIMIT 50`,
+      [req.tenantId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("list unregistered box batches:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 // One batch and every box on it — what the weight manifest is printed from.
 router.get("/box-batches/:id", verifyToken, async (req, res) => {
   const batchId = Number(req.params.id);

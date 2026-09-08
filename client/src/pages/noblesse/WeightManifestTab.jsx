@@ -47,6 +47,37 @@ const REMOVAL_COLOR = {
   manifest_group_deleted: "gray",
 };
 
+// ── "You have not looked at this yet" ────────────────────────────────────────
+// Which manifest rows THIS BROWSER has opened. Per-device on purpose: the
+// question is "have I seen this", not "has anyone", so one person expanding a
+// session must not clear the marker for everyone else.
+//
+// Every access is wrapped. Safari in private mode throws on localStorage rather
+// than returning null, and a shared scanning iPad is exactly where that bites.
+// A throw here must cost the highlight, never the tab.
+const SEEN_KEY = "noblesse.manifestSeen.v1";
+
+// null means "nothing has ever been stored", which is different from "stored
+// and empty" — the first case seeds, the second does not.
+const readSeen = () => {
+  try {
+    const raw = window.localStorage.getItem(SEEN_KEY);
+    return raw ? new Set(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeSeen = (set) => {
+  try {
+    // Capped so this cannot grow without bound. The oldest keys fall off and at
+    // worst an ancient session highlights once more, which is harmless.
+    window.localStorage.setItem(SEEN_KEY, JSON.stringify([...set].slice(-500)));
+  } catch {
+    // Private mode: the highlight simply does not persist across reloads.
+  }
+};
+
 const totalsText = (totals) =>
   Array.isArray(totals) && totals.length
     ? totals.map((t) => `${t.total} ${t.unit}`).join("  ·  ")
@@ -262,6 +293,21 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   // One entry open at a time: these expand into a full box table, and several
   // open at once turns the window into a scroll of tables with no context.
   const [expandedRemovalId, setExpandedRemovalId] = useState(null);
+
+  const [seen, setSeen] = useState(() => readSeen() || new Set());
+  // Whether this device has ever stored a seen-set. Read once, at mount: after
+  // the first write it must not flip back, or the seeding effect would re-run
+  // and swallow genuinely new rows.
+  const seededRef = useRef(readSeen() !== null);
+
+  const markSeen = useCallback((key) => {
+    setSeen((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev).add(key);
+      writeSeen(next);
+      return next;
+    });
+  }, []);
   const [deletingBatch, setDeletingBatch] = useState(false);
   const cancelDeleteBatchRef = useRef(null);
   const [merging, setMerging] = useState(false);
@@ -314,6 +360,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   // which is the thing the merge exists to produce.
   const toggleGroup = async (g) => {
     if (expandedGroupId === g.group_id) { setExpandedGroupId(null); return; }
+    markSeen(`g${g.group_id}`);   // opening it IS the interaction
     setExpandedGroupId(g.group_id);
     if (groupDetails[g.group_id]) return;
     try {
@@ -328,6 +375,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
 
   const toggleExpand = async (batch) => {
     if (expandedId === batch.batch_id) { setExpandedId(null); return; }
+    markSeen(`b${batch.batch_id}`);   // opening it IS the interaction
     setExpandedId(batch.batch_id);
     if (details[batch.batch_id]) return;      // already loaded
     setLoadingId(batch.batch_id);
@@ -640,6 +688,40 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
   }, [groups, visible, matchesFilters]);
 
+  // Counted over `rows` (what is actually on screen) rather than everything
+  // loaded, so the number always matches the dots someone can point at.
+  const newCount = useMemo(
+    () => rows.reduce((n, r) => (seen.has(r.key) ? n : n + 1), 0),
+    [rows, seen]
+  );
+
+  const markAllSeen = useCallback(() => {
+    setSeen((prev) => {
+      const next = new Set(prev);
+      rows.forEach((r) => next.add(r.key));
+      writeSeen(next);
+      return next;
+    });
+  }, [rows]);
+
+  // First run on this device: treat everything already on screen as seen.
+  // Without this the very first visit marks the entire history NEW, which
+  // teaches people to ignore the marker on day one.
+  //
+  // Seeded off `batches`/`groups` rather than `rows`, so an active filter at
+  // the moment of seeding cannot leave the rows it hides looking new later.
+  useEffect(() => {
+    if (seededRef.current) return;
+    if (batches.length === 0 && groups.length === 0) return;   // nothing loaded yet
+    seededRef.current = true;
+    const all = new Set([
+      ...batches.map((b) => `b${b.batch_id}`),
+      ...groups.map((g) => `g${g.group_id}`),
+    ]);
+    setSeen(all);
+    writeSeen(all);
+  }, [batches, groups]);
+
   // The denominator for the count beside the filters. A merged session is
   // represented by its manifest, so counting it again would read "2 of 7" on a
   // tab that is showing everything it has.
@@ -690,6 +772,17 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
           <Text fontSize="sm" color="gray.500">
             {rows.length}{rows.length !== totalRows && ` of ${totalRows}`}
           </Text>
+          {newCount > 0 && (
+            <Flex align="center" gap={1}>
+              <Badge colorScheme="blue" borderRadius="full" fontSize="10px">
+                {newCount} new
+              </Badge>
+              <Button size="xs" variant="ghost" colorScheme="blue"
+                onClick={markAllSeen}>
+                Mark all seen
+              </Button>
+            </Flex>
+          )}
         </Flex>
 
         <Flex gap={2} wrap="wrap">
@@ -805,7 +898,19 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                               onClick={(e) => { e.stopPropagation(); toggleGroup(g); }}
                               onDoubleClick={(e) => e.stopPropagation()}
                             />
+                            {/* The teal left edge is what marks a row as a
+                                merged manifest, so an unseen one takes the dot
+                                and the pill and leaves that edge alone. */}
+                            {!seen.has(row.key) && (
+                              <Box as="span" width="7px" height="7px" borderRadius="full"
+                                bg="blue.500" flexShrink={0} title="Not opened on this device yet" />
+                            )}
                             <Text as="span">{g.name || g.lot_number || `Manifest ${g.group_id}`}</Text>
+                            {!seen.has(row.key) && (
+                              <Badge colorScheme="blue" fontSize="9px" px={1.5} borderRadius="full">
+                                NEW
+                              </Badge>
+                            )}
                           </Flex>
                         </Box>
                         <Box as="td" px={3} py={2} fontSize="sm" color="gray.700"
@@ -872,6 +977,11 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                 const b = row.batch;
                 const open = expandedId === b.batch_id;
                 const detail = details[b.batch_id];
+                // Composed with today's green rather than competing with it: a
+                // row is often BOTH. Today keeps the background and the left
+                // edge; unseen adds the dot and the NEW pill, and only claims
+                // the left edge when today has not.
+                const isNew = !seen.has(row.key);
                 return (
                   <React.Fragment key={row.key}>
                     <Box as="tr"
@@ -892,8 +1002,8 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                       </Box>
                       <Box as="td" px={3} py={2} fontSize="sm" fontWeight="600" color="blue.700"
                         borderBottom="1px solid" borderColor="gray.100"
-                        borderLeft={isToday(b) ? "4px solid" : undefined}
-                        borderLeftColor={isToday(b) ? "green.500" : undefined}>
+                        borderLeft={isToday(b) || isNew ? "4px solid" : undefined}
+                        borderLeftColor={isToday(b) ? "green.500" : isNew ? "blue.400" : undefined}>
                         <Flex align="center" gap={2}>
                           <IconButton
                             aria-label={open ? "Collapse" : "Expand"}
@@ -904,7 +1014,18 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                             onClick={(e) => { e.stopPropagation(); toggleExpand(b); }}
                             onDoubleClick={(e) => e.stopPropagation()}
                           />
+                          {/* A dot rather than more colour on the row: a NEW row
+                              that is also today's must still read as today's. */}
+                          {isNew && (
+                            <Box as="span" width="7px" height="7px" borderRadius="full"
+                              bg="blue.500" flexShrink={0} title="Not opened on this device yet" />
+                          )}
                           <Text as="span">{b.lot_number || `Batch ${b.batch_id}`}</Text>
+                          {isNew && (
+                            <Badge colorScheme="blue" fontSize="9px" px={1.5} borderRadius="full">
+                              NEW
+                            </Badge>
+                          )}
                         </Flex>
                       </Box>
                       <Box as="td" px={3} py={2} fontSize="sm" color="gray.700"
