@@ -215,7 +215,7 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
             <EditableField label="Lot #" value={heading.lotNumber} onChange={setField("lotNumber")} placeholder="N26229-01" />
             <EditableField label="Vendor" value={heading.vendor} onChange={setField("vendor")} />
             <EditableField label="Item" value={heading.itemDescription} onChange={setField("itemDescription")} />
-            <EditableField label="Ship to / BOL" value={heading.shipTo} onChange={setField("shipTo")} />
+            <EditableField label="Vendor Lot #/IC#" value={heading.shipTo} onChange={setField("shipTo")} />
             {/* Read from the sheet and checked against its own totals, so not
                 open to editing — that is the guarantee the import rests on. */}
             <ReadOnlyField label="Date" value={preview.date || "—"} />

@@ -470,7 +470,9 @@ const BoxScanner = ({ isOpen, onClose }) => {
                 onChange={setField("itemDescription")} placeholder="HUMERUS BONE" />
             </Box>
             <Box flex="1 1 150px">
-              <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Ship to / BOL</Text>
+              {/* Still stored as bill_of_lading — the column is unchanged, only
+                  what the operator is being asked for. */}
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Vendor Lot #/IC#</Text>
               <Input {...rawInputProps} size="md" value={header.billOfLading}
                 onChange={setField("billOfLading")} />
             </Box>
@@ -601,7 +603,7 @@ const BoxScanner = ({ isOpen, onClose }) => {
                   ["Lot #", header.lotNumber.trim()],
                   ["Vendor", header.vendor.trim()],
                   ["Item description", header.itemDescription.trim()],
-                  ["Ship to / BOL", header.billOfLading.trim()],
+                  ["Vendor Lot #/IC#", header.billOfLading.trim()],
                 ].map(([label, value], i) => (
                   <Flex key={label} px={3} py={2} gap={{ base: 0, sm: 3 }}
                     direction={{ base: "column", sm: "row" }}

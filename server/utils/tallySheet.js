@@ -95,7 +95,19 @@ const labelledValue = (rows, ...labels) => {
   // eager — "Vendor" would happily match a "Vendor Lot" heading.
   const exact = scan((cell) => wanted.includes(cell));
   if (exact !== null) return exact;
-  return scan((cell) => wanted.some((w) => w.length >= 6 && cell.includes(w)));
+  return scan((cell) => {
+    // The eagerness this file warned about above is now real: the form's
+    // "Vendor Lot #/IC#" cell CONTAINS "Vendor", so on a sheet whose own Vendor
+    // label had been overtyped, containment would read the vendor's lot as the
+    // vendor. A cell that is itself some other field's label is therefore never
+    // matched by containment.
+    //
+    // The combined "Ship To  Bill of Lading" cell is not caught by this: it is
+    // listed among the labels wanted for that field, so the exact pass above
+    // returns it and it never reaches here.
+    if (KNOWN_LABELS.has(cell) && !wanted.includes(cell)) return false;
+    return wanted.some((w) => w.length >= 6 && cell.includes(w));
+  });
 };
 
 const findRowIndex = (rows, predicate) => rows.findIndex((r) => r && predicate(r));
@@ -104,8 +116,14 @@ const findRowIndex = (rows, predicate) => rows.findIndex((r) => r && predicate(r
 // its label and the next one, so without this the scan walks straight past the
 // empty cell and returns the following LABEL as the value — "Ship To" on a
 // sheet with no ship-to reads as "Lot#".
+//
+// `norm` strips punctuation and case, so one entry covers every way the label
+// gets typed: "Vendor Lot #/IC#", "Vendor Lot#/IC#" and "VENDOR LOT # / IC #"
+// all normalise to "vendorlotic". The old Ship To / Bill of Lading wording is
+// kept — the 2026 sheets already in hand still carry it and must keep importing.
 const KNOWN_LABELS = new Set([
   "vendor", "date", "shipto", "billoflading", "shiptobilloflading",
+  "vendorlotic", "vendorslotic",
   "lot", "lotnumber", "itemdescription", "item", "boxpcs", "total",
   "totalboxes", "subtotal", "assembledby", "checkedby", "memo",
   "noblessetrading",
@@ -245,7 +263,13 @@ const parseTallySheet = (rows) => {
   return {
     lotNumber: labelledValue(rows, "Lot#", "Lot"),
     vendor: labelledValue(rows, "Vendor"),
-    shipTo: labelledValue(rows, "Ship To", "Bill of Lading"),
+    // One field, four spellings. The form's label became "Vendor Lot #/IC#",
+    // but the sheets already in hand say "Ship To" / "Bill of Lading" — often
+    // crammed into a single cell — and those must keep importing. The combined
+    // cell is listed explicitly so the exact pass catches it rather than
+    // leaving it to containment.
+    shipTo: labelledValue(rows, "Vendor Lot #/IC#", "Vendor's Lot/IC#",
+      "Ship To", "Bill of Lading", "Ship To Bill of Lading"),
     itemDescription: labelledValue(rows, "Item Description"),
     date: labelledValue(rows, "Date"),
     weights,

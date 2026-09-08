@@ -62,8 +62,11 @@ const totalsText = (totals) =>
 const DETAIL_LABELS = {
   batch_id: "Session #", item_id: "Box #", group_id: "Manifest #",
   lot_number: "Lot #", lot_id: "Lot record", name: "Manifest name",
-  vendor: "Vendor", item_description: "Item", ship_to: "Ship to",
-  bill_of_lading: "Bill of lading", source: "Source", status: "Status",
+  // Both columns feed the one line on the printed manifest, and both now mean
+  // the vendor's lot. Nulls are dropped from the grid, so in practice only the
+  // one a session actually carries is shown.
+  vendor: "Vendor", item_description: "Item", ship_to: "Vendor Lot #/IC#",
+  bill_of_lading: "Vendor Lot #/IC#", source: "Source", status: "Status",
   created_at: "Opened", closed_at: "Closed", scanned_at: "Scanned",
   weight: "Weight", weight_unit: "Unit", original_weight: "Weight on the label",
   converted_from: "Converted from", gtin: "GTIN", production_date: "Production date",
@@ -690,7 +693,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         </Flex>
 
         <Flex gap={2} wrap="wrap">
-          {selected.size >= 2 && (
+          {selected.size >= 2 && (  
             <Button size="xs" colorScheme="teal" onClick={openMerge}>
               Combine {selected.size} sessions
             </Button>
@@ -1008,7 +1011,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                     ["lotNumber", "Lot #", "lot_number"],
                     ["vendor", "Vendor", "vendor"],
                     ["itemDescription", "Item description", "item_description"],
-                    ["billOfLading", "Ship to / BOL", "bill_of_lading"],
+                    ["billOfLading", "Vendor Lot #/IC#", "bill_of_lading"],
                   ].map(([key, label, conflictKey]) => {
                     const c = mergeHeader.conflicts[conflictKey];
                     return (

@@ -115,7 +115,9 @@ const printWeightManifest = ({
           table.head { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
           table.head td { padding: 2px 4px; font-size: 12px; vertical-align: bottom; }
           .lbl { width: 90px; white-space: nowrap; }
-          .lbl-sm { font-size: 8px; line-height: 1.1; }
+          /* One line, but wider than 90px at the 12px the other labels use, and
+             .lbl is nowrap — at full size it would push into the value cell. */
+          .lbl-md { font-size: 10px; }
           .val { border-bottom: 1px solid #000; text-align: center; }
           .val-r { border-bottom: 1px solid #000; text-align: center; width: 170px; }
 
@@ -162,7 +164,7 @@ const printWeightManifest = ({
               <td class="val-r">${esc(date || "")}</td>
             </tr>
             <tr>
-              <td class="lbl lbl-sm">Ship To<br/>Bill of Lading</td>
+              <td class="lbl lbl-md">Vendor Lot #/IC#</td>
               <td class="val">${esc(shipTo || billOfLading || "")}</td>
               <td class="lbl" style="width:50px">Lot#</td>
               <td class="val-r">${esc(lotNumber || "")}</td>
