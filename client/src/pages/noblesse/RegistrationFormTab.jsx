@@ -114,7 +114,26 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
   if (!draft) return null;
   const set = (key) => (e) => setDraft({ ...draft, [key]: upper(e.target.value) });
   const setCheck = (key) => (e) => setDraft({ ...draft, [key]: e.target.checked });
-  const remainingCases = calculateRemainingCases(draft);
+  const tally = caseTally(draft);
+  const remainingCases = tally ? tally.remaining : null;
+
+  // Every case arrived is accounted for — offer to close the form, do not close
+  // it. Three things have to hold, and each rules out a way this would be wrong:
+  //
+  //   tally            total_quantity parsed to a number. It is free text, and
+  //                    parseFloat takes a LEADING number — "24 cases" is 24, so
+  //                    that form works. It is "TBD" or "twenty four", with no
+  //                    leading digits, that yields nothing and stays silent.
+  //   processed > 0    nothing has been done yet is ALSO a remainder of zero
+  //                    (a blank form where total is "0"), and that is not done.
+  //   not completed    nothing to suggest if it already is.
+  //
+  // Suggested rather than applied because completing is what drops a form out
+  // of the default In Progress list, and this recomputes on every keystroke —
+  // correcting 12 to 2 to 22 passes through zero on the way.
+  const suggestComplete =
+    tally !== null && tally.remaining === 0 && tally.processed > 0
+    && draft.status !== "completed";
 
   return (
     <FloatingWindow
@@ -368,13 +387,23 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                 {/* Shown in red when it goes negative rather than hidden or
                     clamped: more cases processed than arrived means a figure
                     somewhere is wrong, and that is worth seeing. */}
-                <Text
-                  fontSize="sm"
-                  fontWeight="medium"
-                  color={remainingCases !== null && remainingCases < 0 ? "red.600" : "gray.700"}
-                >
-                  {remainingCases === null ? "—" : remainingCases}
-                </Text>
+                <Flex align="center" gap={2} wrap="wrap">
+                  <Text
+                    fontSize="sm"
+                    fontWeight="medium"
+                    color={remainingCases !== null && remainingCases < 0 ? "red.600" : "gray.700"}
+                  >
+                    {remainingCases === null ? "—" : remainingCases}
+                  </Text>
+                  {suggestComplete && (
+                    <Button size="xs" colorScheme="green" variant="outline"
+                      height="20px" fontSize="10px" px={2}
+                      title="All cases arrived have been processed"
+                      onClick={() => setDraft({ ...draft, status: "completed" })}>
+                      Mark complete
+                    </Button>
+                  )}
+                </Flex>
               </Box>
             </SheetField>
 
@@ -489,7 +518,10 @@ const calculateYield = (draft) => {
 // total_quantity is a free-text column and sometimes carries wording rather
 // than a bare number, so anything that will not parse yields no figure at all
 // rather than a confidently wrong one.
-const calculateRemainingCases = (draft) => {
+// Returns both halves, not just the difference: "nothing left to do" and
+// "nothing done yet" both read as a remainder of zero, and only the processed
+// figure tells them apart.
+const caseTally = (draft) => {
   if (!draft) return null;
   const total = parseFloat(draft.totalQuantity);
   if (isNaN(total)) return null;
@@ -500,7 +532,7 @@ const calculateRemainingCases = (draft) => {
       return sum + (isNaN(n) ? 0 : n);
     }, 0);
 
-  return total - processed;
+  return { total, processed, remaining: total - processed };
 };
 
 export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = false, refreshSignal = 0 }) => {

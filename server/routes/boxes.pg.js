@@ -900,7 +900,20 @@ router.get("/box-batches", verifyToken, async (req, res) => {
                      WHERE batch_id = b.batch_id AND voided_at IS NULL
                     HAVING COUNT(*) > 0
                   ) g
-              ), '[]'::json) AS totals
+              ), '[]'::json) AS totals,
+              -- The registration form already holding this session, if any.
+              -- A session belongs to exactly ONE form (the tie route refuses a
+              -- second claim), so this is at most one row — but it is a scalar
+              -- subquery, not a join, for the same fan-out reason as above.
+              --
+              -- Exposed so the picker can drop sessions that are already spoken
+              -- for. Before this it offered them, and choosing one came back
+              -- 409 SESSION_ALREADY_TIED — the refusal was correct and the
+              -- offer should never have been made.
+              (SELECT r.form_id
+                 FROM registration_form_batches r
+                WHERE r.batch_id = b.batch_id AND r.tenant_id = $1
+                LIMIT 1) AS form_id
          FROM box_batches b
         WHERE b.tenant_id = $1
         ORDER BY b.created_at DESC

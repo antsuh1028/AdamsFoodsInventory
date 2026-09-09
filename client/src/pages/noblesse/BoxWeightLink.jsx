@@ -4,7 +4,7 @@ import {
 } from "@chakra-ui/react";
 import axiosInstance from "../../utils/axiosInstance";
 import { toDisplay, toDisplayHundredths } from "../../utils/weight";
-import { fmtDate } from "./shared";
+import { fmtDate, today } from "./shared";
 
 // Ties weighing sessions to a registration form.
 //
@@ -102,18 +102,37 @@ const BoxWeightLink = ({
   const options = useMemo(() => {
     const lot = String(lotNumber || "").trim().toUpperCase();
     const formLotId = draft?.lotId ?? null;
+    const todayStr = today();
     return available
       .filter((b) => !linkedIds.has(b.batch_id))
+      // Already claimed by another registration form. The tie route refuses a
+      // second claim with 409 SESSION_ALREADY_TIED, so offering these could
+      // only ever end in an error — the picker now shows what can actually be
+      // picked. Sessions tied to THIS form are excluded above and listed
+      // separately as the ones already on it.
+      .filter((b) => b.form_id == null)
       .map((b) => ({
         ...b,
         suggested: (formLotId != null && b.lot_id === formLotId)
           || (formLotId == null && Boolean(lot)
               && String(b.lot_number || "").toUpperCase().includes(lot)),
+        // Weighed today — the arrivals someone is most likely registering right
+        // now. Same green as the manifest list and the forms table, so the
+        // colour means one thing across the app.
+        isToday: String(b.created_at).slice(0, 10) === todayStr,
       }))
       .sort((a, b) => (b.suggested ? 1 : 0) - (a.suggested ? 1 : 0));
   }, [available, linkedIds, lotNumber, draft]);
 
   const suggested = useMemo(() => options.filter((b) => b.suggested), [options]);
+
+  // Hidden because another form already claims them. Counted so the empty
+  // state can SAY that — a list that silently filters itself down to nothing
+  // reads as "there is no work here", which is the opposite of the truth.
+  const tiedElsewhere = useMemo(
+    () => available.filter((b) => b.form_id != null && !linkedIds.has(b.batch_id)).length,
+    [available, linkedIds]
+  );
 
   const mutate = async (run) => {
     setLoading(true);
@@ -308,15 +327,18 @@ const BoxWeightLink = ({
 
       {options.length === 0 ? (
         <Text fontSize="xs" color="gray.500">
-          {available.length
-            ? "Every weighing session is already tied to this form."
-            : "No weighing sessions to tie yet."}
+          {!available.length
+            ? "No weighing sessions to tie yet."
+            : tiedElsewhere > 0
+              ? `Nothing left to tie. ${tiedElsewhere} weighing session${tiedElsewhere === 1 ? " is" : "s are"} ` +
+                `on another registration form and cannot be tied twice.`
+              : "Every weighing session is already tied to this form."}
         </Text>
       ) : (
         <>
           <Flex justify="space-between" align="baseline" mb={1} gap={2} wrap="wrap">
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
-              Tie weighing sessions
+              Tie lot
             </Text>
             {suggested.length > 0 && (
               <Button size="xs" variant="link" colorScheme="blue"
@@ -341,9 +363,15 @@ const BoxWeightLink = ({
                   {b.suggested && (
                     <Text as="span" color="blue.500" title="Lot matches this form">★</Text>
                   )}
-                  <Text as="span" fontWeight="600" color="blue.700">
+                  <Text as="span" fontWeight="600"
+                    color={b.isToday ? "green.700" : "blue.700"}>
                     {b.lot_number || `Batch ${b.batch_id}`}
                   </Text>
+                  {b.isToday && (
+                    <Badge colorScheme="green" fontSize="9px" px={1.5} borderRadius="full">
+                      TODAY
+                    </Badge>
+                  )}
                   {b.vendor && <Text as="span" color="gray.600">{b.vendor}</Text>}
                   <Text as="span" color="gray.500" fontSize="xs">
                     {b.box_count} box{b.box_count === 1 ? "" : "es"}
@@ -355,7 +383,7 @@ const BoxWeightLink = ({
 
           <Button size="sm" colorScheme="blue" isDisabled={picking.size === 0}
             onClick={() => link([...picking])}>
-            {picking.size > 1 ? `Tie ${picking.size} sessions` : "Tie session"}
+            {picking.size > 1 ? `Tie ${picking.size} lots` : "Tie lot"}
           </Button>
         </>
       )}
