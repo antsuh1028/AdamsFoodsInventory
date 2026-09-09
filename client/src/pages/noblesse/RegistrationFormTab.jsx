@@ -30,11 +30,12 @@ const PROCESSING_TYPES = [
 
 const emptyDraft = () => ({
   id: null,
-  lotNumber: "", lotId: null, pendingBatchIds: [], formDate: "",
+  lotNumber: "", lotId: null, pendingBatchIds: [],
   // Product is registered when it arrives, so "now" is right far more often
-  // than blank. Both stay editable, and an existing form always loads its own
-  // stored values over these.
-  dateReceived: today(), timeReceived: timeNow(),
+  // than blank — for the form's own date as much as the received date. All
+  // stay editable, and an existing form always loads its own stored values
+  // over these, so opening an old form cannot backfill today onto it.
+  formDate: today(), dateReceived: today(), timeReceived: timeNow(),
   vendorLot: "", vendor: "", productDescription: "", processingType: "",
   spec: "", brand: "", estNumber: "", grade: "",
   dueDate: "", predictedYield: "",
