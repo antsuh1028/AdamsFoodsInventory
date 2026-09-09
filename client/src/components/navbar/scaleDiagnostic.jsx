@@ -29,6 +29,16 @@ const visualize = (s) =>
 // broken cable unless you can try another rate.
 const BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
 
+// What the indicator is set to, used only when a line carries no unit itself.
+// The Defender at this station prints a bare number, so without this every
+// reading is refused — and defaulting silently would be a 2.2x error nobody
+// could see. Stating it here makes it a visible setting instead.
+const ASSUMED_UNITS = [
+  ["LB", "lb — indicator set to pounds"],
+  ["KG", "kg — indicator set to kilograms"],
+  ["", "none — refuse lines with no unit"],
+];
+
 const LineRow = ({ entry }) => {
   const p = entry.parsed;
   return (
@@ -47,6 +57,11 @@ const LineRow = ({ entry }) => {
             <Badge colorScheme={p.unit === "LB" ? "blue" : "orange"} fontSize="10px">
               {p.unit}
             </Badge>
+            {p.unitAssumed && (
+              <Badge colorScheme="purple" fontSize="9px" title="The line carried no unit; this is the station setting">
+                unit assumed
+              </Badge>
+            )}
             {p.stable === true && <Badge colorScheme="green" fontSize="9px">stable</Badge>}
             {p.stable === false && <Badge colorScheme="orange" fontSize="9px">unstable</Badge>}
             {p.stable === null && <Text fontSize="9px" color="gray.400">stability not reported</Text>}
@@ -68,15 +83,26 @@ const ScaleDiagnostic = ({ isOpen, onClose }) => {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [baudRate, setBaudRate] = useState(DEFAULT_PORT_OPTIONS.baudRate);
+  const [assumeUnit, setAssumeUnit] = useState("LB");
   const [command, setCommand] = useState("P");
   const [error, setError] = useState(null);
   const handleRef = useRef(null);
 
   const supported = isSupported();
 
+  // Read through a ref so the live read loop always uses the CURRENT setting.
+  // The loop is started once at connect and would otherwise close over whatever
+  // the unit was at that moment, so changing it would appear to do nothing.
+  const assumeUnitRef = useRef(assumeUnit);
+  assumeUnitRef.current = assumeUnit;
+
   const append = useCallback((raw) => {
     setLines((prev) => [
-      { raw, parsed: parseScaleLine(raw), at: new Date().toLocaleTimeString() },
+      {
+        raw,
+        parsed: parseScaleLine(raw, { assumeUnit: assumeUnitRef.current || null }),
+        at: new Date().toLocaleTimeString(),
+      },
       // Newest first, capped: a scale left in continuous mode emits several a
       // second and an unbounded list would take the window down with it.
       ...prev,
@@ -182,6 +208,16 @@ const ScaleDiagnostic = ({ isOpen, onClose }) => {
               <Select size="sm" width="110px" value={baudRate} isDisabled={connected}
                 onChange={(e) => setBaudRate(e.target.value)}>
                 {BAUD_RATES.map((b) => <option key={b} value={b}>{b}</option>)}
+              </Select>
+
+              {/* Changeable while connected on purpose: it only affects how
+                  incoming lines are read, so its effect can be seen live. */}
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase">Unit</Text>
+              <Select size="sm" width="220px" value={assumeUnit}
+                onChange={(e) => setAssumeUnit(e.target.value)}>
+                {ASSUMED_UNITS.map(([v, label]) => (
+                  <option key={v || "none"} value={v}>{label}</option>
+                ))}
               </Select>
 
               {!connected ? (

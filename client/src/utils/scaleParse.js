@@ -34,6 +34,21 @@ const SUPPORTED = new Set(["LB", "KG"]);
 const STABLE_TOKENS = new Set(["ST", "S"]);
 const UNSTABLE_TOKENS = new Set(["US", "SD", "D"]);
 
+// Every word an indicator may legitimately put on a weight line: the stability
+// flags above, plus gross/net/tare markers.
+//
+// This is the whitelist that makes assumeUnit safe. Without a unit to anchor
+// on, ANY line holding one number becomes a reading — and "OHAUS DEFENDER 3000"
+// holds exactly one number. The power-on banner would have been recorded as a
+// 3000 lb box, which is the precise failure this file exists to prevent. So
+// when the unit is being assumed, a word that is not on this list means the
+// line is not a bare reading.
+const READING_WORDS = new Set([
+  "ST", "US", "S", "SD", "D",          // stability
+  "GS", "NT", "TR", "PT",              // gross / net / tare / preset tare
+  "G", "N", "T",                       // single-letter forms of the same
+]);
+
 // A signed decimal, with the digits kept as written. No exponent form: a scale
 // does not emit one, and accepting it would let "1e5" through as 100000.
 const NUMBER_RE = /[-+]?\d+(?:\.\d+)?|[-+]?\.\d+/g;
@@ -57,13 +72,27 @@ const stripControl = (s) => {
 const err = (code, reason, raw) => ({ ok: false, code, reason, raw });
 
 /**
- * Parse one line into { ok, weight, unit, stable, raw }.
+ * Parse one line into { ok, weight, unit, unitAssumed, stable, raw }.
  *
  * `weight` is a decimal STRING, sign stripped, exactly as the scale wrote its
  * digits. `stable` is true/false when the line says, or null when it does not —
  * null means "unknown", never "assume fine".
+ *
+ * `assumeUnit` — the unit to use when the LINE CARRIES NONE.
+ *
+ * The Defender 3000 at this station is configured to print a bare number:
+ * "      6.60      ", no unit, no status. So refusing every unitless line makes
+ * the parser useless against the actual hardware. But quietly defaulting to
+ * pounds is the 2.2x error the GS1 310n/320n rule exists to prevent, and it
+ * would be invisible.
+ *
+ * The resolution is that the assumption becomes a SETTING rather than a
+ * default: the caller states what the indicator is set to, the result is
+ * flagged `unitAssumed: true`, and the UI says so. A unit printed ON the line
+ * always wins over the assumption — so if someone switches the indicator to kg,
+ * that shows up as a conflict instead of being silently overridden.
  */
-const parseScaleLine = (line) => {
+const parseScaleLine = (line, { assumeUnit = null } = {}) => {
   const raw = String(line == null ? "" : line);
 
   const text = stripControl(raw).trim();
@@ -109,7 +138,24 @@ const parseScaleLine = (line) => {
     return err("AMBIGUOUS", `Found ${numbers.length} numbers, cannot tell which is the weight`, raw);
   }
 
-  if (!unit) return err("NO_UNIT", "No unit on the line", raw);
+  // A unit printed on the line always wins. Only when there is none does the
+  // station's configured setting stand in, and the result says which happened.
+  let unitAssumed = false;
+  if (!unit) {
+    if (!assumeUnit) return err("NO_UNIT", "No unit on the line", raw);
+
+    // Nothing on this line identifies it as a weight, so the shape has to. A
+    // word that is not a known indicator token means this is a banner, a menu
+    // echo or an error message that happens to contain a number.
+    const stray = tokens.find((t) => /[A-Z]/.test(t) && !READING_WORDS.has(t.replace(/[^A-Z]/g, "")));
+    if (stray) {
+      return err("NOT_A_READING",
+        `Line contains "${stray}" and no unit — this is not a bare weight`, raw);
+    }
+
+    unit = String(assumeUnit).toUpperCase();
+    unitAssumed = true;
+  }
   if (!SUPPORTED.has(unit)) {
     return err("UNSUPPORTED_UNIT",
       `Reads in ${unit}. Set the indicator to lb or kg.`, raw);
@@ -143,7 +189,7 @@ const parseScaleLine = (line) => {
     weight = trimmed ? `${whole}.${trimmed}` : whole;
   }
 
-  return { ok: true, weight, unit, stable, raw };
+  return { ok: true, weight, unit, unitAssumed, stable, raw };
 };
 
 module.exports = { parseScaleLine, stripControl, UNIT_WORDS, SUPPORTED };
