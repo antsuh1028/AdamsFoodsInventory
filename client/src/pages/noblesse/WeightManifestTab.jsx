@@ -1104,8 +1104,36 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                             {loadingId === b.batch_id ? (
                               <Flex justify="center" py={6}><Spinner size="sm" color="blue.500" /></Flex>
                             ) : detail ? (
-                              <ScanSheet scans={detail.items}
-                                busyId={rowBusy} {...handlersFor(b)} />
+                              <>
+                                {/* Brand, EST and grade are captured at weighing
+                                    and deliberately kept OFF the printed
+                                    manifest, so this is the only place they can
+                                    be read back. Without it they would be
+                                    write-only — recorded and unreachable.
+                                    Hidden entirely when none were entered,
+                                    rather than showing a row of dashes. */}
+                                {(detail.brand || detail.est_number || detail.grade) && (
+                                  <Flex gap={6} wrap="wrap" mb={3} px={1}>
+                                    {[["Brand", detail.brand],
+                                      ["EST #", detail.est_number],
+                                      ["Grade", detail.grade]]
+                                      .filter(([, v]) => v)
+                                      .map(([label, value]) => (
+                                        <Box key={label}>
+                                          <Text fontSize="xs" color="gray.500"
+                                            textTransform="uppercase" letterSpacing="wide">
+                                            {label}
+                                          </Text>
+                                          <Text fontSize="sm" fontWeight="600" color="gray.800">
+                                            {value}
+                                          </Text>
+                                        </Box>
+                                      ))}
+                                  </Flex>
+                                )}
+                                <ScanSheet scans={detail.items}
+                                  busyId={rowBusy} {...handlersFor(b)} />
+                              </>
                             ) : null}
                           </Box>
                         </Box>

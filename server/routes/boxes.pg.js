@@ -6,7 +6,7 @@ const requireRole = require("../middleware/requireRole");
 const { parseGs1 } = require("../utils/gs1");
 const { parseTallySheet } = require("../utils/tallySheet");
 const { toPounds, kgToLb, sumWeights, trimTrailingZeros } = require("../utils/weight");
-const { lotColumns } = require("../utils/lotRegistry");
+const { lotColumns, lookupLot } = require("../utils/lotRegistry");
 const { upload } = require("../utils/aws");
 const readXlsxFile = require("read-excel-file/node");
 
@@ -187,29 +187,64 @@ const validateItem = (item) => {
 // Create a batch. Idempotent on client_uuid so a retried POST after a dropped
 // response returns the original batch instead of orphaning one.
 router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
-  const { clientUuid, lotNumber, vendor, shipTo, billOfLading, itemDescription } = req.body || {};
+  const { clientUuid, lotNumber, vendor, shipTo, billOfLading, itemDescription,
+          brand, estNumber, grade, direction, expectedBoxes } = req.body || {};
   if (!clientUuid || typeof clientUuid !== "string") {
     return res.status(400).json({ error: "clientUuid is required" });
   }
 
+  // Defaults to incoming, so every existing caller keeps its meaning without
+  // being changed. Validated rather than passed through: the CHECK constraint
+  // would reject anything else anyway, and a 400 naming the field beats a 500
+  // from Postgres.
+  const dir = direction == null ? "incoming" : String(direction);
+  if (dir !== "incoming" && dir !== "outgoing") {
+    return res.status(400).json({ error: "direction must be 'incoming' or 'outgoing'" });
+  }
+
+  // Optional, and a PROMPT rather than a limit — reaching it offers to finalise,
+  // it never closes the session or refuses box N+1. See db/migrate.js.
+  let expected = null;
+  if (expectedBoxes != null && expectedBoxes !== "") {
+    expected = Number(expectedBoxes);
+    if (!Number.isInteger(expected) || expected <= 0) {
+      return res.status(400).json({ error: "expectedBoxes must be a positive whole number" });
+    }
+  }
+
   try {
-    // A weighing session opens on the dock, so this is the incoming side: the
-    // lot is created if it is new and resolved if it already exists. The
-    // canonical text is stored beside the id, so a session started as
-    // "N26244-3" is filed as "N26244-03" and stops disagreeing with the
-    // registration form for the same lot.
-    const lot = await lotColumns(req.tenantId, req.userId, lotNumber);
+    // Incoming opens on the dock and may ISSUE a lot. Outgoing is downstream —
+    // the lot already exists, having been issued when the raw product arrived,
+    // and inventing one here would mint a lot from a typo. That split is the
+    // registry's core rule (CLAUDE.md), so the two directions resolve
+    // differently on purpose.
+    let lot;
+    if (dir === "outgoing") {
+      lot = await lookupLot(req.tenantId, lotNumber);
+      if (!lot || lot.lotId == null) {
+        return res.status(404).json({
+          code: "NO_SUCH_LOT",
+          error: `Lot ${lotNumber || "(none)"} does not exist. Finished product is ` +
+                 `weighed against the lot issued when the raw product arrived.`,
+        });
+      }
+    } else {
+      lot = await lotColumns(req.tenantId, req.userId, lotNumber);
+    }
 
     const inserted = await pool.query(
       `INSERT INTO box_batches
          (tenant_id, client_uuid, lot_number, vendor, ship_to, bill_of_lading,
-          item_description, lot_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          item_description, brand, est_number, grade, lot_id, direction, expected_boxes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        ON CONFLICT (client_uuid) DO NOTHING
        RETURNING batch_id, status, created_at, lot_number,
-                 vendor, ship_to, bill_of_lading, item_description, lot_id`,
+                 vendor, ship_to, bill_of_lading, item_description,
+                 brand, est_number, grade, lot_id, direction, expected_boxes`,
       [req.tenantId, clientUuid, lot.lotNumber, vendor || null,
-       shipTo || null, billOfLading || null, itemDescription || null, lot.lotId]
+       shipTo || null, billOfLading || null, itemDescription || null,
+       brand || null, estNumber || null, grade || null, lot.lotId,
+       dir, expected]
     );
 
     if (inserted.rows.length) {
@@ -220,7 +255,8 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
     // another tenant cannot be adopted.
     const existing = await pool.query(
       `SELECT batch_id, status, created_at, lot_number,
-              vendor, ship_to, bill_of_lading, item_description, lot_id
+              vendor, ship_to, bill_of_lading, item_description,
+              brand, est_number, grade, lot_id, direction, expected_boxes
          FROM box_batches
        WHERE client_uuid = $1 AND tenant_id = $2`,
       [clientUuid, req.tenantId]
@@ -1012,7 +1048,8 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
   }
   try {
     const batch = await pool.query(
-      `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description, source,
+      `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description,
+              brand, est_number, grade, source,
               status, created_at, closed_at
          FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]

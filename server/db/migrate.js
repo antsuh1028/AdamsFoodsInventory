@@ -265,7 +265,15 @@ const steps = async () => {
 
   // The rest of the tally sheet heading. Stored on the batch so a past session
   // reprints as a complete form rather than one missing its header.
-  for (const col of ["vendor", "ship_to", "bill_of_lading", "item_description"]) {
+  //
+  // brand / est_number / grade are CAPTURED BUT NOT PRINTED. They describe the
+  // product rather than the tally, so they stay off the manifest — which
+  // reproduces a paper form and must keep matching it. They are worth recording
+  // anyway: they are known at weighing time, they are tedious to reconstruct
+  // afterwards, and the registration form already carries the same three fields
+  // for the same lot, so having both makes them checkable against each other.
+  for (const col of ["vendor", "ship_to", "bill_of_lading", "item_description",
+                     "brand", "est_number", "grade"]) {
     await run(`box_batches ${col}`,
       `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS ${col} TEXT`);
   }
@@ -275,6 +283,52 @@ const steps = async () => {
   // reconciling a shipment needs to be able to tell them apart.
   await run("box_batches source",
     `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'scanned'`);
+
+  // Which end of the process this session weighed.
+  //
+  //   incoming  raw product as it arrives from the supplier
+  //   outgoing  finished product on its way out, weighed off the bench scale
+  //
+  // This is what makes yield calculable: yield is outgoing over incoming for
+  // the same lot. Before it, every session was an arrival and there was nothing
+  // to divide by.
+  //
+  // DEFAULT 'incoming' is load-bearing for the migration: every session that
+  // already exists WAS an arrival, so the default makes all of them correct
+  // with no backfill and no chance of mislabelling history. Old code that never
+  // mentions the column keeps working unchanged.
+  await run("box_batches direction",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL
+       DEFAULT 'incoming' CHECK (direction IN ('incoming', 'outgoing'))`);
+
+  await run("box_batches direction index",
+    `CREATE INDEX IF NOT EXISTS box_batches_direction_idx
+       ON box_batches (tenant_id, direction, lot_id)`);
+
+  // How many boxes the operator expects, entered before weighing starts.
+  //
+  // A PROMPT, NEVER A TRIGGER. Reaching the count offers to finalise; it does
+  // not finalise on its own. The count is a forecast made before the work, and
+  // reality breaks it routinely — a damaged box repacked into two, a partial
+  // pallet, a miscount. Auto-closing at 10 of 10 would either lock an operator
+  // out mid-job or orphan box 11. Nullable because it is optional.
+  await run("box_batches expected_boxes",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS expected_boxes INT`);
+
+  // Where a box's weight actually came from.
+  //
+  //   scanned  read off a barcode and re-verified server-side
+  //   scale    read from the bench scale over serial
+  //   keyed    typed by a person
+  //
+  // is_manual cannot answer this. Its CHECK requires it to be true whenever
+  // there is no barcode, so a scale reading and a hand-typed figure are
+  // indistinguishable there — and they do not deserve equal trust. Nullable:
+  // existing rows predate the distinction and guessing for them would be
+  // inventing provenance that was never recorded.
+  await run("batch_items entry_method",
+    `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS entry_method TEXT
+       CHECK (entry_method IN ('scanned', 'scale', 'keyed'))`);
 
   // Every weight is stored in pounds. Non-American suppliers label in kilograms,
   // so those are converted on the way in; this column records that it happened.

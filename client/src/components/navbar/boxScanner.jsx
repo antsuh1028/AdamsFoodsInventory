@@ -138,6 +138,8 @@ const BoxScanner = ({ isOpen, onClose }) => {
   // offers the real next number from the server.
   const [header, setHeader] = useState({
     lotNumber: "", lotId: null, vendor: "", billOfLading: "", itemDescription: "",
+    // Recorded on the session, deliberately absent from the printed manifest.
+    brand: "", estNumber: "", grade: "",
   });
   const setField = (key) => (e) => {
     const { value } = e.target;
@@ -223,6 +225,9 @@ const BoxScanner = ({ isOpen, onClose }) => {
         vendor: header.vendor.trim() || null,
         billOfLading: header.billOfLading.trim() || null,
         itemDescription: header.itemDescription.trim() || null,
+        brand: header.brand.trim() || null,
+        estNumber: header.estNumber.trim() || null,
+        grade: header.grade.trim() || null,
       });
       setConfirmStart(false);
     } catch (err) {
@@ -476,6 +481,27 @@ const BoxScanner = ({ isOpen, onClose }) => {
               <Input {...rawInputProps} size="md" value={header.billOfLading}
                 onChange={setField("billOfLading")} />
             </Box>
+
+            {/* Captured but NOT printed. These describe the product rather than
+                the tally, and the manifest reproduces a paper form that has to
+                keep matching it — so they are stored and shown on the session,
+                never added to the sheet. Known at weighing time and tedious to
+                reconstruct afterwards, which is the whole reason to take them. */}
+            <Box flex="1 1 120px">
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Brand</Text>
+              <Input {...rawInputProps} size="md" value={header.brand}
+                onChange={setField("brand")} placeholder="IBP" />
+            </Box>
+            <Box flex="1 1 110px">
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>EST #</Text>
+              <Input {...rawInputProps} size="md" value={header.estNumber}
+                onChange={setField("estNumber")} placeholder="9268" />
+            </Box>
+            <Box flex="1 1 110px">
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Grade</Text>
+              <Input {...rawInputProps} size="md" value={header.grade}
+                onChange={setField("grade")} placeholder="CHOICE" />
+            </Box>
           </Flex>
         )}
       </Box>
@@ -604,6 +630,9 @@ const BoxScanner = ({ isOpen, onClose }) => {
                   ["Vendor", header.vendor.trim()],
                   ["Item description", header.itemDescription.trim()],
                   ["Vendor Lot #/IC#", header.billOfLading.trim()],
+                  ["Brand", header.brand.trim()],
+                  ["EST #", header.estNumber.trim()],
+                  ["Grade", header.grade.trim()],
                 ].map(([label, value], i) => (
                   <Flex key={label} px={3} py={2} gap={{ base: 0, sm: 3 }}
                     direction={{ base: "column", sm: "row" }}
