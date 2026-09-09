@@ -17,6 +17,7 @@ import { OutgoingTab } from "./noblesse/OutgoingTab";
 import { WeightManifestTab } from "./noblesse/WeightManifestTab";
 import { lotNumberForDate, fmtLongDate } from "./noblesse/shared";
 import ScannerDiagnostic from "../components/navbar/scannerDiagnostic";
+import ScaleDiagnostic from "../components/navbar/scaleDiagnostic";
 import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -41,6 +42,7 @@ const NoblesseScreen = () => {
   // the Adams Foods navbar. The diagnostic sits alongside it because it exists
   // to configure the same scanner.
   const [scanDiagOpen, setScanDiagOpen] = useState(false);
+  const [scaleDiagOpen, setScaleDiagOpen] = useState(false);
   const { isOpen: drawerOpen, onOpen: openDrawer, onClose: closeDrawer } = useDisclosure();
 
   const logOut = () => {
@@ -389,6 +391,7 @@ const NoblesseScreen = () => {
               <>
                 <Divider />
                 {drawerBtn("Scanner Diagnostic", () => setScanDiagOpen(true))}
+                {drawerBtn("Scale Diagnostic", () => setScaleDiagOpen(true))}
                 <Divider />
                 {drawerBtn("← Adams Foods", () => navigate("/home"))}
               </>
@@ -404,8 +407,17 @@ const NoblesseScreen = () => {
         </DrawerContent>
       </Drawer>
 
+      {/* Both diagnostics are admin-only, gated here AND on the menu entry that
+          opens them. Unlike the admin gates that guard data (which must be
+          enforced server-side — see CLAUDE.md §8), these guard no server
+          resource at all: they read hardware attached to the operator's own
+          machine. There is nothing to leak and nothing to mutate, so keeping
+          them out of the way is the whole requirement. */}
       {isAdmin && (
-        <ScannerDiagnostic isOpen={scanDiagOpen} onClose={() => setScanDiagOpen(false)} />
+        <>
+          <ScannerDiagnostic isOpen={scanDiagOpen} onClose={() => setScanDiagOpen(false)} />
+          <ScaleDiagnostic isOpen={scaleDiagOpen} onClose={() => setScaleDiagOpen(false)} />
+        </>
       )}
     </Flex>
   );
