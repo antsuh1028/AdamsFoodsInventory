@@ -78,6 +78,14 @@ const writeSeen = (set) => {
   }
 };
 
+// Sort key for a lot number.
+//
+// Upper-cased and trimmed so casing or a stray space cannot split one lot into
+// two positions. A session with no lot at all becomes "", which sorts LAST
+// descending — an unlabelled session belongs at the bottom, not above today's
+// work just because the string happens to compare high.
+const lotKey = (lotNumber) => String(lotNumber || "").trim().toUpperCase();
+
 const totalsText = (totals) =>
   Array.isArray(totals) && totals.length
     ? totals.map((t) => `${t.total} ${t.unit}`).join("  ·  ")
@@ -898,13 +906,25 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         kind: "group",
         key: `g${g.group_id}`,
         at: g.first_opened || g.created_at,
+        lot: lotKey(g.lot_number),
         group: g,
       }));
     const sessionRows = visible.map((b) => ({
-      kind: "session", key: `b${b.batch_id}`, at: b.created_at, batch: b,
+      kind: "session", key: `b${b.batch_id}`, at: b.created_at,
+      lot: lotKey(b.lot_number), batch: b,
     }));
-    return [...groupRows, ...sessionRows]
-      .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+    return [...groupRows, ...sessionRows].sort((a, b) => {
+      // Newest lot first. N{YY}{JJJ}-{NN} is fixed width, so comparing the text
+      // sorts by year, then day, then sequence in one step — which is why the
+      // format was chosen (CLAUDE.md §3). No parsing, nothing to get wrong.
+      //
+      // This also beats sorting by created_at: two sessions weighed against the
+      // same lot hours apart now sit together instead of being separated by
+      // whatever else was weighed in between.
+      if (a.lot !== b.lot) return b.lot.localeCompare(a.lot);
+      // Same lot: newest sitting first, so the most recent work is on top.
+      return String(b.at || "").localeCompare(String(a.at || ""));
+    });
   }, [groups, visible, matchesFilters]);
 
   // Counted over `rows` (what is actually on screen) rather than everything

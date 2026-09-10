@@ -1033,6 +1033,70 @@ router.get("/box-batches/unregistered", verifyToken, async (req, res) => {
   }
 });
 
+// Reopen a closed session so more boxes can be SCANNED into it.
+//
+// Typing a missed box into a form works, but it is the wrong tool: a keyed
+// weight is unverified, where a scan is re-derived from the barcode
+// server-side. Reopening puts the session back in front of the scanner, so a
+// late box arrives on exactly the same footing as every other box on the
+// manifest — barcode-checked, deduplicated on serial, and recorded as scanned
+// rather than as somebody's typing.
+//
+// Admin-only: a closed manifest may already have been printed, tied to a
+// registration form, or shipped against, and reopening changes what all of
+// those reference. The blockers are returned rather than refused on — the
+// operator is fixing the record precisely because it is wrong, and being told
+// what else will move is more useful than being stopped.
+router.post("/box-batches/:id/reopen", verifyToken, requireRole("admin"), async (req, res) => {
+  const batchId = Number(req.params.id);
+  if (!Number.isInteger(batchId)) {
+    return res.status(400).json({ error: "Invalid batch id" });
+  }
+
+  try {
+    const batch = await pool.query(
+      `SELECT batch_id, lot_number, status FROM box_batches
+        WHERE batch_id = $1 AND tenant_id = $2`,
+      [batchId, req.tenantId]
+    );
+    if (!batch.rows.length) return res.status(404).json({ error: "Session not found" });
+
+    // Already open is not a failure — a double tap should land on the same
+    // state, the same way close is safe to call twice.
+    if (batch.rows[0].status === "open") {
+      return res.json({ reopened: false, alreadyOpen: true, batchId });
+    }
+
+    // closed_at is cleared because it is no longer true. The fact that it was
+    // closed, and by whom it was reopened, survives in the audit row below.
+    const updated = await pool.query(
+      `UPDATE box_batches SET status = 'open', closed_at = NULL
+        WHERE batch_id = $1 AND tenant_id = $2
+      RETURNING batch_id, lot_number, status, created_at, closed_at`,
+      [batchId, req.tenantId]
+    );
+
+    const blockers = await batchBlockers(pool, batchId, req.tenantId);
+
+    logBoxRemoval({
+      tenantId: req.tenantId,
+      action: "batch_reopened",
+      batchId,
+      lotNumber: batch.rows[0].lot_number,
+      summary: "Reopened for scanning",
+      performedBy: req.username,
+      // What referenced it at the moment it was reopened, so a later
+      // discrepancy between this manifest and a form can be explained.
+      details: { referencedBy: blockers },
+    });
+
+    res.json({ reopened: true, batch: updated.rows[0], blockers });
+  } catch (err) {
+    console.error("reopen box batch:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 // Edit a session's heading after the fact.
 //
 // The heading is typed at the start of a delivery, in a cold room, before
