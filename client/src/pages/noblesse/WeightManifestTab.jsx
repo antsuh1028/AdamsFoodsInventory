@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Spinner, IconButton, Input, Select, Checkbox,
+  Box, Flex, Text, Button, Badge, Spinner, IconButton, Input, Textarea, Select, Checkbox,
   Alert, AlertIcon, useToast,
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
   AlertDialogContent, AlertDialogOverlay,
@@ -235,6 +235,200 @@ const DeletedBoxes = ({ items }) => {
 
 // The sessions a removed manifest covered. They are untouched by the removal,
 // so this is a reference list rather than a copy.
+// The heading fields that print on the manifest, and adding a box that was
+// weighed but never scanned.
+//
+// Both are corrections to a record that is already written, so both follow the
+// same rule the row corrections follow: an operator may work on an open
+// session, a closed one is admin-only. The server enforces it; this only
+// disables the controls to match, because a hidden button is not a control.
+//
+// The LOT is shown but never editable. Every box here was weighed against it,
+// a registration form may reference it, and stock may have moved under it —
+// changing it would silently re-attribute physical product.
+const HEADER_FIELDS = [
+  ["vendor", "Vendor", "TREX/GOP"],
+  ["itemDescription", "Item description", "HUMERUS BONE"],
+  ["billOfLading", "Vendor Lot #/IC#", ""],
+  ["brand", "Brand", "IBP"],
+  ["estNumber", "EST #", "9268"],
+  ["grade", "Grade", "CHOICE"],
+];
+
+const fromDetail = (d) => ({
+  vendor: d.vendor || "",
+  itemDescription: d.item_description || "",
+  billOfLading: d.bill_of_lading || "",
+  brand: d.brand || "",
+  estNumber: d.est_number || "",
+  grade: d.grade || "",
+  remarks: d.remarks || "",
+});
+
+const ManifestEditor = ({ batchId, detail, onChanged }) => {
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(() => fromDetail(detail));
+  const [saving, setSaving] = useState(false);
+
+  const [weight, setWeight] = useState("");
+  const [unit, setUnit] = useState("LB");
+  const [adding, setAdding] = useState(false);
+
+  // Re-seed when a different session is expanded, or the detail is refetched.
+  useEffect(() => { setDraft(fromDetail(detail)); setEditing(false); }, [detail, batchId]);
+
+  const mayEdit = detail.status !== "closed" || getRole() === "admin";
+  const original = fromDetail(detail);
+  const dirty = Object.keys(draft).some((k) => draft[k].trim() !== original[k].trim());
+
+  const set = (key) => (e) => setDraft((d) => ({ ...d, [key]: upper(e.target.value) }));
+
+  const fail = (title) => (err) => toast({
+    status: "error", position: "top", duration: 7000, isClosable: true, title,
+    description: err.response?.data?.error || err.message,
+  });
+
+  const saveHeader = async () => {
+    setSaving(true);
+    try {
+      // Only what actually changed, so a field someone never touched cannot be
+      // blanked by a stale draft.
+      const changed = Object.fromEntries(
+        Object.keys(draft)
+          .filter((k) => draft[k].trim() !== original[k].trim())
+          .map((k) => [k, draft[k].trim() || null])
+      );
+      await axiosInstance.patch(`/box-batches/${batchId}`, changed);
+      await onChanged();
+      setEditing(false);
+      toast({ status: "success", title: "Manifest updated", duration: 2000, position: "top" });
+    } catch (err) { fail("Could not save")(err); } finally { setSaving(false); }
+  };
+
+  const addBox = async () => {
+    setAdding(true);
+    try {
+      // isManual, because there is no barcode to re-derive this from — the
+      // server refuses a barcode-less item otherwise. The weight goes up as a
+      // decimal STRING in the unit given; the server converts and stores.
+      await axiosInstance.post(`/box-batches/${batchId}/items`, {
+        items: [{ weight: weight.trim(), weightUnit: unit, isManual: true }],
+      });
+      setWeight("");
+      await onChanged();
+      toast({ status: "success", title: "Box added", duration: 2000, position: "top" });
+    } catch (err) { fail("Could not add that box")(err); } finally { setAdding(false); }
+  };
+
+  // Up to three decimals, matching NUMERIC(8,3) — the same shape the scanner
+  // and the scale both produce. Checked before sending so a typo is caught
+  // here rather than coming back as a validation error.
+  const weightOk = /^\d{1,5}(\.\d{1,3})?$/.test(weight.trim()) && Number(weight) > 0;
+
+  return (
+    <Box mb={3} px={3} py={2} bg="gray.50" borderRadius="md"
+      border="1px solid" borderColor="gray.200">
+      <Flex align="center" gap={2} mb={2} wrap="wrap">
+        <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
+          Manifest details
+        </Text>
+        {detail.status === "closed" && (
+          <Badge colorScheme={mayEdit ? "purple" : "gray"} fontSize="9px">
+            {mayEdit ? "closed — admin edit" : "closed"}
+          </Badge>
+        )}
+        <Box flex={1} />
+        {mayEdit && !editing && (
+          <Button size="xs" variant="outline" colorScheme="blue"
+            onClick={() => setEditing(true)}>
+            Edit
+          </Button>
+        )}
+      </Flex>
+
+      {editing ? (
+        <>
+          <Flex gap={3} wrap="wrap" mb={2}>
+            {HEADER_FIELDS.map(([key, label, placeholder]) => (
+              <Box key={key} flex="1 1 150px">
+                <Text fontSize="10px" color="gray.500" textTransform="uppercase" mb={1}>
+                  {label}
+                </Text>
+                <Input size="sm" bg="white" value={draft[key]} onChange={set(key)}
+                  placeholder={placeholder} textTransform="uppercase"
+                  autoCorrect="off" autoCapitalize="characters" spellCheck={false} />
+              </Box>
+            ))}
+          </Flex>
+          <Text fontSize="10px" color="gray.500" textTransform="uppercase" mb={1}>
+            Remarks — prints as MEMO
+          </Text>
+          <Textarea size="sm" rows={2} bg="white" value={draft.remarks}
+            onChange={set("remarks")} textTransform="uppercase"
+            placeholder="ANYTHING WORTH SAYING ABOUT THIS TALLY"
+            autoCorrect="off" autoCapitalize="characters" spellCheck={false} />
+          <Flex gap={2} mt={2} justify="flex-end">
+            <Button size="xs" variant="ghost"
+              onClick={() => { setDraft(fromDetail(detail)); setEditing(false); }}>
+              Cancel
+            </Button>
+            <Button size="xs" colorScheme="blue" isLoading={saving}
+              isDisabled={!dirty} onClick={saveHeader}>
+              Save
+            </Button>
+          </Flex>
+        </>
+      ) : (
+        <Flex gap={6} wrap="wrap">
+          {[...HEADER_FIELDS.map(([k, l]) => [l, original[k]]),
+            ["Remarks", original.remarks]]
+            .filter(([, v]) => v)
+            .map(([label, value]) => (
+              <Box key={label} maxW="320px">
+                <Text fontSize="10px" color="gray.500" textTransform="uppercase">{label}</Text>
+                <Text fontSize="sm" color="gray.800" style={{ whiteSpace: "pre-wrap" }}>
+                  {value}
+                </Text>
+              </Box>
+            ))}
+        </Flex>
+      )}
+
+      {/* A box that was weighed but never scanned. Appending is the honest fix —
+          the alternative is a manifest that is permanently short, or deleting
+          and re-weighing the whole lot. */}
+      {mayEdit && (
+        <Flex gap={2} align="flex-end" mt={3} pt={3} wrap="wrap"
+          borderTop="1px solid" borderColor="gray.200">
+          <Box>
+            <Text fontSize="10px" color="gray.500" textTransform="uppercase" mb={1}>
+              Add a missed box
+            </Text>
+            <Input size="sm" bg="white" width="120px" value={weight}
+              placeholder="40.00" inputMode="decimal"
+              onChange={(e) => setWeight(e.target.value)} />
+          </Box>
+          <Select size="sm" bg="white" width="80px" value={unit}
+            onChange={(e) => setUnit(e.target.value)}>
+            <option value="LB">LB</option>
+            <option value="KG">KG</option>
+          </Select>
+          <Button size="sm" colorScheme="blue" variant="outline"
+            isLoading={adding} isDisabled={!weightOk} onClick={addBox}>
+            Add box
+          </Button>
+          {weight.trim() && !weightOk && (
+            <Text fontSize="xs" color="red.600" alignSelf="center">
+              Up to 5 digits and 3 decimals.
+            </Text>
+          )}
+        </Flex>
+      )}
+    </Box>
+  );
+};
+
 const MemberSessions = ({ rows }) => (
   <Box>
     <Text fontSize="xs" fontWeight="600" color="gray.600" mb={1}
@@ -431,6 +625,9 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       itemDescription: full.item_description,
       date: fmtDate(String(full.created_at).slice(0, 10)),
       scans: full.items,
+      // The form already carries a MEMO line — the session's remarks are what
+      // it was always there for.
+      memo: full.remarks,
     });
   };
 
@@ -570,6 +767,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         itemDescription: data.item_description,
         date: fmtDate(String(data.created_at).slice(0, 10)),
         scans: data.items,
+        memo: data.remarks,
       });
     } catch (err) {
       toast({
@@ -1112,25 +1310,19 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                                     write-only — recorded and unreachable.
                                     Hidden entirely when none were entered,
                                     rather than showing a row of dashes. */}
-                                {(detail.brand || detail.est_number || detail.grade) && (
-                                  <Flex gap={6} wrap="wrap" mb={3} px={1}>
-                                    {[["Brand", detail.brand],
-                                      ["EST #", detail.est_number],
-                                      ["Grade", detail.grade]]
-                                      .filter(([, v]) => v)
-                                      .map(([label, value]) => (
-                                        <Box key={label}>
-                                          <Text fontSize="xs" color="gray.500"
-                                            textTransform="uppercase" letterSpacing="wide">
-                                            {label}
-                                          </Text>
-                                          <Text fontSize="sm" fontWeight="600" color="gray.800">
-                                            {value}
-                                          </Text>
-                                        </Box>
-                                      ))}
-                                  </Flex>
-                                )}
+                                <ManifestEditor
+                                  batchId={b.batch_id}
+                                  detail={detail}
+                                  onChanged={async () => {
+                                    // The heading, the boxes and the row's own
+                                    // count and total can all have moved, so
+                                    // both the detail and the listing reload.
+                                    const { data } = await axiosInstance
+                                      .get(`/box-batches/${b.batch_id}`);
+                                    setDetails((prev) => ({ ...prev, [b.batch_id]: data }));
+                                    await fetchBatches();
+                                  }}
+                                />
                                 <ScanSheet scans={detail.items}
                                   busyId={rowBusy} {...handlersFor(b)} />
                               </>

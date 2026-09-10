@@ -15,8 +15,12 @@ const api = {
     axiosInstance.post("/box-batches", { clientUuid, ...meta }).then((r) => r.data),
   postItems: (batchId, items) =>
     axiosInstance.post(`/box-batches/${batchId}/items`, { items }).then((r) => r.data),
-  closeBatch: (batchId) =>
-    axiosInstance.post(`/box-batches/${batchId}/close`).then((r) => r.data),
+  // Remarks travel with the close — the moment the operator knows what to say,
+  // and the only safe place to ask, since a focused textarea on the scanning
+  // surface silently swallows scans (CLAUDE.md §4).
+  closeBatch: (batchId, remarks) =>
+    axiosInstance.post(`/box-batches/${batchId}/close`, { remarks })
+      .then((r) => r.data),
   listBatches: () => axiosInstance.get("/box-batches").then((r) => r.data),
   getBatch: (batchId) =>
     axiosInstance.get(`/box-batches/${batchId}`).then((r) => r.data),
@@ -231,9 +235,9 @@ export const useScanSession = () => {
     return result;
   }, [session, refreshPending]);
 
-  const stop = useCallback(async () => {
+  const stop = useCallback(async (remarks = null) => {
     if (!queueRef.current) return null;
-    const result = await queueRef.current.stop();
+    const result = await queueRef.current.stop(remarks);
     await refreshPending();
     if (result.closed) {
       setSession(null);

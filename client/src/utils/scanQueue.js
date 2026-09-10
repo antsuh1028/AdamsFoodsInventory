@@ -355,7 +355,7 @@ const createScanQueue = ({
 
   // Flushes what is left, then closes. If anything is still unflushed the batch
   // is deliberately left open — closing over unsent scans would strand them.
-  const stop = async () => {
+  const stop = async (remarks = null) => {
     const session = await backend.getSession();
     if (!session || !session.batchId) return { closed: false, reason: "no-open-batch" };
 
@@ -365,7 +365,7 @@ const createScanQueue = ({
       return { closed: false, reason: "unflushed-scans", stillPending, flushed };
     }
 
-    const summary = await api.closeBatch(session.batchId);
+    const summary = await api.closeBatch(session.batchId, remarks);
     await backend.setSession({ ...session, status: "closed" });
     return { closed: true, summary, flushed };
   };

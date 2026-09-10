@@ -272,8 +272,14 @@ const steps = async () => {
   // anyway: they are known at weighing time, they are tedious to reconstruct
   // afterwards, and the registration form already carries the same three fields
   // for the same lot, so having both makes them checkable against each other.
+  // remarks IS printed, unlike the three above — it is the operator explaining
+  // something about this tally to whoever reads it ("2 boxes re-weighed after
+  // the scale was re-zeroed"), which is worthless if it stays on a screen.
+  // Written at close rather than while scanning: a focused textarea on the
+  // scanning surface makes the global keydown handler bail and silently
+  // swallow scans (CLAUDE.md §4).
   for (const col of ["vendor", "ship_to", "bill_of_lading", "item_description",
-                     "brand", "est_number", "grade"]) {
+                     "brand", "est_number", "grade", "remarks"]) {
     await run(`box_batches ${col}`,
       `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS ${col} TEXT`);
   }

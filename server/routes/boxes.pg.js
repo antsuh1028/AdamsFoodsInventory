@@ -297,9 +297,20 @@ router.post("/box-batches/:id/items", verifyToken, scanLimiter, async (req, res)
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "Batch not found" });
     }
-    if (batch.rows[0].status !== "open") {
+    // A closed session is admin-only, not sealed. A box that was weighed but
+    // missed its scan is a real and recurring situation, and the alternative —
+    // leaving the manifest wrong, or deleting and re-weighing the lot — is
+    // worse than letting an admin append it.
+    //
+    // Same rule and the same shape as correcting a row (PATCH .../items/:id):
+    // an operator may work on an open session, a closed one is admin-only, and
+    // it is enforced HERE because a hidden button is not a control.
+    if (batch.rows[0].status !== "open" && req.role !== "admin") {
       await client.query("ROLLBACK");
-      return res.status(409).json({ error: "Batch is closed" });
+      return res.status(409).json({
+        code: "BATCH_CLOSED",
+        error: "This session is closed. Only an admin can add a box to it.",
+      });
     }
 
     // 1. Validate and re-parse every item before touching the table.
@@ -427,10 +438,18 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
 
     const alreadyClosed = batch.rows[0].status === "closed";
     if (!alreadyClosed) {
+      // Remarks are written at close, when the operator knows what happened.
+      // COALESCE so a retried close — which this route is explicitly safe
+      // against — cannot blank a remark that the first attempt already stored.
+      const remarks = typeof req.body?.remarks === "string"
+        ? req.body.remarks.trim() || null
+        : null;
       await pool.query(
-        `UPDATE box_batches SET status = 'closed', closed_at = now()
-         WHERE batch_id = $1 AND tenant_id = $2`,
-        [batchId, req.tenantId]
+        `UPDATE box_batches
+            SET status = 'closed', closed_at = now(),
+                remarks = COALESCE($3, remarks)
+          WHERE batch_id = $1 AND tenant_id = $2`,
+        [batchId, req.tenantId, remarks]
       );
     }
 
@@ -1014,6 +1033,93 @@ router.get("/box-batches/unregistered", verifyToken, async (req, res) => {
   }
 });
 
+// Edit a session's heading after the fact.
+//
+// The heading is typed at the start of a delivery, in a cold room, before
+// anyone knows how it will go — so a vendor gets misspelled, an item
+// description turns out wrong, a remark only makes sense in hindsight. Every
+// one of those prints on the manifest, and reprinting a form that is wrong
+// because a field could not be corrected is not a real option.
+//
+// THE LOT NUMBER IS NOT IN THIS LIST, on purpose. Every box on the session was
+// weighed against it, a registration form may reference it and stock may have
+// moved under it — changing it here would silently re-attribute physical
+// product to a different lot. Detach and re-weigh instead. (CLAUDE.md §9 notes
+// the lot stays locked by design.)
+//
+// Gated exactly as a box correction is: operator on an open session, admin on a
+// closed one, enforced server-side because a hidden button is not a control.
+const EDITABLE_HEADER = {
+  vendor: "vendor",
+  itemDescription: "item_description",
+  billOfLading: "bill_of_lading",
+  shipTo: "ship_to",
+  brand: "brand",
+  estNumber: "est_number",
+  grade: "grade",
+  remarks: "remarks",
+};
+
+router.patch("/box-batches/:id", verifyToken, async (req, res) => {
+  const batchId = Number(req.params.id);
+  if (!Number.isInteger(batchId)) {
+    return res.status(400).json({ error: "Invalid batch id" });
+  }
+
+  // Only known fields, and an unknown one is REFUSED rather than ignored:
+  // silently dropping "lotNumber" would let a caller believe it had changed it.
+  const unknown = Object.keys(req.body || {}).filter((k) => !EDITABLE_HEADER[k]);
+  if (unknown.length) {
+    return res.status(400).json({
+      code: "NOT_EDITABLE",
+      error: `Not editable here: ${unknown.join(", ")}.` +
+             (unknown.includes("lotNumber") || unknown.includes("lotId")
+               ? " The lot a session was weighed against cannot be changed."
+               : ""),
+    });
+  }
+
+  const fields = Object.entries(req.body || {}).filter(([k]) => EDITABLE_HEADER[k]);
+  if (!fields.length) return res.status(400).json({ error: "Nothing to update" });
+
+  try {
+    const batch = await pool.query(
+      `SELECT status FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
+      [batchId, req.tenantId]
+    );
+    if (!batch.rows.length) return res.status(404).json({ error: "Session not found" });
+
+    if (batch.rows[0].status !== "open" && req.role !== "admin") {
+      return res.status(403).json({
+        code: "CLOSED_SESSION",
+        error: "This session is closed. Only an admin can edit it.",
+      });
+    }
+
+    // Blank means "clear it", stored as NULL rather than "" so an empty field
+    // prints as empty everywhere instead of as a stray space.
+    const sets = [];
+    const values = [batchId, req.tenantId];
+    for (const [key, raw] of fields) {
+      const value = typeof raw === "string" ? raw.trim() || null : null;
+      values.push(value);
+      sets.push(`${EDITABLE_HEADER[key]} = $${values.length}`);
+    }
+
+    const updated = await pool.query(
+      `UPDATE box_batches SET ${sets.join(", ")}
+        WHERE batch_id = $1 AND tenant_id = $2
+      RETURNING batch_id, lot_number, vendor, ship_to, bill_of_lading,
+                item_description, brand, est_number, grade, remarks, status`,
+      values
+    );
+    res.json(updated.rows[0]);
+  } catch (err) {
+    console.error("update batch heading:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 // What is currently holding a session, so the confirm dialog can say so BEFORE
 // someone presses Delete rather than after it fails.
 //
@@ -1049,7 +1155,7 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
   try {
     const batch = await pool.query(
       `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description,
-              brand, est_number, grade, source,
+              brand, est_number, grade, remarks, source,
               status, created_at, closed_at
          FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]

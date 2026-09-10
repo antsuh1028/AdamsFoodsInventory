@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Input,
+  Box, Flex, Text, Button, Badge, Input, Textarea,
   Alert, AlertIcon, Stat, StatLabel, StatNumber, StatHelpText, useToast,
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
   AlertDialogContent, AlertDialogOverlay,
@@ -14,7 +14,7 @@ import ScanSheet from "./ScanSheet";
 import NumericKeypad from "./NumericKeypad";
 import LotPicker from "../LotPicker";
 import { toPounds, toDisplay } from "../../utils/weight";
-import { today, fmtDate } from "../../pages/noblesse/shared";
+import { today, fmtDate, upper } from "../../pages/noblesse/shared";
 import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 
 // Operator-facing scanning screen. Designed to be read across a bench by
@@ -24,6 +24,9 @@ import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 // Inputs must not be "helped" by iPadOS — autocorrect on a lot number is
 // silent data corruption.
 const rawInputProps = {
+  // Cosmetic only — it restyles the glyphs and leaves the value alone. What
+  // actually gets stored is uppercased in setField; this just stops the field
+  // flickering between cases while someone types.
   textTransform: "uppercase",
   autoCorrect: "off",
   // "characters" so the iPad keyboard itself is in caps, matching what the
@@ -192,10 +195,27 @@ const BoxScanner = ({ isOpen, onClose }) => {
     // Recorded on the session, deliberately absent from the printed manifest.
     brand: "", estNumber: "", grade: "",
   });
+  // Uppercased HERE, not just displayed that way.
+  //
+  // textTransform on the input is cosmetic — it changes the glyphs and nothing
+  // else. Typing "humerus bone" looked like HUMERUS BONE on screen and was
+  // stored, sent and PRINTED ON THE MANIFEST in lower case, so the paper form
+  // disagreed with the screen it was filled in from.
+  //
+  // Matches how RegistrationFormTab and IncomingRecordsTab already do it, so
+  // the same field reads the same way whichever screen recorded it.
   const setField = (key) => (e) => {
-    const { value } = e.target;
+    const value = upper(e.target.value);
     setHeader((h) => ({ ...h, [key]: value }));
   };
+
+  // Asked for at close, printed on the manifest as MEMO. Deliberately NOT a
+  // field on the scanning surface: the global keydown handler bails on
+  // INPUT/TEXTAREA/SELECT, so a textarea left focused there silently swallows
+  // scans (CLAUDE.md §4). By the time this dialog is open, scanning is over.
+  const [confirmStop, setConfirmStop] = useState(false);
+  const [remarks, setRemarks] = useState("");
+  const cancelStopRef = useRef(null);
 
   const [confirmStart, setConfirmStart] = useState(false);
   // Focus sits on "Go back" so Enter dismisses rather than commits — the
@@ -295,8 +315,10 @@ const BoxScanner = ({ isOpen, onClose }) => {
 
   const onStop = async () => {
     setBusy(true);
+    setConfirmStop(false);
     try {
-      const result = await stop();
+      const result = await stop(remarks.trim() || null);
+      setRemarks("");
       if (result.closed) {
         toast({ title: "Batch closed",
           description: `${result.summary.totalBoxes} boxes recorded`,
@@ -414,7 +436,8 @@ const BoxScanner = ({ isOpen, onClose }) => {
                 Start session
               </Button>
             ) : (
-              <Button size={{ base: "sm", md: "lg" }} colorScheme="red" onClick={onStop} isLoading={busy}>
+              <Button size={{ base: "sm", md: "lg" }} colorScheme="red"
+                onClick={() => setConfirmStop(true)} isLoading={busy}>
                 Stop &amp; close
               </Button>
             )}
@@ -476,6 +499,46 @@ const BoxScanner = ({ isOpen, onClose }) => {
           </Flex>
         </Box>
       )}
+
+      <AlertDialog isOpen={confirmStop} leastDestructiveRef={cancelStopRef}
+        onClose={() => setConfirmStop(false)} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Close this session?
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              <Text fontSize="sm" mb={3}>
+                {scans.length} box{scans.length === 1 ? "" : "es"} will be closed
+                onto the manifest for{" "}
+                <b>{session?.lotNumber || header.lotNumber || "this lot"}</b>.
+              </Text>
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase"
+                letterSpacing="wide" mb={1}>
+                Remarks (optional)
+              </Text>
+              <Textarea size="sm" rows={3} value={remarks}
+                onChange={(e) => setRemarks(upper(e.target.value))}
+                placeholder="ANYTHING WORTH SAYING ABOUT THIS TALLY"
+                autoCorrect="off" autoCapitalize="characters" spellCheck={false}
+                textTransform="uppercase" />
+              <Text fontSize="xs" color="gray.500" mt={1}>
+                Printed on the manifest as MEMO. Editable afterwards.
+              </Text>
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              {/* Focus sits here, not on Close: the scanner types Enter, and a
+                  stray scan must not be able to end the session. */}
+              <Button ref={cancelStopRef} onClick={() => setConfirmStop(false)}>
+                Go back
+              </Button>
+              <Button colorScheme="red" onClick={onStop} isLoading={busy}>
+                Stop &amp; close
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
 
       {resumable && !session && (
         <Alert status="warning" borderRadius="md" mb={3}>
