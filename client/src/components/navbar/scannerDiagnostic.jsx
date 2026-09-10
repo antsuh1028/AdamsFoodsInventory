@@ -35,7 +35,7 @@ const KeyRow = ({ entry, prev }) => {
       </Td>
       <Td fontSize="xs">{printable ? entry.key.charCodeAt(0) : "—"}</Td>
       <Td fontSize="xs">{entry.code || "—"}</Td>
-      <Td fontSize="xs" color={gap > 100 ? "orange.500" : "gray.500"}>
+      <Td fontSize="xs" color={gap > 100 ? "yellow.500" : "gray.500"}>
         {prev ? `${gap} ms` : "—"}
       </Td>
     </Tr>
@@ -191,7 +191,7 @@ const ScannerDiagnostic = ({ isOpen, onClose }) => {
             <Text><strong>Terminator:</strong> {capture.terminator}</Text>
             <Text>
               <strong>GS (0x1D):</strong>{" "}
-              <Badge colorScheme={capture.containsGs ? "green" : "orange"}>
+              <Badge colorScheme={capture.containsGs ? "green" : "yellow"}>
                 {capture.containsGs ? "transmitted" : "not transmitted"}
               </Badge>
             </Text>
@@ -219,7 +219,7 @@ const ScannerDiagnostic = ({ isOpen, onClose }) => {
               <strong>Inter-key timing:</strong> min {capture.timing.min}ms / avg{" "}
               {capture.timing.avg}ms / max {capture.timing.max}ms
               {capture.timing.max > 50 && (
-                <Badge ml={2} colorScheme="orange">exceeds 50ms — timing heuristics unsafe</Badge>
+                <Badge ml={2} colorScheme="yellow">exceeds 50ms — timing heuristics unsafe</Badge>
               )}
             </Text>
           )}

@@ -39,7 +39,7 @@ const PhotoUpload = ({ label, onStubApply }) => {
         <Text fontSize="xs" color="gray.400">{label} · OCR coming soon</Text>
         <input ref={inputRef} type="file" accept="image/*" hidden onChange={handleFile} />
         {preview && onStubApply && (
-          <Button size="sm" colorScheme="orange" variant="outline" onClick={onStubApply}>
+          <Button size="sm" colorScheme="yellow" variant="outline" onClick={onStubApply}>
             Use Test Values
           </Button>
         )}
@@ -476,7 +476,7 @@ const ProductionOrders = ({ isOpen, onClose }) => {
       title={
         <Flex align="center" gap={2}>
           <Text fontSize="md" fontWeight="semibold">Production Orders</Text>
-          <Badge colorScheme="orange" fontSize="xs">Noblesse Trading</Badge>
+          <Badge colorScheme="yellow" fontSize="xs">Noblesse Trading</Badge>
         </Flex>
       }
       bodyProps={{ p: 0 }}

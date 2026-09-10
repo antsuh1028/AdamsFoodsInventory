@@ -40,7 +40,7 @@ const REMOVAL_LABEL = {
 };
 
 const REMOVAL_COLOR = {
-  item_voided: "orange",
+  item_voided: "yellow",
   item_restored: "green",
   item_deleted: "red",
   batch_deleted: "red",
@@ -358,7 +358,7 @@ const ManifestEditor = ({ batchId, detail, onChanged }) => {
           Manifest details
         </Text>
         {detail.status === "closed" && (
-          <Badge colorScheme={mayEdit ? "purple" : "gray"} fontSize="9px">
+          <Badge colorScheme={mayEdit ? "blue" : "gray"} fontSize="9px">
             {mayEdit ? "closed — admin edit" : "closed"}
           </Badge>
         )}
@@ -429,7 +429,7 @@ const ManifestEditor = ({ batchId, detail, onChanged }) => {
           borderTop="1px solid" borderColor="gray.200">
           {detail.status === "closed" ? (
             <>
-              <Button size="sm" colorScheme="orange" variant="outline"
+              <Button size="sm" colorScheme="yellow" variant="outline"
                 isLoading={reopening} onClick={openReopenDialog}>
                 Reopen for scanning
               </Button>
@@ -495,7 +495,7 @@ const ManifestEditor = ({ batchId, detail, onChanged }) => {
               <Button ref={cancelReopenRef} onClick={() => setConfirmReopen(false)}>
                 Go back
               </Button>
-              <Button colorScheme="orange" isLoading={reopening} onClick={reopen}>
+              <Button colorScheme="yellow" isLoading={reopening} onClick={reopen}>
                 Reopen
               </Button>
             </AlertDialogFooter>
@@ -1058,7 +1058,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
             {[["", "All"], ["open", "Open"], ["closed", "Closed"]].map(([value, label]) => (
               <Button key={label} size="xs"
                 variant={statusFilter === value ? "solid" : "outline"}
-                colorScheme={statusFilter === value ? (value === "open" ? "orange" : "blue") : "gray"}
+                colorScheme={statusFilter === value ? (value === "open" ? "yellow" : "blue") : "gray"}
                 onClick={() => setStatusFilter(value)}>
                 {label}
               </Button>
@@ -1354,7 +1354,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                         borderBottom="1px solid" borderColor="gray.100">{totalsText(b.totals)}</Box>
                       <Box as="td" px={3} py={2} borderBottom="1px solid" borderColor="gray.100">
                         <Flex gap={1} wrap="wrap">
-                          <Badge colorScheme={b.status === "closed" ? "green" : "orange"} fontSize="10px">
+                          <Badge colorScheme={b.status === "closed" ? "green" : "yellow"} fontSize="10px">
                             {b.status === "closed" ? "Closed" : "Open"}
                           </Badge>
                           {/* A barcode-verified lot and one keyed in by hand
@@ -1471,22 +1471,22 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                           <Text fontSize="xs" color="gray.500" textTransform="uppercase"
                             letterSpacing="wide">{label}</Text>
                           {c.conflict && (
-                            <Badge colorScheme="orange" fontSize="9px">
+                            <Badge colorScheme="yellow" fontSize="9px">
                               {c.values.length} different values
                             </Badge>
                           )}
                         </Flex>
                         <Input
                           size="sm"
-                          bg={c.conflict ? "orange.50" : "white"}
-                          borderColor={c.conflict ? "orange.300" : "gray.200"}
+                          bg={c.conflict ? "yellow.50" : "white"}
+                          borderColor={c.conflict ? "yellow.300" : "gray.200"}
                           value={mergeHeader[key]}
                           onChange={(e) => setMergeHeader((h) => ({ ...h, [key]: upper(e.target.value) }))}
                         />
                         {c.conflict && (
                           <Flex gap={1} mt={1} wrap="wrap">
                             {c.values.map((v) => (
-                              <Button key={v} size="xs" variant="outline" colorScheme="orange"
+                              <Button key={v} size="xs" variant="outline" colorScheme="yellow"
                                 fontWeight="400"
                                 onClick={() => setMergeHeader((h) => ({ ...h, [key]: v }))}>
                                 {v}
@@ -1572,7 +1572,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                     </Text>
                   </Box>
                   {confirmDeleteBatch.status === "open" && (
-                    <Text fontSize="sm" color="orange.700" mt={3}>
+                    <Text fontSize="sm" color="yellow.800" mt={3}>
                       This session is still open. If someone is scanning into it
                       right now, their work goes too.
                     </Text>

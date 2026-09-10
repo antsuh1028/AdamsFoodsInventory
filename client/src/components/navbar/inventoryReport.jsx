@@ -22,7 +22,7 @@ const getDaysAgo = (dateStr) => {
 const ageBadgeColor = (days) => {
   if (days < 30) return "green";
   if (days < 60) return "yellow";
-  if (days < 90) return "orange";
+  if (days < 90) return "yellow";
   return "red";
 };
 

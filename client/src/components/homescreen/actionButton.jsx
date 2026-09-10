@@ -53,7 +53,7 @@ const ActionButtons = ({
           Update
         </Button>
         <Button
-          colorScheme="orange"
+          colorScheme="yellow"
           variant="outline"
           onClick={onRemove}
           isDisabled={!hasSelected}

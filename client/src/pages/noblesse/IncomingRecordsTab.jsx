@@ -545,7 +545,7 @@ const DailyReceiptCard = ({ receipt, onReceiptUpdate, onReceiptDelete, onInvento
                 {receipt.lines?.length === 1 ? "" : "s"} on it.
               </Text>
               {receipt.inventoryPushed && (
-                <Text color="orange.600" fontWeight="medium" fontSize="sm">
+                <Text color="yellow.700" fontWeight="medium" fontSize="sm">
                   These lines were already pushed to inventory. Deleting this record
                   does not remove them from inventory.
                 </Text>

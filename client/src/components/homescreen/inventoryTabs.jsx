@@ -66,7 +66,7 @@ const getAgeDays = (packdate, date_recvd) => {
 const AGE_DOT = [
   { max: 30,  color: "green.400" },
   { max: 60,  color: "yellow.400" },
-  { max: 90,  color: "orange.400" },
+  { max: 90,  color: "yellow.400" },
   { max: Infinity, color: "red.400" },
 ];
 
@@ -398,7 +398,7 @@ const NoblessePanel = ({ items, handleItemClick, selectedItem, selectedIds, onTo
       ) : (
         <>
           <Box pl={1} pt={2} pb={1}>
-            <Text fontSize="xs" fontWeight="bold" color="orange.300" letterSpacing="wider" textTransform="uppercase">
+            <Text fontSize="xs" fontWeight="bold" color="yellow.700" letterSpacing="wider" textTransform="uppercase">
               Noblesse Trading · {items.length} item{items.length !== 1 ? "s" : ""}
             </Text>
           </Box>
@@ -414,10 +414,10 @@ const NoblessePanel = ({ items, handleItemClick, selectedItem, selectedIds, onTo
                     px={3} py={2}
                     borderRadius="md"
                     border="1px"
-                    borderColor={isChecked ? "red.100" : isSelected ? "orange.300" : "gray.200"}
-                    bg={isChecked ? "red.50" : isSelected ? "orange.50" : "white"}
+                    borderColor={isChecked ? "red.100" : isSelected ? "yellow.300" : "gray.200"}
+                    bg={isChecked ? "red.50" : isSelected ? "yellow.50" : "white"}
                     cursor="pointer"
-                    _hover={{ bg: isSelected ? "orange.100" : "gray.50", borderColor: "orange.200" }}
+                    _hover={{ bg: isSelected ? "yellow.100" : "gray.50", borderColor: "yellow.200" }}
                     transition="all 0.15s"
                   >
                     <Flex justify="space-between" align="center">
@@ -432,7 +432,7 @@ const NoblessePanel = ({ items, handleItemClick, selectedItem, selectedIds, onTo
                             _hover={{ opacity: 1 }}
                           />
                         </Box>
-                        <Text fontSize="sm" fontWeight="semibold" color={isSelected ? "orange.700" : "gray.700"} noOfLines={1}>
+                        <Text fontSize="sm" fontWeight="semibold" color={isSelected ? "yellow.700" : "gray.700"} noOfLines={1}>
                           {item.vendor || item.lot || "—"}
                         </Text>
                       </Flex>
@@ -629,10 +629,10 @@ const InventoryTabs = ({
         <Tab
           fontWeight="semibold"
           fontSize="sm"
-          _hover={{ bg: "orange.50" }}
+          _hover={{ bg: "yellow.50" }}
           _selected={{
-            color: "orange.600",
-            borderColor: "orange.500",
+            color: "yellow.600",
+            borderColor: "yellow.500",
             borderBottomColor: "white",
           }}
         >
@@ -656,7 +656,7 @@ const InventoryTabs = ({
         {[
           { color: "green.400",  label: "<30d" },
           { color: "yellow.400", label: "30-60d" },
-          { color: "orange.400", label: "60-90d" },
+          { color: "yellow.400", label: "60-90d" },
           { color: "red.400",    label: "90d+" },
           { color: "gray.400",    label: "N/A" },
         ].map(({ color, label }) => (
@@ -757,7 +757,7 @@ const InventoryTabs = ({
           {/* Pending production orders */}
           <Box px={3} pt={3} pb={2}>
             <Flex align="center" justify="space-between" mb={1.5}>
-              <Text fontSize="xs" fontWeight="bold" color="orange.400" letterSpacing="wider" textTransform="uppercase">
+              <Text fontSize="xs" fontWeight="bold" color="yellow.700" letterSpacing="wider" textTransform="uppercase">
                 Pending Orders
               </Text>
               <Flex align="center" gap={1}>
@@ -766,7 +766,7 @@ const InventoryTabs = ({
                     key={opt.label}
                     size="xs"
                     variant={rangeDays === opt.days ? "solid" : "ghost"}
-                    colorScheme={rangeDays === opt.days ? "orange" : "gray"}
+                    colorScheme={rangeDays === opt.days ? "yellow" : "gray"}
                     onClick={() => setRangeDays(opt.days)}
                     px={2}
                     minW="auto"
@@ -776,7 +776,7 @@ const InventoryTabs = ({
                     {opt.label}
                   </Button>
                 ))}
-                <Button size="xs" variant="ghost" color="gray.400" _hover={{ color: "orange.500" }}
+                <Button size="xs" variant="ghost" color="gray.400" _hover={{ color: "yellow.500" }}
                   onClick={fetchNoblesseOrders} isDisabled={ordersLoading} p={1} minW="auto">
                   {ordersLoading ? <Spinner size="xs" /> : <RepeatIcon boxSize={3} />}
                 </Button>
@@ -806,8 +806,8 @@ const InventoryTabs = ({
                       key={order.id}
                       borderRadius="md"
                       border="1px"
-                      borderColor={isExpanded ? "orange.300" : "orange.100"}
-                      bg={isExpanded ? "orange.50" : "white"}
+                      borderColor={isExpanded ? "yellow.300" : "yellow.100"}
+                      bg={isExpanded ? "yellow.50" : "white"}
                       overflow="hidden"
                     >
                       {/* Header row — clickable */}
@@ -817,12 +817,12 @@ const InventoryTabs = ({
                         justify="space-between"
                         cursor="pointer"
                         onClick={() => toggleOrderExpand(order.id)}
-                        _hover={{ bg: "orange.50" }}
+                        _hover={{ bg: "yellow.50" }}
                         transition="background 0.1s"
                       >
                         <Flex align="center" gap={1.5}>
-                          {isExpanded ? <ChevronDownIcon color="orange.400" /> : <ChevronRightIcon color="gray.400" />}
-                          <Text fontSize="sm" fontWeight="semibold" color={isExpanded ? "orange.700" : "gray.700"}>
+                          {isExpanded ? <ChevronDownIcon color="yellow.600" /> : <ChevronRightIcon color="gray.400" />}
+                          <Text fontSize="sm" fontWeight="semibold" color={isExpanded ? "yellow.700" : "gray.700"}>
                             {order.sentDate}
                           </Text>
                         </Flex>
@@ -841,14 +841,14 @@ const InventoryTabs = ({
 
                       {/* Expanded detail */}
                       <Collapse in={isExpanded} animateOpacity>
-                        <Divider borderColor="orange.100" />
+                        <Divider borderColor="yellow.100" />
                         <Box px={3} py={2}>
                           {isLoadingDetail ? (
-                            <Flex justify="center" py={2}><Spinner size="xs" color="orange.400" /></Flex>
+                            <Flex justify="center" py={2}><Spinner size="xs" color="yellow.500" /></Flex>
                           ) : detail?.items?.length > 0 ? (
                             <Flex direction="column" gap={1.5}>
                               {detail.items.map((item) => (
-                                <Box key={item.id} px={2} py={1.5} bg="white" borderRadius="sm" border="1px" borderColor="orange.100">
+                                <Box key={item.id} px={2} py={1.5} bg="white" borderRadius="sm" border="1px" borderColor="yellow.100">
                                   <Flex justify="space-between" align="baseline">
                                     <Text fontSize="xs" fontWeight="semibold" color="gray.700" fontFamily="mono">
                                       {item.location || "—"}

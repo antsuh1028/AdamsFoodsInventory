@@ -831,17 +831,17 @@ const DetailsPanel = ({
                     mb={2}
                     px={2}
                     py={1}
-                    bg="orange.50"
+                    bg="yellow.50"
                     borderRadius="md"
                     border="1px"
-                    borderColor="orange.200"
+                    borderColor="yellow.200"
                   >
-                    <Text fontSize="xs" color="orange.700">
+                    <Text fontSize="xs" color="yellow.800">
                       Removed {lastRemovedBoxes.boxes.length} box(es) ({lastRemovedBoxes.boxes.reduce((s, b) => s + parseFloat(b.weight || 0), 0).toFixed(2)} lb)
                     </Text>
                     <Button
                       size="xs"
-                      colorScheme="orange"
+                      colorScheme="yellow"
                       variant="solid"
                       borderRadius="md"
                       isLoading={boxLoading === "undo"}
@@ -942,7 +942,7 @@ const DetailsPanel = ({
                           <Text color="gray.500">
                             {r.sentDate} · {r.weightSent} lb · {r.boxesSent.length} box(es)
                           </Text>
-                          <Badge size="xs" colorScheme={r.status === "returned" ? "green" : "orange"}>
+                          <Badge size="xs" colorScheme={r.status === "returned" ? "green" : "yellow"}>
                             {r.status}
                           </Badge>
                           {r.yieldPct && <Text color="gray.500" ml={1} display="inline">· Yield: {r.yieldPct}%</Text>}
@@ -961,8 +961,8 @@ const DetailsPanel = ({
           <>
             <Divider mb={3} />
             <Collapse in={noblesseOpen} animateOpacity>
-              <Box bg="orange.50" border="1px" borderColor="orange.200" borderRadius="md" p={3} mb={2}>
-                <Text fontSize="xs" fontWeight="semibold" color="orange.700" mb={2}>
+              <Box bg="yellow.50" border="1px" borderColor="yellow.200" borderRadius="md" p={3} mb={2}>
+                <Text fontSize="xs" fontWeight="semibold" color="yellow.800" mb={2}>
                   Send to Noblesse Trading
                 </Text>
 
@@ -978,14 +978,14 @@ const DetailsPanel = ({
                             align="center"
                             px={2}
                             py={0.5}
-                            bg={sel ? "orange.100" : "gray.100"}
+                            bg={sel ? "yellow.100" : "gray.100"}
                             border="1px"
-                            borderColor={sel ? "orange.400" : "gray.200"}
+                            borderColor={sel ? "yellow.400" : "gray.200"}
                             borderRadius="full"
                             fontSize="xs"
                             cursor="pointer"
                             onClick={() => toggleNoblesseIndex(i)}
-                            color={sel ? "orange.700" : "gray.600"}
+                            color={sel ? "yellow.700" : "gray.600"}
                             fontWeight={sel ? "semibold" : "normal"}
                           >
                             {parseFloat(box.weight).toFixed(2)} lb
@@ -994,10 +994,10 @@ const DetailsPanel = ({
                       })}
                     </Flex>
                     <Flex gap={2} mb={2} align="center">
-                      <Button size="xs" variant="ghost" colorScheme="orange" onClick={() => setNoblesseIndices(itemBoxes.map((_, i) => i))}>All</Button>
+                      <Button size="xs" variant="ghost" colorScheme="yellow" onClick={() => setNoblesseIndices(itemBoxes.map((_, i) => i))}>All</Button>
                       <Button size="xs" variant="ghost" colorScheme="gray" onClick={() => setNoblesseIndices([])}>None</Button>
                       {noblesseIndices.length > 0 && (
-                        <Text fontSize="xs" color="orange.600">
+                        <Text fontSize="xs" color="yellow.700">
                           {noblesseIndices.length} boxes · {noblesseIndices.reduce((s, i) => s + parseFloat(itemBoxes[i]?.weight || 0), 0).toFixed(1)} lb
                         </Text>
                       )}
@@ -1023,7 +1023,7 @@ const DetailsPanel = ({
                 <Flex gap={2}>
                   <Button
                     size="xs"
-                    colorScheme="orange"
+                    colorScheme="yellow"
                     isLoading={noblesseSending}
                     isDisabled={itemBoxes.length > 0 && noblesseIndices.length === 0}
                     onClick={handleSendToNoblesse}
@@ -1035,7 +1035,7 @@ const DetailsPanel = ({
             </Collapse>
             <Button
               size="xs"
-              colorScheme={noblesseOpen ? "gray" : "orange"}
+              colorScheme={noblesseOpen ? "gray" : "yellow"}
               variant="outline"
               mb={3}
               onClick={() => { setNoblesseOpen((v) => !v); setNoblesseIndices([]); }}
@@ -1159,7 +1159,7 @@ const DetailsPanel = ({
             </Button>
             <Button
               size="xs"
-              colorScheme="orange"
+              colorScheme="yellow"
               onClick={() => onLocate(item)}
             >
               Locate

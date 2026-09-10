@@ -19,14 +19,14 @@ const KIND = {
   received:        { label: "Received",   color: "blue" },
   weighed:         { label: "Weighed",    color: "blue" },
   registered:      { label: "Registered", color: "gray" },
-  processing:      { label: "Processing", color: "orange" },
+  processing:      { label: "Processing", color: "yellow" },
   processing_done: { label: "Processed",  color: "teal" },
   processed:       { label: "Re-stocked", color: "teal" },
 };
 
 const STATUS = {
   received:   { label: "Received",   color: "blue" },
-  processing: { label: "Processing", color: "orange" },
+  processing: { label: "Processing", color: "yellow" },
   processed:  { label: "Processed",  color: "teal" },
   shipped:    { label: "Shipped",    color: "green" },
 };

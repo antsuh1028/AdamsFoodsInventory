@@ -77,8 +77,8 @@ const SeatCell = ({
     bg = "blue.50"; borderColor = "blue.200"; color = "blue.300";
     border = "1px"; boxShadow = "none"; cursor = "grabbing";
   } else if (isHighlighted) {
-    bg = "orange.300"; borderColor = "orange.500"; color = "orange.900";
-    border = "2px"; boxShadow = "0 0 0 2px orange"; cursor = moveMode && isOccupied ? "grab" : "pointer";
+    bg = "yellow.300"; borderColor = "yellow.500"; color = "yellow.900";
+    border = "2px"; boxShadow = "0 0 0 2px #D69E2E"; cursor = moveMode && isOccupied ? "grab" : "pointer";
   } else if (moveMode && isOver && !isSelf && activeId) {
     // Valid drop target while dragging
     bg = isOccupied ? "yellow.100" : "green.100";
@@ -101,7 +101,7 @@ const SeatCell = ({
     ? { bg: "blue.200", borderColor: "blue.400" }
     : moveMode
     ? {}
-    : { bg: isHighlighted ? "orange.400" : isOccupied ? "blue.200" : "teal.50", cursor: "pointer" };
+    : { bg: isHighlighted ? "yellow.400" : isOccupied ? "blue.200" : "teal.50", cursor: "pointer" };
 
   return (
     <Box
@@ -216,8 +216,8 @@ const Legend = ({ showHighlight, moveMode }) => (
     </HStack>
     {showHighlight && (
       <HStack spacing={1}>
-        <Box w={3} h={3} borderRadius="sm" bg="orange.300" border="2px" borderColor="orange.500" />
-        <Text color="orange.600" fontWeight="semibold">Located Item</Text>
+        <Box w={3} h={3} borderRadius="sm" bg="yellow.300" border="2px" borderColor="yellow.600" />
+        <Text color="yellow.700" fontWeight="semibold">Located Item</Text>
       </HStack>
     )}
     {moveMode && (
@@ -343,7 +343,7 @@ const FloorCell = ({ loc, isOccupied, isHighlighted, moveMode, activeId, onSeatC
   if (isDragging) {
     bg = "blue.50"; borderColor = "blue.200"; color = "blue.300"; border = "1px";
   } else if (isHighlighted) {
-    bg = "orange.300"; borderColor = "orange.500"; color = "orange.900"; border = "2px";
+    bg = "yellow.300"; borderColor = "yellow.500"; color = "yellow.900"; border = "2px";
   } else if (moveMode && isOver && !isSelf && activeId) {
     bg = isOccupied ? "yellow.100" : "green.100";
     borderColor = isOccupied ? "yellow.400" : "green.400";
@@ -374,7 +374,7 @@ const FloorCell = ({ loc, isOccupied, isHighlighted, moveMode, activeId, onSeatC
       _hover={
         moveMode
           ? {}
-          : { bg: isHighlighted ? "orange.400" : isOccupied ? "blue.200" : "teal.50", borderColor: isHighlighted ? "orange.500" : "blue.200" }
+          : { bg: isHighlighted ? "yellow.400" : isOccupied ? "blue.200" : "teal.50", borderColor: isHighlighted ? "yellow.500" : "blue.200" }
       }
       transition="all 0.1s"
       onClick={moveMode ? undefined : (e) => onSeatClick(e, loc)}
@@ -580,7 +580,7 @@ function ShowMap({ isOpen, onClose, highlightLocation }) {
             <Flex align="center" gap={2}>
               Freezer Map
               {highlightLocation && (
-                <Text as="span" fontSize="sm" fontWeight="normal" color="orange.500">
+                <Text as="span" fontSize="sm" fontWeight="normal" color="yellow.600">
                   — Locating {highlightLocation}
                 </Text>
               )}

@@ -108,7 +108,7 @@ const OrderScanner = ({ isOpen, onClose }) => {
   };
 
   const statusIcon = (item) => {
-    if (item.matches.length === 0) return <WarningIcon color="orange.400" boxSize={3} />;
+    if (item.matches.length === 0) return <WarningIcon color="yellow.600" boxSize={3} />;
     if (item.matches.length === 1) return <CheckCircleIcon color="green.400" boxSize={3} />;
     return <InfoIcon color="blue.400" boxSize={3} />;
   };
@@ -222,7 +222,7 @@ const OrderScanner = ({ isOpen, onClose }) => {
                         <Text fontSize="xs" color="blue.600">⚠ {items.filter((i) => i.matches.length > 1).length} pick needed</Text>
                       )}
                       {items.filter((i) => i.matches.length === 0).length > 0 && (
-                        <Text fontSize="xs" color="orange.500">✗ {items.filter((i) => i.matches.length === 0).length} not found</Text>
+                        <Text fontSize="xs" color="yellow.600">✗ {items.filter((i) => i.matches.length === 0).length} not found</Text>
                       )}
                     </Flex>
                   </Box>
@@ -321,7 +321,7 @@ const OrderScanner = ({ isOpen, onClose }) => {
                         {/* Match info */}
                         {item.matches.length === 0 && (
                           <Box pl={6}>
-                            <Text fontSize="xs" color="orange.500">Not found in inventory</Text>
+                            <Text fontSize="xs" color="yellow.600">Not found in inventory</Text>
                           </Box>
                         )}
 

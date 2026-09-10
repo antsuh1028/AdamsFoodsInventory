@@ -381,7 +381,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                                 {item.stage === "processed" && (
                                   <Badge colorScheme="teal" fontSize="9px">Processed</Badge>
                                 )}
-                                {noWeight && <Text fontSize="xs" color="orange.500" fontWeight="semibold">0 lb</Text>}
+                                {noWeight && <Text fontSize="xs" color="yellow.600" fontWeight="semibold">0 lb</Text>}
                               </Flex>
                               <Text color="gray.500" fontSize="xs">
                                 {[item.description, item.brand].filter(Boolean).join(" · ")}
@@ -397,8 +397,8 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                     <Text fontSize="sm" color={weightError ? "red.500" : "gray.500"} mb="2px"
                       textTransform="uppercase" letterSpacing="wide">Weight (lb)</Text>
                       {selectedItemZeroWeight ? (
-                      <Box mt={2} p={2} py={1} bg="orange.50" border="1px" borderColor="orange.300" borderRadius="md" mb={2}>
-                        <Text fontSize="sm" color="orange.700" fontWeight="semibold" >
+                      <Box mt={2} p={2} py={1} bg="yellow.50" border="1px" borderColor="yellow.300" borderRadius="md" mb={2}>
+                        <Text fontSize="sm" color="yellow.800" fontWeight="semibold" >
                           Weight is 0
                         </Text>
                       </Box>
@@ -516,7 +516,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                           )}
                         </Text>
                         {isPartial && (
-                          <Badge colorScheme="orange" variant="subtle" fontSize="sm" px={2} borderRadius="md">
+                          <Badge colorScheme="yellow" variant="subtle" fontSize="sm" px={2} borderRadius="md">
                             Partial
                           </Badge>
                         )}
@@ -570,7 +570,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                             {outParts.length > 0 ? outParts.join(" · ") : "click to enter"}
                           </Text>
                           {order.status === "pending" && !isPartial && (
-                            <Button size="xs" variant="outline" colorScheme="orange"
+                            <Button size="xs" variant="outline" colorScheme="yellow"
                               ml={2} onClick={() => openPartial(order)}>
                               Partial
                             </Button>
@@ -778,7 +778,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
           width={620}
           footer={<>
             <Button size="sm" variant="ghost" onClick={() => setPartialOrderId(null)}>Cancel</Button>
-            <Button size="sm" colorScheme="orange" isLoading={partialSubmitting} onClick={submitPartial}>
+            <Button size="sm" colorScheme="yellow" isLoading={partialSubmitting} onClick={submitPartial}>
               Confirm — Mark Partial Complete
             </Button>
           </>}
@@ -801,7 +801,7 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                         fontSize="sm" fontWeight="semibold" color="blue.600" whiteSpace="nowrap">Actual Used</Box>
                       <Box as="th" textAlign="right" px={3} py={2} bg="gray.50"
                         borderBottom="2px" borderColor="gray.200"
-                        fontSize="sm" fontWeight="semibold" color="orange.500" whiteSpace="nowrap">Remaining</Box>
+                        fontSize="sm" fontWeight="semibold" color="yellow.600" whiteSpace="nowrap">Remaining</Box>
                     </tr>
                   </thead>
                   <tbody>
@@ -838,10 +838,10 @@ export const ProcessingReportTab = ({ ntiInventory = [], procOrders, onProcOrder
                           <Box as="td" px={3} py={3} textAlign="right" borderBottom="1px" borderColor="gray.100">
                             {remaining > 0 ? (
                               <>
-                                <Text fontSize="xl" fontWeight="bold" color="orange.500" lineHeight={1}>
+                                <Text fontSize="xl" fontWeight="bold" color="yellow.600" lineHeight={1}>
                                   {remaining.toFixed(1)}
                                 </Text>
-                                <Text fontSize="xs" color="orange.300">lb pending</Text>
+                                <Text fontSize="xs" color="yellow.700">lb pending</Text>
                               </>
                             ) : (
                               <Text fontSize="sm" color="gray.300">—</Text>

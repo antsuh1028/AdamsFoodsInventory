@@ -527,7 +527,7 @@ const Homescreen = () => {
                 Cancel
               </Button>
               <Button
-                colorScheme="orange"
+                colorScheme="yellow"
                 borderRadius="lg"
                 w="full"
                 onClick={() => {
@@ -587,7 +587,7 @@ const Homescreen = () => {
                 Cancel
               </Button>
               <Button
-                colorScheme="orange"
+                colorScheme="yellow"
                 borderRadius="lg"
                 w="full"
                 onClick={() => {

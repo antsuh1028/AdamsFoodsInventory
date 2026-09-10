@@ -285,7 +285,7 @@ const BoxWeightLink = ({
                 {" — "}
                 {suggested.reduce((n, b) => n + (Number(b.box_count) || 0), 0)} more boxes.
               </Box>
-              <Button size="xs" variant="ghost" colorScheme="orange" fontWeight="500"
+              <Button size="xs" variant="ghost" colorScheme="yellow" fontWeight="500"
                 isLoading={loading}
                 onClick={() => link(suggested.map((b) => b.batch_id))}>
                 Tie {suggested.length === 1 ? "it" : "them"}
@@ -314,7 +314,7 @@ const BoxWeightLink = ({
                 <Text fontSize="sm" fontWeight="600" color="blue.700">
                   {s.lot_number || `Batch ${s.batch_id}`}
                 </Text>
-                <Badge colorScheme={s.status === "closed" ? "green" : "orange"} fontSize="9px">
+                <Badge colorScheme={s.status === "closed" ? "green" : "yellow"} fontSize="9px">
                   {s.status === "closed" ? "Closed" : "Open"}
                 </Badge>
                 {s.source === "imported" && (

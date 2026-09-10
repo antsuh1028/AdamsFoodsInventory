@@ -256,9 +256,9 @@ const FormScanner = ({ isOpen, onClose }) => {
           {step === "review" && (
             <Flex direction="column" gap={4}>
               {!isTally && (
-                <Flex align="center" gap={2} bg="orange.50" border="1px solid" borderColor="orange.200" borderRadius="lg" px={3} py={2}>
-                  <WarningTwoIcon color="orange.400" boxSize={4} flexShrink={0} />
-                  <Text fontSize="xs" color="orange.700" fontWeight="medium">
+                <Flex align="center" gap={2} bg="yellow.50" border="1px solid" borderColor="yellow.200" borderRadius="lg" px={3} py={2}>
+                  <WarningTwoIcon color="yellow.600" boxSize={4} flexShrink={0} />
+                  <Text fontSize="xs" color="yellow.800" fontWeight="medium">
                     This image doesn't look like an Adams Foods tally form. Fields may be inaccurate.
                   </Text>
                 </Flex>

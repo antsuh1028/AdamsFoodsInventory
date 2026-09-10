@@ -54,16 +54,16 @@ const LineRow = ({ entry }) => {
             <Text fontSize="sm" fontWeight="600" style={{ fontVariantNumeric: "tabular-nums" }}>
               {p.weight}
             </Text>
-            <Badge colorScheme={p.unit === "LB" ? "blue" : "orange"} fontSize="10px">
+            <Badge colorScheme={p.unit === "LB" ? "blue" : "yellow"} fontSize="10px">
               {p.unit}
             </Badge>
             {p.unitAssumed && (
-              <Badge colorScheme="purple" fontSize="9px" title="The line carried no unit; this is the station setting">
+              <Badge colorScheme="blue" fontSize="9px" title="The line carried no unit; this is the station setting">
                 unit assumed
               </Badge>
             )}
             {p.stable === true && <Badge colorScheme="green" fontSize="9px">stable</Badge>}
-            {p.stable === false && <Badge colorScheme="orange" fontSize="9px">unstable</Badge>}
+            {p.stable === false && <Badge colorScheme="yellow" fontSize="9px">unstable</Badge>}
             {p.stable === null && <Text fontSize="9px" color="gray.400">stability not reported</Text>}
           </Flex>
         ) : (

@@ -298,7 +298,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                               bg={i % 2 ? "gray.50" : "white"}>
                               <Text fontSize="sm" fontWeight="600" color="blue.700">{it.lotNumber}</Text>
                               {it.stage === "raw" && (
-                                <Badge colorScheme="orange" fontSize="9px">Raw</Badge>
+                                <Badge colorScheme="yellow" fontSize="9px">Raw</Badge>
                               )}
                               <Text fontSize="sm" color="gray.600">{it.description || "—"}</Text>
                               <Text fontSize="sm" color="gray.700" ml="auto"
@@ -395,7 +395,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                             </Text>
                             {detail.items.length > 0 &&
                               Math.abs(Number(detail.weighedTotal) - Number(detail.totalWeight)) > 0.004 && (
-                              <Badge colorScheme="orange" fontSize="9px">
+                              <Badge colorScheme="yellow" fontSize="9px">
                                 differs from the {lb(detail.totalWeight)} lb being shipped
                               </Badge>
                             )}

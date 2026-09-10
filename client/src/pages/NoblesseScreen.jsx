@@ -261,14 +261,14 @@ const NoblesseScreen = () => {
               <Tab>
                 Processing
                 {pendingProcCount > 0 && (
-                  <Badge ml={2} colorScheme="orange" borderRadius="full">{pendingProcCount}</Badge>
+                  <Badge ml={2} colorScheme="yellow" borderRadius="full">{pendingProcCount}</Badge>
                 )}
               </Tab>
             )}
             <Tab>
               Registration Forms
               {unregistered.length > 0 && (
-                <Badge ml={2} colorScheme="purple" borderRadius="full">{unregistered.length}</Badge>
+                <Badge ml={2} colorScheme="blue" borderRadius="full">{unregistered.length}</Badge>
               )}
             </Tab>
             <Tab>Weight Manifests</Tab>
@@ -304,21 +304,21 @@ const NoblesseScreen = () => {
               }
             >
               <Flex align="center" gap={2} flexShrink={0}
-                bg="purple.50" border="1px solid" borderColor="purple.200"
+                bg="blue.50" border="1px solid" borderColor="blue.200"
                 borderRadius="full" pl={3} pr={1.5} py={1}>
-                <WarningIcon color="purple.500" boxSize={3} />
-                <Text fontSize="xs" fontWeight="600" color="purple.800" whiteSpace="nowrap">
+                <WarningIcon color="blue.600" boxSize={3} />
+                <Text fontSize="xs" fontWeight="600" color="blue.900" whiteSpace="nowrap">
                   {unregistered.length} weighed lot{unregistered.length === 1 ? "" : "s"} need
                   {unregistered.length === 1 ? "s" : ""} registering
                 </Text>
-                <Button size="xs" colorScheme="purple" borderRadius="full"
+                <Button size="xs" colorScheme="blue" borderRadius="full"
                   onClick={() => setTabIndex(REGISTRATION_TAB)}>
                   Register
                 </Button>
                 <IconButton
                   aria-label="Dismiss until reload"
                   icon={<CloseIcon boxSize={2} />}
-                  size="xs" variant="ghost" colorScheme="purple" borderRadius="full"
+                  size="xs" variant="ghost" colorScheme="blue" borderRadius="full"
                   onClick={() => setNoticeDismissed(true)}
                 />
               </Flex>

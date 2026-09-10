@@ -47,11 +47,11 @@ const cellStyle = {
 const StatusCell = ({ status }) => {
   if (status === "rejected") return <Badge colorScheme="red" fontSize="10px">Rejected</Badge>;
   // Not counted: the server already held this box, so it is not a second one.
-  if (status === "duplicate") return <Badge colorScheme="orange" fontSize="10px">Duplicate</Badge>;
+  if (status === "duplicate") return <Badge colorScheme="yellow" fontSize="10px">Duplicate</Badge>;
   // Taken off the tally on purpose. Still shown, because a soft void that hid
   // the row would tell a reviewer nothing.
   if (status === "voided") return <Badge colorScheme="gray" fontSize="10px">Voided</Badge>;
-  if (status === "pending") return <Badge colorScheme="orange" fontSize="10px">Sending</Badge>;
+  if (status === "pending") return <Badge colorScheme="yellow" fontSize="10px">Sending</Badge>;
   return <Badge colorScheme="green" fontSize="10px">Saved</Badge>;
 };
 
@@ -172,7 +172,7 @@ const ScanSheet = ({
                           point of keeping the original is that it stays visible. */}
                       {s.originalWeight && s.originalWeight !== weightOf(s) && (
                         <Tooltip label={`Scanned as ${s.originalWeight}, corrected by hand`}>
-                          <Text as="span" fontSize="11px" color="orange.500"
+                          <Text as="span" fontSize="11px" color="yellow.600"
                             fontWeight="400" ml={1} textDecoration="line-through">
                             {s.originalWeight}
                           </Text>
@@ -280,7 +280,7 @@ const ScanSheet = ({
             {counted} box{counted === 1 ? "" : "es"}
           </Text>
           {skipped > 0 && (
-            <Text fontSize="xs" color="orange.600">
+            <Text fontSize="xs" color="yellow.700">
               {skipped} not counted
             </Text>
           )}

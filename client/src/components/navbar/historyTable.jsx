@@ -39,7 +39,7 @@ import FloatingWindow from "../FloatingWindow";
 
 const getBadgeColor = (change = "") => {
   const c = change.toLowerCase();
-  if (c === "before update") return "orange";
+  if (c === "before update") return "yellow";
   if (c.includes("add")) return "green";
   if (c.includes("field updated") || c === "updated") return "blue";
   if (c.includes("remov") || c.includes("delet")) return "red";
@@ -104,7 +104,7 @@ const DiffField = ({ label, oldVal, newVal }) => {
     <Box>
       <Text
         fontSize="xs"
-        color={changed ? "orange.500" : "gray.400"}
+        color={changed ? "yellow.500" : "gray.400"}
         textTransform="uppercase"
         letterSpacing="wide"
         fontWeight="medium"
@@ -155,9 +155,9 @@ const HistoryRow = ({ item, onSet, onRestore }) => {
   return (
     <Box
       border="1px"
-      borderColor={expanded ? `${color}.200` : before ? "orange.100" : "gray.100"}
+      borderColor={expanded ? `${color}.200` : before ? "yellow.100" : "gray.100"}
       borderRadius="lg"
-      bg={expanded ? `${color}.50` : before ? "orange.50" : "white"}
+      bg={expanded ? `${color}.50` : before ? "yellow.50" : "white"}
       opacity={before ? 0.72 : 1}
       overflow="hidden"
       transition="all 0.15s"
@@ -169,7 +169,7 @@ const HistoryRow = ({ item, onSet, onRestore }) => {
         gap={3}
         cursor="pointer"
         onClick={() => setExpanded((v) => !v)}
-        _hover={{ bg: expanded ? `${color}.100` : before ? "orange.100" : "gray.50" }}
+        _hover={{ bg: expanded ? `${color}.100` : before ? "yellow.100" : "gray.50" }}
       >
         <Badge
           colorScheme={color}
@@ -225,7 +225,7 @@ const HistoryRow = ({ item, onSet, onRestore }) => {
             </Text>
           )}
           {oldData && changedFields.length > 0 && (
-            <Badge colorScheme="orange" variant="subtle" fontSize="xs">
+            <Badge colorScheme="yellow" variant="subtle" fontSize="xs">
               {changedFields.length} changed
             </Badge>
           )}
@@ -264,8 +264,8 @@ const HistoryRow = ({ item, onSet, onRestore }) => {
             </Box>
           )}
           {before && (
-            <Box mb={3} px={3} py={2} bg="orange.50" border="1px" borderColor="orange.200" borderRadius="md">
-              <Text fontSize="xs" color="orange.600" fontWeight="medium">
+            <Box mb={3} px={3} py={2} bg="yellow.50" border="1px" borderColor="yellow.200" borderRadius="md">
+              <Text fontSize="xs" color="yellow.700" fontWeight="medium">
                 Snapshot of item state before the update above it
               </Text>
             </Box>
@@ -275,8 +275,8 @@ const HistoryRow = ({ item, onSet, onRestore }) => {
           {oldData ? (
             <>
               {changedFields.length > 0 && (
-                <Box mb={3} px={3} py={2} bg="orange.50" border="1px" borderColor="orange.200" borderRadius="md">
-                  <Text fontSize="xs" color="orange.600" fontWeight="medium">
+                <Box mb={3} px={3} py={2} bg="yellow.50" border="1px" borderColor="yellow.200" borderRadius="md">
+                  <Text fontSize="xs" color="yellow.700" fontWeight="medium">
                     Changed: {changedFields.map(f => f.label).join(", ")}
                   </Text>
                 </Box>
@@ -462,7 +462,7 @@ const HistorySpreadsheet = ({ items, onSet, hasMore, loadingMore, onLoadMore, to
               return (
                 <Tr
                   key={i}
-                  bg={isSelected ? `${color}.50` : before ? "orange.50" : undefined}
+                  bg={isSelected ? `${color}.50` : before ? "yellow.50" : undefined}
                   opacity={before ? 0.72 : 1}
                   _hover={{ bg: isSelected ? `${color}.100` : "gray.50", cursor: "pointer" }}
                   onClick={() => setSelectedIdx(isSelected ? null : i)}

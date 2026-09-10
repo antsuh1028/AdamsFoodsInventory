@@ -79,10 +79,10 @@ const KeypadPanel = ({ onAdd, disabled }) => {
   return (
     <Box>
       <Flex justify="space-between" align="baseline" mb={2} gap={2} wrap="wrap">
-        <Text fontSize="xs" color="orange.700">
+        <Text fontSize="xs" color="yellow.800">
           For damaged or unbarcoded labels
         </Text>
-        <Button size="xs" variant="ghost" colorScheme="orange" tabIndex={-1}
+        <Button size="xs" variant="ghost" colorScheme="yellow" tabIndex={-1}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => setShowNote((v) => !v)}>
           {showNote ? "Hide note" : "Add note"}
@@ -111,7 +111,7 @@ const KeypadPanel = ({ onAdd, disabled }) => {
                 value={note} onChange={(e) => setNote(e.target.value)} />
               {/* Said out loud because the consequence is silent: a focused
                   field takes the scanner's keystrokes instead of the session. */}
-              <Text fontSize="xs" color="orange.700" mt={1}>
+              <Text fontSize="xs" color="yellow.800" mt={1}>
                 Scans are not recorded while this field has focus. Hide it before
                 scanning again.
               </Text>
@@ -555,7 +555,7 @@ const BoxScanner = ({ isOpen, onClose }) => {
                 onClick={() => setConfirmDiscard(true)} isDisabled={busy}>
                 Discard it
               </Button>
-              <Button size="sm" colorScheme="orange" onClick={onResume} isLoading={busy}>
+              <Button size="sm" colorScheme="yellow" onClick={onResume} isLoading={busy}>
                 Resume it
               </Button>
             </Flex>
@@ -579,7 +579,7 @@ const BoxScanner = ({ isOpen, onClose }) => {
           label="Unsent"
           value={pending}
           help={pending > 0 ? "keep this screen open" : "all synced"}
-          color={pending > 0 ? "orange.500" : "green.600"}
+          color={pending > 0 ? "yellow.500" : "green.600"}
           size="2xl"
         />
       </Flex>
@@ -805,7 +805,7 @@ const BoxScanner = ({ isOpen, onClose }) => {
                         {value}
                       </Text>
                     ) : (
-                      <Text fontSize="sm" color="orange.500" fontStyle="italic">
+                      <Text fontSize="sm" color="yellow.600" fontStyle="italic">
                         not set — will print blank on the manifest
                       </Text>
                     )}
