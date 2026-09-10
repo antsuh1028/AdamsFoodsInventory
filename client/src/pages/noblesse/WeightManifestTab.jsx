@@ -279,14 +279,22 @@ const ManifestEditor = ({ batchId, detail, onChanged }) => {
   const [draft, setDraft] = useState(() => fromDetail(detail));
   const [saving, setSaving] = useState(false);
 
-  const [weight, setWeight] = useState("");
-  const [unit, setUnit] = useState("LB");
-  const [adding, setAdding] = useState(false);
+  const [confirmReopen, setConfirmReopen] = useState(false);
+  const [reopening, setReopening] = useState(false);
+  // What else points at this session, so the confirmation can say what will
+  // stop matching if boxes are added. Loaded only when the dialog is opened —
+  // there is no reason to ask on every expanded row.
+  const [blockers, setBlockers] = useState(null);
+  const cancelReopenRef = useRef(null);
 
   // Re-seed when a different session is expanded, or the detail is refetched.
   useEffect(() => { setDraft(fromDetail(detail)); setEditing(false); }, [detail, batchId]);
 
-  const mayEdit = detail.status !== "closed" || getRole() === "admin";
+  // Read here rather than passed down: this component is rendered per row, and
+  // threading the role through every one of them only creates a chance for the
+  // two to disagree. Courtesy only — the server decides.
+  const isAdmin = getRole() === "admin";
+  const mayEdit = detail.status !== "closed" || isAdmin;
   const original = fromDetail(detail);
   const dirty = Object.keys(draft).some((k) => draft[k].trim() !== original[k].trim());
 
@@ -314,25 +322,33 @@ const ManifestEditor = ({ batchId, detail, onChanged }) => {
     } catch (err) { fail("Could not save")(err); } finally { setSaving(false); }
   };
 
-  const addBox = async () => {
-    setAdding(true);
+  // Ask what references this session before offering to reopen it, so the
+  // consequence is stated up front rather than discovered afterwards.
+  const openReopenDialog = async () => {
+    setBlockers(null);
+    setConfirmReopen(true);
     try {
-      // isManual, because there is no barcode to re-derive this from — the
-      // server refuses a barcode-less item otherwise. The weight goes up as a
-      // decimal STRING in the unit given; the server converts and stores.
-      await axiosInstance.post(`/box-batches/${batchId}/items`, {
-        items: [{ weight: weight.trim(), weightUnit: unit, isManual: true }],
-      });
-      setWeight("");
-      await onChanged();
-      toast({ status: "success", title: "Box added", duration: 2000, position: "top" });
-    } catch (err) { fail("Could not add that box")(err); } finally { setAdding(false); }
+      const { data } = await axiosInstance.get(`/box-batches/${batchId}/references`);
+      setBlockers(data);
+    } catch {
+      // The dialog still works without it; the warning simply is not shown.
+    }
   };
 
-  // Up to three decimals, matching NUMERIC(8,3) — the same shape the scanner
-  // and the scale both produce. Checked before sending so a typo is caught
-  // here rather than coming back as a validation error.
-  const weightOk = /^\d{1,5}(\.\d{1,3})?$/.test(weight.trim()) && Number(weight) > 0;
+  const reopen = async () => {
+    setReopening(true);
+    try {
+      await axiosInstance.post(`/box-batches/${batchId}/reopen`);
+      setConfirmReopen(false);
+      await onChanged();
+      toast({
+        status: "success", position: "top", duration: 8000, isClosable: true,
+        title: "Session reopened",
+        description: "Open the scanner and press Continue on this lot to scan more boxes. " +
+                     "Close it again when you are done.",
+      });
+    } catch (err) { fail("Could not reopen")(err); } finally { setReopening(false); }
+  };
 
   return (
     <Box mb={3} px={3} py={2} bg="gray.50" borderRadius="md"
@@ -403,36 +419,89 @@ const ManifestEditor = ({ batchId, detail, onChanged }) => {
         </Flex>
       )}
 
-      {/* A box that was weighed but never scanned. Appending is the honest fix —
-          the alternative is a manifest that is permanently short, or deleting
-          and re-weighing the whole lot. */}
-      {mayEdit && (
-        <Flex gap={2} align="flex-end" mt={3} pt={3} wrap="wrap"
+      {/* More boxes go on by SCANNING them, not by typing them.
+          A keyed weight is unverified; a scanned one is re-derived from the
+          barcode server-side, deduplicated on serial, and recorded as scanned.
+          So a late box arrives on the same footing as every other box on the
+          manifest rather than as somebody's typing. */}
+      {isAdmin && (
+        <Flex gap={3} align="center" mt={3} pt={3} wrap="wrap"
           borderTop="1px solid" borderColor="gray.200">
-          <Box>
-            <Text fontSize="10px" color="gray.500" textTransform="uppercase" mb={1}>
-              Add a missed box
-            </Text>
-            <Input size="sm" bg="white" width="120px" value={weight}
-              placeholder="40.00" inputMode="decimal"
-              onChange={(e) => setWeight(e.target.value)} />
-          </Box>
-          <Select size="sm" bg="white" width="80px" value={unit}
-            onChange={(e) => setUnit(e.target.value)}>
-            <option value="LB">LB</option>
-            <option value="KG">KG</option>
-          </Select>
-          <Button size="sm" colorScheme="blue" variant="outline"
-            isLoading={adding} isDisabled={!weightOk} onClick={addBox}>
-            Add box
-          </Button>
-          {weight.trim() && !weightOk && (
-            <Text fontSize="xs" color="red.600" alignSelf="center">
-              Up to 5 digits and 3 decimals.
+          {detail.status === "closed" ? (
+            <>
+              <Button size="sm" colorScheme="orange" variant="outline"
+                isLoading={reopening} onClick={openReopenDialog}>
+                Reopen for scanning
+              </Button>
+              <Text fontSize="xs" color="gray.600">
+                Puts this session back in the scanner so more boxes can be scanned onto it.
+              </Text>
+            </>
+          ) : (
+            <Text fontSize="xs" color="gray.600">
+              This session is <b>open</b> — open the scanner and press{" "}
+              <b>Continue</b> on {detail.lot_number || "this lot"} to scan more boxes onto it.
             </Text>
           )}
         </Flex>
       )}
+
+      <AlertDialog isOpen={confirmReopen} leastDestructiveRef={cancelReopenRef}
+        onClose={() => setConfirmReopen(false)} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Reopen this session?
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              <Text fontSize="sm" mb={2}>
+                <b>{detail.lot_number || `Session ${batchId}`}</b> goes back to open, and
+                will appear in the scanner under <b>Continue</b>. Its existing boxes stay
+                exactly as they are.
+              </Text>
+              <Text fontSize="sm" mb={2}>
+                Close it again when you have finished — a session left open is not
+                finished work, and the manifest total moves with every box added.
+              </Text>
+              {/* Adding boxes changes the total that anything referencing this
+                  session already recorded. Naming them beats a surprise later. */}
+              {blockers && !blockers.deletable && (
+                <Alert status="warning" borderRadius="md" fontSize="xs" py={2}
+                  alignItems="flex-start">
+                  <AlertIcon />
+                  <Box>
+                    <Text fontWeight="600">Something already references this session.</Text>
+                    {blockers.forms.map((f) => (
+                      <Text key={`f${f.id}`}>
+                        Registration form <b>{f.lot_number || `#${f.id}`}</b> — its recorded
+                        weight will no longer match if you add boxes.
+                      </Text>
+                    ))}
+                    {blockers.groups.map((g) => (
+                      <Text key={`g${g.group_id}`}>
+                        Merged manifest <b>{g.name || g.lot_number || `#${g.group_id}`}</b>.
+                      </Text>
+                    ))}
+                    {blockers.shipments.map((s) => (
+                      <Text key={`s${s.shipment_id}`}>
+                        Shipment <b>#{s.shipment_id} {s.destination_name}</b> ({s.status}).
+                      </Text>
+                    ))}
+                  </Box>
+                </Alert>
+              )}
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelReopenRef} onClick={() => setConfirmReopen(false)}>
+                Go back
+              </Button>
+              <Button colorScheme="orange" isLoading={reopening} onClick={reopen}>
+                Reopen
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </Box>
   );
 };
