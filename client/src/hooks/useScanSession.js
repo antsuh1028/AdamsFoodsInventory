@@ -17,6 +17,9 @@ const api = {
     axiosInstance.post(`/box-batches/${batchId}/items`, { items }).then((r) => r.data),
   closeBatch: (batchId) =>
     axiosInstance.post(`/box-batches/${batchId}/close`).then((r) => r.data),
+  listBatches: () => axiosInstance.get("/box-batches").then((r) => r.data),
+  getBatch: (batchId) =>
+    axiosInstance.get(`/box-batches/${batchId}`).then((r) => r.data),
   // The unit goes up as typed; the server converts it itself rather than
   // trusting a figure the client already converted.
   patchItem: (batchId, itemId, weight, weightUnit = "LB") =>
@@ -142,6 +145,48 @@ export const useScanSession = () => {
     return existing;
   }, [acquireWakeLock, flush]);
 
+  // Sessions left open on the SERVER, whoever opened them and on whatever
+  // device. This is what `resume` cannot see: findResumable only reads local
+  // IndexedDB, so a session started on another iPad — or in a browser whose
+  // storage was cleared — was invisible and the operator had to open a second
+  // one against the same lot.
+  const listOpenSessions = useCallback(async () => {
+    const all = await api.listBatches();
+    return (all || []).filter((b) => b.status === "open");
+  }, []);
+
+  // Rejoin one of them. The server is the source of truth here: its boxes are
+  // pulled and seeded so the grid and running total show the whole session
+  // rather than only what gets scanned from now on.
+  const adoptSession = useCallback(async (batchId) => {
+    if (!queueRef.current) return { adopted: false, reason: "not-ready" };
+    const detail = await api.getBatch(batchId);
+
+    const result = await queueRef.current.adopt({
+      batch: {
+        batchId: detail.batch_id,
+        lotNumber: detail.lot_number,
+        lotId: detail.lot_id ?? null,
+        vendor: detail.vendor,
+        billOfLading: detail.bill_of_lading,
+        itemDescription: detail.item_description,
+        brand: detail.brand,
+        estNumber: detail.est_number,
+        grade: detail.grade,
+      },
+      items: detail.items || [],
+    });
+    // Refused because unsent scans would have been destroyed — leave everything
+    // exactly as it was and let the caller say so.
+    if (!result.adopted) return result;
+
+    setSession(await queueRef.current.findResumable());
+    setResumable(null);
+    await acquireWakeLock();
+    await refreshPending();
+    return result;
+  }, [acquireWakeLock, refreshPending]);
+
   const addScan = useCallback(async (scan) => {
     if (!queueRef.current) throw new Error("Scan store not ready");
     await queueRef.current.enqueue(scan);
@@ -236,6 +281,7 @@ export const useScanSession = () => {
   return {
     ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
     start, resume, discardResumable, stop, flush, addScan, undoLast, editScan, voidScan,
+    listOpenSessions, adoptSession,
   };
 };
 

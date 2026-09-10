@@ -42,7 +42,10 @@ const STORED_UNIT = "LB";
 const displayOf = (record) => record.displayWeight || record.weight;
 
 // Formats the stored thousandths into display strings, e.g.
-// { count: 3, totals: { LB: "228.600" } }
+// { count: 3, totals: [{ unit: "LB", total: "228.600" }] }
+//
+// totals is an ARRAY, not an object keyed by unit — the session can hold more
+// than one unit and the order has to be stable for display.
 const formatStats = (stats) => {
   const source = stats || emptyStats();
   return {
@@ -375,6 +378,101 @@ const createScanQueue = ({
     return { ...session, pending };
   };
 
+  // Rejoin a session that is open ON THE SERVER but unknown to this browser.
+  //
+  // findResumable above only sees what IndexedDB holds, so it covers "same
+  // iPad, came back later" and nothing else. A session opened on another
+  // device — or in a browser whose storage was cleared — was unreachable, and
+  // the only way forward was to start a SECOND session against the same lot.
+  // That splits one delivery across two manifests, which is the thing merged
+  // manifests exist to undo afterwards.
+  //
+  // Boxes already on the batch are seeded as SYNCED rows carrying their server
+  // item ids, which matters three separate ways:
+  //   - the grid and running total show the true state, not just this sitting
+  //   - flush() skips them, so nothing is sent twice
+  //   - serverItemId is what makes an already-sent box correctable mid-session,
+  //     so an adopted row stays as editable as a freshly scanned one
+  const adopt = async ({ batch, items = [] }) => {
+    if (!batch || batch.batchId == null) {
+      throw new Error("adopt requires a batch with a batchId");
+    }
+
+    // Unsent scans belong to whatever session is loaded now. Adopting over them
+    // would destroy the one thing the server has no copy of — the rule this
+    // whole queue is built around — so it refuses and lets the caller decide.
+    const pendingNow = await backend.countPending();
+    if (pendingNow > 0) {
+      return { adopted: false, reason: "pending-scans", pending: pendingNow };
+    }
+
+    await clearSession();
+
+    const stats = emptyStats();
+    const rows = [];
+    for (const item of items) {
+      // A voided box stays visible and struck through but must not count —
+      // the same rule the manifest and every total follow.
+      const voided = Boolean(item.voidedAt);
+      const record = {
+        weight: item.weight,
+        weightUnit: item.weightUnit || STORED_UNIT,
+        // Server weights are ALREADY in pounds, so this is the display weight.
+        // Running toPounds again would apply the kilogram ratio a second time
+        // to a figure that has had it once.
+        displayWeight: item.weight,
+        convertedFrom: item.convertedFrom || null,
+        rawBarcode: item.rawBarcode || null,
+        gtin: item.gtin || null,
+        serial: item.serial || null,
+        productionDate: item.productionDate || null,
+        isManual: !!item.isManual,
+        originalWeight: item.originalWeight || null,
+        editedAt: item.editedAt || null,
+        voidedAt: item.voidedAt || null,
+        voidReason: item.voidReason || null,
+        status: voided ? "voided" : "synced",
+        // Set HERE rather than through markSynced, which forces status to
+        // "synced" and would quietly un-void a voided box — the total stayed
+        // right but the row stopped being struck through, so the grid would
+        // have shown a box that does not count as though it does.
+        //
+        // Neither status is "pending", which is what countPending and
+        // listPending key on, so these are never flushed either way.
+        serverItemId: item.localId,
+        scannedAt: item.scannedAt || new Date().toISOString(),
+      };
+      const localId = await backend.putScan(record);
+      rows.push({ localId, itemId: item.localId, voided });
+      if (!voided) {
+        stats.count += 1;
+        stats.totals[STORED_UNIT] =
+          (stats.totals[STORED_UNIT] || 0) + weightToThousandths(displayOf(record));
+      }
+    }
+
+    await backend.setSession({
+      clientUuid: batch.clientUuid || null,
+      batchId: batch.batchId,
+      lotNumber: batch.lotNumber || null,
+      lotId: batch.lotId ?? null,
+      vendor: batch.vendor || null,
+      billOfLading: batch.billOfLading || null,
+      itemDescription: batch.itemDescription || null,
+      brand: batch.brand || null,
+      estNumber: batch.estNumber || null,
+      grade: batch.grade || null,
+      status: "open",
+      stats,
+    });
+
+    return {
+      adopted: true,
+      batchId: batch.batchId,
+      boxes: rows.filter((r) => !r.voided).length,
+    };
+  };
+
   return {
     enqueue,
     undoLast,
@@ -387,6 +485,7 @@ const createScanQueue = ({
     start,
     stop,
     findResumable,
+    adopt,
     countPending: () => backend.countPending(),
     isFlushing: () => flushing,
   };

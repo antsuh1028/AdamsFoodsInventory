@@ -124,11 +124,62 @@ const KeypadPanel = ({ onAdd, disabled }) => {
   );
 };
 
+// The listing returns totals as [{ unit, total }] — an array, because a session
+// can hold more than one unit.
+const totalsOf = (batch) =>
+  Array.isArray(batch.totals) && batch.totals.length
+    ? batch.totals.map((t) => `${t.total} ${t.unit}`).join("  ·  ")
+    : "—";
+
 const BoxScanner = ({ isOpen, onClose }) => {
   const {
     ready, durable, session, pending, resumable, lastError, lastScan, scans,
     start, resume, discardResumable, stop, flush, addScan, undoLast, editScan, voidScan,
+    listOpenSessions, adoptSession,
   } = useScanSession();
+
+  // Sessions still open on the server. Loaded when the panel opens with nothing
+  // running, so an operator can carry on with a lot rather than starting a
+  // second session against it — two sessions for one delivery is exactly what
+  // merged manifests exist to undo afterwards.
+  const [openSessions, setOpenSessions] = useState([]);
+  const [adopting, setAdopting] = useState(null);
+
+  useEffect(() => {
+    if (!isOpen || session) { setOpenSessions([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await listOpenSessions();
+        if (!cancelled) setOpenSessions(rows);
+      } catch {
+        // A listing failure must not block starting a new session, which is
+        // still the common case — the panel just does not offer to continue.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, session, listOpenSessions]);
+
+  const onContinue = async (batch) => {
+    setAdopting(batch.batch_id);
+    try {
+      const result = await adoptSession(batch.batch_id);
+      if (!result.adopted && result.reason === "pending-scans") {
+        toast({
+          status: "warning", duration: 9000, isClosable: true, position: "top",
+          title: "Finish the session already on this device first",
+          description:
+            `${result.pending} scan(s) here have not reached the server yet. ` +
+            `Resume that session and let it flush, or discard it, before continuing another.`,
+        });
+      }
+    } catch (err) {
+      toast({ status: "error", position: "top", duration: 5000,
+        title: "Could not continue that session", description: err.message });
+    } finally {
+      setAdopting(null);
+    }
+  };
 
   // One session is one lot, so the manifest produced at Stop covers exactly
   // these boxes. Defaults to today's lot; editable before the session opens.
@@ -382,6 +433,48 @@ const BoxScanner = ({ isOpen, onClose }) => {
             </Text>
           </Box>
         </Alert>
+      )}
+
+      {/* Carry on with a session that is already open, instead of opening a
+          second one against the same lot. Hidden once a session is running, and
+          hidden when the local resume banner is showing — that one is more
+          urgent, because it holds scans the server has never seen. */}
+      {!session && !resumable && openSessions.length > 0 && (
+        <Box mb={3} p={3} bg="blue.50" borderRadius="md"
+          border="1px solid" borderColor="blue.200">
+          <Text fontSize="sm" fontWeight="600" color="blue.800" mb={2}>
+            {openSessions.length} session{openSessions.length === 1 ? "" : "s"} still open
+          </Text>
+          <Flex direction="column" gap={2}>
+            {openSessions.map((b) => (
+              <Flex key={b.batch_id} align="center" gap={3} wrap="wrap"
+                bg="white" borderRadius="md" px={3} py={2}
+                border="1px solid" borderColor="blue.100">
+                <Text fontSize="sm" fontWeight="700" color="blue.700">
+                  {b.lot_number || `Batch ${b.batch_id}`}
+                </Text>
+                {b.vendor && <Text fontSize="sm" color="gray.600">{b.vendor}</Text>}
+                {b.item_description && (
+                  <Text fontSize="xs" color="gray.500">{b.item_description}</Text>
+                )}
+                <Text fontSize="xs" color="gray.600">
+                  {b.box_count} box{b.box_count === 1 ? "" : "es"}
+                  {" · "}{totalsOf(b)}
+                </Text>
+                <Text fontSize="xs" color="gray.400" whiteSpace="nowrap">
+                  opened {fmtDate(b.created_at)}
+                </Text>
+                <Box flex={1} />
+                <Button size="sm" colorScheme="blue" variant="outline"
+                  isLoading={adopting === b.batch_id}
+                  isDisabled={!ready || adopting != null}
+                  onClick={() => onContinue(b)}>
+                  Continue
+                </Button>
+              </Flex>
+            ))}
+          </Flex>
+        </Box>
       )}
 
       {resumable && !session && (
