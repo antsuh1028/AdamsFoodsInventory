@@ -640,6 +640,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
                 size="md"
                 allowCreate
                 value={header.lotId}
+                lotNumber={header.lotNumber}
                 onChange={(lot) => setHeader((h) => ({
                   ...h,
                   lotId: lot ? lot.lotId : null,

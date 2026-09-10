@@ -179,6 +179,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                   <LotPicker
                     allowCreate
                     value={draft.lotId ?? null}
+                    lotNumber={draft.lotNumber || ""}
                     onChange={(lot) => setDraft({
                       ...draft,
                       lotId: lot ? lot.lotId : null,

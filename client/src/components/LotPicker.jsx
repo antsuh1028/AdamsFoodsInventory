@@ -1,6 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box, Flex, Text, Select, Button, Input, Spinner, Badge, useToast,
+  AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogContent, AlertDialogOverlay,
 } from "@chakra-ui/react";
 import axiosInstance from "../utils/axiosInstance";
 
@@ -24,6 +26,7 @@ import axiosInstance from "../utils/axiosInstance";
 
 const LotPicker = ({
   value = null,                 // selected lotId, or null
+  lotNumber = "",               // the text, needed when there is no lotId to show
   onChange,                     // (lot | null) => void — the whole lot object
   allowCreate = false,
   date = null,                  // issue against this day instead of today
@@ -36,6 +39,10 @@ const LotPicker = ({
   const [busy, setBusy] = useState(false);
   const [nextLot, setNextLot] = useState(null);
   const [typed, setTyped] = useState("");
+  // Set when the registry refuses what was typed, which turns the refusal into
+  // a confirmation rather than a dead end.
+  const [freeForm, setFreeForm] = useState(null);
+  const cancelFreeFormRef = useRef(null);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -115,8 +122,53 @@ const LotPicker = ({
   const issueNext = () => mutate(() =>
     axiosInstance.post("/lots", date ? { date } : {}));
 
-  const adoptTyped = () => mutate(() =>
-    axiosInstance.post("/lots", { lotNumber: typed.trim() }));
+  // Try to register what was typed. If the registry refuses it — a supplier's
+  // own format, a number off a piece of paper that is not N{YY}{JJJ}-{NN} —
+  // offer to use it verbatim instead of dead-ending.
+  //
+  // The SERVER stays the authority on what counts as canonical: this never
+  // pattern-matches locally, it asks and reacts to the answer. That keeps
+  // normalisation in one place, so "N26244-3" still becomes "N26244-03" rather
+  // than being waved through as free-form because the client's idea of the
+  // format was narrower than lot.js's.
+  const adoptTyped = async () => {
+    const text = typed.trim();
+    if (!text) return;
+    setBusy(true);
+    try {
+      const { data } = await axiosInstance.post("/lots", { lotNumber: text });
+      adopt(data.lot, data.created);
+    } catch (err) {
+      const body = err.response?.data;
+      // A refusal to PARSE is the case this handles. Anything else — a network
+      // failure, a 500 — is a real error and still surfaces as one.
+      if (err.response?.status === 400 && body?.code) {
+        setFreeForm({ text: text.toUpperCase(), reason: body.reason || body.error });
+      } else {
+        toast({
+          title: "Could not get that lot",
+          description: body?.reason ? `${body.reason} — "${body.raw}"` : (body?.error || err.message),
+          status: "error", duration: 6000, position: "top", isClosable: true,
+        });
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Confirmed free-form. No registry row is created — `lots` requires a date
+  // and a sequence that this text does not carry, and inventing them would put
+  // a fictional lot in the registry that everything downstream would then
+  // resolve against.
+  //
+  // Instead the text is carried on the record itself with lot_id NULL, which is
+  // exactly what the server already does for unparseable text (lotColumns) and
+  // what the text columns are still authoritative for.
+  const useFreeForm = () => {
+    onChange({ lotId: null, lotNumber: freeForm.text });
+    setTyped("");
+    setFreeForm(null);
+  };
 
   return (
     <Box>
@@ -139,6 +191,27 @@ const LotPicker = ({
         </Select>
 
         {loading && <Spinner size="xs" color="blue.500" />}
+
+        {/* A free-form lot has no lotId, so the Select above cannot show it and
+            the field would read as empty — someone would type a lot, confirm
+            it, and watch it disappear. It is shown here instead, marked, so it
+            is obvious both that a lot IS set and that it is not one of ours. */}
+        {!value && String(lotNumber || "").trim() && (
+          <Flex align="center" gap={2} flexShrink={0}>
+            <Text fontSize={size} fontWeight="700" color="gray.800">{lotNumber}</Text>
+            <Badge colorScheme="yellow" fontSize="9px" borderRadius="full" px={2}
+              title="Not one of our lot numbers — recorded as written, with no registry link">
+              as written
+            </Badge>
+            {!isDisabled && (
+              <Button size="xs" variant="ghost" colorScheme="gray" px={1}
+                title="Clear it and pick or issue a lot instead"
+                onClick={() => onChange(null)}>
+                clear
+              </Button>
+            )}
+          </Flex>
+        )}
 
         {/* Secondary to picking an existing lot: most of the time the lot is
             already there, and issuing a new one is the exception. Ghost and
@@ -208,6 +281,50 @@ const LotPicker = ({
           All 99 sequences for {nextLot.lotDate} are used. Issue against another date.
         </Text>
       )}
+
+      {/* The intermediate step. Using a number the registry does not recognise
+          is legitimate — suppliers have their own formats — but it costs the
+          lot its links, so it is confirmed rather than assumed. */}
+      <AlertDialog isOpen={Boolean(freeForm)} leastDestructiveRef={cancelFreeFormRef}
+        onClose={() => setFreeForm(null)} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Use this as written?
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              <Text fontSize="sm" mb={3}>
+                <b>{freeForm?.text}</b> is not one of our lot numbers
+                {freeForm?.reason ? ` — ${freeForm.reason}` : ""}.
+                Ours look like <Text as="span" fontFamily="mono">N26253-04</Text>.
+              </Text>
+              <Text fontSize="sm" mb={2}>
+                You can still use it. It will be recorded on this record exactly as
+                written, which is right for a supplier's own number off a box or a
+                delivery note.
+              </Text>
+              {/* Said plainly, because the cost is invisible until someone goes
+                  looking for the lot later and it is not there. */}
+              <Box px={3} py={2} bg="yellow.50" border="1px solid" borderColor="yellow.200"
+                borderRadius="md">
+                <Text fontSize="xs" color="yellow.900">
+                  It will not be added to the lot registry, so it gets no lot history,
+                  and totals for it will not join up with anything else. If this delivery
+                  should have one of our lot numbers, go back and issue one instead.
+                </Text>
+              </Box>
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelFreeFormRef} onClick={() => setFreeForm(null)}>
+                Go back
+              </Button>
+              <Button colorScheme="blue" onClick={useFreeForm}>
+                Use as written
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </Box>
   );
 };
