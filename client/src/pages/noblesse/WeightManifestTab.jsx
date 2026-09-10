@@ -273,7 +273,7 @@ const fromDetail = (d) => ({
   remarks: d.remarks || "",
 });
 
-const ManifestEditor = ({ batchId, detail, onChanged }) => {
+const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() => fromDetail(detail));
@@ -341,12 +341,10 @@ const ManifestEditor = ({ batchId, detail, onChanged }) => {
       await axiosInstance.post(`/box-batches/${batchId}/reopen`);
       setConfirmReopen(false);
       await onChanged();
-      toast({
-        status: "success", position: "top", duration: 8000, isClosable: true,
-        title: "Session reopened",
-        description: "Open the scanner and press Continue on this lot to scan more boxes. " +
-                     "Close it again when you are done.",
-      });
+      // Straight into the scanner, on this session. Reopening is never the goal
+      // in itself — scanning the missing boxes is — so making someone open the
+      // scanner and find the lot again is a step with no purpose.
+      onReopened(batchId);
     } catch (err) { fail("Could not reopen")(err); } finally { setReopening(false); }
   };
 
@@ -605,6 +603,9 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const [merging, setMerging] = useState(false);
   const cancelMergeRef = useRef(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  // When the scanner is opened by reopening a manifest, it carries the session
+  // to pick up — so nobody has to go and find it in a list.
+  const [scannerAdopt, setScannerAdopt] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
   const toast = useToast();
 
@@ -643,7 +644,11 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   }, [refreshSignal, fetchBatches, fetchGroups]);
 
   // Closing the scanner means a session may have been opened or closed.
-  const onScannerClose = () => { setScannerOpen(false); fetchBatches(); };
+  const onScannerClose = () => {
+    setScannerOpen(false);
+    setScannerAdopt(null);
+    fetchBatches();
+  };
 
   const [expandedGroupId, setExpandedGroupId] = useState(null);
   const [groupDetails, setGroupDetails] = useState({});
@@ -1402,6 +1407,12 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                                 <ManifestEditor
                                   batchId={b.batch_id}
                                   detail={detail}
+                                  onReopened={(id) => {
+                                    // Hand the reopened session straight to the
+                                    // scanner, already loaded.
+                                    setScannerAdopt(id);
+                                    setScannerOpen(true);
+                                  }}
                                   onChanged={async () => {
                                     // The heading, the boxes and the row's own
                                     // count and total can all have moved, so
@@ -1773,7 +1784,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         )}
       </FloatingWindow>
 
-      <BoxScanner isOpen={scannerOpen} onClose={onScannerClose} />
+      <BoxScanner isOpen={scannerOpen} onClose={onScannerClose} adoptBatchId={scannerAdopt} />
       <ImportTally isOpen={importOpen} onClose={() => setImportOpen(false)} onImported={fetchBatches} />
     </Box>
   );

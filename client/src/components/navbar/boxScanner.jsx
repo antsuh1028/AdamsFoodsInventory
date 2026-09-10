@@ -134,7 +134,7 @@ const totalsOf = (batch) =>
     ? batch.totals.map((t) => `${t.total} ${t.unit}`).join("  ·  ")
     : "—";
 
-const BoxScanner = ({ isOpen, onClose }) => {
+const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
   const {
     ready, durable, session, pending, resumable, lastError, lastScan, scans,
     start, resume, discardResumable, stop, flush, addScan, undoLast, editScan, voidScan,
@@ -233,6 +233,33 @@ const BoxScanner = ({ isOpen, onClose }) => {
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const cancelDiscardRef = useRef(null);
   const toast = useToast();
+
+  // Opened by reopening a manifest, so the session to work on is already known.
+  //
+  // Guarded by a ref rather than by state: `ready` and `session` both settle
+  // asynchronously, so this effect runs more than once for a single open, and
+  // adopting twice would clear and reseed the grid under the operator.
+  const adoptedRef = useRef(null);
+  useEffect(() => {
+    if (!isOpen) { adoptedRef.current = null; return; }
+    if (!adoptBatchId || !ready || session) return;
+    if (adoptedRef.current === adoptBatchId) return;
+    adoptedRef.current = adoptBatchId;
+    (async () => {
+      const result = await adoptSession(adoptBatchId);
+      if (!result.adopted && result.reason === "pending-scans") {
+        // Refused rather than destroying unsent work. Say so — silently
+        // showing an empty scanner would look like the reopen failed.
+        toast({
+          status: "warning", duration: 12000, isClosable: true, position: "top",
+          title: "Another session on this device has unsent scans",
+          description:
+            `${result.pending} scan(s) here have not reached the server yet. Resume that ` +
+            `session and let it flush, or discard it, then continue this one.`,
+        });
+      }
+    })();
+  }, [isOpen, adoptBatchId, ready, session, adoptSession, toast]);
   const assemblerRef = useRef(null);
 
   // Rebuilt only when the parse function changes, which is never — but keeping
