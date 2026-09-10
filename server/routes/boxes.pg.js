@@ -941,7 +941,8 @@ router.get("/box-batches", verifyToken, async (req, res) => {
     // same total, and with two units it would also have doubled box_count.
     // A scalar subquery returns exactly one value and cannot fan out.
     const result = await pool.query(
-      `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description, b.source,
+      `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description,
+              b.bill_of_lading, b.brand, b.est_number, b.grade, b.source,
               b.status, b.created_at, b.closed_at,
               (SELECT COUNT(*)::int
                  FROM batch_items i
@@ -1560,7 +1561,13 @@ router.get("/box-removals", verifyToken, async (req, res) => {
 // and rounded exactly as the tally is, with voided rows excluded.
 const boxTotalsForForm = async (formId, tenantId) => {
   const sessions = await pool.query(
-    `SELECT b.batch_id, b.lot_number, b.vendor, b.status, b.source, b.created_at,
+    // Everything the form can be filled FROM, not just what it displays. This
+    // used to stop at vendor, while the panel already read item_description and
+    // lot_id — so autofill worked on an unsaved draft (which reads the listing)
+    // and quietly did less once the form had been saved.
+    `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description,
+            b.bill_of_lading, b.brand, b.est_number, b.grade,
+            b.status, b.source, b.created_at,
             (SELECT COUNT(*)::int FROM batch_items i
               WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL) AS box_count,
             COALESCE((SELECT SUM(${weightInLb("i")})::text FROM batch_items i

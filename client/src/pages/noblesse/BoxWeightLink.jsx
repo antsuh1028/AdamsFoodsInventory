@@ -187,6 +187,25 @@ const BoxWeightLink = ({
   // The sessions do not just supply a weight — they are what the form is being
   // written up FROM, so the heading comes across too. Only into fields still
   // empty: whatever the operator already typed wins over anything inferred.
+  // Everything the weighing session already knows, copied onto the form.
+  //
+  // These were typed once, at the scale, against the boxes themselves — so the
+  // session is the better source, and retyping them here is both slower and a
+  // second chance to get them wrong.
+  //
+  // ONLY FIELDS THE FORM HAS LEFT BLANK are filled. Someone who has already
+  // typed a description meant it, and having it silently replaced by whatever
+  // the scanner operator wrote would be worse than leaving it alone. That also
+  // makes the button safe to press twice.
+  const FROM_SESSION = [
+    ["vendor", "vendor", "vendor"],
+    ["productDescription", "item_description", "description"],
+    ["vendorLot", "bill_of_lading", "vendor lot"],
+    ["brand", "brand", "brand"],
+    ["estNumber", "est_number", "EST #"],
+    ["grade", "grade", "grade"],
+  ];
+
   const applyToForm = () => {
     const first = view.sessions[0] || {};
     const filled = {
@@ -198,17 +217,16 @@ const BoxWeightLink = ({
       filled.lotId = first.lot_id;
       filled.lotNumber = first.lot_number || draft.lotNumber;
     }
-    if (!String(draft.vendor || "").trim() && first.vendor) filled.vendor = first.vendor;
-    if (!String(draft.productDescription || "").trim() && first.item_description) {
-      filled.productDescription = first.item_description;
+
+    const also = [];
+    if (filled.lotNumber !== draft.lotNumber) also.push("lot");
+    for (const [formKey, sessionKey, label] of FROM_SESSION) {
+      if (!String(draft[formKey] || "").trim() && first[sessionKey]) {
+        filled[formKey] = first[sessionKey];
+        also.push(label);
+      }
     }
     setDraft(filled);
-
-    const also = [
-      filled.lotNumber !== draft.lotNumber && "lot",
-      filled.vendor !== draft.vendor && "vendor",
-      filled.productDescription !== draft.productDescription && "description",
-    ].filter(Boolean);
 
     toast({
       title: "Boxes applied",

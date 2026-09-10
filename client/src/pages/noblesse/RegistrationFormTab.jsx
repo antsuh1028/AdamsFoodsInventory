@@ -685,7 +685,24 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
     return <Flex justify="center" py={10}><Spinner size="lg" color="blue.500" /></Flex>;
   }
 
-  const filteredForms = forms.filter((f) => !statusFilter || f.status === statusFilter);
+  // Newest lot first, matching the weight-manifest list so the two tabs read
+  // the same way round.
+  //
+  // N{YY}{JJJ}-{NN} is fixed width, so comparing the TEXT sorts by year, then
+  // Julian day, then sequence in one comparison — nothing is parsed, so nothing
+  // can be parsed wrong (CLAUDE.md §3). Upper-cased and trimmed so casing or a
+  // stray space cannot split one lot across two positions, and a form with no
+  // lot yet sorts LAST rather than riding above today's work.
+  const filteredForms = forms
+    .filter((f) => !statusFilter || f.status === statusFilter)
+    .slice()
+    .sort((a, b) => {
+      const la = String(a.lotNumber || "").trim().toUpperCase();
+      const lb = String(b.lotNumber || "").trim().toUpperCase();
+      if (la !== lb) return lb.localeCompare(la);
+      // Same lot — two forms against one lot happens. Newest first.
+      return String(b.dateReceived || "").localeCompare(String(a.dateReceived || ""));
+    });
 
   // Pacific business date, never the browser's local one — see shared.jsx.
   const todayStr = today();
