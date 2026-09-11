@@ -188,7 +188,7 @@ const validateItem = (item) => {
 // response returns the original batch instead of orphaning one.
 router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
   const { clientUuid, lotNumber, vendor, shipTo, billOfLading, itemDescription,
-          brand, estNumber, grade, direction, expectedBoxes } = req.body || {};
+          brand, estNumber, grade, direction, expectedBoxes, lotId } = req.body || {};
   if (!clientUuid || typeof clientUuid !== "string") {
     return res.status(400).json({ error: "clientUuid is required" });
   }
@@ -220,17 +220,65 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
     // differently on purpose.
     let lot;
     if (dir === "outgoing") {
-      lot = await lookupLot(req.tenantId, lotNumber);
+      // Resolve by ID when the caller has one, which it does whenever the lot
+      // came from the picker.
+      //
+      // It used to go through lookupLot, which PARSES the text — so an external
+      // lot (a supplier's own number, no N{YY}{JJJ}-{NN}) could never start an
+      // outgoing session at all. It 404'd on a lot that was sitting right there
+      // in the registry. Resolving by id sidesteps parsing entirely and treats
+      // both kinds alike, which is the whole point of giving external numbers a
+      // lot_id.
+      if (lotId != null) {
+        const byId = await pool.query(
+          `SELECT lot_id, lot_number FROM lots WHERE lot_id = $1 AND tenant_id = $2`,
+          [Number(lotId), req.tenantId]
+        );
+        lot = byId.rows.length
+          ? { lotId: byId.rows[0].lot_id, lotNumber: byId.rows[0].lot_number }
+          : null;
+      } else {
+        lot = await lookupLot(req.tenantId, lotNumber);
+      }
+
       if (!lot || lot.lotId == null) {
-        return res.status(404).json({
+        return res.status(400).json({
           code: "NO_SUCH_LOT",
-          error: `Lot ${lotNumber || "(none)"} does not exist. Finished product is ` +
-                 `weighed against the lot issued when the raw product arrived.`,
+          error: lotNumber || lotId
+            ? `That lot is not in the registry. Finished product is weighed against ` +
+              `the lot the raw product arrived under.`
+            : `Pick the lot these boxes came from before weighing them.`,
         });
       }
     } else {
       lot = await lotColumns(req.tenantId, req.userId, lotNumber);
     }
+
+    // What the product IS was recorded when it arrived. Asking for it again at
+    // the outgoing bench is slow — it is a form standing between the operator
+    // and the first box — and it is how the same lot ends up described two
+    // different ways, which is the thing that stops figures joining up.
+    //
+    // So an outgoing session inherits the description from the lot's arrival
+    // and only asks for what it cannot know: which lot, and how many boxes to
+    // expect. Anything the caller DOES send still wins, so a correction at the
+    // bench is never overwritten by history.
+    let inherited = {};
+    if (dir === "outgoing" && lot.lotId != null) {
+      const src = await pool.query(
+        `SELECT vendor, item_description, brand, est_number, grade
+           FROM box_batches
+          WHERE tenant_id = $1 AND lot_id = $2 AND direction = 'incoming'
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [req.tenantId, lot.lotId]
+      );
+      if (src.rows.length) inherited = src.rows[0];
+    }
+    const pick = (given, fallbackKey) =>
+      (given != null && String(given).trim() !== "")
+        ? given
+        : (inherited[fallbackKey] || null);
 
     const inserted = await pool.query(
       `INSERT INTO box_batches
@@ -241,10 +289,14 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
        RETURNING batch_id, status, created_at, lot_number,
                  vendor, ship_to, bill_of_lading, item_description,
                  brand, est_number, grade, lot_id, direction, expected_boxes`,
-      [req.tenantId, clientUuid, lot.lotNumber, vendor || null,
-       shipTo || null, billOfLading || null, itemDescription || null,
-       brand || null, estNumber || null, grade || null, lot.lotId,
-       dir, expected]
+      [req.tenantId, clientUuid, lot.lotNumber,
+       pick(vendor, "vendor"),
+       shipTo || null, billOfLading || null,
+       pick(itemDescription, "item_description"),
+       pick(brand, "brand"),
+       pick(estNumber, "est_number"),
+       pick(grade, "grade"),
+       lot.lotId, dir, expected]
     );
 
     if (inserted.rows.length) {
