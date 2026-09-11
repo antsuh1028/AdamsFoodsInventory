@@ -177,6 +177,7 @@ export const useScanSession = () => {
         brand: detail.brand,
         estNumber: detail.est_number,
         grade: detail.grade,
+        expectedBoxes: detail.expected_boxes ?? null,
       },
       items: detail.items || [],
     });

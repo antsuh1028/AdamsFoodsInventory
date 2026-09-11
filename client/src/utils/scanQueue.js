@@ -462,6 +462,7 @@ const createScanQueue = ({
       brand: batch.brand || null,
       estNumber: batch.estNumber || null,
       grade: batch.grade || null,
+      expectedBoxes: batch.expectedBoxes ?? null,
       status: "open",
       stats,
     });

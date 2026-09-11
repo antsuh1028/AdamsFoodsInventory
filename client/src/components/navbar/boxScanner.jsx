@@ -12,6 +12,7 @@ import { parseGs1 } from "../../utils/gs1";
 import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import ScanSheet from "./ScanSheet";
 import NumericKeypad from "./NumericKeypad";
+import TypeWeights from "./TypeWeights";
 import LotPicker from "../LotPicker";
 import VendorInput from "../VendorInput";
 import { toPounds, toDisplay } from "../../utils/weight";
@@ -195,6 +196,9 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
     lotNumber: "", lotId: null, vendor: "", billOfLading: "", itemDescription: "",
     // Recorded on the session, deliberately absent from the printed manifest.
     brand: "", estNumber: "", grade: "",
+    // How many boxes to expect. A PROMPT, not a limit — box N+1 is never
+    // refused, it just says so.
+    expectedBoxes: "",
   });
   // Uppercased HERE, not just displayed that way.
   //
@@ -228,6 +232,11 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
   // hunting for when a torn label turns up mid-pallet. Collapsible because the
   // scan grid is the primary readout and sometimes wants the room.
   const [showManual, setShowManual] = useState(true);
+  // Typing mode, for the outgoing bench where finished boxes carry no barcode.
+  // OFF by default: the typing field HOLDS FOCUS, and a focused field makes the
+  // global keydown handler bail — so while this is on the scanner is deaf
+  // (CLAUDE.md §4). A deliberate mode, never a default.
+  const [typeMode, setTypeMode] = useState(false);
   const [rowBusy, setRowBusy] = useState(null);
   // Declining a recovered batch throws away scans the server never received,
   // so it is confirmed rather than a single tap next to "Resume it".
@@ -327,6 +336,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
         brand: header.brand.trim() || null,
         estNumber: header.estNumber.trim() || null,
         grade: header.grade.trim() || null,
+        expectedBoxes: header.expectedBoxes.trim() || null,
       });
       setConfirmStart(false);
     } catch (err) {
@@ -446,10 +456,20 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
       width={980}
       footer={
         <Flex gap={2} width="100%" justify="space-between" wrap="wrap">
-          <Button size={{ base: "sm", md: "lg" }} variant="outline" onClick={() => setShowManual((v) => !v)}
-            isDisabled={!session}>
-            {showManual ? "Hide keypad" : "Show keypad"}
-          </Button>
+          <Flex gap={2} wrap="wrap">
+            <Button size={{ base: "sm", md: "lg" }} variant="outline" onClick={() => setShowManual((v) => !v)}
+              isDisabled={!session}>
+              {showManual ? "Hide keypad" : "Show keypad"}
+            </Button>
+            {/* Typing mode. Closes the keypad on the way in — both are manual
+                entry, and two panels only compete for the bench screen. */}
+            <Button size={{ base: "sm", md: "lg" }} variant={typeMode ? "solid" : "outline"}
+              colorScheme={typeMode ? "blue" : "gray"}
+              isDisabled={!session}
+              onClick={() => setTypeMode((v) => { if (!v) setShowManual(false); return !v; })}>
+              {typeMode ? "Stop typing" : "Type weights"}
+            </Button>
+          </Flex>
           <Flex gap={2} wrap="wrap">
             <Button size={{ base: "sm", md: "lg" }} variant="outline" colorScheme="blue"
               onClick={onPrintManifest} isDisabled={scans.length === 0}>
@@ -690,6 +710,16 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
               <Input {...rawInputProps} size="md" value={header.grade}
                 onChange={setField("grade")} placeholder="CHOICE" />
             </Box>
+            {/* Optional. Drives "Box 12 of 80" while weighing, so being short
+                is noticed DURING the lot rather than after the truck has gone.
+                Never a limit — box 81 is recorded and flagged, not refused. */}
+            <Box flex="1 1 120px">
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>
+                Expected boxes
+              </Text>
+              <Input {...rawInputProps} size="md" value={header.expectedBoxes}
+                onChange={setField("expectedBoxes")} placeholder="80" inputMode="numeric" />
+            </Box>
           </Flex>
         )}
       </Box>
@@ -821,6 +851,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
                   ["Brand", header.brand.trim()],
                   ["EST #", header.estNumber.trim()],
                   ["Grade", header.grade.trim()],
+                  ["Expected boxes", header.expectedBoxes.trim()],
                 ].map(([label, value], i) => (
                   <Flex key={label} px={3} py={2} gap={{ base: 0, sm: 3 }}
                     direction={{ base: "column", sm: "row" }}
@@ -876,6 +907,31 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
       zIndex={1401}
     >
       <KeypadPanel onAdd={onManualAdd} disabled={busy} />
+    </FloatingWindow>
+
+    {/* Typing, in its own window beside the session like the keypad, so it
+        closes with the session and can never be left floating over another
+        screen. */}
+    <FloatingWindow
+      isOpen={isOpen && Boolean(session) && typeMode}
+      onClose={() => setTypeMode(false)}
+      title="Type weights"
+      width={520}
+      placement="right"
+      zIndex={1401}
+    >
+      <TypeWeights
+        disabled={busy}
+        expected={session?.expectedBoxes ?? null}
+        // The lot so far, for the outlier check. Voided and duplicate rows are
+        // excluded: neither counts towards the manifest, so neither should
+        // shape what "normal" looks like for the next box.
+        weights={scans
+          .filter((s) => s.status !== "voided" && s.status !== "duplicate")
+          .map((s) => s.displayWeight || s.weight)}
+        onAdd={(weight) => onManualAdd({ weight, weightUnit: "LB", isManual: true })}
+        onUndo={onUndo}
+      />
     </FloatingWindow>
     </>
   );
