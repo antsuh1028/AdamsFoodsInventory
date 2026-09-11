@@ -5,7 +5,7 @@ import {
   AlertDialogContent, AlertDialogOverlay, useToast,
 } from "@chakra-ui/react";
 import axiosInstance from "../../utils/axiosInstance";
-import BoxScanner from "../../components/navbar/boxScanner";
+import WeighFinishedBoxes from "../../components/navbar/WeighFinishedBoxes";
 import { toDisplay } from "../../utils/weight";
 import { fmtDate, today, upper } from "./shared";
 import getRole from "../../utils/getRole";
@@ -701,9 +701,12 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           a yield rather than another arrival.
           Closing refreshes the tie-able sessions, since a session just closed
           here is exactly what someone will want to attach to a load next. */}
-      <BoxScanner
+      {/* Its own screen, not the incoming scanner pointed the other way. That
+          screen is built around reading barcodes — a scan grid, a keypad, a
+          global keydown handler — and finished boxes carry no barcode, so all
+          of it was between the operator and the scale. */}
+      <WeighFinishedBoxes
         isOpen={weighOpen}
-        direction="outgoing"
         onClose={() => { setWeighOpen(false); fetchBatches(); }}
       />
     </Box>

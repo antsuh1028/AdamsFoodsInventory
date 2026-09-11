@@ -5,7 +5,7 @@ import {
   AlertDialogContent, AlertDialogOverlay,
 } from "@chakra-ui/react";
 import { parseTypedWeight, looksWrong, looksLikeReweigh } from "../../utils/typedWeight";
-import { beepSuccess, beepError } from "../../utils/scanFeedback";
+import { beepError } from "../../utils/scanFeedback";
 
 // Typing weights at the bench, one box at a time as each is weighed.
 //
@@ -48,18 +48,23 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
   const parsed = useMemo(() => parseTypedWeight(typed), [typed]);
   const preview = parsed.ok ? parsed.weight : null;
 
+  // onAdd beeps and reports for itself; what it RETURNS is whether the box
+  // actually landed. Only a true clears the field — leaving the digits in place
+  // after a refusal means the box can be retried with one keypress instead of
+  // being retyped from the label, and a cleared field would otherwise read as
+  // "recorded".
   const commit = async (weight) => {
     setBusy(true);
+    let ok = false;
     try {
-      await onAdd(weight);
-      setTyped("");
-      beepSuccess();
+      ok = await onAdd(weight);
     } catch {
       beepError();
     } finally {
       setBusy(false);
       refocus();
     }
+    if (ok) setTyped("");
   };
 
   const submit = async () => {

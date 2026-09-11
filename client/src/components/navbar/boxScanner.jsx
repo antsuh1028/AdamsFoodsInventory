@@ -13,8 +13,6 @@ import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import ScanSheet from "./ScanSheet";
 import NumericKeypad from "./NumericKeypad";
 import TypeWeights from "./TypeWeights";
-import ScaleWeigh from "./ScaleWeigh";
-import { isSupported as scaleSupported } from "../../utils/scaleSerial";
 import LotPicker from "../LotPicker";
 import VendorInput from "../VendorInput";
 import { toPounds, toDisplay } from "../../utils/weight";
@@ -247,12 +245,6 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
   // global keydown handler bail — so while this is on the scanner is deaf
   // (CLAUDE.md §4). A deliberate mode, never a default.
   const [typeMode, setTypeMode] = useState(false);
-  // Reading the bench scale directly. Unlike typing, this panel has no field
-  // and never holds focus, so it does not make the scanner deaf — but it is
-  // still outgoing-only, because it is the finished-box bench that has a scale
-  // wired to it.
-  const [scaleMode, setScaleMode] = useState(false);
-  const scaleOffered = useRef(false);
 
   // The session's own direction wins once one is open — an ADOPTED session
   // carries what it was created as, which may not be what this panel was
@@ -265,23 +257,8 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
   // would otherwise leave the scanner deaf with no visible cause.
   useEffect(() => {
     if (!isOutgoing && typeMode) setTypeMode(false);
-    if (!isOutgoing && scaleMode) setScaleMode(false);
-  }, [isOutgoing, typeMode, scaleMode]);
+  }, [isOutgoing, typeMode]);
 
-  // Open the scale panel by itself once an outgoing session is running.
-  //
-  // Weighing IS the job here — making the operator find a button first is the
-  // "way too slow" complaint in miniature. Guarded by a ref so closing it stays
-  // closed: this offers the panel once per session, it does not insist on it.
-  // Only where a port can actually be opened; on iPad the panel would just be
-  // an apology.
-  useEffect(() => {
-    if (!session || !isOutgoing) { scaleOffered.current = false; return; }
-    if (scaleOffered.current || !scaleSupported()) return;
-    scaleOffered.current = true;
-    setShowManual(false);
-    setScaleMode(true);
-  }, [session, isOutgoing]);
   const [rowBusy, setRowBusy] = useState(null);
   // Declining a recovered batch throws away scans the server never received,
   // so it is confirmed rather than a single tap next to "Resume it".
@@ -375,6 +352,13 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
       await primeAudio(); // iOS needs a gesture before audio will play
       await start({
         lotNumber: header.lotNumber.trim() || null,
+        // The picker already knows exactly which lot was chosen, so send the id
+        // and let the server skip parsing entirely. Without it an OUTGOING
+        // session falls back to resolving the lot by TEXT, which cannot see an
+        // external lot at all — a supplier's own number has no N{YY}{JJJ}-{NN}
+        // to parse — and the start dies on NO_SUCH_LOT for a lot that is
+        // sitting right there in the registry.
+        lotId: header.lotId ?? null,
         vendor: header.vendor.trim() || null,
         billOfLading: header.billOfLading.trim() || null,
         itemDescription: header.itemDescription.trim() || null,
@@ -526,26 +510,8 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
               <Button size={{ base: "sm", md: "lg" }} variant={typeMode ? "solid" : "outline"}
                 colorScheme={typeMode ? "blue" : "gray"}
                 isDisabled={!session}
-                onClick={() => setTypeMode((v) => {
-                  if (!v) { setShowManual(false); setScaleMode(false); }
-                  return !v;
-                })}>
+                onClick={() => setTypeMode((v) => { if (!v) setShowManual(false); return !v; })}>
                 {typeMode ? "Stop typing" : "Type weights"}
-              </Button>
-            )}
-            {/* The scale is the primary path at the outgoing bench; typing is
-                the fallback for when it is not connected. They are mutually
-                exclusive because the same box would otherwise be recordable
-                twice, once by each. */}
-            {isOutgoing && scaleSupported() && (
-              <Button size={{ base: "sm", md: "lg" }} variant={scaleMode ? "solid" : "outline"}
-                colorScheme={scaleMode ? "blue" : "gray"}
-                isDisabled={!session}
-                onClick={() => setScaleMode((v) => {
-                  if (!v) { setShowManual(false); setTypeMode(false); }
-                  return !v;
-                })}>
-                {scaleMode ? "Hide scale" : "Weigh from scale"}
               </Button>
             )}
           </Flex>
@@ -1013,30 +979,6 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
       />
     </FloatingWindow>
 
-    {/* The scale, in its own window on the same terms as the other two: its
-        isOpen is ANDed with the session's, so it cannot outlive the session it
-        is weighing into and the port is released when the session closes. */}
-    <FloatingWindow
-      isOpen={isOpen && Boolean(session) && scaleMode}
-      onClose={() => setScaleMode(false)}
-      title={`Weighing ${session?.lotNumber || ""}`.trim()}
-      width={520}
-      placement="right"
-      zIndex={1401}
-    >
-      <ScaleWeigh
-        disabled={busy}
-        lotNumber={session?.lotNumber || null}
-        itemDescription={session?.itemDescription || null}
-        expected={session?.expectedBoxes ?? null}
-        // Same exclusion as typing: voided and duplicate rows count towards
-        // nothing, so they must not shape what "normal" looks like either.
-        weights={scans
-          .filter((s) => s.status !== "voided" && s.status !== "duplicate")
-          .map((s) => s.displayWeight || s.weight)}
-        onAdd={(weight) => onManualAdd({ weight, weightUnit: "LB", isManual: true })}
-      />
-    </FloatingWindow>
     </>
   );
 };
