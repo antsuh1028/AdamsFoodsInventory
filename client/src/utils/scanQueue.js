@@ -20,6 +20,20 @@ const DEFAULT_MAX_CHUNK_ITEMS = 250;
 // Running totals are kept as integer thousandths and formatted only for
 // display. A float accumulator would drift over a thousand-box shift, and the
 // operator's running total has to agree with what the server stores.
+// A v4 uuid, preferring the platform's own generator. The fallback exists
+// because crypto.randomUUID needs a secure context, and the weighing station is
+// reached over plain http on the LAN often enough to matter.
+const newItemUuid = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  const b = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) crypto.getRandomValues(b);
+  else for (let i = 0; i < 16; i += 1) b[i] = Math.floor(Math.random() * 256);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+};
+
 const weightToThousandths = (s) => {
   const [whole, frac = ""] = String(s).split(".");
   return parseInt(whole, 10) * 1000 + parseInt((frac + "000").slice(0, 3), 10);
@@ -61,6 +75,15 @@ const toWireItem = (record) => ({
   weightUnit: record.weightUnit,
   rawBarcode: record.rawBarcode || undefined,
   isManual: !!record.isManual,
+  // How the figure reached the computer, and whether it was measured at all.
+  // Only the client can know either: the server sees an identical payload from
+  // the bench scale and from the keypad.
+  entryMethod: record.entryMethod || undefined,
+  isEstimated: record.isEstimated ? true : undefined,
+  // This box's own id, so a resend is recognisable as the same box. Without it
+  // a serial-less row has NO resend protection at all — the (batch_id, serial)
+  // index is partial and every scale or typed box has serial = NULL.
+  clientItemUuid: record.clientItemUuid || undefined,
 });
 
 // Splits records into requests that stay under both the byte and item ceilings.
@@ -112,9 +135,28 @@ const createScanQueue = ({
     return next;
   };
 
+  // The same, for a whole batch at once. One read and one write of the session
+  // rather than N of each — and the total moves in one step, so a reader can
+  // never catch it part-way through a batch add.
+  const bumpStatsBy = async (thousandths, unit, countDelta) => {
+    const session = await backend.getSession();
+    if (!session) return null;
+    const stats = session.stats || emptyStats();
+    const totals = { ...stats.totals };
+    totals[unit] = (totals[unit] || 0) + thousandths;
+    const next = {
+      count: Math.max(0, (stats.count || 0) + countDelta),
+      totals,
+    };
+    await backend.setSession({ ...session, stats: next });
+    return next;
+  };
+
   // Persist first, then report success. If the write throws, the caller must
   // hear about it — a scan that was never stored must not be treated as taken.
-  const enqueue = async (scan) => {
+  // One box's worth of record, shared by enqueue and enqueueMany so the two
+  // cannot drift apart.
+  const buildRecord = (scan) => {
     // Two weights are kept, deliberately.
     //
     // `weight`/`weightUnit` are exactly what the label said, and are what goes
@@ -135,26 +177,95 @@ const createScanQueue = ({
       serial: scan.serial || null,
       productionDate: scan.productionDate || null,
       isManual: !!scan.isManual,
+      // Provenance, so a manifest can tell a scale reading from a typed figure
+      // from one of thirty added in a batch. is_manual cannot: its CHECK forces
+      // it true whenever there is no barcode, so every scale box is already
+      // manual.
+      entryMethod: scan.entryMethod || null,
+      // A weight that was not measured. Kept apart from entryMethod on purpose:
+      // that says HOW the figure arrived, this says whether to trust it as a
+      // measurement, and a nominal weight is genuinely keyed.
+      isEstimated: scan.isEstimated === true,
+      // This box's own id, minted here and never reused. It is what makes a
+      // resend recognisable as the same box after a response goes missing.
+      clientItemUuid: newItemUuid(),
       status: "pending",
       scannedAt: new Date().toISOString(),
     };
+    return record;
+  };
+
+  const enqueue = async (scan) => {
+    const record = buildRecord(scan);
     const localId = await backend.putScan(record);
     await bumpStats(displayOf(record), STORED_UNIT, +1);
     return localId;
   };
 
-  // Removes the most recent scan that has not yet been confirmed by the server.
-  // Once a scan is flushed it belongs to the batch and cannot be taken back from
-  // here — there is no void endpoint — so this reports that rather than lying.
-  const undoLast = async () => {
+  // Many boxes as ONE act.
+  //
+  // A batch add is a single decision the operator made — "thirty labels at
+  // forty pounds" — so it has to be one thing that either happened or did not,
+  // rather than thirty independent ones that can half-fail. Looping enqueue
+  // would also cost thirty IndexedDB round trips, thirty stats reads and a
+  // React render each, and would trip the every-fifth-scan auto-flush six times
+  // part-way through.
+  const enqueueMany = async (scans) => {
+    const list = Array.isArray(scans) ? scans : [];
+    if (!list.length) return [];
+    const records = list.map(buildRecord);
+    const ids = [];
+    for (const record of records) ids.push(await backend.putScan(record));
+    // Summed in integer thousandths and written once, rather than N read-modify
+    // -writes of the same session object.
+    let delta = 0;
+    for (const r of records) delta += weightToThousandths(displayOf(r));
+    await bumpStatsBy(delta, STORED_UNIT, records.length);
+    return ids;
+  };
+
+  // Take back the last box.
+  //
+  // This USED to look only at pending rows and return "nothing-pending"
+  // otherwise. But the queue flushes every five scans OR every four seconds, so
+  // the box the operator has just put down is already the server's more often
+  // than not — and both callers ignored the return value and left the button
+  // enabled. The result was a control that silently did nothing for any box
+  // older than four seconds, which is why editing felt absent rather than
+  // merely missing.
+  //
+  // So it falls through to VOIDING the synced row: the same act the grid's bin
+  // icon performs, reversible and recorded in box_removal_history. `how` comes
+  // back because the two are genuinely different — a removed box leaves no
+  // trace and a voided one does — and the caller must be able to say which
+  // happened rather than implying they are the same.
+  //
+  // (undoLast is declared above voidScan. Both are const arrows in the same
+  // factory, so this reads as a TDZ hazard and is not one: the factory has
+  // fully run before anything can call undoLast. Do not "fix" the ordering.)
+  const undoLast = async ({ voidServer } = {}) => {
     const pending = await backend.listPending();
-    if (!pending.length) {
-      return { undone: false, reason: "nothing-pending" };
+    if (pending.length) {
+      const last = pending[pending.length - 1];
+      await backend.deleteScans([last.localId]);
+      await bumpStats(displayOf(last), STORED_UNIT, -1);
+      return { undone: true, how: "removed", record: last };
     }
-    const last = pending[pending.length - 1];
-    await backend.deleteScans([last.localId]);
-    await bumpStats(displayOf(last), STORED_UNIT, -1);
-    return { undone: true, record: last };
+
+    const all = await backend.listAll();
+    // "synced" is doing three jobs: it skips rows already voided, rows that were
+    // rejected (never recorded, nothing to take back) and duplicates (never
+    // counted).
+    const last = [...all].reverse()
+      .find((r) => r.status === "synced" && r.serverItemId != null);
+    if (!last) return { undone: false, reason: "nothing-to-undo" };
+
+    const result = await voidScan(last.localId, {
+      voidServer, reason: "Undone at the bench",
+    });
+    return result.voided
+      ? { undone: true, how: "voided", record: result.record }
+      : { undone: false, reason: result.reason };
   };
 
   // Correct a weight mid-session. The running total is adjusted by the
@@ -225,13 +336,52 @@ const createScanQueue = ({
 
     if (row.serverItemId && voidServer) await voidServer(row.serverItemId, reason);
 
-    const patched = await backend.patchScan(localId, { status: "voided", voidReason: reason });
+    const patched = await backend.patchScan(localId, {
+      status: "voided",
+      voidReason: reason,
+      // What this row was BEFORE it was struck off. patchScan overwrites
+      // `status`, so without this the fact that it was a duplicate — which
+      // never counted toward the total — is gone, and restoring it would credit
+      // the tally with a box that never existed.
+      preVoidStatus: row.preVoidStatus || row.status,
+    });
     // A duplicate never counted toward the total, so voiding one must not
     // subtract a second time.
     if (row.status !== "duplicate" && row.status !== "rejected") {
       await bumpStats(displayOf(row), STORED_UNIT, -1);
     }
     return { voided: true, record: patched };
+  };
+
+  // Put a voided box back. The mirror of voidScan, including the ORDER: the
+  // server first, so a failed call leaves the row struck off rather than showing
+  // a box on the tally that the database still has voided.
+  const restoreScan = async (localId, { restoreServer } = {}) => {
+    const rows = await backend.listAll();
+    const row = rows.find((r) => r.localId === localId);
+    if (!row) return { restored: false, reason: "not-found" };
+    if (row.status !== "voided") return { restored: true, record: row };
+
+    if (row.serverItemId && restoreServer) await restoreServer(row.serverItemId);
+
+    // A row with a server id goes back to "synced". One WITHOUT has never been
+    // sent, and must go back to "pending" — anything else and flush() skips it
+    // for the rest of the session, so voiding an unsent box and restoring it
+    // would drop it silently. Losing a box is the one outcome this whole queue
+    // exists to prevent.
+    const back = row.preVoidStatus || (row.serverItemId ? "synced" : "pending");
+    const patched = await backend.patchScan(localId, {
+      status: back,
+      voidReason: null,
+      preVoidStatus: null,
+    });
+
+    // Only a row that COUNTED gets its weight back. A restored duplicate is
+    // still a duplicate.
+    if (back !== "duplicate" && back !== "rejected") {
+      await bumpStats(displayOf(row), STORED_UNIT, +1);
+    }
+    return { restored: true, record: patched };
   };
 
   const getStats = async () => {
@@ -427,6 +577,12 @@ const createScanQueue = ({
         serial: item.serial || null,
         productionDate: item.productionDate || null,
         isManual: !!item.isManual,
+        // Carried onto the adopted row, not dropped. Without these an adopted
+        // session shows a nominal batch-added box as though it were measured —
+        // exactly the confusion the estimated flag exists to prevent, and
+        // invisible because every other field looks normal.
+        entryMethod: item.entryMethod || null,
+        isEstimated: item.isEstimated === true,
         originalWeight: item.originalWeight || null,
         editedAt: item.editedAt || null,
         voidedAt: item.voidedAt || null,
@@ -477,9 +633,11 @@ const createScanQueue = ({
 
   return {
     enqueue,
+    enqueueMany,
     undoLast,
     editScan,
     voidScan,
+    restoreScan,
     getStats,
     listSession,
     clearSession,

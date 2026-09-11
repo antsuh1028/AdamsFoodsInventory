@@ -1449,6 +1449,7 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
     const items = await pool.query(
       `SELECT item_id, weight::text AS weight, weight_unit, gtin,
               production_date, serial, is_manual, converted_from, scanned_at,
+              entry_method, is_estimated,
               original_weight::text AS original_weight, edited_at, edited_by,
               voided_at, voided_by, void_reason
          FROM batch_items
@@ -1468,6 +1469,10 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
           ? new Date(r.production_date).toISOString().slice(0, 10) : null,
         serial: r.serial,
         isManual: r.is_manual,
+        // Provenance and confidence, so an adopted session and the manifest can
+        // tell a scale reading from a nominal batch figure.
+        entryMethod: r.entry_method || null,
+        isEstimated: r.is_estimated === true,
         convertedFrom: r.converted_from,
         scannedAt: r.scanned_at,
         // The audit trail travels with the row: a reviewer needs to see that a
@@ -1669,6 +1674,7 @@ router.get("/manifest-groups/:id", verifyToken, async (req, res) => {
     const items = await pool.query(
       `SELECT i.item_id, i.weight::text AS weight, i.weight_unit, i.gtin,
               i.production_date, i.serial, i.is_manual, i.converted_from, i.scanned_at,
+              i.entry_method, i.is_estimated,
               i.original_weight::text AS original_weight, i.edited_at,
               i.voided_at, i.void_reason,
               b.batch_id, b.lot_number AS batch_lot
@@ -1701,6 +1707,10 @@ router.get("/manifest-groups/:id", verifyToken, async (req, res) => {
           ? new Date(r.production_date).toISOString().slice(0, 10) : null,
         serial: r.serial,
         isManual: r.is_manual,
+        // Provenance and confidence, so an adopted session and the manifest can
+        // tell a scale reading from a nominal batch figure.
+        entryMethod: r.entry_method || null,
+        isEstimated: r.is_estimated === true,
         convertedFrom: r.converted_from,
         scannedAt: r.scanned_at,
         originalWeight: r.original_weight,

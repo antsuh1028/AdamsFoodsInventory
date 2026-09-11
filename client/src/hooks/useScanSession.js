@@ -34,6 +34,12 @@ const api = {
   voidItem: (batchId, itemId, reason) =>
     axiosInstance.delete(`/box-batches/${batchId}/items/${itemId}`,
       { data: { reason } }).then((r) => r.data),
+  // Un-voiding mid-session. The route has existed since row editing shipped,
+  // but only the manifest tab called it — so a box voided by mistake at the
+  // bench could not be put back without closing the session first.
+  restoreItem: (batchId, itemId) =>
+    axiosInstance.post(`/box-batches/${batchId}/items/${itemId}/restore`)
+      .then((r) => r.data),
 };
 
 const newUuid = () =>
@@ -210,13 +216,20 @@ export const useScanSession = () => {
     return scan;
   }, [flush, refreshPending]);
 
+  // `how` comes back so the caller can say what actually happened: a box still
+  // in the queue is removed outright, one the server already holds is voided —
+  // recorded and reversible. Conflating them would tell the operator a box
+  // vanished when it is struck through on a manifest somewhere.
   const undoLast = useCallback(async () => {
     if (!queueRef.current) return { undone: false, reason: "not-ready" };
-    const result = await queueRef.current.undoLast();
+    const batchId = session?.batchId;
+    const result = await queueRef.current.undoLast({
+      voidServer: (itemId, why) => api.voidItem(batchId, itemId, why),
+    });
     if (result.undone) setLastScan(null);
     await refreshPending();
     return result;
-  }, [refreshPending]);
+  }, [session, refreshPending]);
 
   // Correcting a row that has already reached the server goes through the
   // server first; scanQueue leaves the local copy alone if that call fails, so
@@ -243,6 +256,25 @@ export const useScanSession = () => {
     await refreshPending();
     return result;
   }, [session, refreshPending]);
+
+  const restoreScan = useCallback(async (localId) => {
+    if (!queueRef.current) return { restored: false, reason: "not-ready" };
+    const batchId = session?.batchId;
+    const result = await queueRef.current.restoreScan(localId, {
+      restoreServer: (itemId) => api.restoreItem(batchId, itemId),
+    });
+    await refreshPending();
+    return result;
+  }, [session, refreshPending]);
+
+  // Many boxes as one act, for a run of labels printed at a nominal weight.
+  const addScanMany = useCallback(async (scans) => {
+    if (!queueRef.current) throw new Error("Scan store not ready");
+    const ids = await queueRef.current.enqueueMany(scans);
+    await refreshPending();
+    flush();
+    return ids;
+  }, [flush, refreshPending]);
 
   const stop = useCallback(async (remarks = null) => {
     if (!queueRef.current) return null;
@@ -293,7 +325,8 @@ export const useScanSession = () => {
 
   return {
     ready, durable, session, pending, resumable, lastError, stats, lastScan, scans,
-    start, resume, discardResumable, stop, flush, addScan, undoLast, editScan, voidScan,
+    start, resume, discardResumable, stop, flush, addScan, addScanMany,
+    undoLast, editScan, voidScan, restoreScan,
     listOpenSessions, adoptSession,
   };
 };
