@@ -157,6 +157,17 @@ const ScaleDiagnostic = ({ isOpen, onClose }) => {
 
   useEffect(() => () => { disconnect(); }, [disconnect]);
 
+  // A port still held by a closed tab is what makes the NEXT session say
+  // "access denied", and the fix then looks like "restart everything" because
+  // nothing names the holder. Unmount alone does not cover it: closing the tab
+  // or navigating away tears the page down without running React cleanup
+  // reliably. pagehide does fire on both.
+  useEffect(() => {
+    const release = () => { handleRef.current?.disconnect?.(); };
+    window.addEventListener("pagehide", release);
+    return () => window.removeEventListener("pagehide", release);
+  }, []);
+
   // The whole point of capturing this is being able to send it on, so it goes
   // to the clipboard as text rather than having to be read off the screen.
   const copyAll = async () => {

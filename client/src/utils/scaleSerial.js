@@ -24,6 +24,27 @@ const DEFAULT_PORT_OPTIONS = {
 const isSupported = () =>
   typeof navigator !== "undefined" && "serial" in navigator;
 
+// Ports this browser has already been granted for this origin.
+//
+// Exposed so a caller can say "reconnecting to the remembered port" rather than
+// silently doing something the operator did not ask for, and so a settings
+// screen could offer to forget one.
+const rememberedPorts = async () =>
+  (isSupported() ? navigator.serial.getPorts() : Promise.resolve([]));
+
+// Hand the port back to Windows.
+//
+// A serial port is EXCLUSIVE and nothing releases it politely: the handle lives
+// until the owning process exits or closes it. A tab left holding COM2 is why a
+// later session gets access-denied and why the fix looks like "restart
+// everything". Releasing on every exit path is the app's share of not causing
+// that.
+const releaseAll = async () => {
+  if (!isSupported()) return;
+  const ports = await navigator.serial.getPorts();
+  await Promise.all(ports.map((p) => p.close().catch(() => {})));
+};
+
 /**
  * Splits a stream of arbitrary chunks into whole lines.
  *
@@ -64,8 +85,40 @@ const connectScale = async ({
     throw new Error("This browser cannot talk to a serial device. Use Chrome or Edge on the desktop.");
   }
 
-  const port = await navigator.serial.requestPort();
-  await port.open({ ...DEFAULT_PORT_OPTIONS, ...portOptions });
+  // Reuse a port this browser has already been granted rather than asking
+  // again.
+  //
+  // getPorts() returns what the user has previously approved for this origin,
+  // and the grant survives a reload. Reusing it means the operator is not
+  // presented with a chooser every session — which is not just friction: the
+  // chooser is where COM1 gets picked by mistake, and COM1 is BarTender's. A
+  // wrong pick there denies BarTender its port and the whole chain falls over.
+  //
+  // Only when exactly ONE port is remembered, though. With several there is no
+  // way to tell which is which — Web Serial exposes a USB vendor/product id,
+  // not a COM number — so guessing would be the same mistake automated.
+  const remembered = await navigator.serial.getPorts();
+  const port = remembered.length === 1
+    ? remembered[0]
+    : await navigator.serial.requestPort();
+
+  try {
+    await port.open({ ...DEFAULT_PORT_OPTIONS, ...portOptions });
+  } catch (err) {
+    // "Failed to open serial port" covers every reason, and the commonest by
+    // far is that something else already holds it. Name the likely culprit,
+    // because the browser will not.
+    const busy = /open|access|denied|busy|in use/i.test(err.message || "");
+    if (busy) {
+      const e = new Error(
+        "That port is already in use. COM1 belongs to BarTender — this app reads " +
+        "COM2. If it is the right port, close whatever else has it open."
+      );
+      e.cause = err;
+      throw e;
+    }
+    throw err;
+  }
 
   let stopped = false;
   let reader = null;
@@ -125,4 +178,7 @@ const connectScale = async ({
   return { port, disconnect: stop, send };
 };
 
-module.exports = { isSupported, splitLines, connectScale, DEFAULT_PORT_OPTIONS };
+module.exports = {
+  isSupported, splitLines, connectScale, rememberedPorts, releaseAll,
+  DEFAULT_PORT_OPTIONS,
+};
