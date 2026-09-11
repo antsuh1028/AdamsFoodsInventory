@@ -86,6 +86,11 @@ const batchBlockers = async (q, batchId, tenantId) => {
 const UNITS = new Set(["LB", "KG"]);
 const DECIMAL_RE = /^\d{1,5}(\.\d{1,3})?$/; // fits NUMERIC(8,3)
 const MAX_WEIGHT_THOUSANDTHS = 2000n * 1000n; // 2000 lb/kg per box is already absurd
+// Matches the column's CHECK. Kept as a Set rather than reaching for the schema
+// so an unknown value is dropped quietly instead of reaching Postgres as a
+// constraint violation that fails a whole chunk of good boxes.
+const ENTRY_METHODS = new Set(["scanned", "scale", "keyed"]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Decimal string -> integer thousandths, so weights compare exactly with no
 // float ever entering the path. "76.20" and "76.2" must compare equal.
@@ -104,6 +109,17 @@ const validateItem = (item) => {
 
   const { weight, weightUnit, rawBarcode, isManual = false } = item;
 
+  // Provenance and confidence, both supplied by the client because only the
+  // client can know them — the server sees an identical payload from the bench
+  // scale and from the keypad.
+  //
+  // An unrecognised entry_method is DROPPED, never rejected: the deployed client
+  // sends none at all, and a server that 400s on that breaks the running app the
+  // hour it ships.
+  const entryMethod = ENTRY_METHODS.has(item.entryMethod) ? item.entryMethod : null;
+  const clientItemUuid = UUID_RE.test(String(item.clientItemUuid || ""))
+    ? String(item.clientItemUuid) : null;
+
   if (typeof weight !== "string" || !DECIMAL_RE.test(weight)) {
     return { ok: false, code: "BAD_WEIGHT",
       reason: "weight must be a decimal string with at most 3 decimal places" };
@@ -120,6 +136,14 @@ const validateItem = (item) => {
     return { ok: false, code: "IMPLAUSIBLE_WEIGHT", reason: "weight exceeds plausible range" };
   }
 
+  // A weight the server itself re-derives from a barcode is a measurement by
+  // definition. Letting a client mark one as nominal would put an estimate on a
+  // row that carries its own proof.
+  if (rawBarcode && item.isEstimated === true) {
+    return { ok: false, code: "ESTIMATE_WITH_BARCODE",
+      reason: "A weight read from a barcode is not an estimate" };
+  }
+
   if (!rawBarcode) {
     if (!isManual) {
       return { ok: false, code: "MISSING_BARCODE",
@@ -133,6 +157,8 @@ const validateItem = (item) => {
       weight: asLb.weight, weightUnit: asLb.weightUnit, convertedFrom: asLb.convertedFrom,
       gtin: null, productionDate: null,
       serial: null, rawBarcode: null, isManual: true,
+      entryMethod, clientItemUuid,
+      isEstimated: item.isEstimated === true,
     } };
   }
 
@@ -179,6 +205,11 @@ const validateItem = (item) => {
     serial: parsed.serial,
     rawBarcode,
     isManual: false,
+    // FORCED, not taken from the client. The provenance of a box the server
+    // verified against its own barcode parse is not the client's to assert.
+    entryMethod: "scanned",
+    isEstimated: false,
+    clientItemUuid,
   } };
 };
 
@@ -411,14 +442,16 @@ router.post("/box-batches/:id/items", verifyToken, scanLimiter, async (req, res)
       const insertedRows = await client.query(
         `INSERT INTO batch_items
            (tenant_id, batch_id, weight, weight_unit, gtin, production_date, serial,
-            raw_barcode, is_manual, converted_from)
-         SELECT $1, $2, w, u, g, d, s, r, m, c
+            raw_barcode, is_manual, converted_from, entry_method, is_estimated,
+            client_item_uuid)
+         SELECT $1, $2, w, u, g, d, s, r, m, c, e, x, k
          FROM UNNEST(
            $3::numeric[], $4::text[], $5::text[], $6::date[],
-           $7::text[], $8::text[], $9::boolean[], $10::text[]
-         ) AS t(w, u, g, d, s, r, m, c)
+           $7::text[], $8::text[], $9::boolean[], $10::text[],
+           $11::text[], $12::boolean[], $13::uuid[]
+         ) AS t(w, u, g, d, s, r, m, c, e, x, k)
          ON CONFLICT DO NOTHING
-         RETURNING item_id, serial`,
+         RETURNING item_id, serial, client_item_uuid`,
         [
           req.tenantId,
           batchId,
@@ -430,13 +463,38 @@ router.post("/box-batches/:id/items", verifyToken, scanLimiter, async (req, res)
           rows.map((r) => r.rawBarcode),
           rows.map((r) => r.isManual),
           rows.map((r) => r.convertedFrom || null),
+          rows.map((r) => r.entryMethod || null),
+          rows.map((r) => r.isEstimated === true),
+          rows.map((r) => r.clientItemUuid || null),
         ]
       );
 
       const idBySerial = new Map(
         insertedRows.rows.filter((r) => r.serial).map((r) => [r.serial, r.item_id])
       );
-      const unkeyedIds = insertedRows.rows.filter((r) => !r.serial).map((r) => r.item_id);
+      const idByUuid = new Map(
+        insertedRows.rows.filter((r) => r.client_item_uuid)
+          .map((r) => [r.client_item_uuid, r.item_id])
+      );
+      const unkeyedIds = insertedRows.rows
+        .filter((r) => !r.serial && !r.client_item_uuid).map((r) => r.item_id);
+
+      // A row the insert SKIPPED whose uuid we sent is a resend: the box is
+      // already on the batch from a request whose response never got back to the
+      // client. Recover its id rather than reporting it inserted — otherwise the
+      // client never learns the server id, keeps the row pending, and sends it
+      // again on every flush forever.
+      const unresolved = toInsert.filter(
+        (r) => r.row.clientItemUuid && !idByUuid.has(r.row.clientItemUuid)
+      );
+      if (unresolved.length) {
+        const found = await client.query(
+          `SELECT item_id, client_item_uuid FROM batch_items
+            WHERE batch_id = $1 AND tenant_id = $2 AND client_item_uuid = ANY($3::uuid[])`,
+          [batchId, req.tenantId, unresolved.map((r) => r.row.clientItemUuid)]
+        );
+        for (const row of found.rows) idByUuid.set(row.client_item_uuid, row.item_id);
+      }
 
       for (const r of toInsert) {
         if (r.row.serial) {
@@ -448,7 +506,24 @@ router.post("/box-batches/:id/items", verifyToken, scanLimiter, async (req, res)
             r.status = "duplicate";
             r.reason = "Serial recorded concurrently";
           }
+        } else if (r.row.clientItemUuid) {
+          // Keyed by the client's own id, so this no longer depends on RETURNING
+          // coming back in input order. That positional assumption held only
+          // while every serial-less row in a chunk was interchangeable, which
+          // entry_method and is_estimated ended.
+          const known = idByUuid.get(r.row.clientItemUuid);
+          if (known != null) {
+            r.itemId = known;
+            r.status = insertedRows.rows.some(
+              (x) => x.client_item_uuid === r.row.clientItemUuid
+            ) ? "inserted" : "duplicate";
+            if (r.status === "duplicate") r.reason = "Already recorded in this batch";
+          } else {
+            r.status = "inserted";
+          }
         } else {
+          // An older client that sends no uuid. Falls back to the positional
+          // mapping, so a deployed bundle keeps working unchanged.
           r.status = "inserted";
           if (unkeyedIds.length) r.itemId = unkeyedIds.shift();
         }

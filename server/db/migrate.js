@@ -362,10 +362,56 @@ const steps = async () => {
     await run("batch_items audit", ddl);
   }
 
+  // A weight that was NOT measured.
+  //
+  // Thirty labels printed at a nominal 40 lb are thirty boxes that each actually
+  // weigh something else. The figure is real enough to ship against and useless
+  // as a measurement, and the two must never be summed into one number silently.
+  //
+  // NOT entry_method. That column answers HOW THE FIGURE ARRIVED, and a nominal
+  // weight genuinely IS keyed. These are independent axes: a keyed figure is
+  // usually a real measurement someone read off the indicator, and collapsing
+  // them would throw that away.
+  //
+  // NOT is_manual. Its CHECK already forces it true whenever there is no
+  // barcode, so every scale box is already is_manual — it distinguishes nothing.
+  //
+  // NOT NULL DEFAULT false, unlike entry_method, and the default is not a guess:
+  // every row written before this column existed was a real measurement.
+  //
+  // ANY FUTURE YIELD FIGURE MUST FILTER is_estimated = false. An estimate inside
+  // a yield is a lie about the process, not a rounding error.
+  await run("batch_items is_estimated",
+    `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS is_estimated BOOLEAN NOT NULL
+       DEFAULT false`);
+
+  // The client's own id for one box, minted when it is queued.
+  //
+  // Without it a serial-less row has NO resend protection. scanQueue.flush()
+  // leaves a chunk pending when a request fails, and a lost RESPONSE is
+  // indistinguishable from a lost REQUEST — so the next flush sends the same
+  // boxes again. The serial index below cannot catch that, because it is
+  // PARTIAL and every scale, typed and outgoing box has serial IS NULL.
+  //
+  // So "the server is idempotent on (batch_id, serial)" has only ever been true
+  // for scanned boxes. This is what makes it true for the rest.
+  //
+  // It also replaces the positional RETURNING mapping in the append route, which
+  // held only while every serial-less row in a chunk was interchangeable —
+  // a property entry_method and is_estimated destroy.
+  await run("batch_items client_item_uuid",
+    `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS client_item_uuid UUID`);
+
   // Free duplicate-scan protection: the same serial cannot land in a batch twice.
   await run("batch_items unique index", `
     CREATE UNIQUE INDEX IF NOT EXISTS batch_items_batch_serial_uniq
     ON batch_items (batch_id, serial) WHERE serial IS NOT NULL
+  `);
+
+  // The same, for boxes that have no serial to be keyed on.
+  await run("batch_items client uuid index", `
+    CREATE UNIQUE INDEX IF NOT EXISTS batch_items_batch_client_uuid_uniq
+    ON batch_items (batch_id, client_item_uuid) WHERE client_item_uuid IS NOT NULL
   `);
 
   // A lot is sometimes weighed across several sessions — two people on two

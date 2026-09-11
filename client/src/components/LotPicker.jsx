@@ -334,21 +334,20 @@ const LotPicker = ({
                 Ours look like <Text as="span" fontFamily="mono">N26253-04</Text>.
               </Text>
               <Text fontSize="sm" mb={2}>
-                You can still use it — that is right for a supplier's or a customer's
-                own number off a box or a delivery note.
+                You can still use it. It will be recorded on this record exactly as
+                written, which is right for a supplier's own number off a box or a
+                delivery note.
               </Text>
-              <Box px={3} py={2} bg="blue.50" border="1px solid" borderColor="blue.200"
+              {/* Said plainly, because the cost is invisible until someone goes
+                  looking for the lot later and it is not there. */}
+              <Box px={3} py={2} bg="yellow.50" border="1px solid" borderColor="yellow.200"
                 borderRadius="md">
-                <Text fontSize="xs" color="blue.900">
-                  It will be recorded exactly as written and <b>tracked like any other
-                  lot</b> — its own history, and its weights add up. It is filed under
-                  "not our lot numbers" rather than in the dated sequence, because it
-                  has no date or sequence of its own.
+                <Text fontSize="xs" color="yellow.900">
+                  It will not be added to the lot registry, so it gets no lot history,
+                  and totals for it will not join up with anything else. If this delivery
+                  should have one of our lot numbers, go back and issue one instead.
                 </Text>
               </Box>
-              <Text fontSize="xs" color="gray.600" mt={2}>
-                If this delivery should have one of ours, go back and issue one instead.
-              </Text>
             </AlertDialogBody>
             <AlertDialogFooter gap={2}>
               <Button ref={cancelFreeFormRef} onClick={() => setFreeForm(null)}>
