@@ -609,9 +609,19 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const [importOpen, setImportOpen] = useState(false);
   const toast = useToast();
 
+  // ARRIVALS ONLY. A weight manifest is the tally for product that came IN.
+  // Finished product weighed on its way out is a different thing with a
+  // different home (the Outgoing tab) — it used to be listed here, where it was
+  // indistinguishable from an arrival and could be tied to a registration form
+  // as though it were one.
+  //
+  // Filtered by the SERVER, not here: the listing returns 50 rows by default, so
+  // filtering client-side would have quietly dropped arrivals off the end of the
+  // page as outgoing sessions accumulated.
   const fetchBatches = useCallback(async () => {
     try {
-      const { data } = await axiosInstance.get("/box-batches");
+      const { data } = await axiosInstance.get("/box-batches",
+        { params: { direction: "incoming" } });
       setBatches(data || []);
       setError(null);
     } catch (err) {

@@ -398,11 +398,33 @@ router.post("/shipments/:id/box-batches", verifyToken, async (req, res) => {
     // Counted rather than trusted, so a session id from another tenant cannot
     // be attached to this load.
     const owned = await pool.query(
-      `SELECT batch_id FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2`,
+      `SELECT batch_id, lot_number, direction
+         FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2`,
       [ids, req.tenantId]
     );
     if (owned.rows.length !== ids.length) {
       return res.status(404).json({ error: "One or more sessions were not found" });
+    }
+
+    // The mirror of the registration form's guard in boxes.pg.js. An incoming
+    // session is the RAW ARRIVAL for this lot, and hanging it on a load makes
+    // `weighedTotal` the weight that came IN — which fmtShipment puts beside the
+    // weight being shipped for someone to reconcile against. So it would not
+    // read as a category error; it would read as a discrepancy in the load, and
+    // somebody would go looking for boxes that were never missing.
+    //
+    // Checked after draftOnly above: a shipped load must still refuse with its
+    // status, which is the more urgent truth about why nothing can be tied.
+    const incoming = owned.rows.filter((b) => b.direction === "incoming");
+    if (incoming.length) {
+      const names = incoming.map((b) => b.lot_number || `batch ${b.batch_id}`).join(", ");
+      return res.status(409).json({
+        code: "INCOMING_SESSION",
+        error: `${names} weighed product ARRIVING, not leaving. A load carries ` +
+               `the finished boxes weighed off the bench — weigh them with ` +
+               `"Weigh finished boxes" on the Outgoing tab.`,
+        sessions: incoming.map((b) => ({ batchId: b.batch_id, lotNumber: b.lot_number })),
+      });
     }
 
     // Tying the same session twice is what a double tap produces, not an error.

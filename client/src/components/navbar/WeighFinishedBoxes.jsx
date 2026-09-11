@@ -30,11 +30,11 @@ import { toDisplayHundredths, fromHundredths } from "../../utils/weight";
 // survives a refresh, a dropped connection and a closed tab exactly as a
 // scanned one does. Only the surface differs.
 
-const WeighFinishedBoxes = ({ isOpen, onClose }) => {
+const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
   const toast = useToast();
   const {
     ready, durable, session, pending, scans, lastError, resumable,
-    start, stop, addScan, undoLast, resume,
+    start, stop, addScan, undoLast, resume, adoptSession,
   } = useScanSession();
 
   const [lot, setLot] = useState({ lotId: null, lotNumber: "" });
@@ -46,6 +46,35 @@ const WeighFinishedBoxes = ({ isOpen, onClose }) => {
   const cancelStopRef = useRef(null);
 
   const supported = scaleSupported();
+
+  // Opened on a session that is already running, so the lot is already known
+  // and the start form is skipped entirely.
+  //
+  // Guarded by a ref rather than by state: `ready` and `session` both settle
+  // asynchronously, so this effect runs more than once for a single open, and
+  // adopting twice would clear and reseed the recorded list under the operator.
+  const adoptedRef = useRef(null);
+  useEffect(() => {
+    if (!isOpen) { adoptedRef.current = null; return; }
+    if (!adoptBatchId || !ready || session) return;
+    if (adoptedRef.current === adoptBatchId) return;
+    adoptedRef.current = adoptBatchId;
+    (async () => {
+      const result = await adoptSession(adoptBatchId);
+      if (!result.adopted && result.reason === "pending-scans") {
+        // Refused rather than destroying unsent work. Say so — silently showing
+        // the start form would look like the button simply did nothing, and the
+        // resumable banner below explains the rest.
+        toast({
+          status: "warning", duration: 12000, isClosable: true, position: "top",
+          title: "Another session on this device has unsent weights",
+          description:
+            `${result.pending} weight(s) here have not reached the server yet. Carry ` +
+            `on with that session and let it send, then come back to this one.`,
+        });
+      }
+    })();
+  }, [isOpen, adoptBatchId, ready, session, adoptSession, toast]);
 
   // With no scale reachable there is nothing for the primary path to do, so the
   // fallback becomes the path rather than an option to find.

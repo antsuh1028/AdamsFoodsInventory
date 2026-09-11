@@ -49,7 +49,17 @@ const BoxWeightLink = ({
         formId
           ? axiosInstance.get(`/noblesse-registration-forms/${formId}/box-batches`)
           : Promise.resolve({ data: { sessions: [], boxCount: 0, totalWeight: "0", weightUnit: "LB" } }),
-        axiosInstance.get("/box-batches"),
+        // ARRIVALS ONLY, and this one parameter is the whole guard on this
+        // screen. `options` and `suggested` below both derive from `available`,
+        // so filtering at the fetch removes outgoing sessions from the picker
+        // AND from the "Tie them" banner in one move.
+        //
+        // It mattered most here. An outgoing session deliberately carries the
+        // SAME lot_id as the arrival it came from, so the ★-suggestion below
+        // matched it exactly — this panel was actively recommending that
+        // finished product be filed as the measurement of a delivery, with a
+        // one-click button to do it in bulk.
+        axiosInstance.get("/box-batches", { params: { direction: "incoming" } }),
       ]);
       setLinked(links);
       setAvailable(batches || []);
@@ -320,6 +330,18 @@ const BoxWeightLink = ({
                 {s.source === "imported" && (
                   <Badge colorScheme="teal" fontSize="9px">Imported</Badge>
                 )}
+                {/* A tie that should never have been made. The server refuses
+                    these now, but any made BEFORE that guard existed are still
+                    sitting on filed forms, inflating Original Weight with
+                    product that was leaving rather than arriving. Without this
+                    badge they look exactly like a good tie, so nobody would
+                    ever find them — it is the only way back out. */}
+                {s.direction === "outgoing" && (
+                  <Badge colorScheme="red" fontSize="9px"
+                    title="Finished product going out — not an arrival. Untie it.">
+                    OUTGOING — UNTIE
+                  </Badge>
+                )}
                 <Text fontSize="xs" color="gray.500">
                   {fmtDate(String(s.created_at).slice(0, 10))}
                 </Text>
@@ -345,8 +367,13 @@ const BoxWeightLink = ({
 
       {options.length === 0 ? (
         <Text fontSize="xs" color="gray.500">
+          {/* Says WHY the list is short. A list that silently filters itself to
+              nothing reads as "there is no work here", which is the opposite of
+              the truth — the same reasoning behind the tiedElsewhere count. */}
           {!available.length
-            ? "No weighing sessions to tie yet."
+            ? "No incoming weighing sessions to tie yet. Finished product weighed " +
+              "on the way out is on the Outgoing tab — it records what left, so it " +
+              "cannot be registered as an arrival."
             : tiedElsewhere > 0
               ? `Nothing left to tie. ${tiedElsewhere} weighing session${tiedElsewhere === 1 ? " is" : "s are"} ` +
                 `on another registration form and cannot be tied twice.`

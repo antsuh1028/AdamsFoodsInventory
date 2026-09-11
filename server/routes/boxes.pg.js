@@ -1023,6 +1023,35 @@ router.get("/vendors", verifyToken, async (req, res) => {
 
 router.get("/box-batches", verifyToken, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
+
+  // Which end of the process to list. ABSENT MEANS BOTH, so every existing
+  // caller keeps its meaning unchanged — the same reasoning the column's own
+  // DEFAULT 'incoming' follows.
+  //
+  // It has to be filtered HERE rather than by the caller. The limit above is 50
+  // by default, so once outgoing sessions accumulate they push incoming ones
+  // off the end of the page and a client-side filter would show a list that is
+  // silently short. Filtering in the query is what makes the page mean
+  // something.
+  //
+  // Validated rather than passed through: a typo'd value must not quietly
+  // return an empty list, which reads as "there is no work here".
+  const raw = req.query.direction;
+  const direction = raw == null || raw === "" ? null : String(raw);
+  if (direction !== null && direction !== "incoming" && direction !== "outgoing") {
+    return res.status(400).json({ error: "direction must be 'incoming' or 'outgoing'" });
+  }
+
+  // Built up rather than written as ($3 IS NULL OR b.direction = $3), which is
+  // not sargable — that form cannot use box_batches_direction_idx
+  // (tenant_id, direction, lot_id) and gains nothing for the extra cleverness.
+  const params = [req.tenantId, limit];
+  let dirFilter = "";
+  if (direction) {
+    params.push(direction);
+    dirFilter = ` AND b.direction = $${params.length}`;
+  }
+
   try {
     // Both aggregates are independent scalar subqueries rather than joins.
     // Joining batch_items for the count AND again for the per-unit totals
@@ -1032,7 +1061,7 @@ router.get("/box-batches", verifyToken, async (req, res) => {
     const result = await pool.query(
       `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description,
               b.bill_of_lading, b.brand, b.est_number, b.grade, b.source,
-              b.status, b.created_at, b.closed_at,
+              b.direction, b.status, b.created_at, b.closed_at,
               (SELECT COUNT(*)::int
                  FROM batch_items i
                 WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL) AS box_count,
@@ -1058,12 +1087,27 @@ router.get("/box-batches", verifyToken, async (req, res) => {
               (SELECT r.form_id
                  FROM registration_form_batches r
                 WHERE r.batch_id = b.batch_id AND r.tenant_id = $1
-                LIMIT 1) AS form_id
+                LIMIT 1) AS form_id,
+              -- The load already carrying this session, if any — the mirror of
+              -- form_id above, and the same scalar-subquery-not-a-join reason.
+              --
+              -- Exposed so the Outgoing tab can say whether a weighed lot is
+              -- still waiting for a load. Before this, a session weighed on
+              -- Friday afternoon was visible NOWHERE until somebody started a
+              -- shipment to tie it to.
+              (SELECT json_build_object('shipmentId', s.shipment_id,
+                                        'status', s.status,
+                                        'destinationName', s.destination_name)
+                 FROM shipment_batches sb
+                 JOIN noblesse_shipments s ON s.shipment_id = sb.shipment_id
+                WHERE sb.batch_id = b.batch_id AND sb.tenant_id = $1
+                ORDER BY s.shipment_id DESC
+                LIMIT 1) AS shipment
          FROM box_batches b
-        WHERE b.tenant_id = $1
+        WHERE b.tenant_id = $1${dirFilter}
         ORDER BY b.created_at DESC
         LIMIT $2`,
-      [req.tenantId, limit]
+      params
     );
     res.json(result.rows);
   } catch (err) {
@@ -1102,6 +1146,12 @@ router.get("/box-batches/unregistered", verifyToken, async (req, res) => {
                 WHERE m.batch_id = b.batch_id LIMIT 1) AS manifest_name
          FROM box_batches b
         WHERE b.tenant_id = $1
+          -- INCOMING ONLY. This notice means "product arrived and nobody has
+          -- filed the registration form for it". An outgoing session weighed
+          -- finished product LEAVING: there is no form it can ever go on, so it
+          -- satisfied "closed, has boxes, not on a form" permanently and nagged
+          -- forever with nothing anyone could do about it.
+          AND b.direction = 'incoming'
           AND b.status = 'closed'
           AND NOT EXISTS (
                 SELECT 1 FROM registration_form_batches r
@@ -1310,6 +1360,11 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
     const batch = await pool.query(
       `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description,
               brand, est_number, grade, remarks, source, expected_boxes, direction,
+              -- lot_id was missing here while useScanSession reads detail.lot_id
+              -- when adopting, so EVERY adopted session silently lost its lot —
+              -- the number still showed, because lot_number is its own column,
+              -- which is what made it invisible.
+              lot_id,
               status, created_at, closed_at
          FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]
@@ -1385,13 +1440,36 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
     // trusting the request, so a batch id from another tenant cannot be folded
     // into a manifest.
     const owned = await client.query(
-      `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description, lot_id
+      `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description,
+              lot_id, direction
          FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2`,
       [ids, req.tenantId]
     );
     if (owned.rows.length !== ids.length) {
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "One or more sessions were not found" });
+    }
+
+    // A merged manifest is ONE printed tally, so its sessions must be the same
+    // KIND of thing. This is about mixing, not direction as such — two benches
+    // weighing one lot out is a perfectly good merge.
+    //
+    // Asked before the lot check below, which cannot catch this: an outgoing
+    // session carries the same lot_id as its incoming parent, so an in/out pair
+    // PASSES the one-lot rule by construction and prints as a single sheet whose
+    // total is the same product counted twice.
+    const dirs = [...new Set(owned.rows.map((b) => b.direction))];
+    if (dirs.length > 1) {
+      await client.query("ROLLBACK");
+      const say = (d) => owned.rows.filter((b) => b.direction === d)
+        .map((b) => b.lot_number || `batch ${b.batch_id}`).join(", ");
+      return res.status(409).json({
+        code: "DIRECTION_MISMATCH",
+        error: `These sessions are not all the same direction — ${say("incoming")} ` +
+               `weighed product in, ${say("outgoing")} weighed product out. One ` +
+               `tally covering both would count the same lot twice.`,
+        directions: dirs,
+      });
     }
 
     // One manifest covers ONE lot. Merging sessions from different lots would
@@ -1656,6 +1734,11 @@ const boxTotalsForForm = async (formId, tenantId) => {
     // and quietly did less once the form had been saved.
     `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description,
             b.bill_of_lading, b.brand, b.est_number, b.grade,
+            -- Carried so the panel can LABEL a tie that should never have been
+            -- made. New ones are refused now, but any that predate that guard
+            -- are already sitting on filed forms, and without this they are
+            -- indistinguishable from good ones — so nobody would ever find them.
+            b.direction,
             b.status, b.source, b.created_at,
             (SELECT COUNT(*)::int FROM batch_items i
               WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL) AS box_count,
@@ -1726,12 +1809,45 @@ router.post("/noblesse-registration-forms/:id/box-batches", verifyToken, async (
     // Counted rather than trusted, so a session id from another tenant cannot
     // be attached to this form.
     const owned = await client.query(
-      `SELECT batch_id FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2`,
+      `SELECT batch_id, lot_number, direction
+         FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2`,
       [ids, req.tenantId]
     );
     if (owned.rows.length !== ids.length) {
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "One or more sessions were not found" });
+    }
+
+    // A registration form asserts "these boxes are the measurement of this
+    // delivery". An outgoing session weighed finished product LEAVING, so tying
+    // it counts one lot's product twice — once in, once out — on the form that
+    // is also the DENOMINATOR of that lot's yield.
+    //
+    // Nothing about the row makes this visible: an outgoing session deliberately
+    // carries the SAME lot_id as the arrival it came from, which is what makes
+    // yield computable, and is also what made every picker and suggestion in the
+    // app treat it as the arrival's twin.
+    //
+    // Asked BEFORE the already-claimed check below: "wrong kind of thing
+    // entirely" is a better answer than "right kind, already spoken for", and
+    // the direction is already in hand.
+    //
+    // Tested for 'outgoing' rather than "not incoming" on purpose. The column is
+    // NOT NULL with a two-value CHECK so the two are equivalent in the database,
+    // but naming the value keeps the refusal honest if a third direction is ever
+    // added — and a row that somehow carries no direction is not swept up by a
+    // guard that was written to catch finished product.
+    const outgoing = owned.rows.filter((b) => b.direction === "outgoing");
+    if (outgoing.length) {
+      await client.query("ROLLBACK");
+      const names = outgoing.map((b) => b.lot_number || `batch ${b.batch_id}`).join(", ");
+      return res.status(409).json({
+        code: "OUTGOING_SESSION",
+        error: `${names} weighed finished product going OUT, not an arrival. ` +
+               `A registration form records what came in — those boxes belong ` +
+               `on the Outgoing tab.`,
+        sessions: outgoing.map((b) => ({ batchId: b.batch_id, lotNumber: b.lot_number })),
+      });
     }
 
     // A weighing session belongs to ONE delivery. Letting a second form claim

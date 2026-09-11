@@ -21,7 +21,9 @@ const api = {
   closeBatch: (batchId, remarks) =>
     axiosInstance.post(`/box-batches/${batchId}/close`, { remarks })
       .then((r) => r.data),
-  listBatches: () => axiosInstance.get("/box-batches").then((r) => r.data),
+  listBatches: (direction = null) =>
+    axiosInstance.get("/box-batches", { params: direction ? { direction } : {} })
+      .then((r) => r.data),
   getBatch: (batchId) =>
     axiosInstance.get(`/box-batches/${batchId}`).then((r) => r.data),
   // The unit goes up as typed; the server converts it itself rather than
@@ -154,8 +156,13 @@ export const useScanSession = () => {
   // IndexedDB, so a session started on another iPad — or in a browser whose
   // storage was cleared — was invisible and the operator had to open a second
   // one against the same lot.
-  const listOpenSessions = useCallback(async () => {
-    const all = await api.listBatches();
+  //
+  // Scoped by DIRECTION, which the server applies. The incoming bench must not
+  // offer to adopt an outgoing session and vice versa: they are different jobs
+  // at different benches, and adopting across would put an operator on a screen
+  // built for the other one.
+  const listOpenSessions = useCallback(async (direction = null) => {
+    const all = await api.listBatches(direction);
     return (all || []).filter((b) => b.status === "open");
   }, []);
 

@@ -53,9 +53,13 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // A new line being added to the open draft.
   const [line, setLine] = useState({ stockKey: "", weight: "", qtyCases: "" });
 
-  // Weighing sessions that could be tied to the open draft.
+  // Finished product weighed at the bench. Listed on this tab in its own right
+  // now, not just offered inside an open draft.
   const [batches, setBatches] = useState([]);
   const [pickedBatches, setPickedBatches] = useState(() => new Set());
+  // A session to reopen the weighing window on, so an interrupted lot can be
+  // carried on with instead of started again.
+  const [adoptBatchId, setAdoptBatchId] = useState(null);
 
   const [confirmShip, setConfirmShip] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -88,9 +92,15 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     }
   }, []);
 
+  // OUTGOING ONLY. These are the finished boxes weighed off the bench — the
+  // only kind that belongs on a load. Tying an incoming session would make the
+  // "weighed on the dock" figure the weight that ARRIVED, shown beside the
+  // weight being shipped for someone to reconcile against; it would not read as
+  // a mistake, it would read as a discrepancy in the load.
   const fetchBatches = useCallback(async () => {
     try {
-      const { data } = await axiosInstance.get("/box-batches");
+      const { data } = await axiosInstance.get("/box-batches",
+        { params: { direction: "outgoing" } });
       setBatches(data || []);
     } catch {
       // Tying a session is optional, so failing to list them must not stop a
@@ -111,7 +121,12 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     lastSignal.current = refreshSignal;
     fetchShipments();
     fetchAvailable();
-  }, [refreshSignal, fetchShipments, fetchAvailable]);
+    // Weighed sessions are primary content on this tab now, not just a picker
+    // inside a draft, so they have to follow the poll. A tab that only fetches
+    // on mount looks live and is frozen at page load — that has shipped here
+    // once already (CLAUDE.md §1).
+    fetchBatches();
+  }, [refreshSignal, fetchShipments, fetchAvailable, fetchBatches]);
 
   const openShipment = async (id) => {
     if (openId === id) { setOpenId(null); setDetail(null); return; }
@@ -260,6 +275,64 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           <Button size="sm" colorScheme="blue" onClick={startDraft}>New shipment</Button>
         </Flex>
       </Flex>
+
+      {/* Finished product weighed at the bench, listed whether or not a load
+          has been built for it.
+
+          It used to appear ONLY inside an open draft's tie picker, so a lot
+          weighed on Friday afternoon was visible nowhere until somebody started
+          a shipment — while simultaneously showing up on the Weight Manifests
+          tab as though it were an arrival. Weighing and loading are separate
+          acts, as the button above says: boxes are weighed as they come off the
+          line, often before anyone knows which truck they are going on. */}
+      {batches.length > 0 && (
+        <Box mb={5}>
+          <Text fontSize="sm" fontWeight="bold" color="gray.800">
+            Finished product weighed
+          </Text>
+          <Text fontSize="xs" color="gray.500" mb={2}>
+            Boxes weighed off the bench on their way out. Tie one to a load below,
+            or leave it until there is a load for it.
+          </Text>
+          <Flex direction="column" gap={1}>
+            {batches.map((b) => (
+              <Flex key={b.batch_id} align="baseline" gap={3} wrap="wrap"
+                px={3} py={2} bg="white" borderRadius="md"
+                border="1px solid" borderColor="gray.200">
+                <Text fontSize="sm" fontWeight="600" color="blue.700">
+                  {b.lot_number || `Batch ${b.batch_id}`}
+                </Text>
+                <Badge colorScheme={b.status === "closed" ? "green" : "yellow"} fontSize="9px">
+                  {b.status === "closed" ? "Closed" : "Open"}
+                </Badge>
+                {b.item_description && (
+                  <Text fontSize="xs" color="gray.600">{b.item_description}</Text>
+                )}
+                {/* The listing returns totals as [{unit,total}] — a session can
+                    hold more than one unit — where the shipment detail returns a
+                    plain string. Read the LB entry rather than assuming [0]. */}
+                <Text fontSize="sm" color="gray.700" ml="auto"
+                  style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {b.box_count} × {lb((b.totals || []).find((t) => t.unit === "LB")?.total)} lb
+                </Text>
+                {b.shipment ? (
+                  <Badge colorScheme="blue" fontSize="9px">
+                    On {b.shipment.destinationName} ({b.shipment.status})
+                  </Badge>
+                ) : (
+                  <Badge colorScheme="gray" fontSize="9px">Not on a load</Badge>
+                )}
+                {b.status === "open" && (
+                  <Button size="xs" variant="ghost" colorScheme="blue"
+                    onClick={() => { setAdoptBatchId(b.batch_id); setWeighOpen(true); }}>
+                    Carry on weighing
+                  </Button>
+                )}
+              </Flex>
+            ))}
+          </Flex>
+        </Box>
+      )}
 
       {loading && <Flex justify="center" py={8}><Spinner color="blue.500" /></Flex>}
 
@@ -707,7 +780,8 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           of it was between the operator and the scale. */}
       <WeighFinishedBoxes
         isOpen={weighOpen}
-        onClose={() => { setWeighOpen(false); fetchBatches(); }}
+        adoptBatchId={adoptBatchId}
+        onClose={() => { setWeighOpen(false); setAdoptBatchId(null); fetchBatches(); }}
       />
     </Box>
   );

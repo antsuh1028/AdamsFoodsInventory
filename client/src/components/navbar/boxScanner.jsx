@@ -163,7 +163,11 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
     let cancelled = false;
     (async () => {
       try {
-        const rows = await listOpenSessions();
+        // Scoped to this panel's own end of the process. Without it the
+        // incoming bench offered open OUTGOING sessions for adoption, which
+        // would drop the operator into a barcode screen for boxes that carry
+        // no barcode.
+        const rows = await listOpenSessions(direction);
         if (!cancelled) setOpenSessions(rows);
       } catch {
         // A listing failure must not block starting a new session, which is
@@ -171,7 +175,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
       }
     })();
     return () => { cancelled = true; };
-  }, [isOpen, session, listOpenSessions]);
+  }, [isOpen, session, listOpenSessions, direction]);
 
   const onContinue = async (batch) => {
     setAdopting(batch.batch_id);
