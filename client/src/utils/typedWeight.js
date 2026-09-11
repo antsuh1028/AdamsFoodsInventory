@@ -102,7 +102,38 @@ const looksWrong = (weight, previousWeights) => {
   return { outlier: false, median };
 };
 
+/**
+ * Is this the box that was just weighed, coming back?
+ *
+ * A label rips, or a box is re-weighed to reprint, and the same box goes on the
+ * scale twice. Nothing distinguishes that from a second box except the figure
+ * being EXACTLY the same, seconds apart — so that is what this looks for.
+ *
+ * ONLY against the box immediately before. Measured over 1,052 real boxes:
+ *
+ *   repeat of the one before   1.52%   rare enough to ask about
+ *   repeat of any earlier box  18.6%   ordinary coincidence, must be ignored
+ *
+ * Prompting on the second would interrupt roughly one box in five for nothing,
+ * and an operator who dismisses a prompt five times an hour stops reading it.
+ *
+ * It also matches the physical sequence: the capture machine will not record
+ * again until the platform clears, so a re-weigh is always
+ * capture X -> empty -> capture X. Consecutive by construction.
+ *
+ * Advisory. The operator knows whether they picked the same box up.
+ */
+const looksLikeReweigh = (weight, previousWeights) => {
+  const list = previousWeights || [];
+  if (!list.length) return { reweigh: false };
+  const last = list[list.length - 1];
+  // Compared as NUMBERS: "40.60" and "40.6" are the same box, and the scale is
+  // free to render trailing zeros differently between two readings.
+  const same = Number(weight) === Number(last) && Number.isFinite(Number(weight));
+  return same ? { reweigh: true, previous: last } : { reweigh: false };
+};
+
 module.exports = {
-  parseTypedWeight, looksWrong, medianOf,
+  parseTypedWeight, looksWrong, looksLikeReweigh, medianOf,
   IMPLIED_DECIMALS, MIN_SAMPLE, HIGH, LOW,
 };

@@ -4,7 +4,7 @@ import {
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
   AlertDialogContent, AlertDialogOverlay,
 } from "@chakra-ui/react";
-import { parseTypedWeight, looksWrong } from "../../utils/typedWeight";
+import { parseTypedWeight, looksWrong, looksLikeReweigh } from "../../utils/typedWeight";
 import { beepSuccess, beepError } from "../../utils/scanFeedback";
 
 // Typing weights at the bench, one box at a time as each is weighed.
@@ -73,9 +73,20 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
     const verdict = looksWrong(parsed.weight, weights);
     if (verdict.outlier) {
       beepError();
-      setConfirm({ weight: parsed.weight, ...verdict });
+      setConfirm({ kind: "outlier", weight: parsed.weight, ...verdict });
       return;
     }
+
+    // The same box coming back: a ripped label, or a re-weigh to reprint one.
+    // Asked AFTER the outlier check because a weight that is both wrong-looking
+    // and a repeat is more likely a mis-key than a box.
+    const repeat = looksLikeReweigh(parsed.weight, weights);
+    if (repeat.reweigh) {
+      beepError();
+      setConfirm({ kind: "reweigh", weight: parsed.weight, ...repeat });
+      return;
+    }
+
     await commit(parsed.weight);
   };
 
@@ -189,7 +200,9 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
         <AlertDialogOverlay>
           <AlertDialogContent>
             <AlertDialogHeader fontSize="lg" fontWeight="bold">
-              Is that weight right?
+              {confirm?.kind === "reweigh"
+                ? "Same weight as the last box"
+                : "Is that weight right?"}
             </AlertDialogHeader>
             <AlertDialogBody>
               <Flex align="baseline" gap={2} mb={3}>
@@ -199,26 +212,46 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
                 </Text>
                 <Text fontSize="md" color="gray.600">lb</Text>
               </Flex>
-              <Text fontSize="sm">
-                That is about <b>{confirm ? Math.round(confirm.ratio > 1 ? confirm.ratio : 1 / confirm.ratio) : ""}×</b>
-                {" "}{confirm?.direction === "high" ? "heavier" : "lighter"} than the rest of this
-                lot, which is running around <b>{confirm ? confirm.median.toFixed(2) : ""} lb</b> a box.
-              </Text>
-              <Text fontSize="xs" color="gray.600" mt={2}>
-                A misplaced decimal looks exactly like this. If the box really does weigh
-                that, record it.
-              </Text>
+
+              {confirm?.kind === "reweigh" ? (
+                <>
+                  <Text fontSize="sm">
+                    The box before this one weighed exactly the same. That usually
+                    means the <b>same box came back</b> — a torn label, or a re-weigh
+                    to reprint one.
+                  </Text>
+                  <Text fontSize="xs" color="gray.600" mt={2}>
+                    If it is the same box it is already on the manifest, and recording
+                    it again would count one box as two. Two different boxes landing on
+                    the same figure does happen — if that is what this is, add it.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text fontSize="sm">
+                    That is about <b>{confirm ? Math.round(confirm.ratio > 1 ? confirm.ratio : 1 / confirm.ratio) : ""}×</b>
+                    {" "}{confirm?.direction === "high" ? "heavier" : "lighter"} than the rest of this
+                    lot, which is running around <b>{confirm ? confirm.median.toFixed(2) : ""} lb</b> a box.
+                  </Text>
+                  <Text fontSize="xs" color="gray.600" mt={2}>
+                    A misplaced decimal looks exactly like this. If the box really does weigh
+                    that, record it.
+                  </Text>
+                </>
+              )}
             </AlertDialogBody>
             <AlertDialogFooter gap={2}>
               {/* Focus sits on the safe option: Enter is the key being hammered
-                  here, and it must not commit a weight that was queried. */}
+                  here, and it must not commit a weight that was queried.
+                  For a re-weigh the safe answer is NOT recording it — a box
+                  counted twice inflates the lot and nothing downstream notices. */}
               <Button ref={cancelRef}
-                onClick={() => { setConfirm(null); refocus(); }}>
-                Let me retype it
+                onClick={() => { setConfirm(null); setTyped(""); refocus(); }}>
+                {confirm?.kind === "reweigh" ? "Same box — don't record" : "Let me retype it"}
               </Button>
               <Button colorScheme="yellow"
                 onClick={async () => { const w = confirm.weight; setConfirm(null); await commit(w); }}>
-                Record {confirm?.weight}
+                {confirm?.kind === "reweigh" ? "Different box — record it" : `Record ${confirm?.weight}`}
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>
