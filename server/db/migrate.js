@@ -497,6 +497,38 @@ const steps = async () => {
     )
   `);
 
+  // Lots that are not ours.
+  //
+  // Some deliveries arrive under a supplier's or a customer's own number and
+  // there is no NTI lot to give them — but they still have to be TRACKED, which
+  // means they need a lot_id like anything else. Carrying only the text left
+  // them with no history, no timeline, and no way to add up.
+  //
+  // 'external' is a first-class lot with one difference: it carries no date and
+  // no sequence, because it genuinely has neither. Those two columns become
+  // nullable for exactly this, and the NOT NULL is kept in spirit by `kind` —
+  // an internal lot without a date is still impossible, since issuance derives
+  // both from the number it allocates.
+  //
+  // What this does NOT relax: downstream still cannot mint a lot
+  // (`POST /lots/resolve` never creates), and an external one is only ever made
+  // by an explicit, confirmed act on an incoming-side screen. The registry's
+  // rule was "issued once at Incoming, referenced afterwards" — that holds.
+  //
+  // UNIQUE (tenant_id, lot_date, seq) is unaffected: Postgres treats NULLs as
+  // distinct, so any number of external lots coexist under it, while two
+  // internal lots still cannot take the same sequence on the same day.
+  await run("lots kind",
+    `ALTER TABLE lots ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL
+       DEFAULT 'internal' CHECK (kind IN ('internal', 'external'))`);
+
+  // Every lot that already exists was issued by us, so the default is correct
+  // for all of them and there is nothing to backfill.
+  await run("lots lot_date nullable",
+    `ALTER TABLE lots ALTER COLUMN lot_date DROP NOT NULL`);
+  await run("lots seq nullable",
+    `ALTER TABLE lots ALTER COLUMN seq DROP NOT NULL`);
+
   // Back-references. ADD COLUMN IF NOT EXISTS skips the whole clause, FK
   // included, when the column is already there — so re-running is safe.
   for (const table of [

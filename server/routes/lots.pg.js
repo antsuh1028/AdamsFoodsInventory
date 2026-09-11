@@ -27,6 +27,11 @@ const fmtLot = (row) => ({
     ? row.lot_date.toISOString().slice(0, 10)
     : row.lot_date,
   seq: row.seq,
+  // 'internal' (ours, N{YY}{JJJ}-{NN}) or 'external' (a supplier's or
+  // customer's own number). An external lot has no date and no sequence
+  // because it genuinely has neither — callers group on this rather than
+  // inferring it from a null date.
+  kind: row.kind || "internal",
   notes: row.notes,
   createdAt: row.created_at,
 });
@@ -98,9 +103,58 @@ const issueNextForDate = async (tenantId, lotDate, userId, notes) => {
 // to the record it already has, which is the whole "stored, not re-created"
 // rule. It reports which happened so the caller can say so.
 router.post("/lots", verifyToken, async (req, res) => {
-  const { date, lotNumber, notes } = req.body || {};
+  const { date, lotNumber, notes, external } = req.body || {};
 
   try {
+    // A number that is not ours — a supplier's or a customer's — recorded as a
+    // real lot so it can be TRACKED: it gets a lot_id, a history, and joins up
+    // like any other. It carries no date and no sequence because it has
+    // neither, which is what `kind` marks.
+    //
+    // Only ever reached when the caller asks for it EXPLICITLY. The default
+    // path below still refuses anything unparseable, so a typo cannot become a
+    // lot by accident — which was the point of the registry's strictness, and
+    // is untouched. `POST /lots/resolve` still never creates.
+    if (external === true) {
+      const text = String(lotNumber == null ? "" : lotNumber).trim().toUpperCase();
+      if (!text) return res.status(400).json({ error: "lotNumber is required" });
+
+      // Ours has a canonical form and an allocated sequence. Letting one in
+      // through this door would mint an N-number that the issuer never handed
+      // out, and put it in the registry with no date to order it by.
+      const parsedCheck = parseLot(text);
+      if (parsedCheck.ok) {
+        return res.status(400).json({
+          code: "IS_OUR_LOT",
+          error: `"${parsedCheck.lotNumber}" is one of our lot numbers. ` +
+                 `Issue or pick it rather than recording it as an outside number.`,
+        });
+      }
+
+      const already = await findLot(req.tenantId, text);
+      if (already.rows.length) {
+        return res.json({ lot: fmtLot(already.rows[0]), created: false });
+      }
+
+      try {
+        const ins = await pool.query(
+          `INSERT INTO lots (tenant_id, lot_number, lot_date, seq, kind, created_by, notes)
+           VALUES ($1, $2, NULL, NULL, 'external', $3, $4)
+           RETURNING *`,
+          [req.tenantId, text, req.userId, notes || null]
+        );
+        return res.status(201).json({ lot: fmtLot(ins.rows[0]), created: true });
+      } catch (err) {
+        // Someone recorded the same outside number a moment ago. That is a
+        // success for the caller: the lot exists and is theirs.
+        if (err.code === "23505") {
+          const now = await findLot(req.tenantId, text);
+          if (now.rows.length) return res.json({ lot: fmtLot(now.rows[0]), created: false });
+        }
+        throw err;
+      }
+    }
+
     if (lotNumber != null && String(lotNumber).trim() !== "") {
       const parsed = parseLot(lotNumber);
       if (!parsed.ok) {
@@ -200,10 +254,21 @@ router.get("/lots", verifyToken, async (req, res) => {
 
   try {
     const result = await pool.query(
+      // Ours first — newest day, highest sequence. Anything not ours in its
+      // own block below, newest first.
+      //
+      // External lots are deliberately kept OUT of the date/sequence ordering
+      // rather than mixed into it. They have no date, and a NULL sorts FIRST
+      // under DESC in Postgres, so left in the same ordering they would sit
+      // above today's work and push the lot someone actually wants off the top
+      // of the list. The client renders the two blocks as separate groups.
       `SELECT * FROM lots
         WHERE tenant_id = $1
           AND ($2 = '' OR lot_number ILIKE '%' || $2 || '%')
-        ORDER BY lot_date DESC, seq DESC
+        ORDER BY (kind = 'external'),
+                 lot_date DESC NULLS LAST,
+                 seq DESC NULLS LAST,
+                 created_at DESC
         LIMIT $3`,
       [req.tenantId, q, limit]
     );

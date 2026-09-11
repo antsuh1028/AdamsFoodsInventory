@@ -82,6 +82,19 @@ const LotPicker = ({
     return lots;
   }, [lots, selected, value]);
 
+  // The server already returns ours first and outside numbers after; splitting
+  // here only puts a heading between them. Kept as a filter rather than a slice
+  // so an older server that sends no `kind` degrades to one ungrouped list
+  // rather than an empty picker.
+  const ours = useMemo(
+    () => options.filter((l) => (l.kind || "internal") !== "external"),
+    [options]
+  );
+  const outside = useMemo(
+    () => options.filter((l) => l.kind === "external"),
+    [options]
+  );
+
   const pick = (lotId) => {
     if (!lotId) { onChange(null); return; }
     const lot = lots.find((l) => String(l.lotId) === String(lotId));
@@ -156,18 +169,31 @@ const LotPicker = ({
     }
   };
 
-  // Confirmed free-form. No registry row is created — `lots` requires a date
-  // and a sequence that this text does not carry, and inventing them would put
-  // a fictional lot in the registry that everything downstream would then
-  // resolve against.
+  // Confirmed: record it as an EXTERNAL lot — a real registry row with a
+  // lot_id, carrying no date or sequence because it has neither.
   //
-  // Instead the text is carried on the record itself with lot_id NULL, which is
-  // exactly what the server already does for unparseable text (lotColumns) and
-  // what the text columns are still authoritative for.
-  const useFreeForm = () => {
-    onChange({ lotId: null, lotNumber: freeForm.text });
-    setTyped("");
-    setFreeForm(null);
+  // It used to be stored as bare text with lot_id NULL, which saved fine and
+  // then tracked nothing: no history, no timeline, and no way for its weights
+  // to add up with anything. A number that is not ours still has to be
+  // followed, so it gets a lot like everything else.
+  const useFreeForm = async () => {
+    setBusy(true);
+    try {
+      const { data } = await axiosInstance.post("/lots", {
+        lotNumber: freeForm.text, external: true,
+      });
+      setFreeForm(null);
+      adopt(data.lot, data.created);
+    } catch (err) {
+      const body = err.response?.data;
+      toast({
+        title: "Could not record that number",
+        description: body?.error || err.message,
+        status: "error", duration: 6000, position: "top", isClosable: true,
+      });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -183,11 +209,20 @@ const LotPicker = ({
           isDisabled={isDisabled || loading}
           onChange={(e) => pick(e.target.value)}
         >
-          {options.map((l) => (
-            <option key={l.lotId} value={l.lotId}>
-              {l.lotNumber}
-            </option>
+          {/* Two groups, never one list. Ours are ordered by day and sequence;
+              an outside number has neither, so mixing them means sorting a
+              thing by a key it does not have — and the operator loses the top
+              of the list, which is where today's lot lives. */}
+          {ours.map((l) => (
+            <option key={l.lotId} value={l.lotId}>{l.lotNumber}</option>
           ))}
+          {outside.length > 0 && (
+            <optgroup label="Not our lot numbers">
+              {outside.map((l) => (
+                <option key={l.lotId} value={l.lotId}>{l.lotNumber}</option>
+              ))}
+            </optgroup>
+          )}
         </Select>
 
         {loading && <Spinner size="xs" color="blue.500" />}
@@ -299,20 +334,21 @@ const LotPicker = ({
                 Ours look like <Text as="span" fontFamily="mono">N26253-04</Text>.
               </Text>
               <Text fontSize="sm" mb={2}>
-                You can still use it. It will be recorded on this record exactly as
-                written, which is right for a supplier's own number off a box or a
-                delivery note.
+                You can still use it — that is right for a supplier's or a customer's
+                own number off a box or a delivery note.
               </Text>
-              {/* Said plainly, because the cost is invisible until someone goes
-                  looking for the lot later and it is not there. */}
-              <Box px={3} py={2} bg="yellow.50" border="1px solid" borderColor="yellow.200"
+              <Box px={3} py={2} bg="blue.50" border="1px solid" borderColor="blue.200"
                 borderRadius="md">
-                <Text fontSize="xs" color="yellow.900">
-                  It will not be added to the lot registry, so it gets no lot history,
-                  and totals for it will not join up with anything else. If this delivery
-                  should have one of our lot numbers, go back and issue one instead.
+                <Text fontSize="xs" color="blue.900">
+                  It will be recorded exactly as written and <b>tracked like any other
+                  lot</b> — its own history, and its weights add up. It is filed under
+                  "not our lot numbers" rather than in the dated sequence, because it
+                  has no date or sequence of its own.
                 </Text>
               </Box>
+              <Text fontSize="xs" color="gray.600" mt={2}>
+                If this delivery should have one of ours, go back and issue one instead.
+              </Text>
             </AlertDialogBody>
             <AlertDialogFooter gap={2}>
               <Button ref={cancelFreeFormRef} onClick={() => setFreeForm(null)}>
