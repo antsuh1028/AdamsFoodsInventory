@@ -1257,7 +1257,7 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
   try {
     const batch = await pool.query(
       `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description,
-              brand, est_number, grade, remarks, source, expected_boxes,
+              brand, est_number, grade, remarks, source, expected_boxes, direction,
               status, created_at, closed_at
          FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]

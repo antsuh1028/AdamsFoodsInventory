@@ -136,7 +136,15 @@ const totalsOf = (batch) =>
     ? batch.totals.map((t) => `${t.total} ${t.unit}`).join("  ·  ")
     : "—";
 
-const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
+// `direction` decides which end of the process this session belongs to:
+//
+//   incoming   raw product arriving — barcoded, scanned. The default, so every
+//              existing caller keeps its meaning without being changed.
+//   outgoing   finished product leaving — no barcodes, weights typed.
+//
+// It is a prop rather than a toggle because the two are different jobs at
+// different benches, and the difference decides what the panel offers.
+const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incoming" }) => {
   const {
     ready, durable, session, pending, resumable, lastError, lastScan, scans,
     start, resume, discardResumable, stop, flush, addScan, undoLast, editScan, voidScan,
@@ -237,6 +245,19 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
   // global keydown handler bail — so while this is on the scanner is deaf
   // (CLAUDE.md §4). A deliberate mode, never a default.
   const [typeMode, setTypeMode] = useState(false);
+
+  // The session's own direction wins once one is open — an ADOPTED session
+  // carries what it was created as, which may not be what this panel was
+  // opened for. Falls back to the prop before a session exists, so the start
+  // form can already show the right shape.
+  const isOutgoing = session ? session.direction === "outgoing" : direction === "outgoing";
+
+  // Typing is only ever on for an outgoing session. Belt and braces with the
+  // button being absent: adopting an INCOMING session while typing was left on
+  // would otherwise leave the scanner deaf with no visible cause.
+  useEffect(() => {
+    if (!isOutgoing && typeMode) setTypeMode(false);
+  }, [isOutgoing, typeMode]);
   const [rowBusy, setRowBusy] = useState(null);
   // Declining a recovered batch throws away scans the server never received,
   // so it is confirmed rather than a single tap next to "Resume it".
@@ -337,6 +358,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
         estNumber: header.estNumber.trim() || null,
         grade: header.grade.trim() || null,
         expectedBoxes: header.expectedBoxes.trim() || null,
+        direction,
       });
       setConfirmStart(false);
     } catch (err) {
@@ -461,14 +483,23 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
               isDisabled={!session}>
               {showManual ? "Hide keypad" : "Show keypad"}
             </Button>
-            {/* Typing mode. Closes the keypad on the way in — both are manual
-                entry, and two panels only compete for the bench screen. */}
-            <Button size={{ base: "sm", md: "lg" }} variant={typeMode ? "solid" : "outline"}
-              colorScheme={typeMode ? "blue" : "gray"}
-              isDisabled={!session}
-              onClick={() => setTypeMode((v) => { if (!v) setShowManual(false); return !v; })}>
-              {typeMode ? "Stop typing" : "Type weights"}
-            </Button>
+            {/* OUTGOING ONLY, and that is a safety property rather than tidiness.
+                The typing field holds focus, and a focused field makes the
+                global keydown handler bail — so while it is open the scanner is
+                deaf (CLAUDE.md §4). On an incoming session that would silently
+                swallow scans, so the control is not merely disabled there: it
+                does not exist. Finished boxes carry no barcode, so nothing is
+                lost at the outgoing bench.
+                Closes the keypad on the way in — both are manual entry, and two
+                panels only compete for the screen. */}
+            {isOutgoing && (
+              <Button size={{ base: "sm", md: "lg" }} variant={typeMode ? "solid" : "outline"}
+                colorScheme={typeMode ? "blue" : "gray"}
+                isDisabled={!session}
+                onClick={() => setTypeMode((v) => { if (!v) setShowManual(false); return !v; })}>
+                {typeMode ? "Stop typing" : "Type weights"}
+              </Button>
+            )}
           </Flex>
           <Flex gap={2} wrap="wrap">
             <Button size={{ base: "sm", md: "lg" }} variant="outline" colorScheme="blue"

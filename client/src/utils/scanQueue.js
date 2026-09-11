@@ -463,6 +463,7 @@ const createScanQueue = ({
       estNumber: batch.estNumber || null,
       grade: batch.grade || null,
       expectedBoxes: batch.expectedBoxes ?? null,
+      direction: batch.direction || "incoming",
       status: "open",
       stats,
     });

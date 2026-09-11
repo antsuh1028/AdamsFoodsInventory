@@ -5,6 +5,7 @@ import {
   AlertDialogContent, AlertDialogOverlay, useToast,
 } from "@chakra-ui/react";
 import axiosInstance from "../../utils/axiosInstance";
+import BoxScanner from "../../components/navbar/boxScanner";
 import { toDisplay } from "../../utils/weight";
 import { fmtDate, today, upper } from "./shared";
 import getRole from "../../utils/getRole";
@@ -59,6 +60,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   const [confirmShip, setConfirmShip] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Weighing finished product. Opens the same session machinery the incoming
+  // bench uses, pointed the other way.
+  const [weighOpen, setWeighOpen] = useState(false);
   const cancelRef = useRef(null);
 
   const fetchShipments = useCallback(async () => {
@@ -244,7 +248,17 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
             Loads leaving for AdamsFoods or a customer. Stock moves when a load ships.
           </Text>
         </Box>
-        <Button size="sm" colorScheme="blue" onClick={startDraft}>New shipment</Button>
+        <Flex gap={2} wrap="wrap">
+          {/* Weighing finished product is a separate act from building a load:
+              it happens at the bench as boxes come off the line, often before
+              anyone knows which shipment they will go on. So it opens its own
+              session rather than hanging off a draft. */}
+          <Button size="sm" variant="outline" colorScheme="blue"
+            onClick={() => setWeighOpen(true)}>
+            Weigh finished boxes
+          </Button>
+          <Button size="sm" colorScheme="blue" onClick={startDraft}>New shipment</Button>
+        </Flex>
       </Flex>
 
       {loading && <Flex justify="center" py={8}><Spinner color="blue.500" /></Flex>}
@@ -681,6 +695,17 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           </AlertDialogContent>
         </AlertDialogOverlay>
       </AlertDialog>
+
+      {/* The same session machinery the incoming bench uses, pointed the other
+          way: direction="outgoing" is what makes these weights the numerator of
+          a yield rather than another arrival.
+          Closing refreshes the tie-able sessions, since a session just closed
+          here is exactly what someone will want to attach to a load next. */}
+      <BoxScanner
+        isOpen={weighOpen}
+        direction="outgoing"
+        onClose={() => { setWeighOpen(false); fetchBatches(); }}
+      />
     </Box>
   );
 };
