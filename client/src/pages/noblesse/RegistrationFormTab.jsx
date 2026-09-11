@@ -9,6 +9,7 @@ import { fmtDate, today, Th, Td, timeNow, upper, fmtWeight } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
 import BoxWeightLink from "./BoxWeightLink";
 import LotPicker from "../../components/LotPicker";
+import VendorInput from "../../components/VendorInput";
 import LotTimeline from "../../components/LotTimeline";
 import ntiLogo from "../../assets/nti.jpg";
 import FloatingWindow from "../../components/FloatingWindow";
@@ -206,7 +207,12 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             <SheetField label="Date Received"><Input {...sheetInputProps} type="date" value={draft.dateReceived} onChange={set("dateReceived")} /></SheetField>
             <SheetField label="Time Received"><Input {...sheetInputProps} type="time" value={draft.timeReceived} onChange={set("timeReceived")} /></SheetField>
             <SheetField label="Vendor Lot/(IC)#"><Input {...sheetInputProps} value={draft.vendorLot} onChange={set("vendorLot")} /></SheetField>
-            <SheetField label="Vendor"><Input {...sheetInputProps} value={draft.vendor} onChange={set("vendor")} /></SheetField>
+            {/* Suggests spellings already in use so one company does not end up
+                as four vendors. Still free text — a new supplier gets typed. */}
+            <SheetField label="Vendor">
+              <VendorInput {...sheetInputProps} value={draft.vendor} onChange={set("vendor")}
+                listId="vendor-suggestions-form" />
+            </SheetField>
 
             <SectionBar>Product Identification</SectionBar>
             <SheetField label="Product Description" full><Input {...sheetInputProps} value={draft.productDescription} onChange={set("productDescription")} /></SheetField>
@@ -303,7 +309,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       flex="1 1 30%"
                       type="number"
                       placeholder="lbs"
-                      title="Processed weight (lbs)"
+                      title="Weight taken from inventory and processed (lbs) — not what came out"
                       value={pd.weight || ""}
                       onChange={(e) => {
                         const newDates = [...draft.processingDates];
@@ -318,7 +324,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       flex="1 1 30%"
                       type="number"
                       placeholder="c/s"
-                      title="Processed quantity (cases)"
+                      title="Cases taken from inventory and processed — not what came out"
                       value={pd.cases || ""}
                       onChange={(e) => {
                         const newDates = [...draft.processingDates];
@@ -380,11 +386,17 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
               </React.Fragment>
             ))}
 
-            <SheetField label="Actual Yield (%)">
+            {/* Was labelled "Actual Yield (%)", which it never was: a
+                processing row records inventory CONSUMED, so this is how far
+                through the lot we are, not what the process returned. */}
+            <SheetField label="Processed (%)">
               <Box {...sheetInputProps} bg="white" border="1px solid" borderColor="gray.200" py={1}>
-                <Text fontSize="sm" color="gray.700" fontWeight="medium">
-                  {calculateYield(draft) ?? "—"}
-                </Text>
+                <Flex align="baseline" gap={2} wrap="wrap">
+                  <Text fontSize="sm" color="gray.700" fontWeight="medium">
+                    {processedPercent(draft) ?? "—"}
+                  </Text>
+                  <Text fontSize="10px" color="gray.400">of what arrived</Text>
+                </Flex>
               </Box>
             </SheetField>
             <SheetField label="Remaining (c/s)">
@@ -501,21 +513,36 @@ const HistorySnapshot = ({ form, tone, label }) => {
 
 const statusColor = (status) => (status === "completed" ? "green" : "yellow");
 
-const calculateYield = (draft) => {
+// How much of the lot has been PUT THROUGH processing, as a percentage of what
+// arrived.
+//
+// THIS IS NOT A YIELD, and it was labelled as one. A processing row records how
+// much of our existing inventory was consumed — not what came out the other
+// side. So weight-processed over weight-received is a measure of PROGRESS
+// through the lot, and it can only ever approach 100%.
+//
+// A real yield is finished product out over raw material in, and this form has
+// no way to know the "out" side: the whole reason outgoing boxes get weighed
+// separately is that processing output cannot be captured as it happens. The
+// paper form's own "Actual Yield" box stays for that number, filled once it is
+// known — which is why it is not wired to this figure.
+//
+// The same reading is already baked into caseTally, where remaining = arrived
+// less processed. The two agree now.
+const processedPercent = (draft) => {
   if (!draft || !draft.originalWeight || !Array.isArray(draft.processingDates)) {
     return null;
   }
   const originalWeight = parseFloat(draft.originalWeight);
   if (!originalWeight || originalWeight <= 0) return null;
 
-  const totalProcessedWeight = draft.processingDates.reduce((sum, pd) => {
+  const consumed = draft.processingDates.reduce((sum, pd) => {
     const weight = parseFloat(pd.weight || 0);
     return sum + (isNaN(weight) ? 0 : weight);
   }, 0);
 
-  if (totalProcessedWeight === 0) return null;
-  const yield_ = (totalProcessedWeight / originalWeight * 100).toFixed(2);
-  return yield_;
+  if (consumed === 0) return null;
+  return (consumed / originalWeight * 100).toFixed(2);
 };
 
 // Cases still to process: what arrived, less every case processed so far.

@@ -932,6 +932,43 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
 
 // Batch list with derived counts and totals. Totals come back as strings so
 // NUMERIC never round-trips through a float.
+// Vendor names already in use, most-used first.
+//
+// Typed free-hand, the same vendor arrives four different ways — production
+// currently holds ADAMSFOODS, ADAMS FOOD, ADAMSFOOD and AdamsFoods, which are
+// one company that no filter, grouping or total will ever join up.
+//
+// SUGGESTED, NOT ENFORCED. A locked list would be wrong here: a new supplier
+// turns up without warning and an operator who cannot type the name will put it
+// somewhere worse, or not at all. Offering what is already there makes the
+// consistent spelling the easy one to pick, which is enough.
+//
+// Drawn from both tables because a vendor may have been typed on a weighing
+// session before any form exists for it, or the other way round.
+router.get("/vendors", verifyToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT vendor, SUM(uses)::int AS uses FROM (
+         SELECT vendor, COUNT(*) AS uses FROM box_batches
+          WHERE tenant_id = $1 AND vendor IS NOT NULL AND btrim(vendor) <> ''
+          GROUP BY vendor
+         UNION ALL
+         SELECT vendor, COUNT(*) AS uses FROM noblesse_registration_forms
+          WHERE tenant_id = $1 AND vendor IS NOT NULL AND btrim(vendor) <> ''
+          GROUP BY vendor
+       ) v
+       GROUP BY vendor
+       ORDER BY uses DESC, vendor ASC
+       LIMIT 200`,
+      [req.tenantId]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("list vendors:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 router.get("/box-batches", verifyToken, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   try {

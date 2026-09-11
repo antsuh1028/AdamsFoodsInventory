@@ -13,6 +13,7 @@ import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import ScanSheet from "./ScanSheet";
 import NumericKeypad from "./NumericKeypad";
 import LotPicker from "../LotPicker";
+import VendorInput from "../VendorInput";
 import { toPounds, toDisplay } from "../../utils/weight";
 import { today, fmtDate, upper } from "../../pages/noblesse/shared";
 import printWeightManifest from "../../pages/noblesse/printWeightManifest";
@@ -650,8 +651,11 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null }) => {
             </Box>
             <Box flex="1 1 150px">
               <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Vendor</Text>
-              <Input {...rawInputProps} size="md" value={header.vendor}
-                onChange={setField("vendor")} placeholder="TREX/GOP" />
+              {/* Suggests the spellings already in use, without locking the
+                  field — a new supplier still gets typed. */}
+              <VendorInput {...rawInputProps} size="md" value={header.vendor}
+                onChange={setField("vendor")} placeholder="TREX/GOP"
+                listId="vendor-suggestions-scanner" />
             </Box>
             <Box flex="2 1 220px">
               <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Item description</Text>
