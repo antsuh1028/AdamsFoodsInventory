@@ -1066,7 +1066,7 @@ router.get("/noblesse-registration-forms/:id", verifyToken, async (req, res) => 
 
 router.post("/noblesse-registration-forms", verifyToken, async (req, res) => {
   try {
-    const lot = await lotColumns(req.tenantId, req.userId, req.body.lotNumber);
+    const lot = await lotColumns(req.tenantId, req.userId, req.body.lotNumber, pool, req.body.lotId);
     const result = await pool.query(
       `INSERT INTO noblesse_registration_forms
          (tenant_id, lot_number, form_date, date_received, time_received, vendor_lot, vendor,
@@ -1103,7 +1103,7 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
     const oldData = fmtRegistrationForm(oldRes.rows[0]);
 
     const status = req.body.status && ["in_progress", "completed"].includes(req.body.status) ? req.body.status : null;
-    const lot = await lotColumns(req.tenantId, req.userId, req.body.lotNumber);
+    const lot = await lotColumns(req.tenantId, req.userId, req.body.lotNumber, pool, req.body.lotId);
     const result = await pool.query(
       `UPDATE noblesse_registration_forms
        SET lot_number = $1, form_date = $2, date_received = $3, time_received = $4, vendor_lot = $5, vendor = $6,

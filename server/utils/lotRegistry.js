@@ -90,7 +90,21 @@ const lookupLot = async (tenantId, text, client = pool) => {
  * each other. When it does not, the original text is kept exactly as the caller
  * sent it and lot_id is null, which is what today's behaviour already is.
  */
-const lotColumns = async (tenantId, userId, text, client = pool) => {
+// `lotId` wins when the caller has one, because it came from the picker and is
+// exact. Falling through to the text is what broke external lots: a supplier's
+// own number has no N{YY}{JJJ}-{NN} to parse, so ensureLot returns null and the
+// row is stored with the number but no lot_id — invisible to anything that
+// joins on it.
+const lotColumns = async (tenantId, userId, text, client = pool, lotId = null) => {
+  if (lotId != null) {
+    const byId = await client.query(
+      `SELECT lot_id, lot_number FROM lots WHERE lot_id = $1 AND tenant_id = $2`,
+      [Number(lotId), tenantId]
+    );
+    if (byId.rows.length) {
+      return { lotId: byId.rows[0].lot_id, lotNumber: byId.rows[0].lot_number, created: false };
+    }
+  }
   const lot = await ensureLot(tenantId, userId, text, client);
   return lot
     ? { lotId: lot.lotId, lotNumber: lot.lotNumber, created: lot.created }
