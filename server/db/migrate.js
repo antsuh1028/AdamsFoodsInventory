@@ -469,6 +469,79 @@ const steps = async () => {
   `);
 
   // ══════════════════════════════════════════════════════════════════════════
+  // Processing reports — the shop-floor record of one run.
+
+  // What the paper form carries. Tracked in CASES only: the manager counts
+  // cases, and real pounds come from the weighing benches.
+  await run("noblesse_processing_reports", `
+    CREATE TABLE IF NOT EXISTS noblesse_processing_reports (
+      report_id        SERIAL PRIMARY KEY,
+      tenant_id        UUID NOT NULL REFERENCES tenants(id),
+      -- A report REFERENCES a lot and never mints one, like outgoing weighing.
+      lot_id           INT NOT NULL REFERENCES lots(lot_id),
+      processing_date  DATE,
+      processing_type  TEXT,
+      line_no          TEXT,
+      customer         TEXT,
+      description      TEXT,
+      brand            TEXT,
+      grade            TEXT,
+      est_number       TEXT,
+      pack_date        DATE,
+      input_cases      INT NOT NULL,
+      output_cases     INT,
+      -- Recorded and printed, but it creates no stock: nobody weighed it.
+      output_weight    NUMERIC(10,3),
+      inedible_weight  NUMERIC(10,3),
+      notes            TEXT,
+      status           TEXT NOT NULL DEFAULT 'submitted'
+                       CHECK (status IN ('submitted', 'accepted', 'rejected')),
+      submitted_by     TEXT,
+      submitted_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+      accepted_by      TEXT,
+      accepted_at      TIMESTAMPTZ,
+      reject_reason    TEXT,
+      -- The form this was applied to, set when reception accepts.
+      applied_form_id  INT,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await run("noblesse_processing_reports lot index", `
+    CREATE INDEX IF NOT EXISTS noblesse_processing_reports_lot_idx
+      ON noblesse_processing_reports (tenant_id, lot_id, status)
+  `);
+
+  // One row per pull off the rack. Cases only — no weight column, because the
+  // manager does not have one.
+  await run("noblesse_processing_report_pulls", `
+    CREATE TABLE IF NOT EXISTS noblesse_processing_report_pulls (
+      pull_id   SERIAL PRIMARY KEY,
+      report_id INT NOT NULL REFERENCES noblesse_processing_reports(report_id) ON DELETE CASCADE,
+      position  INT NOT NULL DEFAULT 0,
+      cases     INT NOT NULL,
+      notes     TEXT
+    )
+  `);
+  await run("noblesse_processing_report_pulls index", `
+    CREATE INDEX IF NOT EXISTS noblesse_processing_report_pulls_report_idx
+      ON noblesse_processing_report_pulls (report_id)
+  `);
+
+  // Who ran the line. Free text until there is a reason for a roster table.
+  await run("noblesse_processing_report_workers", `
+    CREATE TABLE IF NOT EXISTS noblesse_processing_report_workers (
+      worker_id SERIAL PRIMARY KEY,
+      report_id INT NOT NULL REFERENCES noblesse_processing_reports(report_id) ON DELETE CASCADE,
+      position  INT NOT NULL DEFAULT 0,
+      name      TEXT NOT NULL
+    )
+  `);
+  await run("noblesse_processing_report_workers index", `
+    CREATE INDEX IF NOT EXISTS noblesse_processing_report_workers_report_idx
+      ON noblesse_processing_report_workers (report_id)
+  `);
+
+  // ══════════════════════════════════════════════════════════════════════════
   // Adams side.
 
   await run("history old_data",

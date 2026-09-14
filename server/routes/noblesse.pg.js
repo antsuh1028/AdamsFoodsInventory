@@ -956,6 +956,25 @@ router.patch("/noblesse-proc-orders/:id/status", verifyToken, async (req, res) =
 // `lot` comes from lotColumns(): the canonical lot_number plus its lot_id, or
 // the caller's original text with a null id when it is not a lot number. The
 // registration form is an incoming-side record, so it may create a lot.
+// Report-sourced runs are not the client's to delete.
+//
+// An accepted processing report appends a run row carrying its reportId, and
+// this route rewrites processing_dates whole — so reception saving a form they
+// had open before accepting would erase it. Rows the payload omits but that
+// carry a reportId are merged back from the row being updated. Removing one is
+// what unaccept is for.
+const MERGE_REPORT_RUNS = `(
+    SELECT COALESCE(jsonb_agg(e), '[]'::jsonb) FROM (
+      SELECT e FROM jsonb_array_elements(COALESCE($19::jsonb, '[]'::jsonb)) e
+      UNION ALL
+      SELECT e FROM jsonb_array_elements(COALESCE(processing_dates, '[]'::jsonb)) e
+       WHERE e ? 'reportId'
+         AND NOT EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE($19::jsonb, '[]'::jsonb)) p
+            WHERE p->>'reportId' = e->>'reportId')
+    ) merged
+  )`;
+
 const regFormValues = (body, lot) => {
   // Handle processingDates: convert array to JSON for storage
   const processingDatesJSON = body.processingDates && Array.isArray(body.processingDates)
@@ -1085,7 +1104,7 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
        SET lot_number = $1, form_date = $2, date_received = $3, time_received = $4, vendor_lot = $5, vendor = $6,
            product_description = $7, processing_type = $8, spec = $9, brand = $10, est_number = $11, grade = $12,
            due_date = $13, predicted_yield = $14, manifest_bl_attached = $15, process_report_attached = $16,
-           original_weight = $17, total_quantity = $18, processing_dates = $19, actual_yield = $20, temp = $21, remarks = $22,
+           original_weight = $17, total_quantity = $18, processing_dates = ${MERGE_REPORT_RUNS}, actual_yield = $20, temp = $21, remarks = $22,
            checked_by = $23, status = $24, lot_id = $25, updated_at = NOW()
        WHERE id = $26 AND tenant_id = $27
        RETURNING *`,
