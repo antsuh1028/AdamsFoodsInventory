@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Box, Flex, Text, Spinner, Badge, IconButton, Tooltip, Image, Button,
-  Alert, AlertIcon,
   Tabs, TabList, TabPanels, Tab, TabPanel,
   Drawer, DrawerOverlay, DrawerContent, DrawerHeader, DrawerFooter,
   Stack, Divider, useDisclosure,
@@ -11,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
-import { ProcessingReportTab } from "./noblesse/ProcessingReportTab";
+import ProcessingReportsTab from "./noblesse/ProcessingReportsTab";
 import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
 import { OutgoingTab } from "./noblesse/OutgoingTab";
 import { WeightManifestTab } from "./noblesse/WeightManifestTab";
@@ -23,16 +22,6 @@ import ntiLogo from "../assets/nti.jpg";
 const REFRESH_INTERVAL_MS = 60 * 1000;
 
 // Processing is dev-only for now, so the rest of the work can ship without it.
-// `npm start` is development and `react-scripts build` is production, so a
-// deploy hides the tab with no extra step. To turn it on in a real build later,
-// set REACT_APP_PROCESSING_TAB=on at build time — no code change needed.
-//
-// One flag drives the tab, the panel AND the two fetches: gating only the tab
-// would leave production polling endpoints nothing renders.
-const SHOW_PROCESSING =
-  process.env.REACT_APP_PROCESSING_TAB === "on" ||
-  process.env.NODE_ENV !== "production";
-
 const NoblesseScreen = () => {
   const navigate = useNavigate();
   const isAdmin  = getRole() === "admin";
@@ -65,9 +54,6 @@ const NoblesseScreen = () => {
   const [unregistered, setUnregistered]   = useState([]);
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   const [tabIndex, setTabIndex]           = useState(0);
-  const [ntiInventory, setNtiInventory]   = useState([]);
-  const [procOrders, setProcOrders]       = useState([]);
-  const [procError, setProcError]         = useState(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
@@ -96,25 +82,17 @@ const NoblesseScreen = () => {
       // so an empty tab is never mistaken for "no orders".
       // The unregistered list is tolerated the same way: it is a prompt, not
       // the screen's content, and losing it must not blank Incoming Records.
-      const [receiptsRes, invRes, ordersRes, unregRes] = await Promise.all([
+      const [receiptsRes, unregRes, reportsRes] = await Promise.all([
         axiosInstance.get("/noblesse-receipts"),
-        SHOW_PROCESSING ? axiosInstance.get("/nti-inventory").catch((e) => e) : null,
-        SHOW_PROCESSING ? axiosInstance.get("/noblesse-proc-orders").catch((e) => e) : null,
         axiosInstance.get("/box-batches/unregistered").catch((e) => e),
+        axiosInstance.get("/processing-reports", { params: { status: "submitted" } })
+          .catch((e) => e),
       ]);
       setReceipts(receiptsRes.data || []);
       if (!(unregRes instanceof Error)) setUnregistered(unregRes.data || []);
+      // Only for the tab badge; the tab fetches its own list.
+      if (!(reportsRes instanceof Error)) setWaitingReports((reportsRes.data || []).length);
 
-      if (SHOW_PROCESSING) {
-        const failed = [invRes, ordersRes].find((r) => r instanceof Error);
-        if (failed) {
-          setProcError(failed.response?.data?.error || failed.message);
-        } else {
-          setProcError(null);
-          setNtiInventory(invRes.data || []);
-          setProcOrders(ordersRes.data || []);
-        }
-      }
       // Tabs that load their own data watch this and re-fetch. Without it the
       // timestamp below ticks while their contents stay frozen at page load.
       setRefreshSignal((n) => n + 1);
@@ -142,31 +120,12 @@ const NoblesseScreen = () => {
   const handleReceiptUpdate = (r) => setReceipts((prev) => prev.map((x) => x.id === r.id ? r : x));
   const handleReceiptDelete = (id) => setReceipts((prev) => prev.filter((x) => x.id !== id));
 
-  // Any order change moves stock — creating one claims raw, completing one
-  // deducts it and puts the output back under the same lot. So the picker's
-  // figures are stale the moment an order changes. The 60s poll would catch up
-  // eventually; refetching here means the next pick is against real numbers.
-  const refreshInventory = useCallback(async () => {
-    try {
-      const res = await axiosInstance.get("/nti-inventory");
-      setNtiInventory(res.data || []);
-    } catch (err) {
-      console.error("Could not refresh NTI inventory", err);
-    }
-  }, []);
-
-  const handleProcOrderAdded  = (o) => { setProcOrders((prev) => [o, ...prev]); refreshInventory(); };
-  const handleProcOrderUpdate = (o) => { setProcOrders((prev) => prev.map((x) => x.id === o.id ? o : x)); refreshInventory(); };
-  const handleProcOrderDelete = (id) => { setProcOrders((prev) => prev.filter((x) => x.id !== id)); refreshInventory(); };
-
-  // Orders still open. Badged so the tab says there is work outstanding
-  // without anyone having to open it.
-  const pendingProcCount = procOrders.filter((o) => o.status === "pending").length;
+  const [waitingReports, setWaitingReports] = useState(0);
 
   // Chakra pairs tabs to panels BY POSITION and the Processing tab is
   // conditional, so this has to be derived from the same flag that hides it.
   // Hardcoding 2 lands on Weight Manifests in a production build.
-  const REGISTRATION_TAB = SHOW_PROCESSING ? 2 : 1;
+  const REGISTRATION_TAB = 2;
 
   if (loading) {
     return (
@@ -253,18 +212,15 @@ const NoblesseScreen = () => {
               {receipts.length > 0 && <Badge ml={2} colorScheme="blue" borderRadius="full">{receipts.length}</Badge>}
             </Tab>
             {/* Sits between Incoming and Outgoing because that is the order the
-                product actually moves through the building. Gated with the
-                panel below on the SAME flag — Chakra pairs tabs to panels by
-                position, so hiding one without the other shifts every tab after
-                it onto the wrong panel. */}
-            {SHOW_PROCESSING && (
-              <Tab>
-                Processing
-                {pendingProcCount > 0 && (
-                  <Badge ml={2} colorScheme="yellow" borderRadius="full">{pendingProcCount}</Badge>
-                )}
-              </Tab>
-            )}
+                product actually moves through the building. Chakra pairs tabs
+                to panels by position, so a tab and its panel must always be
+                added or removed together. */}
+            <Tab>
+              Processing
+              {waitingReports > 0 && (
+                <Badge ml={2} colorScheme="yellow" borderRadius="full">{waitingReports}</Badge>
+              )}
+            </Tab>
             <Tab>
               Registration Forms
               {unregistered.length > 0 && (
@@ -339,27 +295,9 @@ const NoblesseScreen = () => {
                   canDelete={isAdmin}
                 />
               </TabPanel>
-              {SHOW_PROCESSING && (
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
-                {procError && (
-                  <Alert status="error" borderRadius="md" mb={4} fontSize="sm">
-                    <AlertIcon />
-                    <Box>
-                      <Text fontWeight="600">Processing data could not be loaded</Text>
-                      <Text fontSize="xs" color="gray.700">{procError}</Text>
-                    </Box>
-                  </Alert>
-                )}
-                <ProcessingReportTab
-                  ntiInventory={ntiInventory}
-                  procOrders={procOrders}
-                  onProcOrderAdded={handleProcOrderAdded}
-                  onProcOrderUpdate={handleProcOrderUpdate}
-                  onProcOrderDelete={handleProcOrderDelete}
-                  canDelete={isAdmin}
-                />
+                <ProcessingReportsTab refreshSignal={refreshSignal} />
               </TabPanel>
-              )}
               {/* There is still no NTI Inventory tab. Stock is visible through
                   the lot picker here and through Outgoing, so it has no screen
                   of its own. The half-built NtiInventoryTab.jsx that used to sit

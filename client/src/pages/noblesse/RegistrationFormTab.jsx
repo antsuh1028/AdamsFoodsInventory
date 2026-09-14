@@ -5,9 +5,10 @@ import {
 } from "@chakra-ui/react";
 import { DeleteIcon, ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
-import { fmtDate, today, Th, Td, timeNow, upper, fmtWeight } from "./shared";
+import { fmtDate, today, Th, Td, timeNow, upper, fmtWeight, PROCESSING_TYPES } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
 import BoxWeightLink from "./BoxWeightLink";
+import ProcessingReportLink from "./ProcessingReportLink";
 import LotPicker from "../../components/LotPicker";
 import VendorInput from "../../components/VendorInput";
 import LotTimeline from "../../components/LotTimeline";
@@ -19,19 +20,6 @@ import AllFormsTable from "./AllFormsTable";
 // Stored verbatim as the field value, so the number, abbreviation and name all
 // survive into the printed form and the history snapshot with no lookup table
 // to keep in sync.
-const PROCESSING_TYPES = [
-  "101 SLC-BG Slicing & Bagging",
-  "101A SLC-PK Slicing & Packing",
-  "102 DBN-PK Deboning & Bagging",
-  "103 PRTN-PK Portioning & Packing",
-  "104 CUT-PK 1/2 Cutting & Packing",
-  "105 BONE CUT Bone Cut",
-  "106 CUT-RL Cutting & Rolling",
-  "108 SHR-CT Short Rib Cut",
-  "109 CHK-RL Chicken & Rolling",
-  "110 REPK Repacking",
-  "111 MARIN Marinading",
-];
 
 const emptyDraft = () => ({
   id: null,
@@ -289,6 +277,28 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             </Box>
 
             <SectionBar>Processing &amp; Yield</SectionBar>
+
+            {/* Reports from the floor. Accepting one takes its cases off the
+                lot and adds a row below, so it saves straight away rather than
+                waiting for the form to be saved. */}
+            <Box gridColumn="1 / -1" px={3} py={3} bg="gray.50"
+              borderBottom="1px solid" borderColor="gray.200">
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase"
+                letterSpacing="wide" mb={2}>
+                Processing reports
+              </Text>
+              <ProcessingReportLink
+                lotId={draft.lotId}
+                formId={draft.id}
+                onApplied={async () => {
+                  // The accept appended a run row server-side, so the draft in
+                  // hand is behind. Reloaded rather than guessed at.
+                  if (!draft.id) return;
+                  const { data } = await axiosInstance.get(`/noblesse-registration-forms/${draft.id}`);
+                  setDraft((d) => ({ ...d, processingDates: data.processingDates || d.processingDates }));
+                }}
+              />
+            </Box>
 
             {Array.isArray(draft.processingDates) && draft.processingDates.map((pd, idx) => (
               <React.Fragment key={idx}>

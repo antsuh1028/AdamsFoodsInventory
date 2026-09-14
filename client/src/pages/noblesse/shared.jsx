@@ -17,6 +17,22 @@ import { Box } from "@chakra-ui/react";
 export const upper = (v) =>
   (typeof v === "string" ? v.toUpperCase() : v);
 
+// NTI's processing codes, kept as the literal strings that get stored so they
+// survive into the printed form with no lookup table to keep in sync.
+export const PROCESSING_TYPES = [
+  "101 SLC-BG Slicing & Bagging",
+  "101A SLC-PK Slicing & Packing",
+  "102 DBN-PK Deboning & Bagging",
+  "103 PRTN-PK Portioning & Packing",
+  "104 CUT-PK 1/2 Cutting & Packing",
+  "105 BONE CUT Bone Cut",
+  "106 CUT-RL Cutting & Rolling",
+  "108 SHR-CT Short Rib Cut",
+  "109 CHK-RL Chicken & Rolling",
+  "110 REPK Repacking",
+  "111 MARIN Marinading",
+];
+
 export const PACIFIC_TZ = "America/Los_Angeles";
 
 const pacificParts = (date = new Date()) => {
