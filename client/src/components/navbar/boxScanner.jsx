@@ -1,6 +1,12 @@
+/* global BigInt */
+// The directive is not decoration: CRA's linter fails the build on BigInt
+// without it, the same way utils/weight.js has always needed it. The batch
+// total below multiplies integer hundredths, because a float accumulator over
+// five hundred boxes drifts and the figure the operator agrees to has to be the
+// figure that gets stored.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Input, Textarea,
+  Box, Flex, Text, Button, Badge, Input, Textarea, ButtonGroup,
   Alert, AlertIcon, Stat, StatLabel, StatNumber, StatHelpText, useToast,
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
   AlertDialogContent, AlertDialogOverlay,
@@ -15,7 +21,9 @@ import NumericKeypad from "./NumericKeypad";
 import TypeWeights from "./TypeWeights";
 import LotPicker from "../LotPicker";
 import VendorInput from "../VendorInput";
-import { toPounds, toDisplay } from "../../utils/weight";
+import {
+  toPounds, toDisplay, toDisplayHundredths, fromHundredths,
+} from "../../utils/weight";
 import { today, fmtDate, upper } from "../../pages/noblesse/shared";
 import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 
@@ -62,20 +70,75 @@ const StatCard = ({ label, value, help, color = "gray.800", size = "3xl" }) => (
 // SELECT, so any field left focused here would silently swallow scans instead of
 // recording them. The unit lives on the keypad as buttons, and the note — which
 // needs a real keyboard and so is desktop-only in practice — stays collapsed.
-const KeypadPanel = ({ onAdd, disabled }) => {
+//
+// It has two modes. ONE BOX is the original: a damaged label, weighed and typed.
+// BATCH is a run of identical cases — "30 at 50 lb" — where the weight is the
+// figure printed on the label rather than one anybody put on a scale. Those two
+// are different enough that the second is a mode rather than an extra field,
+// and its rows are marked estimated so the difference survives into the totals.
+
+// A batch of one weight is still thirty boxes, and a mis-keyed count invents
+// every one of them. Capped so a stuck key cannot put five thousand rows on a
+// lot before anyone looks up.
+const MAX_BATCH = 500;
+
+const KeypadPanel = ({ onAdd, onAddMany, disabled }) => {
   const [weight, setWeight] = useState("");
   const [unit, setUnit] = useState("LB");
   const [note, setNote] = useState("");
   const [showNote, setShowNote] = useState(false);
+  // "one" | "batch". A run of identical cases is a different act from weighing
+  // one damaged box, so it is a mode rather than an extra field always on show.
+  const [mode, setMode] = useState("one");
+  const [cases, setCases] = useState("");
+  // Which readout the shared keypad is typing into. ONE keypad, not two: a
+  // second pad would double the height of a panel that already sits on the
+  // scanning screen, and two live readouts invite typing into the wrong one.
+  const [field, setField] = useState("cases");
+  const [confirm, setConfirm] = useState(null);
+  const cancelBatchRef = useRef(null);
 
   const valid = /^\d{1,5}(\.\d{1,3})?$/.test(weight) && parseFloat(weight) > 0;
+  const caseCount = parseInt(cases, 10);
+  const batchReady = valid && Number.isInteger(caseCount)
+    && caseCount > 0 && caseCount <= MAX_BATCH;
+
+  // Shown before committing, because the operator is agreeing to a TOTAL, not
+  // to two numbers. Rounded per box then summed, the way every other total in
+  // this app is — see utils/weight.js.
+  const batchTotal = batchReady
+    ? fromHundredths(toDisplayHundredths(toPounds(weight, unit).weight) * BigInt(caseCount))
+    : null;
 
   const submit = async () => {
     if (!valid) return;
-    await onAdd({ weight, weightUnit: unit, isManual: true, note });
+    await onAdd({
+      weight, weightUnit: unit, isManual: true, note,
+      // Typed by a person on the keypad. Distinct from a scale reading, which
+      // is_manual cannot tell apart — its CHECK forces it true whenever there
+      // is no barcode.
+      entryMethod: "keyed",
+    });
     setWeight("");
     setNote("");
     setShowNote(false);
+  };
+
+  const submitBatch = async () => {
+    if (!batchReady) return;
+    setConfirm(null);
+    await onAddMany(Array.from({ length: caseCount }, () => ({
+      weight, weightUnit: unit, isManual: true, note,
+      entryMethod: "keyed",
+      // NOT MEASURED. Every one of these boxes actually weighs something else;
+      // the figure is the one printed on the label. Marked so it can never be
+      // read as a weighed figure — and so a yield can exclude it, because an
+      // estimate inside a yield is a lie about the process.
+      isEstimated: true,
+    })));
+    setCases("");
+    setWeight("");
+    setField("cases");
   };
 
   return (
@@ -84,25 +147,111 @@ const KeypadPanel = ({ onAdd, disabled }) => {
         <Text fontSize="xs" color="yellow.800">
           For damaged or unbarcoded labels
         </Text>
-        <Button size="xs" variant="ghost" colorScheme="yellow" tabIndex={-1}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => setShowNote((v) => !v)}>
-          {showNote ? "Hide note" : "Add note"}
-        </Button>
+        <Flex gap={2}>
+          {/* tabIndex -1 and mousedown prevented on every control here, like the
+              keypad itself: a scanner types Enter after each scan, and a button
+              left holding focus would be re-pressed instead. */}
+          <ButtonGroup size="xs" isAttached variant="outline">
+            {[["one", "One box"], ["batch", "Batch"]].map(([m, label]) => (
+              <Button key={m} tabIndex={-1} onMouseDown={(e) => e.preventDefault()}
+                colorScheme={mode === m ? "blue" : "gray"}
+                variant={mode === m ? "solid" : "outline"}
+                onClick={() => { setMode(m); setField("cases"); }}>
+                {label}
+              </Button>
+            ))}
+          </ButtonGroup>
+          <Button size="xs" variant="ghost" colorScheme="yellow" tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setShowNote((v) => !v)}>
+            {showNote ? "Hide note" : "Add note"}
+          </Button>
+        </Flex>
       </Flex>
 
       <Flex gap={3} wrap="wrap" align="flex-start">
         <Box flex="1 1 240px" maxW="100%">
+          {mode === "batch" && (
+            <Box mb={2}>
+              {/* Two readouts, one keypad. Tapping a readout aims the pad at it,
+                  which keeps the whole panel non-focusable — an input here would
+                  silently swallow scans (CLAUDE.md §4). */}
+              <Flex gap={2} mb={2}>
+                {[
+                  ["cases", "Cases", cases || "0", ""],
+                  ["weight", "Weight each", weight || "0", unit],
+                ].map(([key, label, shown, suffix]) => (
+                  <Box key={key} flex={1} as="button" type="button" textAlign="left"
+                    tabIndex={-1} onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setField(key)}
+                    px={3} py={2} borderRadius="md" border="2px solid"
+                    borderColor={field === key ? "blue.400" : "gray.200"}
+                    bg={field === key ? "blue.50" : "white"}>
+                    <Text fontSize="9px" color="gray.500" textTransform="uppercase"
+                      letterSpacing="wide">
+                      {label}
+                    </Text>
+                    <Text fontSize="xl" fontWeight="bold" lineHeight="1.2"
+                      color={shown === "0" ? "gray.300" : "gray.800"}
+                      style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {shown}{suffix ? ` ${suffix}` : ""}
+                    </Text>
+                  </Box>
+                ))}
+              </Flex>
+
+              {batchReady ? (
+                <Alert status="warning" borderRadius="md" fontSize="xs" py={2}>
+                  <AlertIcon boxSize={3} />
+                  <Box>
+                    <b>{caseCount} boxes × {toDisplay(toPounds(weight, unit).weight)} lb
+                    {" "}= {batchTotal} lb</b>
+                    <Text>
+                      Recorded as <b>estimated</b> — the label figure, not a weighed one.
+                    </Text>
+                  </Box>
+                </Alert>
+              ) : (
+                <Text fontSize="xs" color="gray.500">
+                  {caseCount > MAX_BATCH
+                    ? `That is more than ${MAX_BATCH} boxes — split it.`
+                    : "Tap a box above, then type on the keypad."}
+                </Text>
+              )}
+            </Box>
+          )}
+
           <NumericKeypad
-            value={weight}
-            onChange={setWeight}
-            onSubmit={submit}
-            label="Weight"
+            value={mode === "batch" && field === "cases" ? cases : weight}
+            onChange={mode === "batch" && field === "cases" ? setCases : setWeight}
+            onSubmit={mode === "batch"
+              ? () => { if (batchReady) setConfirm(true); }
+              : submit}
+            label={mode === "batch"
+              ? (field === "cases" ? "Cases" : "Weight each")
+              : "Weight"}
+            maxDecimals={mode === "batch" && field === "cases" ? 0 : 3}
             unit={unit}
-            onUnitChange={setUnit}
+            // The unit belongs to the weight, so it is not offered while the pad
+            // is aimed at the count.
+            onUnitChange={mode === "batch" && field === "cases" ? undefined : setUnit}
             submitLabel="Add box"
+            // In batch mode the pad's own submit is hidden and replaced below.
+            // Its button gates on whether the ACTIVE field is a valid number,
+            // which would let "30 cases of nothing" through the moment the
+            // count looked fine.
+            hideSubmit={mode === "batch"}
             isDisabled={disabled}
           />
+
+          {mode === "batch" && (
+            <Button mt={2} width="100%" size="md" colorScheme="blue"
+              tabIndex={-1} onMouseDown={(e) => e.preventDefault()}
+              isDisabled={disabled || !batchReady}
+              onClick={() => setConfirm(true)}>
+              {batchReady ? `Add ${caseCount} boxes` : "Add boxes"}
+            </Button>
+          )}
         </Box>
 
         <Box flex="1 1 100%">
@@ -125,6 +274,48 @@ const KeypadPanel = ({ onAdd, disabled }) => {
           )}
         </Box>
       </Flex>
+
+      {/* Confirmed, unlike a single box. One tap here writes thirty rows, and a
+          mis-keyed count invents every one of them — Undo takes back one box at
+          a time, so the cost of getting this wrong is thirty corrections. */}
+      <AlertDialog isOpen={Boolean(confirm)} leastDestructiveRef={cancelBatchRef}
+        onClose={() => setConfirm(null)} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Add {caseCount} boxes?
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              <Text fontSize="3xl" fontWeight="bold" color="blue.700" lineHeight="1.2"
+                style={{ fontVariantNumeric: "tabular-nums" }}>
+                {caseCount} × {valid ? toDisplay(toPounds(weight, unit).weight) : "—"} lb
+              </Text>
+              <Text fontSize="md" color="gray.700" mb={3}>
+                = <b>{batchTotal} lb</b> on this lot
+              </Text>
+              <Text fontSize="sm">
+                Each one is recorded as its own box, so any of them can be
+                corrected or voided on its own afterwards.
+              </Text>
+              <Text fontSize="xs" color="gray.600" mt={2}>
+                They are marked <b>estimated</b>: this is the figure on the label,
+                and the boxes themselves vary. Totals will say so, and the printed
+                tally writes them as <b>~{valid ? toDisplay(toPounds(weight, unit).weight) : ""}</b>.
+              </Text>
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              {/* Focus sits on the safe option: the scanner types Enter, and an
+                  Enter arriving while this is open must not commit the batch. */}
+              <Button ref={cancelBatchRef} onClick={() => setConfirm(null)}>
+                Go back
+              </Button>
+              <Button colorScheme="blue" onClick={submitBatch}>
+                Add {caseCount} boxes
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </Box>
   );
 };
@@ -147,7 +338,8 @@ const totalsOf = (batch) =>
 const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incoming" }) => {
   const {
     ready, durable, session, pending, resumable, lastError, lastScan, scans,
-    start, resume, discardResumable, stop, flush, addScan, undoLast, editScan, voidScan,
+    start, resume, discardResumable, stop, flush, addScan, addScanMany,
+    undoLast, editScan, voidScan,
     listOpenSessions, adoptSession,
   } = useScanSession();
 
@@ -472,6 +664,28 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
   // beep, one toast — but the ANSWER has to go back to the caller: the scale
   // panel shows a large "recorded" confirmation, and showing that for a box the
   // server refused would be worse than showing nothing at all.
+  // A whole run of cases as ONE act. Not a loop over onManualAdd: that would be
+  // thirty IndexedDB writes, thirty re-renders and six interleaved flushes, and
+  // a half-failure would leave nobody able to say how many boxes landed.
+  const onManualAddMany = async (entries) => {
+    try {
+      await addScanMany(entries);
+      beepSuccess();
+      setRejection(null);
+      toast({
+        status: "success", position: "top", duration: 4000,
+        title: `${entries.length} boxes added`,
+        description: "Marked estimated — the label figure, not a weighed one.",
+      });
+      return true;
+    } catch (err) {
+      beepError();
+      toast({ title: "Could not add those boxes", description: err.message,
+        status: "error", position: "top" });
+      return false;
+    }
+  };
+
   const onManualAdd = async (entry) => {
     try {
       await addScan(entry);
@@ -955,7 +1169,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
       placement="right"
       zIndex={1401}
     >
-      <KeypadPanel onAdd={onManualAdd} disabled={busy} />
+      <KeypadPanel onAdd={onManualAdd} onAddMany={onManualAddMany} disabled={busy} />
     </FloatingWindow>
 
     {/* Typing, in its own window beside the session like the keypad, so it

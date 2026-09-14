@@ -99,6 +99,12 @@ const ScanSheet = ({
   // rounded figures would let the column disagree with its own footer by a
   // cent — the disagreement a tally exists to rule out.
   const displayTotal = countedRows.reduce((acc, s) => acc + cents(s), 0);
+  // Estimated boxes stay IN the total — the truck carries them — but the two
+  // halves are never readable as one measured number. A yield computed off this
+  // lot has to be able to exclude them, and nobody can do that if the only
+  // figure on screen is the sum.
+  const estimatedRows = countedRows.filter((s) => s.isEstimated);
+  const estimatedTotal = estimatedRows.reduce((acc, s) => acc + cents(s), 0);
   const editable = Boolean(onEditWeight || onVoid);
   const cols = editable ? [...COLS, ACTIONS_COL] : COLS;
 
@@ -167,7 +173,10 @@ const ScanSheet = ({
                       fontSize: "17px", color: rejected ? "#C53030" : dup ? "#C05621"
                         : voided ? "#718096" : "#1A365D",
                       textDecoration: struck ? "line-through" : undefined }}>
-                      {show(cents(s))}
+                      {/* A nominal figure is written with a leading ~, the way
+                          it will print on the tally. The tally goes to a mono
+                          laser, so colour cannot be the only thing carrying it. */}
+                      {s.isEstimated ? "~" : ""}{show(cents(s))}
                       {/* What the label said, before someone corrected it. The
                           point of keeping the original is that it stays visible. */}
                       {s.originalWeight && s.originalWeight !== weightOf(s) && (
@@ -193,7 +202,17 @@ const ScanSheet = ({
                       {s.productionDate ? fmtDate(s.productionDate) : "—"}
                     </td>
                     <td style={{ ...cellStyle, color: "#4A5568" }}>
-                      {s.isManual ? <em style={{ color: "#DD6B20" }}>manual entry</em> : (s.serial || "—")}
+                      {/* entry_method finally being read. is_manual cannot say
+                          this — its CHECK forces it true for every barcode-less
+                          box, so a scale reading and a hand-typed figure look
+                          identical there. */}
+                      {s.isEstimated
+                        ? <em style={{ color: "#B7791F" }}>nominal</em>
+                        : s.entryMethod === "scale"
+                          ? <em style={{ color: "#2C7A7B" }}>scale</em>
+                          : s.isManual
+                            ? <em style={{ color: "#DD6B20" }}>typed</em>
+                            : (s.serial || "—")}
                     </td>
                     <td style={{ ...cellStyle, textAlign: "center", color: "#718096", fontSize: "13px" }}>
                       {s.scannedAt ? new Date(s.scannedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
@@ -282,6 +301,11 @@ const ScanSheet = ({
           {skipped > 0 && (
             <Text fontSize="xs" color="yellow.700">
               {skipped} not counted
+            </Text>
+          )}
+          {estimatedRows.length > 0 && (
+            <Text fontSize="xs" color="yellow.700">
+              {estimatedRows.length} nominal ({show(estimatedTotal)} lb) — not weighed
             </Text>
           )}
         </Flex>

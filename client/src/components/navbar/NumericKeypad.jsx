@@ -18,7 +18,21 @@ const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"];
 // Mirrors the server's DECIMAL_RE. Typing is constrained as it happens rather
 // than validated afterwards, so an impossible weight cannot be assembled — a
 // second decimal point or a fourth decimal place is simply not accepted.
-const wouldBeValid = (next) => next === "" || /^\d{0,5}(\.\d{0,3})?$/.test(next);
+//
+// maxDecimals 0 makes it a counter: a count of cases has no fractional part,
+// and letting "3.5" be assembled only to refuse it on submit wastes a keypress
+// and reads as the pad being broken.
+//
+// The backslashes are DOUBLED because these are template literals: `\d` is not
+// a valid string escape, so it collapses to a bare "d" and the pattern would
+// match the letter rather than a digit. Written once, wrong, and caught only
+// because eslint flags the useless escape.
+const partialRe = (maxDecimals) => (maxDecimals > 0
+  ? new RegExp(`^\\d{0,5}(\\.\\d{0,${maxDecimals}})?$`)
+  : /^\d{0,5}$/);
+const finalRe = (maxDecimals) => (maxDecimals > 0
+  ? new RegExp(`^\\d{1,5}(\\.\\d{1,${maxDecimals}})?$`)
+  : /^\d{1,5}$/);
 
 const NumericKeypad = ({
   value = "",
@@ -33,6 +47,12 @@ const NumericKeypad = ({
   onUnitChange,
   submitLabel = "Save",
   isDisabled = false,
+  // 0 turns the pad into a whole-number counter and hides the point key.
+  maxDecimals = 3,
+  // Lets the caller drive the pad from outside — a batch panel types a count
+  // and a weight into the SAME pad rather than putting two of them on a
+  // scanning screen.
+  hideSubmit = false,
 }) => {
   const press = (key) => {
     if (isDisabled) return;
@@ -41,10 +61,10 @@ const NumericKeypad = ({
       return;
     }
     const next = value + key;
-    if (wouldBeValid(next)) onChange(next);
+    if (partialRe(maxDecimals).test(next)) onChange(next);
   };
 
-  const valid = /^\d{1,5}(\.\d{1,3})?$/.test(value) && parseFloat(value) > 0;
+  const valid = finalRe(maxDecimals).test(value) && parseFloat(value) > 0;
 
   return (
     <Box p={3} bg="white" borderRadius="md" border="1px solid" borderColor="gray.300">
@@ -88,7 +108,7 @@ const NumericKeypad = ({
       </Box>
 
       <SimpleGrid columns={3} spacing={2} mb={3}>
-        {KEYS.map((key) => (
+        {KEYS.filter((k) => maxDecimals > 0 || k !== ".").map((key) => (
           <Button
             key={key}
             onClick={() => press(key)}
@@ -115,7 +135,7 @@ const NumericKeypad = ({
         </Text>
       )}
 
-      <Flex gap={2}>
+      <Flex gap={2} display={hideSubmit ? "none" : undefined}>
         {onCancel && (
           <Button flex={1} size="md" variant="ghost" onClick={onCancel} tabIndex={-1}>
             Cancel

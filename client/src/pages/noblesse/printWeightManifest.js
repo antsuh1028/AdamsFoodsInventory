@@ -68,6 +68,12 @@ const printWeightManifest = ({
   // Flagged on the row, or still carrying a kilogram unit because it predates
   // the conversion — either way the operator should see it was converted.
   const convertedCount = boxes.filter((s) => s.convertedFrom || inKg(s)).length;
+  // Boxes added in a batch at a nominal weight — a run of identical cases typed
+  // once, where the figure is the one printed on the label and the boxes
+  // themselves vary. They belong on the tally (they shipped) but must not read
+  // as weighed, so they are written with a leading ~ and counted in a footnote.
+  const estimated = boxes.filter((s) => s.isEstimated);
+  const estimatedTotal = estimated.reduce((acc, s) => acc + cents(weightOf(s)), 0);
 
   const rows = [];
   for (let i = 0; i < boxes.length; i += PER_ROW) rows.push(boxes.slice(i, i + PER_ROW));
@@ -81,7 +87,10 @@ const printWeightManifest = ({
 
     const cells = Array.from({ length: PER_ROW }, (_, c) => {
       const s = row[c];
-      return `<td class="w">${s ? esc(show(cents(weightOf(s)))) : ""}</td>`;
+      if (!s) return `<td class="w"></td>`;
+      // Colour is not available — this prints on a mono laser — so the mark has
+      // to be in the glyphs.
+      return `<td class="w">${s.isEstimated ? "~" : ""}${esc(show(cents(weightOf(s))))}</td>`;
     }).join("");
 
     rowHtml.push(
@@ -190,6 +199,11 @@ const printWeightManifest = ({
             </tr>
           </table>
 
+          ${estimated.length
+            ? `<div style="margin-top:6px;font-size:10px;">~ ${estimated.length} of these ${
+                boxes.length} boxes carry a nominal label weight and were not weighed${
+                ""} — ${esc(show(estimatedTotal))} ${unit} of the total.</div>`
+            : ""}
           ${convertedCount
             ? `<div style="margin-top:6px;font-size:10px;">${convertedCount} box${
                 convertedCount === 1 ? "" : "es"} labelled in kilograms, converted to pounds.</div>`
