@@ -411,10 +411,17 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                                   qtyCases: stock && stock.qtyCases != null ? String(stock.qtyCases) : "",
                                 });
                               }}>
+                              {/* Cases first for raw stock: processing deducts
+                                  cases, not pounds, so the case count is the
+                                  live figure and the weight is what was
+                                  registered on arrival. */}
                               {available.map((a) => (
                                 <option key={a.ntiItemId} value={a.ntiItemId}>
                                   {a.lotNumber} · {a.stage === "raw" ? "RAW · " : ""}
-                                  {lb(a.onHand)} lb{a.inProcessing ? " · in processing" : ""}
+                                  {a.stage === "raw"
+                                    ? `${a.qtyCases ?? "?"} cs left · ${lb(a.onHand)} lb registered`
+                                    : `${lb(a.onHand)} lb`}
+                                  {a.inProcessing ? " · in processing" : ""}
                                 </option>
                               ))}
                             </Select>
@@ -441,10 +448,20 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                               {selectedStock.lotNumber} has processing still open. You can ship it anyway.
                             </Alert>
                           )}
+                          {/* Said plainly, because the number above is the one
+                              somebody will type into the weight field: a
+                              processed lot has had cases taken off it but its
+                              weight is still what the registration form
+                              claimed on arrival. */}
                           {selectedStock && selectedStock.stage === "raw" && (
                             <Alert status="warning" borderRadius="md" fontSize="xs" py={2} flex="1 1 100%">
                               <AlertIcon boxSize={3} />
-                              {selectedStock.lotNumber} is raw — it has not been processed.
+                              <Box>
+                                {selectedStock.lotNumber} is raw — it has not been processed.
+                                {" "}The {lb(selectedStock.onHand)} lb is the weight registered on
+                                arrival, not a live figure: processing takes cases off a lot, not
+                                pounds. {selectedStock.qtyCases ?? "?"} cases are left.
+                              </Box>
                             </Alert>
                           )}
                         </Flex>
