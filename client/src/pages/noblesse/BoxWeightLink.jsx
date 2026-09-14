@@ -24,6 +24,10 @@ const BoxWeightLink = ({
   const [available, setAvailable] = useState([]);
   const [loading, setLoading] = useState(false);
   const [picking, setPicking] = useState(() => new Set());
+  // Collapsed once something is tied. Tying is the job when the form is empty
+  // and an afterthought once it is done, so the picker stops taking up the
+  // panel and becomes a button.
+  const [pickerOpen, setPickerOpen] = useState(false);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -114,6 +118,7 @@ const BoxWeightLink = ({
       const { data } = await run();
       setLinked(data);
       setPicking(new Set());
+      setPickerOpen(false);
     } catch (err) {
       toast({
         title: err.response?.data?.code === "SESSION_ALREADY_TIED"
@@ -317,7 +322,18 @@ const BoxWeightLink = ({
         </Text>
       )}
 
-      {options.length === 0 ? (
+      {/* Folded away when boxes are already on the form. The drift warning and
+          the untied-sibling nudge above stay visible either way — those say
+          something is WRONG, which a collapsed section must never hide. */}
+      {hasBoxes && !pickerOpen && options.length > 0 && (
+        <Button size="xs" variant="outline" colorScheme="blue"
+          onClick={() => setPickerOpen(true)}>
+          Tie another lot
+          {options.length > 1 ? ` (${options.length} available)` : ""}
+        </Button>
+      )}
+
+      {(!hasBoxes || pickerOpen) && (options.length === 0 ? (
         <Text fontSize="xs" color="gray.500">
           {/* Says WHY the list is short. A list that silently filters itself to
               nothing reads as "there is no work here", which is the opposite of
@@ -378,12 +394,20 @@ const BoxWeightLink = ({
             ))}
           </Box>
 
-          <Button size="sm" colorScheme="blue" isDisabled={picking.size === 0}
-            onClick={() => link([...picking])}>
-            {picking.size > 1 ? `Tie ${picking.size} lots` : "Tie lot"}
-          </Button>
+          <Flex gap={2}>
+            <Button size="sm" colorScheme="blue" isDisabled={picking.size === 0}
+              onClick={() => link([...picking])}>
+              {picking.size > 1 ? `Tie ${picking.size} lots` : "Tie lot"}
+            </Button>
+            {hasBoxes && (
+              <Button size="sm" variant="ghost"
+                onClick={() => { setPicking(new Set()); setPickerOpen(false); }}>
+                Done
+              </Button>
+            )}
+          </Flex>
         </>
-      )}
+      ))}
     </Box>
   );
 };
