@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, Alert, AlertIcon, Input, useToast,
 } from "@chakra-ui/react";
-import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate } from "./shared";
+import { acceptReport, rejectReport, unacceptReport } from "./reportActions";
 import getRole from "../../utils/getRole";
 
 // Reception's side of the processing report.
@@ -11,44 +11,22 @@ import getRole from "../../utils/getRole";
 // Unlike BoxWeightLink, which fills the draft and waits for a human to save,
 // Accept PERSISTS IMMEDIATELY — it takes cases off the lot, so it cannot sit in
 // an unsaved draft.
-const ProcessingReportLink = ({ lotId, formId, onApplied }) => {
+const ProcessingReportLink = ({ lotId, reports = [], onApplied }) => {
   const toast = useToast();
   const isAdmin = getRole() === "admin";
-  const [reports, setReports] = useState([]);
   const [busyId, setBusyId] = useState(null);
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState("");
 
-  const load = useCallback(async () => {
-    if (!lotId) { setReports([]); return; }
-    try {
-      const { data } = await axiosInstance.get("/processing-reports", { params: { lotId } });
-      setReports(data || []);
-    } catch {
-      // A reports failure must not block filling in the form itself.
-    }
-  }, [lotId]);
-
-  useEffect(() => { load(); }, [load]);
-
   const waiting = reports.filter((r) => r.status === "submitted");
   const accepted = reports.filter((r) => r.status === "accepted");
 
-  const run = async (report, path, body) => {
+  const run = async (report, fn, ...args) => {
     setBusyId(report.reportId);
-    try {
-      await axiosInstance.post(`/processing-reports/${report.reportId}/${path}`, body || {});
-      await load();
-      if (onApplied) await onApplied();
-      return true;
-    } catch (err) {
-      toast({
-        status: "error", position: "top", duration: 8000, isClosable: true,
-        title: path === "accept" ? "Could not accept" : "Could not update",
-        description: err.response?.data?.error || err.message,
-      });
-      return false;
-    } finally { setBusyId(null); }
+    const result = await fn(report.reportId, ...args, toast);
+    setBusyId(null);
+    if (result.ok && onApplied) await onApplied();
+    return result.ok;
   };
 
   if (!lotId) {
@@ -89,7 +67,7 @@ const ProcessingReportLink = ({ lotId, formId, onApplied }) => {
                 Send back
               </Button>
               <Button size="xs" colorScheme="blue" isLoading={busyId === r.reportId}
-                onClick={() => run(r, "accept")}>
+                onClick={() => run(r, acceptReport)}>
                 Accept
               </Button>
             </Flex>
@@ -103,7 +81,7 @@ const ProcessingReportLink = ({ lotId, formId, onApplied }) => {
                 <Input size="xs" placeholder="What is wrong with it?"
                   value={reason} onChange={(e) => setReason(e.target.value)} />
                 <Button size="xs" colorScheme="red" onClick={async () => {
-                  if (await run(r, "reject", { reason: reason.trim() || null })) setRejecting(null);
+                  if (await run(r, rejectReport, reason.trim())) setRejecting(null);
                 }}>
                   Send back
                 </Button>
@@ -133,7 +111,7 @@ const ProcessingReportLink = ({ lotId, formId, onApplied }) => {
                 {isAdmin && (
                   <Button size="xs" variant="ghost" colorScheme="red"
                     isLoading={busyId === r.reportId}
-                    onClick={() => run(r, "unaccept")}>
+                    onClick={() => run(r, unacceptReport)}>
                     Un-accept
                   </Button>
                 )}

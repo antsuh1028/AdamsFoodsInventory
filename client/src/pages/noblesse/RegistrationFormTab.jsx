@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   Box, Flex, Text, Button, IconButton, Badge, Spinner, useToast, Image,
-  Grid, GridItem, Input, Textarea, Select, Checkbox, Menu, MenuButton, MenuList, MenuItem,
+  Grid, Input, Textarea, Select, Checkbox, Menu, MenuButton, MenuList, MenuItem,
 } from "@chakra-ui/react";
-import { DeleteIcon, ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
+import { DeleteIcon, ChevronDownIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import { fmtDate, today, Th, Td, timeNow, upper, fmtWeight, PROCESSING_TYPES, SheetField, sheetInputProps, SectionBar } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
@@ -60,6 +60,27 @@ const sampleDraft = () => ({
 });
 
 const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, saving }) => {
+  // Accepted reports are what the locked run rows below say; the panel needs
+  // the waiting ones too, so this loads both and hands them down.
+  const [reports, setReports] = useState([]);
+  const lotId = draft && draft.lotId;
+
+  const loadReports = useCallback(async () => {
+    if (!lotId) { setReports([]); return; }
+    try {
+      const { data } = await axiosInstance.get("/processing-reports", { params: { lotId } });
+      setReports(data || []);
+    } catch {
+      // The form still has to be fillable with the reports unreachable.
+    }
+  }, [lotId]);
+
+  useEffect(() => { loadReports(); }, [loadReports]);
+
+  const reportById = useMemo(
+    () => new Map(reports.map((r) => [r.reportId, r])), [reports]
+  );
+
   const [isFullScreen, setIsFullScreen] = useState(false);
   if (!draft) return null;
   const set = (key) => (e) => setDraft({ ...draft, [key]: upper(e.target.value) });
@@ -246,8 +267,9 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
               </Text>
               <ProcessingReportLink
                 lotId={draft.lotId}
-                formId={draft.id}
+                reports={reports}
                 onApplied={async () => {
+                  await loadReports();
                   // The accept appended a run row server-side, so the draft in
                   // hand is behind. Reloaded rather than guessed at.
                   if (!draft.id) return;
@@ -257,7 +279,59 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
               />
             </Box>
 
-            {Array.isArray(draft.processingDates) && draft.processingDates.map((pd, idx) => (
+            {Array.isArray(draft.processingDates) && draft.processingDates.map((pd, idx) => {
+              // A row carrying a reportId was written by an accepted report, so
+              // it is shown rather than edited — retyping it by hand would make
+              // the form disagree with the report that moved the stock. An
+              // admin takes it back with Un-accept, not by deleting a row.
+              const from = pd.reportId != null ? reportById.get(pd.reportId) : null;
+              if (pd.reportId != null) {
+                return (
+                  <SheetField key={idx} label={`(${idx + 1}) Processed`} full plain>
+                    <Box px={3} py={2} bg="green.50" borderRadius="sm">
+                      <Flex align="baseline" gap={3} wrap="wrap">
+                        <Text fontSize="sm" fontWeight="bold" color="green.900"
+                          style={{ fontVariantNumeric: "tabular-nums" }}>
+                          {pd.cases != null ? `${pd.cases} cases` : "—"}
+                        </Text>
+                        {pd.weight ? (
+                          <Text fontSize="sm" color="gray.700"
+                            style={{ fontVariantNumeric: "tabular-nums" }}>
+                            {pd.weight} lb
+                          </Text>
+                        ) : null}
+                        <Text fontSize="xs" color="gray.600">{fmtDate(pd.date) || "—"}</Text>
+                        {from && from.lineNo && (
+                          <Badge colorScheme="gray" fontSize="9px">Line {from.lineNo}</Badge>
+                        )}
+                        <Box flex={1} />
+                        <Badge colorScheme="green" fontSize="9px">from report</Badge>
+                      </Flex>
+                      {from && (
+                        <Flex align="baseline" gap={3} wrap="wrap" mt={1}>
+                          {from.processingType && (
+                            <Text fontSize="xs" color="gray.600">{from.processingType}</Text>
+                          )}
+                          {from.workers && from.workers.length > 0 && (
+                            <Text fontSize="xs" color="gray.600">{from.workers.join(", ")}</Text>
+                          )}
+                          {from.inedibleWeight && (
+                            <Text fontSize="xs" color="gray.600">
+                              {from.inedibleWeight} lb inedible
+                            </Text>
+                          )}
+                          {from.acceptedBy && (
+                            <Text fontSize="xs" color="gray.500">
+                              accepted by {from.acceptedBy}
+                            </Text>
+                          )}
+                        </Flex>
+                      )}
+                    </Box>
+                  </SheetField>
+                );
+              }
+              return (
               <React.Fragment key={idx}>
                 {/* One processing event per row: weight, cases and the date it
                     happened. The date carries no label of its own — a date
@@ -351,7 +425,8 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                   </Flex>
                 </SheetField>
               </React.Fragment>
-            ))}
+              );
+            })}
 
             {/* Was labelled "Actual Yield (%)", which it never was: a
                 processing row records inventory CONSUMED, so this is how far
@@ -544,7 +619,6 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   const [draft, setDraft]     = useState(null);
   const [saving, setSaving]   = useState(false);
   const [statusFilter, setStatusFilter] = useState("in_progress");
-  const [expandedId, setExpandedId] = useState(null);
   const [allHistoryOpen, setAllHistoryOpen] = useState(false);
   const [allHistory, setAllHistory] = useState([]);
   const [allHistoryLoading, setAllHistoryLoading] = useState(false);
@@ -792,13 +866,8 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = rowHoverBg; }}
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = rowBg; }}
-                  onDoubleClick={() => {
-                    if (expandedId === f.id) {
-                      setExpandedId(null);
-                    } else {
-                      setExpandedId(f.id);
-                    }
-                  }}
+                  title="Double-click to open"
+                  onDoubleClick={() => openEdit(f)}
                 >
                   {/* A green left edge makes today's intake scannable down the
                       column without reading a single date. */}
@@ -806,24 +875,6 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                     borderLeft={isToday ? "4px solid" : undefined}
                     borderLeftColor={isToday ? "green.500" : undefined}>
                     <Flex align="center" gap={2}>
-                      {/* Inside the first cell rather than its own column, so
-                          the expanded row's colSpan does not have to change. */}
-                      <IconButton
-                        aria-label={expandedId === f.id ? "Collapse details" : "Expand details"}
-                        title={expandedId === f.id ? "Collapse" : "Expand"}
-                        icon={expandedId === f.id ? <ChevronUpIcon /> : <ChevronDownIcon />}
-                        size="xs"
-                        variant="ghost"
-                        colorScheme={expandedId === f.id ? "blue" : "gray"}
-                        // The row also expands on double-click. Without these
-                        // the button's own events bubble up to it and toggle a
-                        // second time, cancelling the first.
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedId(expandedId === f.id ? null : f.id);
-                        }}
-                        onDoubleClick={(e) => e.stopPropagation()}
-                      />
                       {f.lotId ? (
                         <Text
                           as="span"
@@ -913,47 +964,6 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                     </Flex>
                   </Td>
                 </tr>
-                {expandedId === f.id && (
-                  <tr style={{ backgroundColor: "rgb(230, 240, 255)", borderTop: "2px solid rgb(66, 153, 225)" }}>
-                    {/* 8, not 6: Weight and Qty were added above. A colSpan
-                        that undercounts leaves the detail panel short and the
-                        table's last columns collapse. */}
-                    <td colSpan={8} style={{ padding: 0 }}>
-                      <Box p={4} width="100%">
-                        <Grid templateColumns={{ base: "1fr", md: "repeat(2, 1fr)" }} gap={4} fontSize="sm">
-                          <GridItem>
-                            <Text fontWeight="bold" color="gray.700">Lot #</Text>
-                            <Text>{f.lotNumber || "—"}</Text>
-                          </GridItem>
-                          <GridItem>
-                            <Text fontWeight="bold" color="gray.700">Form Date</Text>
-                            <Text>{fmtDate(f.formDate) || "—"}</Text>
-                          </GridItem>
-                          <GridItem>
-                            <Text fontWeight="bold" color="gray.700">Vendor</Text>
-                            <Text>{f.vendor || "—"}</Text>
-                          </GridItem>
-                          <GridItem>
-                            <Text fontWeight="bold" color="gray.700">Product Description</Text>
-                            <Text>{f.productDescription || "—"}</Text>
-                          </GridItem>
-                          <GridItem>
-                            <Text fontWeight="bold" color="gray.700">Processing Type</Text>
-                            <Text>{f.processingType || "—"}</Text>
-                          </GridItem>
-                          <GridItem>
-                            <Text fontWeight="bold" color="gray.700">Spec</Text>
-                            <Text>{f.spec || "—"}</Text>
-                          </GridItem>
-                          <GridItem colSpan={{ base: 1, md: 2 }}>
-                            <Text fontWeight="bold" color="gray.700">Remarks</Text>
-                            <Text>{f.remarks || "—"}</Text>
-                          </GridItem>
-                        </Grid>
-                      </Box>
-                    </td>
-                  </tr>
-                )}
               </React.Fragment>
               );
             })}

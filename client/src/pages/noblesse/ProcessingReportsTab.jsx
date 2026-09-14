@@ -86,6 +86,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     fetchStock();
   }, [refreshSignal, fetchReports, fetchStock]);
 
+  const waitingCount = useMemo(
+    () => reports.filter((r) => r.status === "submitted").length, [reports]
+  );
+
   const visible = useMemo(
     () => (filter ? reports.filter((r) => r.status === filter) : reports),
     [reports, filter]
@@ -172,12 +176,22 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
           </Text>
         </Box>
         <Flex gap={2} align="center" wrap="wrap">
-          <Select size="sm" width="150px" value={filter} onChange={(e) => setFilter(e.target.value)}>
-            <option value="submitted">Waiting</option>
-            <option value="accepted">Accepted</option>
-            <option value="rejected">Sent back</option>
-            <option value="">All</option>
-          </Select>
+          <Flex gap={1}>
+            {[
+              ["submitted", "Waiting", "yellow"],
+              ["accepted", "Accepted", "green"],
+              ["rejected", "Sent back", "red"],
+              ["", "All", "teal"],
+            ].map(([value, label, scheme]) => (
+              <Button key={label} size="xs"
+                variant={filter === value ? "solid" : "outline"}
+                colorScheme={filter === value ? scheme : "gray"}
+                onClick={() => setFilter(value)}>
+                {label}
+                {value === "submitted" && waitingCount > 0 ? ` (${waitingCount})` : ""}
+              </Button>
+            ))}
+          </Flex>
           <Button size="sm" colorScheme="blue" onClick={() => setDraft(emptyDraft())}>
             New report
           </Button>
