@@ -87,10 +87,12 @@ const printWeightManifest = ({
 
     const cells = Array.from({ length: PER_ROW }, (_, c) => {
       const s = row[c];
-      if (!s) return `<td class="w"></td>`;
-      // Colour is not available — this prints on a mono laser — so the mark has
-      // to be in the glyphs.
-      return `<td class="w">${s.isEstimated ? "~" : ""}${esc(show(cents(weightOf(s))))}</td>`;
+      // Nominal weights are NOT marked in the cell. The grid is read down the
+      // page against a pallet, and a prefix on some figures and not others
+      // breaks the alignment that makes it scannable — the same reason every
+      // weight is written to two decimals whether it needs them or not. The
+      // footnote below carries the caveat instead.
+      return `<td class="w">${s ? esc(show(cents(weightOf(s)))) : ""}</td>`;
     }).join("");
 
     rowHtml.push(
@@ -200,7 +202,7 @@ const printWeightManifest = ({
           </table>
 
           ${estimated.length
-            ? `<div style="margin-top:6px;font-size:10px;">~ ${estimated.length} of these ${
+            ? `<div style="margin-top:6px;font-size:10px;">${estimated.length} of these ${
                 boxes.length} boxes carry a nominal label weight and were not weighed${
                 ""} — ${esc(show(estimatedTotal))} ${unit} of the total.</div>`
             : ""}
