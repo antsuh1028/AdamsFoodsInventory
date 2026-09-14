@@ -11,7 +11,7 @@ import getRole from "../../utils/getRole";
 // Unlike BoxWeightLink, which fills the draft and waits for a human to save,
 // Accept PERSISTS IMMEDIATELY — it takes cases off the lot, so it cannot sit in
 // an unsaved draft.
-const ProcessingReportLink = ({ lotId, reports = [], onApplied }) => {
+const ProcessingReportLink = ({ lotId, lotNumber, reports = [], onApplied }) => {
   const toast = useToast();
   const isAdmin = getRole() === "admin";
   const [busyId, setBusyId] = useState(null);
@@ -29,7 +29,7 @@ const ProcessingReportLink = ({ lotId, reports = [], onApplied }) => {
     return result.ok;
   };
 
-  if (!lotId) {
+  if (!lotId && !lotNumber) {
     return (
       <Text fontSize="xs" color="gray.500">
         Pick a lot to see processing reports for it.

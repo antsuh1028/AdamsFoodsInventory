@@ -64,16 +64,21 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
   // the waiting ones too, so this loads both and hands them down.
   const [reports, setReports] = useState([]);
   const lotId = draft && draft.lotId;
+  const lotNumber = draft && draft.lotNumber;
 
   const loadReports = useCallback(async () => {
-    if (!lotId) { setReports([]); return; }
+    // The number is enough when there is no id: a form for an external lot, or
+    // one saved before lot_id existed, still knows what lot it is.
+    if (!lotId && !lotNumber) { setReports([]); return; }
     try {
-      const { data } = await axiosInstance.get("/processing-reports", { params: { lotId } });
+      const { data } = await axiosInstance.get("/processing-reports", {
+        params: lotId ? { lotId } : { lotNumber },
+      });
       setReports(data || []);
     } catch {
       // The form still has to be fillable with the reports unreachable.
     }
-  }, [lotId]);
+  }, [lotId, lotNumber]);
 
   useEffect(() => { loadReports(); }, [loadReports]);
 
@@ -267,6 +272,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
               </Text>
               <ProcessingReportLink
                 lotId={draft.lotId}
+                lotNumber={draft.lotNumber}
                 reports={reports}
                 onApplied={async () => {
                   await loadReports();

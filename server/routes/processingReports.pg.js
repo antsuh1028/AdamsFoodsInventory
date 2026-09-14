@@ -88,9 +88,15 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
     params.push(String(req.query.status));
     where += ` AND r.status = $${params.length}`;
   }
+  // Matched by id, or by the lot NUMBER when the caller has no id — a form
+  // saved before lot_id existed, or for an external lot whose id never
+  // resolved, only knows the number.
   if (req.query.lotId) {
     params.push(Number(req.query.lotId));
     where += ` AND r.lot_id = $${params.length}`;
+  } else if (req.query.lotNumber) {
+    params.push(String(req.query.lotNumber));
+    where += ` AND l.lot_number = $${params.length}`;
   }
   try {
     const result = await pool.query(

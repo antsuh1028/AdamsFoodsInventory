@@ -28,6 +28,7 @@ const BoxWeightLink = ({
   // and an afterthought once it is done, so the picker stops taking up the
   // panel and becomes a button.
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [open, setOpen] = useState(false);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -208,6 +209,35 @@ const BoxWeightLink = ({
   const drifted = live !== null && onForm !== null && live !== onForm;
   const hasBoxes = Boolean(view && view.sessions.length);
 
+  // Anything WRONG keeps the section open: a collapsed panel must never be the
+  // reason nobody saw a discrepancy.
+  const needsAttention = drifted || suggested.length > 0;
+  const collapsed = hasBoxes && !open && !needsAttention;
+
+  if (collapsed) {
+    return (
+      <Flex align="baseline" gap={3} wrap="wrap"
+        px={3} py={2} bg="blue.50" borderRadius="md"
+        border="1px solid" borderColor="blue.200">
+        <Text fontSize="sm" fontWeight="bold" color="blue.800"
+          style={{ fontVariantNumeric: "tabular-nums" }}>
+          {toDisplay(view.totalWeight)} lb
+        </Text>
+        <Text fontSize="sm" color="gray.700">
+          {view.boxCount} box{view.boxCount === 1 ? "" : "es"}
+        </Text>
+        <Text fontSize="xs" color="gray.600">
+          {view.sessions.map((x) => x.lot_number || `Batch ${x.batch_id}`).join(", ")}
+        </Text>
+        {pending && <Text fontSize="xs" color="gray.500">tied when you save</Text>}
+        <Box flex={1} />
+        <Button size="xs" variant="ghost" colorScheme="blue" onClick={() => setOpen(true)}>
+          Change
+        </Button>
+      </Flex>
+    );
+  }
+
   return (
     <Box p={3} bg="blue.50" borderRadius="md" border="1px solid" borderColor="blue.200">
       <Flex justify="space-between" align="baseline" mb={2} gap={2} wrap="wrap">
@@ -218,6 +248,13 @@ const BoxWeightLink = ({
           <Text fontSize="xs" color="gray.500">tied when you save</Text>
         )}
         {loading && <Spinner size="xs" color="blue.500" />}
+        <Box flex={1} />
+        {hasBoxes && !needsAttention && (
+          <Button size="xs" variant="ghost" colorScheme="blue"
+            onClick={() => { setPickerOpen(false); setOpen(false); }}>
+            Done
+          </Button>
+        )}
       </Flex>
 
       {hasBoxes && (
