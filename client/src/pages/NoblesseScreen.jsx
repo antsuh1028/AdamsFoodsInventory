@@ -21,7 +21,6 @@ import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
 
-// Processing is dev-only for now, so the rest of the work can ship without it.
 const NoblesseScreen = () => {
   const navigate = useNavigate();
   const isAdmin  = getRole() === "admin";
@@ -53,6 +52,8 @@ const NoblesseScreen = () => {
   // someone. Drives the tab badge and the notice below the tabs.
   const [unregistered, setUnregistered]   = useState([]);
   const [noticeDismissed, setNoticeDismissed] = useState(false);
+  // Submitted reports waiting on reception. Drives the tab badge and the nudge.
+  const [waitingReports, setWaitingReports] = useState(0);
   const [tabIndex, setTabIndex]           = useState(0);
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [loading, setLoading]             = useState(true);
@@ -76,12 +77,8 @@ const NoblesseScreen = () => {
     if (isManual) setRefreshing(true);
     try {
       // Receipts stay the load-bearing fetch: if they fail the screen says so.
-      // The two processing fetches are tolerated instead, because a failure
-      // there should not take Incoming Records and the manifests down with it.
-      // Tolerated, NOT swallowed — procError renders in the Processing panel,
-      // so an empty tab is never mistaken for "no orders".
-      // The unregistered list is tolerated the same way: it is a prompt, not
-      // the screen's content, and losing it must not blank Incoming Records.
+      // The other two are prompts, not content, so losing either must not blank
+      // Incoming Records.
       const [receiptsRes, unregRes, reportsRes] = await Promise.all([
         axiosInstance.get("/noblesse-receipts"),
         axiosInstance.get("/box-batches/unregistered").catch((e) => e),
@@ -120,11 +117,8 @@ const NoblesseScreen = () => {
   const handleReceiptUpdate = (r) => setReceipts((prev) => prev.map((x) => x.id === r.id ? r : x));
   const handleReceiptDelete = (id) => setReceipts((prev) => prev.filter((x) => x.id !== id));
 
-  const [waitingReports, setWaitingReports] = useState(0);
-
-  // Chakra pairs tabs to panels BY POSITION and the Processing tab is
-  // conditional, so this has to be derived from the same flag that hides it.
-  // Hardcoding 2 lands on Weight Manifests in a production build.
+  // Chakra pairs tabs to panels by position, so these are positions, not names.
+  const PROCESSING_TAB = 1;
   const REGISTRATION_TAB = 2;
 
   if (loading) {
@@ -236,6 +230,24 @@ const NoblesseScreen = () => {
               cannot grow and push the panels down. Dismissible (the answer is
               sometimes "not today") but it returns on reload, since the work
               has not gone away. */}
+          {/* Reception works on the Registration Forms tab, so without this a
+              waiting report is only found by opening a form and noticing.
+              Same shape as the registering nudge beside it. */}
+          {waitingReports > 0 && (
+            <Flex align="center" gap={2} flexShrink={0}
+              bg="yellow.50" border="1px solid" borderColor="yellow.300"
+              borderRadius="full" pl={3} pr={1.5} py={1}>
+              <WarningIcon color="yellow.700" boxSize={3} />
+              <Text fontSize="xs" fontWeight="600" color="yellow.900" whiteSpace="nowrap">
+                {waitingReports} processing report{waitingReports === 1 ? "" : "s"} waiting
+              </Text>
+              <Button size="xs" colorScheme="yellow" borderRadius="full"
+                onClick={() => setTabIndex(PROCESSING_TAB)}>
+                Review
+              </Button>
+            </Flex>
+          )}
+
           {unregistered.length > 0 && !noticeDismissed && (
             <Tooltip
               hasArrow

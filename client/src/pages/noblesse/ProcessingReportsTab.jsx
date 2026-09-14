@@ -11,6 +11,7 @@ import {
   SheetField, sheetInputProps, SectionBar, SHEET_GRID,
 } from "./shared";
 import getRole from "../../utils/getRole";
+import { acceptReport, rejectReport, unacceptReport } from "./reportActions";
 
 // The digital version of the paper processing report.
 //
@@ -46,6 +47,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [workerInput, setWorkerInput] = useState("");
+  const [busyId, setBusyId] = useState(null);
+  const [rejecting, setRejecting] = useState(null);
+  const [reason, setReason] = useState("");
 
   const fetchReports = useCallback(async () => {
     try {
@@ -133,6 +137,14 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     } finally { setSaving(false); }
   };
 
+  const act = async (report, fn, ...args) => {
+    setBusyId(report.reportId);
+    const result = await fn(report.reportId, ...args, toast);
+    setBusyId(null);
+    if (result.ok) { await fetchReports(); await fetchStock(); }
+    return result.ok;
+  };
+
   const remove = async (report) => {
     try {
       await axiosInstance.delete(`/processing-reports/${report.reportId}`);
@@ -143,7 +155,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     }
   };
 
-  const openEdit = (r) => setDraft({
+  const openReport = (r) => setDraft({
+    readOnly: r.status === "accepted",
     ...emptyDraft(), ...r,
     pulls: r.pulls.length ? r.pulls.map((p) => ({ cases: String(p.cases) })) : [{ cases: "" }],
     inedibleWeight: r.inedibleWeight != null ? String(r.inedibleWeight) : "",
@@ -192,7 +205,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
       <Flex direction="column" gap={2}>
         {visible.map((r) => (
           <Box key={r.reportId} px={3} py={2} bg="white" borderRadius="md"
-            border="1px solid" borderColor="gray.200">
+            border="1px solid" borderColor="gray.200"
+            cursor="pointer"
+            _hover={{ borderColor: "blue.300", bg: "blue.50" }}
+            title="Double-click to open"
+            onDoubleClick={() => openReport(r)}>
             <Flex align="baseline" gap={3} wrap="wrap">
               <Text fontSize="sm" fontWeight="700" color="blue.700">{r.lotNumber}</Text>
               <Badge colorScheme={STATUS_COLOR[r.status]} fontSize="9px">
@@ -223,17 +240,48 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 </Text>
               )}
               <Box flex={1} />
-              {r.status !== "accepted" && (
-                <Button size="xs" variant="ghost" colorScheme="blue" onClick={() => openEdit(r)}>
-                  Edit
+              {r.status === "submitted" && (
+                <>
+                  <Button size="xs" variant="ghost" isLoading={busyId === r.reportId}
+                    onClick={(e) => { e.stopPropagation(); setRejecting(r.reportId); setReason(""); }}>
+                    Send back
+                  </Button>
+                  <Button size="xs" colorScheme="blue" isLoading={busyId === r.reportId}
+                    onClick={(e) => { e.stopPropagation(); act(r, acceptReport); }}>
+                    Accept
+                  </Button>
+                </>
+              )}
+              {isAdmin && r.status === "accepted" && (
+                <Button size="xs" variant="ghost" colorScheme="red"
+                  isLoading={busyId === r.reportId}
+                  onClick={(e) => { e.stopPropagation(); act(r, unacceptReport); }}>
+                  Un-accept
                 </Button>
               )}
               {isAdmin && r.status !== "accepted" && (
-                <Button size="xs" variant="ghost" colorScheme="red" onClick={() => remove(r)}>
+                <Button size="xs" variant="ghost" colorScheme="red"
+                  onClick={(e) => { e.stopPropagation(); remove(r); }}>
                   Delete
                 </Button>
               )}
             </Flex>
+
+            {rejecting === r.reportId && (
+              <Flex gap={2} mt={2} onClick={(e) => e.stopPropagation()}>
+                <Input size="xs" placeholder="What is wrong with it?" value={reason}
+                  onChange={(e) => setReason(e.target.value)} />
+                <Button size="xs" colorScheme="red" isLoading={busyId === r.reportId}
+                  onClick={async () => {
+                    if (await act(r, rejectReport, reason.trim())) setRejecting(null);
+                  }}>
+                  Send back
+                </Button>
+                <Button size="xs" variant="ghost" onClick={() => setRejecting(null)}>
+                  Cancel
+                </Button>
+              </Flex>
+            )}
           </Box>
         ))}
       </Flex>
@@ -249,11 +297,15 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {inputCases} case{inputCases === 1 ? "" : "s"} off the lot
             </Text>
             <Flex gap={2}>
-              <Button size="md" variant="ghost" onClick={() => setDraft(null)}>Cancel</Button>
-              <Button size="md" colorScheme="blue" onClick={submit}
-                isLoading={saving} isDisabled={!canSubmit}>
-                Submit report
+              <Button size="md" variant="ghost" onClick={() => setDraft(null)}>
+                {draft?.readOnly ? "Close" : "Cancel"}
               </Button>
+              {!draft?.readOnly && (
+                <Button size="md" colorScheme="blue" onClick={submit}
+                  isLoading={saving} isDisabled={!canSubmit}>
+                  Submit report
+                </Button>
+              )}
             </Flex>
           </Flex>
         }
@@ -261,7 +313,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         {draft && (
           <Box>
             <Text fontSize="xs" color="gray.600" mb={3}>
-              Submitting files the report. Cases come off the lot when reception accepts it.
+              {draft.readOnly
+                ? `Accepted by ${draft.acceptedBy || "reception"} — ${draft.inputCases} cases are off the lot. An admin can un-accept it from the list.`
+                : "Submitting files the report. Cases come off the lot when reception accepts it."}
             </Text>
 
             <Grid {...SHEET_GRID} mb={5}>
@@ -274,6 +328,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   <LotPicker
                     size="sm"
                     allowCreate={false}
+                    isDisabled={draft.readOnly}
                     value={draft.lotId}
                     lotNumber={draft.lotNumber}
                     onChange={(lot) => setDraft((d) => ({
@@ -285,46 +340,46 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 </Box>
               </SheetField>
               <SheetField label="Processing Date">
-                <Input {...sheetInputProps} type="date" value={draft.processingDate}
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="date" value={draft.processingDate}
                   onChange={(e) => setDraft({ ...draft, processingDate: e.target.value })} />
               </SheetField>
 
               <SheetField label="Processing Type" full>
-                <Select {...sheetInputProps} placeholder="Select…" value={draft.processingType}
+                <Select {...sheetInputProps} isReadOnly={draft.readOnly} placeholder="Select…" value={draft.processingType}
                   onChange={(e) => setDraft({ ...draft, processingType: e.target.value })}>
                   {PROCESSING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </Select>
               </SheetField>
 
               <SheetField label="Line #">
-                <Input {...sheetInputProps} placeholder="1" value={draft.lineNo}
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} placeholder="1" value={draft.lineNo}
                   onChange={(e) => setDraft({ ...draft, lineNo: upper(e.target.value) })} />
               </SheetField>
               <SheetField label="Customer">
-                <Input {...sheetInputProps} value={draft.customer || ""}
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.customer || ""}
                   onChange={(e) => setDraft({ ...draft, customer: upper(e.target.value) })} />
               </SheetField>
 
               <SectionBar>Product</SectionBar>
 
               <SheetField label="Description" full>
-                <Input {...sheetInputProps} value={draft.description || ""}
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.description || ""}
                   onChange={(e) => setDraft({ ...draft, description: upper(e.target.value) })} />
               </SheetField>
               <SheetField label="Brand">
-                <Input {...sheetInputProps} value={draft.brand || ""}
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.brand || ""}
                   onChange={(e) => setDraft({ ...draft, brand: upper(e.target.value) })} />
               </SheetField>
               <SheetField label="Grade">
-                <Input {...sheetInputProps} value={draft.grade || ""}
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.grade || ""}
                   onChange={(e) => setDraft({ ...draft, grade: upper(e.target.value) })} />
               </SheetField>
               <SheetField label="EST #">
-                <Input {...sheetInputProps} value={draft.estNumber || ""}
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.estNumber || ""}
                   onChange={(e) => setDraft({ ...draft, estNumber: upper(e.target.value) })} />
               </SheetField>
               <SheetField label="Pack Date">
-                <Input {...sheetInputProps} type="date" value={draft.packDate || ""}
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="date" value={draft.packDate || ""}
                   onChange={(e) => setDraft({ ...draft, packDate: e.target.value })} />
               </SheetField>
 
@@ -336,7 +391,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 <SheetField key={idx} label={`(${idx + 1}) Cases`} full>
                   <Flex gap={3} align="center" px={3} py={1.5}>
                     <Input
-                      {...sheetInputProps}
+                      {...sheetInputProps} isReadOnly={draft.readOnly}
                       bg="white" flex="0 0 130px" type="number" placeholder="cases"
                       value={p.cases}
                       onChange={(e) => {
@@ -346,7 +401,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                       }}
                     />
                     <Button size="xs" variant="ghost" colorScheme="red" px={1} minW="auto"
-                      isDisabled={draft.pulls.length <= 1}
+                      isDisabled={draft.readOnly || draft.pulls.length <= 1}
                       title={draft.pulls.length <= 1 ? "Cannot delete last row" : "Delete this row"}
                       onClick={() => setDraft({
                         ...draft, pulls: draft.pulls.filter((_, i) => i !== idx),
@@ -355,6 +410,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                     </Button>
                     {idx === draft.pulls.length - 1 && (
                       <Button size="xs" variant="outline" colorScheme="blue" px={2} minW="auto"
+                        isDisabled={draft.readOnly}
                         title="Add another batch"
                         onClick={() => setDraft({ ...draft, pulls: [...draft.pulls, { cases: "" }] })}>
                         +
@@ -383,7 +439,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </SheetField>
 
               <SheetField label="Inedible (lb)">
-                <Input {...sheetInputProps} type="number" value={draft.inedibleWeight}
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="number" value={draft.inedibleWeight}
                   onChange={(e) => setDraft({ ...draft, inedibleWeight: e.target.value })} />
               </SheetField>
 
@@ -397,6 +453,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                         fontSize="sm" fontWeight="500">
                         {w}
                         <Box as="button" type="button" ml={2} color="blue.600"
+                          display={draft.readOnly ? "none" : undefined}
                           onClick={() => setDraft({
                             ...draft, workers: draft.workers.filter((_, i) => i !== idx),
                           })}>
@@ -405,7 +462,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                       </Badge>
                     ))}
                   </Flex>
-                  <Flex gap={2}>
+                  <Flex gap={2} display={draft.readOnly ? "none" : undefined}>
                     <Input size="sm" bg="white" width="220px" placeholder="Name, then Enter"
                       value={workerInput}
                       onChange={(e) => setWorkerInput(e.target.value)}
@@ -418,7 +475,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </SheetField>
 
               <SheetField label="Remarks" full>
-                <Textarea {...sheetInputProps} rows={2} value={draft.notes || ""}
+                <Textarea {...sheetInputProps} isReadOnly={draft.readOnly} rows={2} value={draft.notes || ""}
                   onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
               </SheetField>
             </Grid>
