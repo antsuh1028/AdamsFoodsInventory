@@ -322,8 +322,11 @@ router.post("/processing-reports/:id/accept", verifyToken, async (req, res) => {
 
     // Locked first: the lock is what makes a double-click safe.
     const head = await client.query(
-      `SELECT * FROM noblesse_processing_reports
-        WHERE report_id = $1 AND tenant_id = $2 FOR UPDATE`,
+      `SELECT r.*, l.lot_number
+         FROM noblesse_processing_reports r
+         JOIN lots l ON l.lot_id = r.lot_id
+        WHERE r.report_id = $1 AND r.tenant_id = $2
+          FOR UPDATE OF r`,
       [id, req.tenantId]
     );
     if (!head.rows.length) {
@@ -343,8 +346,10 @@ router.post("/processing-reports/:id/accept", verifyToken, async (req, res) => {
 
     const forms = await client.query(
       `SELECT id, lot_number FROM noblesse_registration_forms
-        WHERE lot_id = $1 AND tenant_id = $2 ORDER BY id`,
-      [report.lot_id, req.tenantId]
+        WHERE tenant_id = $2
+          AND (lot_id = $1 OR (lot_id IS NULL AND lot_number = $3))
+        ORDER BY id`,
+      [report.lot_id, req.tenantId, report.lot_number]
     );
     if (!forms.rows.length) {
       await client.query("ROLLBACK");
@@ -365,8 +370,10 @@ router.post("/processing-reports/:id/accept", verifyToken, async (req, res) => {
 
     const stock = await client.query(
       `SELECT id, qty_cases FROM nti_inventory
-        WHERE lot_id = $1 AND tenant_id = $2 AND stage = 'raw' FOR UPDATE`,
-      [report.lot_id, req.tenantId]
+        WHERE tenant_id = $2 AND stage = 'raw'
+          AND (lot_id = $1 OR (lot_id IS NULL AND lot = $3))
+        FOR UPDATE`,
+      [report.lot_id, req.tenantId, report.lot_number]
     );
     if (!stock.rows.length) {
       await client.query("ROLLBACK");
@@ -480,8 +487,11 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
   try {
     await client.query("BEGIN");
     const head = await client.query(
-      `SELECT * FROM noblesse_processing_reports
-        WHERE report_id = $1 AND tenant_id = $2 FOR UPDATE`,
+      `SELECT r.*, l.lot_number
+         FROM noblesse_processing_reports r
+         JOIN lots l ON l.lot_id = r.lot_id
+        WHERE r.report_id = $1 AND r.tenant_id = $2
+          FOR UPDATE OF r`,
       [id, req.tenantId]
     );
     if (!head.rows.length) {
@@ -496,8 +506,9 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
 
     await client.query(
       `UPDATE nti_inventory SET qty_cases = COALESCE(qty_cases, 0) + $1
-        WHERE lot_id = $2 AND tenant_id = $3 AND stage = 'raw'`,
-      [report.input_cases, report.lot_id, req.tenantId]
+        WHERE tenant_id = $3 AND stage = 'raw'
+          AND (lot_id = $2 OR (lot_id IS NULL AND lot = $4))`,
+      [report.input_cases, report.lot_id, req.tenantId, report.lot_number]
     );
 
     // Only this report's row comes out; hand-entered runs are untouched.
