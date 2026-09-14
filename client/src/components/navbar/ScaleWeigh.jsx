@@ -9,32 +9,13 @@ import { looksWrong, looksLikeReweigh } from "../../utils/typedWeight";
 import { beepError } from "../../utils/scanFeedback";
 
 // Weighing finished boxes off the bench scale, hands-free.
-//
-// The indicator streams about twice a second whether or not anything is
-// happening, so the work is deciding which reading IS a box. That decision
-// lives in createCaptureMachine (scaleCapture.js) and nowhere else — this
-// component feeds it lines and renders what it says.
-//
-//   EMPTY     nothing on the platform
-//   SETTLING  a box is on it and still moving
-//   DONE      captured; will not capture again until the platform clears
-//
-// The trap worth naming: AN EMPTY SCALE IS ALSO STABLE. Recording on "stable"
-// alone would record a stream of zeros forever. The machine requires a weight
-// above EMPTY_BELOW *and* the same figure held for HOLD_READINGS, and requires
-// the platform to clear before it will arm again.
-//
-// The port is read-only. BarTender owns COM1 and polls the scale; we listen on
-// COM2 to the replies. Nothing here can disturb it.
 
 // How long the confirmation stays up. Long enough to be seen over a shoulder,
 // short enough to be gone before the next box lands.
 const FLASH_MS = 2500;
 
 const StateLine = ({ state, weight, queried }) => {
-  // Queried outranks the machine's own state. The machine says DONE — it did
-  // capture — but nothing has been recorded, and a green "Recorded" over a box
-  // that is still a question is the one thing this panel must never say.
+  // Queried outranks the machine's own state.
   if (queried) {
     return <Text fontSize="lg" color="yellow.700" fontWeight="600">Held — answer below</Text>;
   }
@@ -69,9 +50,8 @@ const ScaleWeigh = ({
   const machineRef = useRef(createCaptureMachine());
   const flashTimer = useRef(null);
 
-  // The capture callback runs inside the serial read loop, which is started
-  // once and closes over whatever these were at that moment. Refs keep it
-  // reading the CURRENT session instead of an empty list from mount.
+  // The capture callback runs inside the serial read loop, which is started once
+  // and closes over whatever these were at that moment.
   const weightsRef = useRef(weights);
   weightsRef.current = weights;
   const onAddRef = useRef(onAdd);
@@ -79,10 +59,8 @@ const ScaleWeigh = ({
   const queriedRef = useRef(null);
   queriedRef.current = queried;
 
-  // onAdd beeps and toasts for itself; what it returns is whether the box
-  // actually landed. The confirmation below is only ever shown for a TRUE —
-  // a green "recorded" over a box the server refused is worse than silence,
-  // because the operator walks away believing the manifest has it.
+  // onAdd beeps and toasts for itself; what it returns is whether the box actually
+  // landed.
   const record = useCallback(async (weight) => {
     let ok = false;
     try {
@@ -102,20 +80,10 @@ const ScaleWeigh = ({
 
   // One line off the wire. Parse it, hand it to the machine, act on the verdict.
   const onLine = useCallback((raw) => {
-    // A capture waiting on an answer FREEZES the feed. Not a nicety: keep
-    // reading and the next box settles, captures, and records AHEAD of the one
-    // still being asked about — and then answering "record it" files it out of
-    // order. Frozen, the readout stays on the weight in question and nothing
-    // can be recorded or lost while the operator looks up.
-    //
-    // Note what deliberately does NOT happen when they answer: the machine is
-    // not reset. It is in DONE, and DONE only clears when the platform does, so
-    // the box still sitting on the scale cannot be captured a second time.
+    // A capture waiting on an answer FREEZES the feed.
     if (queriedRef.current) return;
 
-    // assumeUnit because this indicator prints a bare number with no unit. The
-    // station is set to pounds; a line that DOES carry a unit still wins, so a
-    // switch to kg shows up rather than being silently relabelled.
+    // assumeUnit because this indicator prints a bare number with no unit.
     const reading = parseScaleLine(raw, { assumeUnit: "LB" });
     const result = machineRef.current.feed(reading);
 
@@ -123,9 +91,7 @@ const ScaleWeigh = ({
     setState(result.state);
     if (!result.captured) return;
 
-    // Both guards are advisory and both stop the box at the gate rather than
-    // recording and apologising: an unwanted row is far harder to notice later
-    // than a question now.
+    // Advisory: stop the box at the gate rather than recording and apologising.
     const w = result.captured;
     const outlier = looksWrong(w, weightsRef.current);
     if (outlier.outlier) { beepError(); setQueried({ kind: "outlier", weight: w, ...outlier }); return; }

@@ -13,11 +13,6 @@ import printPackingList from "./printPackingList";
 
 // Outgoing: product leaving NTI, either back to AdamsFoods for distribution or
 // straight to a customer.
-//
-// A load is built as a draft, then shipped — and shipping is the moment stock
-// actually moves, so it is confirmed against the destination, the lots and the
-// total rather than being a single tap. A shipped load is never edited or
-// deleted; cancelling restores the stock and keeps the record.
 
 const STATUS = {
   draft:     { label: "Draft",     color: "gray" },
@@ -92,11 +87,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     }
   }, []);
 
-  // OUTGOING ONLY. These are the finished boxes weighed off the bench — the
-  // only kind that belongs on a load. Tying an incoming session would make the
-  // "weighed on the dock" figure the weight that ARRIVED, shown beside the
-  // weight being shipped for someone to reconcile against; it would not read as
-  // a mistake, it would read as a discrepancy in the load.
+  // OUTGOING ONLY.
   const fetchBatches = useCallback(async () => {
     try {
       const { data } = await axiosInstance.get("/box-batches",
@@ -112,9 +103,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     fetchShipments(); fetchAvailable(); fetchBatches();
   }, [fetchShipments, fetchAvailable, fetchBatches]);
 
-  // The parent polls every 60s and bumps this. Compared against a ref so the
-  // mount effect and the signal effect do not both fire on first render — a tab
-  // that only fetches on mount looks live but is frozen at page load.
+  // The parent polls every 60s and bumps this.
   const lastSignal = useRef(refreshSignal);
   useEffect(() => {
     if (lastSignal.current === refreshSignal) return;
@@ -122,9 +111,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     fetchShipments();
     fetchAvailable();
     // Weighed sessions are primary content on this tab now, not just a picker
-    // inside a draft, so they have to follow the poll. A tab that only fetches
-    // on mount looks live and is frozen at page load — that has shipped here
-    // once already (CLAUDE.md §1).
+    // inside a draft, so they have to follow the poll.
     fetchBatches();
   }, [refreshSignal, fetchShipments, fetchAvailable, fetchBatches]);
 
@@ -235,11 +222,8 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     await refreshOpen(openId);
   }, "Cancelled — stock restored");
 
-  // The load is gone afterwards, so unlike cancel there is nothing to refresh
-  // into — the open row is collapsed and the list reloaded instead.
-  //
-  // fetchAvailable too: deleting a SHIPPED load puts its weight back, so the
-  // stock the picker offers is stale the moment this returns.
+  // The load is gone afterwards, so unlike cancel there is nothing to refresh into
+  // — the open row is collapsed and the list reloaded instead.
   const deleteDraft = () => run(async () => {
     setConfirmDelete(false);
     const { data } = await axiosInstance.delete(`/shipments/${openId}`);

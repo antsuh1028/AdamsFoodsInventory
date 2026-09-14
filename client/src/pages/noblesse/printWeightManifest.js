@@ -7,26 +7,12 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
 ));
 
 // The Noblesse Trading tally sheet, reproduced from the paper form.
-//
-// Ten weights to a row, with the box count for that row on the left and the
-// row total on the right, then Total Boxes and Subtotal across the bottom.
-// The layout is not cosmetic: people read it row by row against a pallet, so
-// the ten-across grouping has to be preserved exactly.
-//
-// Every sum is integer thousandths. Floats would drift over sixty-odd boxes
-// and the printed subtotal has to match the database to the cent.
 
 const PER_ROW = 10;
 const MIN_ROWS = 16; // the paper form always shows this many, blank or not
 
-// The tally is written to two decimal places, and every figure on it is
-// rounded per box BEFORE anything is added up — see utils/weight.js. Summing
-// first and rounding the total would leave a column that does not add up to
-// its own printed subtotal.
-//
-// Always two decimals, zeros included: 63 is written "63.00". A column of
-// weights is read down the page, and ragged decimals ("63" above "76.2" above
-// "150.58") are far harder to scan than an aligned one.
+// The tally is written to two decimal places, and every figure on it is rounded per
+// box BEFORE anything is added up — see utils/weight.js.
 const cents = (s) => Number(toDisplayHundredths(s ?? "0"));
 const show = (n) => fromHundredths(n);
 
@@ -37,27 +23,12 @@ const printWeightManifest = ({
   const win = window.open("", "_blank");
   if (!win) return;
 
-  // A rejected scan was never recorded, a duplicate is one box scanned twice,
-  // and a voided one was taken off the tally on purpose. None of the three is
-  // product arriving, so none belongs on the form.
+  // A rejected scan was never recorded, a duplicate is one box scanned twice, and a
+  // voided one was taken off the tally on purpose.
   const OFF_THE_TALLY = new Set(["rejected", "duplicate", "voided"]);
   const boxes = scans.filter((s) => !OFF_THE_TALLY.has(s.status));
 
-  // A tally is always in pounds. Rows reach this function in three shapes and
-  // only one of them can be trusted to be converted already:
-  //
-  //   1. a live session row  — carries displayWeight, its converted twin
-  //   2. a row stored since conversion shipped — weight in LB, converted_from set
-  //   3. a row stored BEFORE it shipped — weight still in kilograms
-  //
-  // The third is why this converts here rather than trusting weightUnit.
-  // Production ran without conversion for a while, so those rows are real, and
-  // printing them as-is put kilograms in a column headed pounds.
-  //
-  // Converted per box, then summed — never summed then converted. Each box
-  // rounds independently, so the two orders disagree by a thousandth or so and
-  // the column would not add up to its own printed subtotal, which is precisely
-  // what someone reconciling a shipment checks.
+  // A tally is always in pounds.
   const inKg = (s) => String(s.weightUnit || "").toUpperCase() === "KG";
   const weightOf = (s) => {
     if (s.displayWeight) return s.displayWeight;      // already converted
@@ -68,10 +39,7 @@ const printWeightManifest = ({
   // Flagged on the row, or still carrying a kilogram unit because it predates
   // the conversion — either way the operator should see it was converted.
   const convertedCount = boxes.filter((s) => s.convertedFrom || inKg(s)).length;
-  // Boxes added in a batch at a nominal weight — a run of identical cases typed
-  // once, where the figure is the one printed on the label and the boxes
-  // themselves vary. They belong on the tally (they shipped) but must not read
-  // as weighed, so they are written with a leading ~ and counted in a footnote.
+  // Boxes added in a batch at a nominal label weight, not individually weighed.
   const estimated = boxes.filter((s) => s.isEstimated);
   const estimatedTotal = estimated.reduce((acc, s) => acc + cents(weightOf(s)), 0);
 
@@ -87,11 +55,7 @@ const printWeightManifest = ({
 
     const cells = Array.from({ length: PER_ROW }, (_, c) => {
       const s = row[c];
-      // Nominal weights are NOT marked in the cell. The grid is read down the
-      // page against a pallet, and a prefix on some figures and not others
-      // breaks the alignment that makes it scannable — the same reason every
-      // weight is written to two decimals whether it needs them or not. The
-      // footnote below carries the caveat instead.
+      // Nominal weights are NOT marked in the cell.
       return `<td class="w">${s ? esc(show(cents(weightOf(s)))) : ""}</td>`;
     }).join("");
 

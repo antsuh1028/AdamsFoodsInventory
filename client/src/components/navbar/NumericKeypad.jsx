@@ -3,29 +3,10 @@ import { Box, Button, Flex, Text, SimpleGrid, ButtonGroup } from "@chakra-ui/rea
 import { kgToLb, toDisplay } from "../../utils/weight";
 
 // An on-screen keypad drawn in the page, not summoned from the OS.
-//
-// A Bluetooth barcode scanner pairs as a hardware keyboard, and iPadOS hides
-// the software keyboard whenever one is connected. That is correct behaviour
-// for a real keyboard and useless here: the operator cannot type a weight
-// without unpairing the scanner they are holding.
-//
-// These are buttons, so nothing depends on the OS keyboard existing. They are
-// also large enough to hit wearing freezer gloves, which the iPadOS keyboard
-// is not.
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"];
 
-// Mirrors the server's DECIMAL_RE. Typing is constrained as it happens rather
-// than validated afterwards, so an impossible weight cannot be assembled — a
-// second decimal point or a fourth decimal place is simply not accepted.
-//
-// maxDecimals 0 makes it a counter: a count of cases has no fractional part,
-// and letting "3.5" be assembled only to refuse it on submit wastes a keypress
-// and reads as the pad being broken.
-//
-// The backslashes are DOUBLED because these are template literals: `\d` is not
-// a valid string escape, so it collapses to a bare "d" and the pattern would
-// match the letter rather than a digit. Written once, wrong, and caught only
+// Mirrors the server's DECIMAL_RE.
 // because eslint flags the useless escape.
 const partialRe = (maxDecimals) => (maxDecimals > 0
   ? new RegExp(`^\\d{0,5}(\\.\\d{0,${maxDecimals}})?$`)
@@ -41,17 +22,14 @@ const NumericKeypad = ({
   onCancel,
   label = "Weight",
   unit = "LB",
-  // Supplying this turns the unit into a control. A box labelled in kilograms
-  // has to be enterable as kilograms — making the operator convert 34.5 kg in
-  // their head is how a wrong weight ends up on a manifest.
+  // Supplying this turns the unit into a control.
   onUnitChange,
   submitLabel = "Save",
   isDisabled = false,
   // 0 turns the pad into a whole-number counter and hides the point key.
   maxDecimals = 3,
-  // Lets the caller drive the pad from outside — a batch panel types a count
-  // and a weight into the SAME pad rather than putting two of them on a
-  // scanning screen.
+  // Lets the caller drive the pad from outside — a batch panel types a count and a
+  // weight into the SAME pad rather than putting two of them on a scanning screen.
   hideSubmit = false,
 }) => {
   const press = (key) => {
@@ -116,9 +94,7 @@ const NumericKeypad = ({
             size="lg" height="52px" fontSize="xl"
             variant={key === "⌫" ? "outline" : "solid"}
             colorScheme={key === "⌫" ? "gray" : undefined}
-            // A scanner types Enter after every scan. Without this the keypad
-            // buttons keep focus and a scan would re-press whichever was last
-            // touched instead of registering as a scan.
+            // A scanner types Enter after every scan.
             onMouseDown={(e) => e.preventDefault()}
             tabIndex={-1}
           >

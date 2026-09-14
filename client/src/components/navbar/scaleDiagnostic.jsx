@@ -7,16 +7,7 @@ import FloatingWindow from "../FloatingWindow";
 import { isSupported, connectScale, DEFAULT_PORT_OPTIONS } from "../../utils/scaleSerial";
 import { parseScaleLine } from "../../utils/scaleParse";
 
-// Answers the one question that cannot be answered without the hardware:
-// what does THIS Defender 3000 actually transmit?
-//
-// Its print format is configured on the device — gross/net prefixes, stability
-// flags, unit position, line endings — so every guess about the format is just
-// a guess until a real reading lands here. This shows the exact bytes beside
-// what the parser made of them, so the parser is corrected from evidence.
-//
-// Same purpose as scannerDiagnostic.jsx, which exists to configure the barcode
-// scanner, and it is reached the same way: admin only, from the Noblesse menu.
+// Shows what this indicator actually transmits, beside what the parser made of it.
 
 // Control characters would otherwise vanish, and an unexpected STX or NUL is
 // exactly the kind of thing that has to be visible here.
@@ -24,15 +15,10 @@ const visualize = (s) =>
   // eslint-disable-next-line no-control-regex
   String(s).replace(/[\x00-\x1F\x7F]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, "0")}`);
 
-// Ohaus ships at 9600. The rest are here because the unit is configurable and
-// a wrong baud rate produces garbage rather than silence — which looks like a
-// broken cable unless you can try another rate.
+// Ohaus ships at 9600. A wrong rate gives garbage, not silence, so offer the rest.
 const BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
 
 // What the indicator is set to, used only when a line carries no unit itself.
-// The Defender at this station prints a bare number, so without this every
-// reading is refused — and defaulting silently would be a 2.2x error nobody
-// could see. Stating it here makes it a visible setting instead.
 const ASSUMED_UNITS = [
   ["LB", "lb — indicator set to pounds"],
   ["KG", "kg — indicator set to kilograms"],
@@ -91,8 +77,6 @@ const ScaleDiagnostic = ({ isOpen, onClose }) => {
   const supported = isSupported();
 
   // Read through a ref so the live read loop always uses the CURRENT setting.
-  // The loop is started once at connect and would otherwise close over whatever
-  // the unit was at that moment, so changing it would appear to do nothing.
   const assumeUnitRef = useRef(assumeUnit);
   assumeUnitRef.current = assumeUnit;
 
@@ -157,11 +141,7 @@ const ScaleDiagnostic = ({ isOpen, onClose }) => {
 
   useEffect(() => () => { disconnect(); }, [disconnect]);
 
-  // A port still held by a closed tab is what makes the NEXT session say
-  // "access denied", and the fix then looks like "restart everything" because
-  // nothing names the holder. Unmount alone does not cover it: closing the tab
-  // or navigating away tears the page down without running React cleanup
-  // reliably. pagehide does fire on both.
+  // A port held by a closed tab is what makes the next session say access denied.
   useEffect(() => {
     const release = () => { handleRef.current?.disconnect?.(); };
     window.addEventListener("pagehide", release);

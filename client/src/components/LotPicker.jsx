@@ -240,7 +240,7 @@ const LotPicker = ({
             </Badge>
             {!isDisabled && (
               <Button size="xs" variant="ghost" colorScheme="gray" px={1}
-                title="Clear it and pick or issue a lot instead"
+                title="Clear it and pick or issue a lot instead" 
                 onClick={() => onChange(null)}>
                 clear
               </Button>

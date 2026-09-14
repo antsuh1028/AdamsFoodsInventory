@@ -4,21 +4,7 @@ const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
 
-// Outgoing. Product leaving NTI, either back to AdamsFoods for distribution or
-// straight to a customer.
-//
-// A shipment DEDUCTS STOCK WHEN IT SHIPS, the way a processing order deducts
-// when it is created — same GREATEST(0, ...) floor, same history log, same
-// restore on the way back.
-//
-// Lifecycle is draft -> shipped -> cancelled, and it only runs forwards. A
-// shipped load is never edited in place and never deleted: cancelling restores
-// the stock and keeps the record, which is the only version of "undo" that
-// leaves an audit trail. Cancelling is admin-only for the same reason deleting
-// a weighing session is.
-//
-// Outgoing is DOWNSTREAM, so it references lots and never creates them. There
-// is no path in this file that writes to `lots`.
+// Outgoing.
 
 const DESTINATIONS = new Set(["adamsfoods", "customer"]);
 const DECIMAL_RE = /^\d{1,7}(\.\d{1,3})?$/;
@@ -64,9 +50,7 @@ const fmtShipment = (r, items = [], sessions = []) => ({
     boxCount: b.box_count,
     total: b.total,
   })),
-  // What the boxes actually weighed, against what the lines claim. Kept apart
-  // rather than reconciled automatically: a difference is something a person
-  // should see, not something the screen quietly papers over.
+  // What the boxes actually weighed, against what the lines claim.
   weighedTotal: sessions
     .reduce((sum, b) => sum + Math.round(Number(b.total) * 1000), 0) / 1000,
 });
@@ -82,9 +66,7 @@ const itemsFor = (shipmentId, tenantId, client = pool) =>
     [shipmentId, tenantId]
   );
 
-// Weighing sessions tied to a load. References, never copies — the same choice
-// merged manifests and registration forms make, so a box corrected after the
-// fact shows up here rather than leaving a stale number behind.
+// Weighing sessions tied to a load.
 const sessionsFor = (shipmentId, tenantId, client = pool) =>
   client.query(
     `SELECT b.batch_id, b.lot_number, b.vendor, b.status, b.source, b.created_at,
@@ -114,8 +96,7 @@ const normaliseDestination = (type, name) => {
   const t = typeof type === "string" ? type.trim().toLowerCase() : null;
   if (!t || !DESTINATIONS.has(t)) return null;
   // AdamsFoods is one place, so its name is fixed; a customer's is whatever was
-  // typed. Free text with typeahead, the way vendors already work — a master
-  // customers table before there is data to master would be premature.
+  // typed.
   return { type: t, name: t === "adamsfoods" ? "AdamsFoods" : (name || "").trim() };
 };
 
@@ -150,13 +131,8 @@ router.get("/shipments", verifyToken, async (req, res) => {
   }
 });
 
-// Registered BEFORE /shipments/:id: ":id" matches the literal string
-// "available" and would make this unreachable.
-// What is available to ship, per lot and per stage.
-//
-// Processed stock is listed first because that is normally what leaves; raw is
-// shippable too — sometimes product passes straight through — but it is marked
-// so nobody ships unprocessed material without noticing.
+// Registered BEFORE /shipments/:id: ":id" matches the literal string "available"
+// and would make this unreachable.
 router.get("/shipments/available", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
@@ -371,12 +347,7 @@ router.delete("/shipments/:id/items/:itemId", verifyToken, async (req, res) => {
   }
 });
 
-// ── Weighing sessions on a load ──────────────────────────────────────────────
-// The paper tally already carries Ship To and a BOL, so a weighed load already
-// HAS an outgoing manifest — tying the session to the shipment is what connects
-// the two instead of leaving someone to match them by eye.
-//
-// Optional, deliberately: type the totals when the load was not weighed.
+// Weighing sessions on a load. The paper tally already carries Ship To and a BOL.
 
 router.post("/shipments/:id/box-batches", verifyToken, async (req, res) => {
   const id = Number(req.params.id);
@@ -406,15 +377,7 @@ router.post("/shipments/:id/box-batches", verifyToken, async (req, res) => {
       return res.status(404).json({ error: "One or more sessions were not found" });
     }
 
-    // The mirror of the registration form's guard in boxes.pg.js. An incoming
-    // session is the RAW ARRIVAL for this lot, and hanging it on a load makes
-    // `weighedTotal` the weight that came IN — which fmtShipment puts beside the
-    // weight being shipped for someone to reconcile against. So it would not
-    // read as a category error; it would read as a discrepancy in the load, and
-    // somebody would go looking for boxes that were never missing.
-    //
-    // Checked after draftOnly above: a shipped load must still refuse with its
-    // status, which is the more urgent truth about why nothing can be tied.
+    // The mirror of the registration form's guard in boxes.pg.js.
     const incoming = owned.rows.filter((b) => b.direction === "incoming");
     if (incoming.length) {
       const names = incoming.map((b) => b.lot_number || `batch ${b.batch_id}`).join(", ");
@@ -502,11 +465,7 @@ router.post("/shipments/:id/ship", verifyToken, async (req, res) => {
       return res.status(400).json({ error: "Nothing to ship — add at least one lot" });
     }
 
-    // Stock is checked and deducted inside the transaction, with the row locked,
-    // so two people shipping the same stock at once cannot both succeed and
-    // drive it negative. GREATEST would silently floor at zero; the explicit
-    // check refuses instead, because shipping more than exists is a mistake
-    // someone needs told about rather than quietly absorbed.
+    // Deducted inside the transaction with the row locked, so two shippers cannot race.
     const short = [];
     for (const item of items.rows) {
       if (!item.nti_item_id) continue;   // no stock row behind it; nothing to move
@@ -575,9 +534,7 @@ router.post("/shipments/:id/ship", verifyToken, async (req, res) => {
   }
 });
 
-// ── Cancel ───────────────────────────────────────────────────────────────────
-// The only undo. Restores the stock and keeps the record, so what happened
-// stays visible — which is why a shipped load is never deleted.
+// Cancel  The only undo.
 
 router.post("/shipments/:id/cancel", verifyToken, requireRole("admin"), async (req, res) => {
   const id = Number(req.params.id);
@@ -648,22 +605,7 @@ router.post("/shipments/:id/cancel", verifyToken, requireRole("admin"), async (r
   }
 });
 
-// Delete an outgoing load outright. ADMIN ONLY, and available in every state.
-//
-// This deliberately relaxes the older rule that a shipped load could only ever
-// be cancelled. Cancel is still the right action nearly always — it restores
-// stock AND leaves the load on the record, so what went out and came back stays
-// visible. Delete is for a load that should never have existed at all.
-//
-// THE PART THAT MUST NOT GO WRONG IS STOCK. Shipping deducts from
-// nti_inventory, so deleting a shipped load without putting that weight back
-// would leave the deduction standing with nothing left to explain it — stock
-// quietly short, and no record of why. So a shipped load restores exactly what
-// cancel restores before it is destroyed.
-//
-// A draft never deducted anything, and a cancelled load already had its weight
-// put back at cancel time. Restoring either would INVENT weight that never
-// left, so the restore is keyed strictly on 'shipped'.
+// Delete an outgoing load outright.
 router.delete("/shipments/:id", verifyToken, requireRole("admin"), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid shipment id" });
@@ -704,9 +646,7 @@ router.delete("/shipments/:id", verifyToken, requireRole("admin"), async (req, r
       }
     }
 
-    // noblesse_shipment_items and shipment_batches both cascade on
-    // shipment_id, so the lines and the weighing-session links go with it —
-    // and releasing those links is what lets a tied session be deleted after.
+    // Lines and weighing-session links cascade on shipment_id.
     await client.query(
       `DELETE FROM noblesse_shipments WHERE shipment_id = $1 AND tenant_id = $2`,
       [id, req.tenantId]
@@ -720,9 +660,7 @@ router.delete("/shipments/:id", verifyToken, requireRole("admin"), async (req, r
       (restoresStock ? " — stock restored" : "")
     );
 
-    // Logged after COMMIT and never allowed to fail the request, matching
-    // cancel. nti_inventory_history has no FK to shipments precisely so an
-    // audit row can outlive the thing it describes — which here it always does.
+    // Logged after COMMIT and never allowed to fail the request, matching cancel.
     if (restoresStock) {
       for (const item of items.rows) {
         pool.query(

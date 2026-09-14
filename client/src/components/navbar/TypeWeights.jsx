@@ -8,23 +8,9 @@ import { parseTypedWeight, looksWrong, looksLikeReweigh } from "../../utils/type
 import { beepError } from "../../utils/scanFeedback";
 
 // Typing weights at the bench, one box at a time as each is weighed.
-//
-// The operator is already pressing Print on every box. This is a SECOND
-// per-box action on top of that, so the only thing that matters is how few
-// keystrokes it costs — five, and never a mouse:
-//
-//     4 0 6 1 <Enter>     ->  40.61 lb recorded, field cleared, still focused
-//
-// Digits are read like a till: the last two are the decimals. That removes a
-// keystroke and the commonest mis-key. Anyone who prefers the point can type
-// 40.61 and it is taken literally.
-//
-// THIS FIELD HOLDS FOCUS ON PURPOSE, which is the opposite of every other input
 // on the scanning screen. The global keydown handler in boxScanner.jsx bails
-// when focus is in an INPUT, so a focused field normally SWALLOWS SCANS
-// (CLAUDE.md §4). That is fine here and nowhere else: this panel is for the
-// outgoing bench, where finished boxes carry no barcode and there is nothing to
-// scan. It is a deliberate mode, never the default, and it says so.
+// when focus is in an INPUT, so a focused field normally SWALLOWS SCANS (CLAUDE.md
+// §4).
 const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = false }) => {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,11 +18,7 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
   const inputRef = useRef(null);
   const cancelRef = useRef(null);
 
-  // Re-arm after every commit. Without this the operator has to click back in
-  // once per box, which is the whole cost this component exists to remove.
-  // Called after a COMMIT, never on blur. Yanking focus back whenever it is
-  // lost would trap it: on a desktop there is a mouse and a grid to click, and
-  // a field that cannot be left is worse than one keystroke to return to.
+  // Re-arm after every commit.
   const refocus = () => {
     // After the dialog closes React restores focus elsewhere, so this waits a
     // tick rather than fighting it.
@@ -48,11 +30,8 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
   const parsed = useMemo(() => parseTypedWeight(typed), [typed]);
   const preview = parsed.ok ? parsed.weight : null;
 
-  // onAdd beeps and reports for itself; what it RETURNS is whether the box
-  // actually landed. Only a true clears the field — leaving the digits in place
-  // after a refusal means the box can be retried with one keypress instead of
-  // being retyped from the label, and a cleared field would otherwise read as
-  // "recorded".
+  // onAdd beeps and reports for itself; what it RETURNS is whether the box actually
+  // landed.
   const commit = async (weight) => {
     setBusy(true);
     let ok = false;
@@ -72,9 +51,7 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
       if (typed.trim()) beepError();
       return;
     }
-    // Advisory, never a refusal — the operator is holding the box and this is
-    // not. A missed decimal is a 10x error, which is worth one keypress to
-    // confirm and impossible to spot afterwards in a column of numbers.
+    // Advisory, never a refusal — the operator is holding the box and this is not.
     const verdict = looksWrong(parsed.weight, weights);
     if (verdict.outlier) {
       beepError();
@@ -83,8 +60,6 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
     }
 
     // The same box coming back: a ripped label, or a re-weigh to reprint one.
-    // Asked AFTER the outlier check because a weight that is both wrong-looking
-    // and a repeat is more likely a mis-key than a box.
     const repeat = looksLikeReweigh(parsed.weight, weights);
     if (repeat.reweigh) {
       beepError();
@@ -97,9 +72,7 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
 
   const onKeyDown = (e) => {
     if (e.key === "Enter") { e.preventDefault(); submit(); return; }
-    // Backspace on an empty field takes back the last box. No dialog: undoing
-    // is how a mistake gets fixed at speed, and a confirmation here would cost
-    // more than the mistake.
+    // Backspace on an empty field takes back the last box.
     if (e.key === "Backspace" && !typed && onUndo) {
       e.preventDefault();
       onUndo();

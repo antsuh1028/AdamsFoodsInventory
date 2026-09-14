@@ -14,21 +14,6 @@ import { isSupported as scaleSupported } from "../../utils/scaleSerial";
 import { toDisplayHundredths, fromHundredths } from "../../utils/weight";
 
 // Weighing finished boxes on their way out.
-//
-// SEPARATE FROM boxScanner.jsx ON PURPOSE. The incoming bench reads barcodes:
-// its screen is a scan grid, a keypad, a barcode diagnostic and a global
-// keydown handler, and nearly all of that is dead weight here — finished boxes
-// carry no barcode to scan. Reusing that screen meant the operator waded past
-// controls that could not do anything for them to reach the one that could.
-//
-// What this screen is, end to end:
-//
-//     pick the lot  ->  Start  ->  put boxes on the scale  ->  Stop & close
-//
-// Everything else is removed. The durable queue underneath is the SAME
-// machinery (useScanSession -> scanQueue -> IndexedDB), so a box recorded here
-// survives a refresh, a dropped connection and a closed tab exactly as a
-// scanned one does. Only the surface differs.
 
 const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
   const toast = useToast();
@@ -47,12 +32,8 @@ const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
 
   const supported = scaleSupported();
 
-  // Opened on a session that is already running, so the lot is already known
-  // and the start form is skipped entirely.
-  //
-  // Guarded by a ref rather than by state: `ready` and `session` both settle
-  // asynchronously, so this effect runs more than once for a single open, and
-  // adopting twice would clear and reseed the recorded list under the operator.
+  // Opened on a session that is already running, so the lot is already known and
+  // the start form is skipped entirely.
   const adoptedRef = useRef(null);
   useEffect(() => {
     if (!isOpen) { adoptedRef.current = null; return; }
@@ -62,9 +43,7 @@ const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
     (async () => {
       const result = await adoptSession(adoptBatchId);
       if (!result.adopted && result.reason === "pending-scans") {
-        // Refused rather than destroying unsent work. Say so — silently showing
-        // the start form would look like the button simply did nothing, and the
-        // resumable banner below explains the rest.
+        // Refused rather than destroying unsent work.
         toast({
           status: "warning", duration: 12000, isClosable: true, position: "top",
           title: "Another session on this device has unsent weights",
@@ -80,19 +59,14 @@ const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
   // fallback becomes the path rather than an option to find.
   useEffect(() => { if (!supported) setTypeMode(true); }, [supported]);
 
-  // The lot so far. Voided and duplicate rows are excluded: neither counts
-  // towards the manifest, so neither should shape what "normal" looks like for
-  // the next box, nor the totals shown here.
+  // The lot so far.
   const live = useMemo(
     () => scans.filter((s) => s.status !== "voided" && s.status !== "duplicate"),
     [scans]
   );
   const weights = useMemo(() => live.map((s) => s.displayWeight || s.weight), [live]);
   // Round per box, THEN sum — the rule the rest of this codebase follows
-  // (ScanSheet, printWeightManifest). Summing first and rounding once gives a
-  // total that does not equal the column of figures shown above it, which is
-  // exactly what someone reconciling a shipment notices. BigInt throughout: no
-  // float ever touches a weight here.
+  // (ScanSheet, printWeightManifest).
   const total = useMemo(
     () => fromHundredths(weights.reduce((sum, w) => sum + toDisplayHundredths(w), 0n)),
     [weights]
@@ -103,10 +77,7 @@ const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
     try {
       await primeAudio(); // audio needs a gesture before it will play
       await start({
-        // The id, not the text. The server resolves an outgoing lot by id and
-        // only falls back to PARSING the number — which cannot see an external
-        // lot at all, since a supplier's own number has no N{YY}{JJJ}-{NN} in
-        // it. Sending the id is what makes those lots weighable.
+        // The id, not the text.
         lotId: lot.lotId ?? null,
         lotNumber: lot.lotNumber.trim() || null,
         expectedBoxes: expectedBoxes.trim() || null,
@@ -118,10 +89,7 @@ const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
     } finally { setBusy(false); }
   };
 
-  // Returns whether the box actually landed. The scale panel shows a large
-  // "recorded" confirmation, and showing that for a box the server refused
-  // would be worse than showing nothing — the operator walks away believing the
-  // manifest has it.
+  // Returns whether the box actually landed.
   const onAdd = async (weight) => {
     try {
       await addScan({ weight, weightUnit: "LB", isManual: true });
@@ -178,12 +146,7 @@ const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
             {!session ? (
               <Button size="md" colorScheme="blue" onClick={onStart}
                 isLoading={busy}
-                // The lot is the ONE thing this screen cannot proceed without:
-                // every box recorded lands on it, and a session opened against
-                // the wrong lot means re-weighing the pallet.
-                // Blocked outright while a session is unfinished — start()
-                // clears the queue first, so this button would destroy weights
-                // the server has never seen.
+                // The lot is required: every box recorded lands on it.
                 isDisabled={!ready || !lot.lotId || Boolean(resumable)}>
                 Start weighing
               </Button>
@@ -251,11 +214,7 @@ const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
             </Box>
           </Alert>
         ) : !session ? (
-          // The start form is two fields. It used to be seven, inherited from
-          // the incoming bench, and it stood between the operator and the first
-          // box for no return: what the product IS was recorded when it
-          // arrived, and the server copies vendor, item, brand, EST and grade
-          // off the lot's incoming session rather than asking again.
+          // The start form is two fields.
           <Box>
             <Text fontSize="sm" color="gray.600" mb={4}>
               Pick the lot these finished boxes came out of. Everything else about

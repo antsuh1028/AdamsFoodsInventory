@@ -315,8 +315,12 @@ one line in the INSERT, if it ever matters.
 
 ## 6. Conventions worth matching
 
-- Comments explain **why**, especially where a naive implementation is wrong. The
-  existing code does this heavily; match the density.
+- Comments are **short one-liners**. One line above a non-obvious bit of code,
+  saying what it does or what it guards. No multi-paragraph blocks, no narrating
+  the reasoning, no retelling the bug that led to a fix — if it needs a
+  paragraph it belongs in §8 (Scars) or in a test name. This rule replaces an
+  earlier one that said to match a heavy density, which is what left
+  `scaleCapture.js` at 50% comments.
 - Chakra responsive props: `{{ base, md }}`. Wide tables live in an
   `overflowX="auto"` box **and carry a `minWidth`** — a scroll container without a
   floor just lets the table crush to nothing (this bit `scannerDiagnostic`).

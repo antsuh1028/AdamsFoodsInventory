@@ -1,18 +1,9 @@
 // Reads a bench-scale indicator over the Web Serial API.
-//
-// WHY SERIAL AND NOT A KEYBOARD WEDGE. A wedge types into whatever has focus,
 // and this app already carries a scar from exactly that: the global keydown
-// handler in boxScanner.jsx has to ignore INPUT/TEXTAREA/SELECT because a
-// focused field silently swallows scans. A serial port cannot type into
-// anything, so a stray focus cannot eat a weight or scatter digits into a note.
-//
-// The trade is that Web Serial is Chrome/Edge on desktop only — no iOS, no
-// Safari. That is fine for a fixed weighing station and nowhere else, so
-// isSupported() is checked before any of this is offered.
+// handler in boxScanner.jsx has to ignore INPUT/TEXTAREA/SELECT because a focused
+// field silently swallows scans.
 
-// Ohaus indicators ship at 9600 8-N-1 by default. Every one of these is
-// settable on the device, so they are parameters rather than constants — if the
-// unit in the warehouse was configured differently, this is what changes.
+// Ohaus indicators ship at 9600 8-N-1 by default.
 const DEFAULT_PORT_OPTIONS = {
   baudRate: 9600,
   dataBits: 8,
@@ -25,20 +16,10 @@ const isSupported = () =>
   typeof navigator !== "undefined" && "serial" in navigator;
 
 // Ports this browser has already been granted for this origin.
-//
-// Exposed so a caller can say "reconnecting to the remembered port" rather than
-// silently doing something the operator did not ask for, and so a settings
-// screen could offer to forget one.
 const rememberedPorts = async () =>
   (isSupported() ? navigator.serial.getPorts() : Promise.resolve([]));
 
 // Hand the port back to Windows.
-//
-// A serial port is EXCLUSIVE and nothing releases it politely: the handle lives
-// until the owning process exits or closes it. A tab left holding COM2 is why a
-// later session gets access-denied and why the fix looks like "restart
-// everything". Releasing on every exit path is the app's share of not causing
-// that.
 const releaseAll = async () => {
   if (!isSupported()) return;
   const ports = await navigator.serial.getPorts();
@@ -85,18 +66,7 @@ const connectScale = async ({
     throw new Error("This browser cannot talk to a serial device. Use Chrome or Edge on the desktop.");
   }
 
-  // Reuse a port this browser has already been granted rather than asking
-  // again.
-  //
-  // getPorts() returns what the user has previously approved for this origin,
-  // and the grant survives a reload. Reusing it means the operator is not
-  // presented with a chooser every session — which is not just friction: the
-  // chooser is where COM1 gets picked by mistake, and COM1 is BarTender's. A
-  // wrong pick there denies BarTender its port and the whole chain falls over.
-  //
-  // Only when exactly ONE port is remembered, though. With several there is no
-  // way to tell which is which — Web Serial exposes a USB vendor/product id,
-  // not a COM number — so guessing would be the same mistake automated.
+  // Reuse a port this browser has already been granted rather than asking again.
   const remembered = await navigator.serial.getPorts();
   const port = remembered.length === 1
     ? remembered[0]
@@ -105,9 +75,8 @@ const connectScale = async ({
   try {
     await port.open({ ...DEFAULT_PORT_OPTIONS, ...portOptions });
   } catch (err) {
-    // "Failed to open serial port" covers every reason, and the commonest by
-    // far is that something else already holds it. Name the likely culprit,
-    // because the browser will not.
+    // "Failed to open serial port" covers every reason, and the commonest by far is
+    // that something else already holds it.
     const busy = /open|access|denied|busy|in use/i.test(err.message || "");
     if (busy) {
       const e = new Error(
@@ -131,9 +100,7 @@ const connectScale = async ({
     onDisconnect();
   };
 
-  // The read loop runs detached. Every failure inside it has to reach onError:
-  // an exception here would otherwise be an unhandled rejection and the station
-  // would look connected while silently reading nothing.
+  // The read loop runs detached.
   (async () => {
     const decoder = new TextDecoder();
     let carry = "";
@@ -161,10 +128,7 @@ const connectScale = async ({
     }
   })();
 
-  // Sends a command to the indicator. Ohaus units take short ASCII commands
-  // (P to print, Z to zero, T to tare) when they are not in continuous mode, so
-  // the app can ASK for a reading instead of someone reaching over to press
-  // Print. Terminated with CRLF, which is what the command set expects.
+  // Sends a command to the indicator.
   const send = async (command, { terminator = "\r\n" } = {}) => {
     if (stopped || !port.writable) throw new Error("Not connected");
     const writer = port.writable.getWriter();

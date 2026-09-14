@@ -10,17 +10,12 @@ const { lotColumns, lookupLot } = require("../utils/lotRegistry");
 const { upload } = require("../utils/aws");
 const readXlsxFile = require("read-excel-file/node");
 
-// Schema lives in ../db/migrate.js and is applied, in order, before this
-// module is ever required. The sequential migrate() that used to sit here was
-// the first fix for the fire-and-forget race (CLAUDE.md §8); it has moved so
-// that noblesse tables and box tables — and now the lot registry that both
-// reference — are created by one ordered run instead of two.
+// Schema lives in ../db/migrate.js and is applied, in order, before this module is
+// ever required.
 
 // ── Rate limiting ────────────────────────────────────────────────────────────
 // The global 60/min limiter in index.js keys on IP, so every iPad behind the
-// warehouse NAT shares one budget. A scanning session flushes every few seconds
-// and would trip it, which collides head-on with the durability requirement.
-// These routes are exempted there and get their own, much higher ceiling.
+// warehouse NAT shares one budget.
 const scanLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 600,
@@ -30,10 +25,7 @@ const scanLimiter = rateLimit({
 // Shared with routes/lots.pg.js so both report the same figure.
 const { weightInLb } = require("../utils/sqlWeight");
 
-// Records a removal. Never throws into the request path: failing to write the
-// audit row must not fail the operation the operator actually asked for — but
-// it is logged loudly, because a silently missing audit trail is worse than a
-// noisy one.
+// Records a removal.
 const logBoxRemoval = ({
   tenantId, action, batchId = null, itemId = null,
   lotNumber = null, summary = null, reason = null, details = null, performedBy = null,
@@ -46,15 +38,6 @@ const logBoxRemoval = ({
 ).catch((err) => console.error("box removal history log error:", err.message));
 
 // Everything that currently prevents a weighing session being deleted.
-//
-// ONE definition, read by both the DELETE guard and the endpoint the confirm
-// dialog calls, so the dialog can never offer a delete the route then refuses.
-// They were always going to drift if written twice — shipment_batches is proof:
-// it was added to the schema and to Outgoing, and the delete guard never heard
-// about it, so a shipped session died on a raw 23503 reported as a 500.
-//
-// Takes `q` rather than the pool so it can run on a transaction client mid
-// DELETE, or on the pool for a plain read.
 const batchBlockers = async (q, batchId, tenantId) => {
   const groups = await q.query(
     `SELECT g.group_id, g.name, g.lot_number
@@ -86,9 +69,7 @@ const batchBlockers = async (q, batchId, tenantId) => {
 const UNITS = new Set(["LB", "KG"]);
 const DECIMAL_RE = /^\d{1,5}(\.\d{1,3})?$/; // fits NUMERIC(8,3)
 const MAX_WEIGHT_THOUSANDTHS = 2000n * 1000n; // 2000 lb/kg per box is already absurd
-// Matches the column's CHECK. Kept as a Set rather than reaching for the schema
-// so an unknown value is dropped quietly instead of reaching Postgres as a
-// constraint violation that fails a whole chunk of good boxes.
+// Matches the column's CHECK.
 const ENTRY_METHODS = new Set(["scanned", "scale", "keyed"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -99,9 +80,8 @@ const toThousandths = (s) => {
   return BigInt(whole) * 1000n + BigInt((frac + "000").slice(0, 3));
 };
 
-// Validates one incoming scan and, when it carries a barcode, re-derives the
-// weight from that barcode server-side. The client is not trusted: a tampered
-// or buggy client weight that disagrees with its own raw_barcode is rejected.
+// Validates one incoming scan and, when it carries a barcode, re-derives the weight
+// from that barcode server-side.
 const validateItem = (item) => {
   if (!item || typeof item !== "object") {
     return { ok: false, code: "BAD_ITEM", reason: "Item is not an object" };
@@ -109,13 +89,7 @@ const validateItem = (item) => {
 
   const { weight, weightUnit, rawBarcode, isManual = false } = item;
 
-  // Provenance and confidence, both supplied by the client because only the
-  // client can know them — the server sees an identical payload from the bench
-  // scale and from the keypad.
-  //
-  // An unrecognised entry_method is DROPPED, never rejected: the deployed client
-  // sends none at all, and a server that 400s on that breaks the running app the
-  // hour it ships.
+  // Supplied by the client: the server sees the same payload from scale and keypad.
   const entryMethod = ENTRY_METHODS.has(item.entryMethod) ? item.entryMethod : null;
   const clientItemUuid = UUID_RE.test(String(item.clientItemUuid || ""))
     ? String(item.clientItemUuid) : null;
@@ -137,8 +111,7 @@ const validateItem = (item) => {
   }
 
   // A weight the server itself re-derives from a barcode is a measurement by
-  // definition. Letting a client mark one as nominal would put an estimate on a
-  // row that carries its own proof.
+  // definition.
   if (rawBarcode && item.isEstimated === true) {
     return { ok: false, code: "ESTIMATE_WITH_BARCODE",
       reason: "A weight read from a barcode is not an estimate" };
@@ -180,11 +153,7 @@ const validateItem = (item) => {
   }
 
   // Only now, with the barcode verified against what the client claimed, is the
-  // weight converted. Doing it on the client instead would send pounds against a
-  // kilogram payload and the UNIT_MISMATCH check above would reject the scan —
-  // the verification has to happen in the unit the label is actually printed in.
-  //
-  // Everything below comes from the server's own parse, not from the client.
+  // weight converted.
   const asLb = toPounds(parsed.weight.value, parsed.weight.unit);
   if (toThousandths(asLb.weight) > MAX_WEIGHT_THOUSANDTHS) {
     return { ok: false, code: "IMPLAUSIBLE_WEIGHT",
@@ -199,8 +168,6 @@ const validateItem = (item) => {
     convertedFrom: asLb.convertedFrom,
     gtin: parsed.gtin,
     // Suppliers use one or the other: AI 11 (production) or AI 13 (packaging).
-    // Both answer "when was this box made", so whichever is present fills the
-    // column rather than leaving it null for half the vendors.
     productionDate: parsed.productionDate || parsed.packagingDate,
     serial: parsed.serial,
     rawBarcode,
@@ -224,10 +191,8 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
     return res.status(400).json({ error: "clientUuid is required" });
   }
 
-  // Defaults to incoming, so every existing caller keeps its meaning without
-  // being changed. Validated rather than passed through: the CHECK constraint
-  // would reject anything else anyway, and a 400 naming the field beats a 500
-  // from Postgres.
+  // Defaults to incoming, so every existing caller keeps its meaning without being
+  // changed.
   const dir = direction == null ? "incoming" : String(direction);
   if (dir !== "incoming" && dir !== "outgoing") {
     return res.status(400).json({ error: "direction must be 'incoming' or 'outgoing'" });
@@ -244,22 +209,11 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
   }
 
   try {
-    // Incoming opens on the dock and may ISSUE a lot. Outgoing is downstream —
-    // the lot already exists, having been issued when the raw product arrived,
-    // and inventing one here would mint a lot from a typo. That split is the
-    // registry's core rule (CLAUDE.md), so the two directions resolve
-    // differently on purpose.
+    // Incoming opens on the dock and may ISSUE a lot.
     let lot;
     if (dir === "outgoing") {
-      // Resolve by ID when the caller has one, which it does whenever the lot
-      // came from the picker.
-      //
-      // It used to go through lookupLot, which PARSES the text — so an external
-      // lot (a supplier's own number, no N{YY}{JJJ}-{NN}) could never start an
-      // outgoing session at all. It 404'd on a lot that was sitting right there
-      // in the registry. Resolving by id sidesteps parsing entirely and treats
-      // both kinds alike, which is the whole point of giving external numbers a
-      // lot_id.
+      // Resolve by ID when the caller has one, which it does whenever the lot came
+      // from the picker.
       if (lotId != null) {
         const byId = await pool.query(
           `SELECT lot_id, lot_number FROM lots WHERE lot_id = $1 AND tenant_id = $2`,
@@ -285,15 +239,7 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
       lot = await lotColumns(req.tenantId, req.userId, lotNumber);
     }
 
-    // What the product IS was recorded when it arrived. Asking for it again at
-    // the outgoing bench is slow — it is a form standing between the operator
-    // and the first box — and it is how the same lot ends up described two
-    // different ways, which is the thing that stops figures joining up.
-    //
-    // So an outgoing session inherits the description from the lot's arrival
-    // and only asks for what it cannot know: which lot, and how many boxes to
-    // expect. Anything the caller DOES send still wins, so a correction at the
-    // bench is never overwritten by history.
+    // What the product IS was recorded when it arrived.
     let inherited = {};
     if (dir === "outgoing" && lot.lotId != null) {
       const src = await pool.query(
@@ -380,14 +326,7 @@ router.post("/box-batches/:id/items", verifyToken, scanLimiter, async (req, res)
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "Batch not found" });
     }
-    // A closed session is admin-only, not sealed. A box that was weighed but
-    // missed its scan is a real and recurring situation, and the alternative —
-    // leaving the manifest wrong, or deleting and re-weighing the lot — is
-    // worse than letting an admin append it.
-    //
-    // Same rule and the same shape as correcting a row (PATCH .../items/:id):
-    // an operator may work on an open session, a closed one is admin-only, and
-    // it is enforced HERE because a hidden button is not a control.
+    // A closed session is admin-only, not sealed.
     if (batch.rows[0].status !== "open" && req.role !== "admin") {
       await client.query("ROLLBACK");
       return res.status(409).json({
@@ -479,11 +418,8 @@ router.post("/box-batches/:id/items", verifyToken, scanLimiter, async (req, res)
       const unkeyedIds = insertedRows.rows
         .filter((r) => !r.serial && !r.client_item_uuid).map((r) => r.item_id);
 
-      // A row the insert SKIPPED whose uuid we sent is a resend: the box is
-      // already on the batch from a request whose response never got back to the
-      // client. Recover its id rather than reporting it inserted — otherwise the
-      // client never learns the server id, keeps the row pending, and sends it
-      // again on every flush forever.
+      // A row the insert SKIPPED whose uuid we sent is a resend: the box is already
+      // on the batch from a request whose response never got back to the client.
       const unresolved = toInsert.filter(
         (r) => r.row.clientItemUuid && !idByUuid.has(r.row.clientItemUuid)
       );
@@ -508,9 +444,7 @@ router.post("/box-batches/:id/items", verifyToken, scanLimiter, async (req, res)
           }
         } else if (r.row.clientItemUuid) {
           // Keyed by the client's own id, so this no longer depends on RETURNING
-          // coming back in input order. That positional assumption held only
-          // while every serial-less row in a chunk was interchangeable, which
-          // entry_method and is_estimated ended.
+          // coming back in input order.
           const known = idByUuid.get(r.row.clientItemUuid);
           if (known != null) {
             r.itemId = known;
@@ -566,8 +500,6 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
     const alreadyClosed = batch.rows[0].status === "closed";
     if (!alreadyClosed) {
       // Remarks are written at close, when the operator knows what happened.
-      // COALESCE so a retried close — which this route is explicitly safe
-      // against — cannot blank a remark that the first attempt already stored.
       const remarks = typeof req.body?.remarks === "string"
         ? req.body.remarks.trim() || null
         : null;
@@ -580,11 +512,8 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
       );
     }
 
-    // One total, in pounds: kilogram rows are converted per box on the way out,
-    // so a session mixing units still closes with a figure that matches its
-    // manifest. total_boxes is derived rather than stored so it cannot drift
-    // from the real row count. HAVING keeps an empty batch returning no totals
-    // row rather than one reading null.
+    // One total, in pounds: kilogram rows are converted per box on the way out, so
+    // a session mixing units still closes with a figure that matches its manifest.
     const totals = await pool.query(
       `SELECT 'LB' AS weight_unit, COUNT(*)::int AS count, SUM(${weightInLb()})::text AS total
        FROM batch_items WHERE batch_id = $1 AND tenant_id = $2 AND voided_at IS NULL
@@ -607,12 +536,7 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
   }
 });
 
-// ── Correcting rows ──────────────────────────────────────────────────────────
-// Two audiences. An operator fixes their own session as they go — a box weighed
-// twice, a damaged label read wrong — while the batch is still open. An admin
-// fixes a batch that was closed days ago, which is a different act and is gated
-// accordingly. The gate is here on the server: a disabled button is a courtesy,
-// not a control.
+// Correcting rows  Two audiences.
 
 const rowGate = async (batchId, req) => {
   const batch = await pool.query(
@@ -667,8 +591,7 @@ router.patch("/box-batches/:id/items/:itemId", verifyToken, scanLimiter, async (
     if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
 
     // COALESCE means the FIRST edit captures what the label said and every later
-    // edit leaves it alone. Without it, a second correction would overwrite the
-    // original with the first correction and the audit trail would be a lie.
+    // edit leaves it alone.
     const updated = await pool.query(
       `UPDATE batch_items
           SET original_weight = COALESCE(original_weight, weight),
@@ -690,10 +613,7 @@ router.patch("/box-batches/:id/items/:itemId", verifyToken, scanLimiter, async (
   }
 });
 
-// Take a box off the tally. Soft, deliberately: that a box was scanned and then
-// removed is a fact about the shipment, and a hard DELETE would erase the only
-// record it ever happened. Voided rows are excluded from every count, total and
-// printed manifest, but stay visible to whoever is reconciling.
+// Take a box off the tally.
 router.delete("/box-batches/:id/items/:itemId", verifyToken, scanLimiter, async (req, res) => {
   const { batchId, itemId } = rowIds(req);
   if (!Number.isInteger(batchId) || !Number.isInteger(itemId)) {
@@ -733,9 +653,7 @@ router.delete("/box-batches/:id/items/:itemId", verifyToken, scanLimiter, async 
   }
 });
 
-// Undo a void. Without this a mis-click would be permanent, and voiding is the
-// only way to take a single box off a tally — deleting one outright is not
-// offered, because a voided row still says what happened.
+// Undo a void.
 router.post("/box-batches/:id/items/:itemId/restore", verifyToken, scanLimiter, async (req, res) => {
   const { batchId, itemId } = rowIds(req);
   if (!Number.isInteger(batchId) || !Number.isInteger(itemId)) {
@@ -772,17 +690,6 @@ router.post("/box-batches/:id/items/:itemId/restore", verifyToken, scanLimiter, 
 });
 
 // Delete an entire weighing session and every box in it.
-//
-// The row-level erase above is for one bad box; this is for a session that
-// should not exist at all — a start pressed by accident, a test run, a lot
-// weighed under the wrong number. Admin only, and it takes the boxes with it,
-// so it is confirmed in the UI against the lot and the box count.
-//
-// It REFUSES when the session is part of a merged manifest. A group stores
-// references, so deleting a session out from under one would silently shrink a
-// manifest somebody has already printed and filed — the exact fork-the-truth
-// problem merged manifests exist to avoid. Remove it from the group first; the
-// error names the groups so that is actionable rather than a dead end.
 router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req, res) => {
   const batchId = Number(req.params.id);
   if (!Number.isInteger(batchId)) return res.status(400).json({ error: "Invalid batch id" });
@@ -791,9 +698,7 @@ router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req,
   try {
     await client.query("BEGIN");
 
-    // The whole row, not just the three fields the guards below need: this is
-    // what goes into the audit entry, and after the delete it is the only
-    // record that the vendor, item, ship-to and BOL were ever on this session.
+    // The whole row: after the delete the audit entry is the only copy left.
     const batch = await client.query(
       `SELECT * FROM box_batches
         WHERE batch_id = $1 AND tenant_id = $2`,
@@ -821,9 +726,7 @@ router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req,
       });
     }
 
-    // Same reasoning as the manifest-group check: a registration form pointing
-    // at this session records what came in, and deleting the boxes out from
-    // under it would leave its weight unaccounted for.
+    // A form points at this session; deleting its boxes would leave it dangling.
     if (blockers.forms.length) {
       await client.query("ROLLBACK");
       const names = blockers.forms.map((f) => f.lot_number || `form ${f.id}`).join(", ");
@@ -835,20 +738,15 @@ router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req,
       });
     }
 
-    // The THIRD table that points at a session, and the one this route did not
-    // know about. shipment_batches arrived with Outgoing, after these guards
-    // were written, and its batch_id FK has no ON DELETE CASCADE either — so a
-    // session on a load fell past every check and died on a raw 23503 from
-    // Postgres, which this route reported as a bare 500.
+    // The THIRD table that points at a session, and the one this route did not know
+    // about.
     if (blockers.shipments.length) {
       await client.query("ROLLBACK");
       const names = blockers.shipments
         .map((s) => `${s.destination_name || `shipment ${s.shipment_id}`} (${s.status})`)
         .join(", ");
-      // A draft can simply be deleted or the session untied from it; a SHIPPED
-      // load is never edited or deleted, so there the only route is cancelling.
-      // The message says which applies rather than sending someone to look for
-      // a button that is not there.
+      // A draft can simply be deleted or the session untied from it; a SHIPPED load
+      // is never edited or deleted, so there the only route is cancelling.
       const anyShipped = blockers.shipments.some((s) => s.status !== "draft");
       return res.status(409).json({
         code: "IN_SHIPMENT",
@@ -860,10 +758,8 @@ router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req,
       });
     }
 
-    // Children first: batch_items references box_batches, and there is no
-    // ON DELETE CASCADE on that constraint. Every box comes back with the
-    // delete so the audit entry carries the session in full — after this there
-    // is no other copy of these weights anywhere.
+    // Children first: batch_items references box_batches, and there is no ON DELETE
+    // CASCADE on that constraint.
     const items = await client.query(
       `DELETE FROM batch_items WHERE batch_id = $1 AND tenant_id = $2
        RETURNING *, weight::text AS weight`,
@@ -900,13 +796,7 @@ router.delete("/box-batches/:id", verifyToken, requireRole("admin"), async (req,
   }
 });
 
-// ── Importing a hand-entered tally sheet ─────────────────────────────────────
-// The path for lots whose labels carry no barcode: the weights are written
-// into the Excel form on an iPad and the file is uploaded here.
-//
-// Send dryRun=true first to show the operator what was read; without it the
-// batch is written. Both go through the same parser, so the preview cannot
-// disagree with what gets stored.
+// Importing a hand-entered tally sheet, for lots whose labels carry no barcode.
 router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file"),
   async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -947,24 +837,15 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
       });
     }
 
-    // The heading may be corrected in the preview before committing — real
-    // sheets carry things like "P12 N26230-01" in the lot cell. The WEIGHTS are
-    // deliberately not overridable: they passed the sheet's own checksums, and
-    // letting them be hand-edited afterwards would quietly void that guarantee.
+    // The heading may be corrected in the preview before committing — real sheets
+    // carry things like "P12 N26230-01" in the lot cell.
     const pick = (override, fromSheet) => {
       const v = typeof override === "string" ? override.trim() : "";
       return v || fromSheet || null;
     };
 
-    // Converted only after the sheet has been reconciled against its own
-    // checksums in the unit it was written in. Each box converts individually
-    // and the total is the sum of those converted figures, so the printed
-    // column adds up to the printed total — summing in kilograms and converting
-    // once gives a total that disagrees with the column by a few hundredths.
-    // Trailing zeros are trimmed so a converted sheet reads the way the paper
-    // one does. An LB sheet passes through untouched — there is nothing to
-    // convert, and reformatting figures the operator is about to compare
-    // against the page in their hand helps nobody.
+    // Converted only after the sheet has been reconciled against its own checksums
+    // in the unit it was written in.
     const isKg = weightUnit === "KG";
     const converted = isKg
       ? parsed.weights.map((w) => trimTrailingZeros(kgToLb(w)))
@@ -997,11 +878,8 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
     try {
       await client.query("BEGIN");
 
-      // An imported tally is incoming-side, so its lot is created or resolved
-      // like any other. This is the path the messy cells arrive through —
-      // "P12 N26230-01", "N26244-3" — and it is where normalising them stops
-      // the sheets disagreeing with the sessions scanned for the same lot.
-      // Inside the transaction, so a failed import leaves no orphan lot.
+      // An imported tally is incoming-side, so its lot is created or resolved like
+      // any other.
       const lot = await lotColumns(req.tenantId, req.userId, summary.lotNumber, client);
       // Report it as STORED, not as the sheet spelled it, so the operator sees
       // that "N26244-3" was filed as "N26244-03".
@@ -1053,25 +931,10 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
     }
   });
 
-// ── Reading batches back ─────────────────────────────────────────────────────
-// Without these the data is write-only: scanned, stored, and unreachable from
-// anywhere but psql.
+// Reading batches back  Without these the data is write-only: scanned, stored, and
+// unreachable from anywhere but psql.
 
-// Batch list with derived counts and totals. Totals come back as strings so
-// NUMERIC never round-trips through a float.
-// Vendor names already in use, most-used first.
-//
-// Typed free-hand, the same vendor arrives four different ways — production
-// currently holds ADAMSFOODS, ADAMS FOOD, ADAMSFOOD and AdamsFoods, which are
-// one company that no filter, grouping or total will ever join up.
-//
-// SUGGESTED, NOT ENFORCED. A locked list would be wrong here: a new supplier
-// turns up without warning and an operator who cannot type the name will put it
-// somewhere worse, or not at all. Offering what is already there makes the
-// consistent spelling the easy one to pick, which is enough.
-//
-// Drawn from both tables because a vendor may have been typed on a weighing
-// session before any form exists for it, or the other way round.
+// Batch list with derived counts and totals.
 router.get("/vendors", verifyToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -1099,27 +962,14 @@ router.get("/vendors", verifyToken, async (req, res) => {
 router.get("/box-batches", verifyToken, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
 
-  // Which end of the process to list. ABSENT MEANS BOTH, so every existing
-  // caller keeps its meaning unchanged — the same reasoning the column's own
-  // DEFAULT 'incoming' follows.
-  //
-  // It has to be filtered HERE rather than by the caller. The limit above is 50
-  // by default, so once outgoing sessions accumulate they push incoming ones
-  // off the end of the page and a client-side filter would show a list that is
-  // silently short. Filtering in the query is what makes the page mean
-  // something.
-  //
-  // Validated rather than passed through: a typo'd value must not quietly
-  // return an empty list, which reads as "there is no work here".
+  // Which end of the process to list.
   const raw = req.query.direction;
   const direction = raw == null || raw === "" ? null : String(raw);
   if (direction !== null && direction !== "incoming" && direction !== "outgoing") {
     return res.status(400).json({ error: "direction must be 'incoming' or 'outgoing'" });
   }
 
-  // Built up rather than written as ($3 IS NULL OR b.direction = $3), which is
-  // not sargable — that form cannot use box_batches_direction_idx
-  // (tenant_id, direction, lot_id) and gains nothing for the extra cleverness.
+  // Built up rather than ($3 IS NULL OR ...), which is not sargable.
   const params = [req.tenantId, limit];
   let dirFilter = "";
   if (direction) {
@@ -1129,10 +979,6 @@ router.get("/box-batches", verifyToken, async (req, res) => {
 
   try {
     // Both aggregates are independent scalar subqueries rather than joins.
-    // Joining batch_items for the count AND again for the per-unit totals
-    // multiplies the two together: 17 boxes x 1 unit produced 17 copies of the
-    // same total, and with two units it would also have doubled box_count.
-    // A scalar subquery returns exactly one value and cannot fan out.
     const result = await pool.query(
       `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description,
               b.bill_of_lading, b.brand, b.est_number, b.grade, b.source,
@@ -1193,15 +1039,6 @@ router.get("/box-batches", verifyToken, async (req, res) => {
 
 // Weighed and closed, but on no registration form — the work that is sitting
 // waiting for someone to register it.
-//
-// A session belongs to exactly ONE form (POST .../box-batches refuses a second
-// claim), so "has no registration_form_batches row" is the whole definition.
-// Open sessions are excluded: they are still being scanned and there is nothing
-// final to register yet.
-//
-// MUST be declared before "/box-batches/:id" below. Express matches in
-// declaration order, so the other way round "unregistered" is read as an :id,
-// fails Number.isInteger and answers 400.
 router.get("/box-batches/unregistered", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
@@ -1249,19 +1086,6 @@ router.get("/box-batches/unregistered", verifyToken, async (req, res) => {
 });
 
 // Reopen a closed session so more boxes can be SCANNED into it.
-//
-// Typing a missed box into a form works, but it is the wrong tool: a keyed
-// weight is unverified, where a scan is re-derived from the barcode
-// server-side. Reopening puts the session back in front of the scanner, so a
-// late box arrives on exactly the same footing as every other box on the
-// manifest — barcode-checked, deduplicated on serial, and recorded as scanned
-// rather than as somebody's typing.
-//
-// Admin-only: a closed manifest may already have been printed, tied to a
-// registration form, or shipped against, and reopening changes what all of
-// those reference. The blockers are returned rather than refused on — the
-// operator is fixing the record precisely because it is wrong, and being told
-// what else will move is more useful than being stopped.
 router.post("/box-batches/:id/reopen", verifyToken, requireRole("admin"), async (req, res) => {
   const batchId = Number(req.params.id);
   if (!Number.isInteger(batchId)) {
@@ -1313,21 +1137,6 @@ router.post("/box-batches/:id/reopen", verifyToken, requireRole("admin"), async 
 });
 
 // Edit a session's heading after the fact.
-//
-// The heading is typed at the start of a delivery, in a cold room, before
-// anyone knows how it will go — so a vendor gets misspelled, an item
-// description turns out wrong, a remark only makes sense in hindsight. Every
-// one of those prints on the manifest, and reprinting a form that is wrong
-// because a field could not be corrected is not a real option.
-//
-// THE LOT NUMBER IS NOT IN THIS LIST, on purpose. Every box on the session was
-// weighed against it, a registration form may reference it and stock may have
-// moved under it — changing it here would silently re-attribute physical
-// product to a different lot. Detach and re-weigh instead. (CLAUDE.md §9 notes
-// the lot stays locked by design.)
-//
-// Gated exactly as a box correction is: operator on an open session, admin on a
-// closed one, enforced server-side because a hidden button is not a control.
 const EDITABLE_HEADER = {
   vendor: "vendor",
   itemDescription: "item_description",
@@ -1401,11 +1210,6 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
 
 // What is currently holding a session, so the confirm dialog can say so BEFORE
 // someone presses Delete rather than after it fails.
-//
-// Same helper the delete guard uses, so "deletable: true" here means the delete
-// really will go through. Read-only and not admin-gated: seeing why something
-// cannot be deleted is not itself a privileged act, and gating it would leave
-// an operator staring at a disabled button with no explanation.
 router.get("/box-batches/:id/references", verifyToken, async (req, res) => {
   const batchId = Number(req.params.id);
   if (!Number.isInteger(batchId)) {
@@ -1492,10 +1296,7 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
   }
 });
 
-// ── Merged manifests ─────────────────────────────────────────────────────────
-// Several weighing sessions printed as one tally sheet. The group holds
-// references, never copies: a weight corrected in a session afterwards shows up
-// on the next reprint of the manifest rather than leaving the two disagreeing.
+// Merged manifests  Several weighing sessions printed as one tally sheet.
 
 // Create a group. The heading defaults to the first session's, since in practice
 // these are sessions covering one lot.
@@ -1516,9 +1317,7 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Every session must belong to this tenant. Checked by counting rather than
-    // trusting the request, so a batch id from another tenant cannot be folded
-    // into a manifest.
+    // Every session must belong to this tenant.
     const owned = await client.query(
       `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description,
               lot_id, direction
@@ -1530,14 +1329,8 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
       return res.status(404).json({ error: "One or more sessions were not found" });
     }
 
-    // A merged manifest is ONE printed tally, so its sessions must be the same
-    // KIND of thing. This is about mixing, not direction as such — two benches
-    // weighing one lot out is a perfectly good merge.
-    //
-    // Asked before the lot check below, which cannot catch this: an outgoing
-    // session carries the same lot_id as its incoming parent, so an in/out pair
-    // PASSES the one-lot rule by construction and prints as a single sheet whose
-    // total is the same product counted twice.
+    // A merged manifest is ONE printed tally, so its sessions must be the same KIND
+    // of thing.
     const dirs = [...new Set(owned.rows.map((b) => b.direction))];
     if (dirs.length > 1) {
       await client.query("ROLLBACK");
@@ -1552,11 +1345,7 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
       });
     }
 
-    // One manifest covers ONE lot. Merging sessions from different lots would
-    // print a tally whose lot number is true of only some of its boxes, and
-    // nothing downstream could tell which. Compared on lot_id where both have
-    // one — exact — and on the text otherwise, for sessions predating the
-    // registry.
+    // One manifest covers ONE lot.
     const lotKey = (b) => (b.lot_id != null ? `id:${b.lot_id}` : `txt:${b.lot_number || ""}`);
     const distinctLots = [...new Set(owned.rows.map(lotKey))];
     if (distinctLots.length > 1) {
@@ -1576,9 +1365,8 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
       return v || fallback || null;
     };
 
-    // A merged manifest is downstream — it references the lot its sessions
-    // already carry rather than resolving text of its own. Taken from the first
-    // session, the same one the heading comes from.
+    // A merged manifest is downstream — it references the lot its sessions already
+    // carry rather than resolving text of its own.
     const group = await client.query(
       `INSERT INTO manifest_groups
          (tenant_id, name, lot_number, vendor, ship_to, bill_of_lading, item_description, created_by,
@@ -1734,11 +1522,8 @@ router.delete("/manifest-groups/:id", verifyToken, requireRole("admin"), async (
   const groupId = Number(req.params.id);
   if (!Number.isInteger(groupId)) return res.status(400).json({ error: "Invalid group id" });
   try {
-    // The member list is read first: the CASCADE takes it with the group, and
-    // which sessions the manifest covered is the part worth keeping.
-    // Named, not just numbered. The sessions themselves survive a manifest
-    // removal, but a trail that says "covered sessions 41, 42" is unreadable a
-    // month later — the lot and vendor are what anyone reading this looks for.
+    // The member list is read first: the CASCADE takes it with the group, and which
+    // sessions the manifest covered is the part worth keeping.
     const members = await pool.query(
       `SELECT m.batch_id, m.position, b.lot_number, b.vendor, b.item_description,
               (SELECT COUNT(*)::int FROM batch_items i
@@ -1771,9 +1556,7 @@ router.delete("/manifest-groups/:id", verifyToken, requireRole("admin"), async (
   }
 });
 
-// Everything that has been taken off a tally, newest first. Voids and restores
-// are included alongside the permanent deletions: a trail showing only removals
-// and not the ones that were undone overstates what actually left.
+// Everything that has been taken off a tally, newest first.
 router.get("/box-removals", verifyToken, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 100, 500);
   const batchId = req.query.batchId ? Number(req.query.batchId) : null;
@@ -1799,24 +1582,14 @@ router.get("/box-removals", verifyToken, async (req, res) => {
   }
 });
 
-// ── Box weights feeding a registration form ──────────────────────────────────
-// A registration form records what came in; box weighing is how that figure is
-// actually measured. These endpoints tie the two together so nobody reads a
-// total off a manifest and retypes it into a form.
-//
-// They live here rather than in noblesse.pg.js because the arithmetic does —
-// weightInLb, the voided-row exclusion and the per-box rounding all have to
-// match what the manifest prints, and duplicating that elsewhere is how the two
-// drift apart.
+// Box weights feeding a registration form  A registration form records what came
+// in; box weighing is how that figure is actually measured.
 
 // The live figure for a form: every box across its linked sessions, converted
 // and rounded exactly as the tally is, with voided rows excluded.
 const boxTotalsForForm = async (formId, tenantId) => {
   const sessions = await pool.query(
-    // Everything the form can be filled FROM, not just what it displays. This
-    // used to stop at vendor, while the panel already read item_description and
-    // lot_id — so autofill worked on an unsaved draft (which reads the listing)
-    // and quietly did less once the form had been saved.
+    // Everything the form can be filled FROM, not just what it displays.
     `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description,
             b.bill_of_lading, b.brand, b.est_number, b.grade,
             -- Carried so the panel can LABEL a tie that should never have been
@@ -1904,24 +1677,7 @@ router.post("/noblesse-registration-forms/:id/box-batches", verifyToken, async (
     }
 
     // A registration form asserts "these boxes are the measurement of this
-    // delivery". An outgoing session weighed finished product LEAVING, so tying
-    // it counts one lot's product twice — once in, once out — on the form that
-    // is also the DENOMINATOR of that lot's yield.
-    //
-    // Nothing about the row makes this visible: an outgoing session deliberately
-    // carries the SAME lot_id as the arrival it came from, which is what makes
-    // yield computable, and is also what made every picker and suggestion in the
-    // app treat it as the arrival's twin.
-    //
-    // Asked BEFORE the already-claimed check below: "wrong kind of thing
-    // entirely" is a better answer than "right kind, already spoken for", and
-    // the direction is already in hand.
-    //
-    // Tested for 'outgoing' rather than "not incoming" on purpose. The column is
-    // NOT NULL with a two-value CHECK so the two are equivalent in the database,
-    // but naming the value keeps the refusal honest if a third direction is ever
-    // added — and a row that somehow carries no direction is not swept up by a
-    // guard that was written to catch finished product.
+    // delivery".
     const outgoing = owned.rows.filter((b) => b.direction === "outgoing");
     if (outgoing.length) {
       await client.query("ROLLBACK");
@@ -1935,10 +1691,7 @@ router.post("/noblesse-registration-forms/:id/box-batches", verifyToken, async (
       });
     }
 
-    // A weighing session belongs to ONE delivery. Letting a second form claim
-    // the same boxes would double-count them in every lot total that adds the
-    // two forms up, and nothing downstream could tell which was right — so it
-    // is refused, naming the form that already has them.
+    // A weighing session belongs to ONE delivery.
     const claimed = await client.query(
       `SELECT r.batch_id, r.form_id, b.lot_number
          FROM registration_form_batches r

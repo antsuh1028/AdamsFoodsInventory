@@ -1,14 +1,5 @@
-// Durable scan queue: the piece that decides what gets persisted, what gets
-// sent, and — most importantly — what is safe to delete.
-//
-// An hour of scanning must never live only in a React variable, so every scan
-// is written to storage before it is sent anywhere, and a local record is only
-// removed once the server has confirmed that specific record. Every failure
-// path here has to leave the scan on disk; losing a box is worse than sending
-// it twice, and the server is idempotent on (batch_id, serial) anyway.
-//
-// Storage and transport are injected so this logic is testable without a
-// browser. scanStore.js supplies the IndexedDB backend in the app.
+// Durable scan queue: the piece that decides what gets persisted, what gets sent,
+// and — most importantly — what is safe to delete.
 
 const { toPounds } = require("./weight");
 
@@ -17,12 +8,7 @@ const { toPounds } = require("./weight");
 const DEFAULT_MAX_CHUNK_BYTES = 64 * 1024;
 const DEFAULT_MAX_CHUNK_ITEMS = 250;
 
-// Running totals are kept as integer thousandths and formatted only for
-// display. A float accumulator would drift over a thousand-box shift, and the
-// operator's running total has to agree with what the server stores.
-// A v4 uuid, preferring the platform's own generator. The fallback exists
-// because crypto.randomUUID needs a secure context, and the weighing station is
-// reached over plain http on the LAN often enough to matter.
+// Running totals are kept as integer thousandths and formatted only for display.
 const newItemUuid = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   const b = new Uint8Array(16);
@@ -50,16 +36,10 @@ const emptyStats = () => ({ count: 0, totals: {} });
 // Everything is stored and printed in pounds; kilogram labels are converted.
 const STORED_UNIT = "LB";
 
-// Records written before conversion existed have no displayWeight. Falling back
-// to the scanned weight keeps a resumed session from reading as zero — those
-// rows are pounds already, since conversion is what introduced the field.
+// Records written before conversion existed have no displayWeight.
 const displayOf = (record) => record.displayWeight || record.weight;
 
-// Formats the stored thousandths into display strings, e.g.
-// { count: 3, totals: [{ unit: "LB", total: "228.600" }] }
-//
-// totals is an ARRAY, not an object keyed by unit — the session can hold more
-// than one unit and the order has to be stable for display.
+// Totals are an ARRAY of { unit, total }, not an object keyed by unit.
 const formatStats = (stats) => {
   const source = stats || emptyStats();
   return {
@@ -76,19 +56,13 @@ const toWireItem = (record) => ({
   rawBarcode: record.rawBarcode || undefined,
   isManual: !!record.isManual,
   // How the figure reached the computer, and whether it was measured at all.
-  // Only the client can know either: the server sees an identical payload from
-  // the bench scale and from the keypad.
   entryMethod: record.entryMethod || undefined,
   isEstimated: record.isEstimated ? true : undefined,
-  // This box's own id, so a resend is recognisable as the same box. Without it
-  // a serial-less row has NO resend protection at all — the (batch_id, serial)
-  // index is partial and every scale or typed box has serial = NULL.
+  // This box's own id, so a resend is recognisable as the same box.
   clientItemUuid: record.clientItemUuid || undefined,
 });
 
 // Splits records into requests that stay under both the byte and item ceilings.
-// A single record larger than maxBytes still goes out alone rather than being
-// dropped — the server can reject it, but we must never silently discard it.
 const chunkRecords = (records, maxBytes, maxItems) => {
   const chunks = [];
   let current = [];
@@ -135,9 +109,7 @@ const createScanQueue = ({
     return next;
   };
 
-  // The same, for a whole batch at once. One read and one write of the session
-  // rather than N of each — and the total moves in one step, so a reader can
-  // never catch it part-way through a batch add.
+  // The same, for a whole batch at once.
   const bumpStatsBy = async (thousandths, unit, countDelta) => {
     const session = await backend.getSession();
     if (!session) return null;
@@ -152,20 +124,9 @@ const createScanQueue = ({
     return next;
   };
 
-  // Persist first, then report success. If the write throws, the caller must
-  // hear about it — a scan that was never stored must not be treated as taken.
-  // One box's worth of record, shared by enqueue and enqueueMany so the two
-  // cannot drift apart.
+  // Persist first, then report success.
   const buildRecord = (scan) => {
     // Two weights are kept, deliberately.
-    //
-    // `weight`/`weightUnit` are exactly what the label said, and are what goes
-    // on the wire: the server re-parses raw_barcode and rejects any disagreement,
-    // so a kilogram label has to be sent in kilograms or the scan is refused.
-    //
-    // `displayWeight` is the same box in pounds, which is what gets stored and
-    // what the manifest prints. The grid and the running total use it so the
-    // number on screen during the session is the number on the paper afterwards.
     const asLb = toPounds(scan.weight, scan.weightUnit);
     const record = {
       weight: scan.weight,
@@ -177,14 +138,10 @@ const createScanQueue = ({
       serial: scan.serial || null,
       productionDate: scan.productionDate || null,
       isManual: !!scan.isManual,
-      // Provenance, so a manifest can tell a scale reading from a typed figure
-      // from one of thirty added in a batch. is_manual cannot: its CHECK forces
-      // it true whenever there is no barcode, so every scale box is already
-      // manual.
+      // Provenance, so a manifest can tell a scale reading from a typed figure from
+      // one of thirty added in a batch.
       entryMethod: scan.entryMethod || null,
-      // A weight that was not measured. Kept apart from entryMethod on purpose:
-      // that says HOW the figure arrived, this says whether to trust it as a
-      // measurement, and a nominal weight is genuinely keyed.
+      // A weight that was not measured.
       isEstimated: scan.isEstimated === true,
       // This box's own id, minted here and never reused. It is what makes a
       // resend recognisable as the same box after a response goes missing.
@@ -203,13 +160,6 @@ const createScanQueue = ({
   };
 
   // Many boxes as ONE act.
-  //
-  // A batch add is a single decision the operator made — "thirty labels at
-  // forty pounds" — so it has to be one thing that either happened or did not,
-  // rather than thirty independent ones that can half-fail. Looping enqueue
-  // would also cost thirty IndexedDB round trips, thirty stats reads and a
-  // React render each, and would trip the every-fifth-scan auto-flush six times
-  // part-way through.
   const enqueueMany = async (scans) => {
     const list = Array.isArray(scans) ? scans : [];
     if (!list.length) return [];
@@ -225,24 +175,6 @@ const createScanQueue = ({
   };
 
   // Take back the last box.
-  //
-  // This USED to look only at pending rows and return "nothing-pending"
-  // otherwise. But the queue flushes every five scans OR every four seconds, so
-  // the box the operator has just put down is already the server's more often
-  // than not — and both callers ignored the return value and left the button
-  // enabled. The result was a control that silently did nothing for any box
-  // older than four seconds, which is why editing felt absent rather than
-  // merely missing.
-  //
-  // So it falls through to VOIDING the synced row: the same act the grid's bin
-  // icon performs, reversible and recorded in box_removal_history. `how` comes
-  // back because the two are genuinely different — a removed box leaves no
-  // trace and a voided one does — and the caller must be able to say which
-  // happened rather than implying they are the same.
-  //
-  // (undoLast is declared above voidScan. Both are const arrows in the same
-  // factory, so this reads as a TDZ hazard and is not one: the factory has
-  // fully run before anything can call undoLast. Do not "fix" the ordering.)
   const undoLast = async ({ voidServer } = {}) => {
     const pending = await backend.listPending();
     if (pending.length) {
@@ -253,9 +185,7 @@ const createScanQueue = ({
     }
 
     const all = await backend.listAll();
-    // "synced" is doing three jobs: it skips rows already voided, rows that were
-    // rejected (never recorded, nothing to take back) and duplicates (never
-    // counted).
+    // Skips voided, rejected and duplicate rows — none of them can be taken back.
     const last = [...all].reverse()
       .find((r) => r.status === "synced" && r.serverItemId != null);
     if (!last) return { undone: false, reason: "nothing-to-undo" };
@@ -268,21 +198,14 @@ const createScanQueue = ({
       : { undone: false, reason: result.reason };
   };
 
-  // Correct a weight mid-session. The running total is adjusted by the
-  // difference rather than recomputed, keeping it exact in integer thousandths.
-  //
-  // A row that has already synced must be corrected on the server FIRST: if that
-  // call fails, the local copy is left alone, so the grid never shows a figure
-  // the database does not hold. patchServer is injected by the caller because
-  // this module deliberately knows nothing about HTTP.
+  // Correct a weight mid-session.
   const editScan = async (localId, newWeight, { unit = "LB", patchServer } = {}) => {
     const rows = await backend.listAll();
     const row = rows.find((r) => r.localId === localId);
     if (!row) return { edited: false, reason: "not-found" };
 
     // The operator types the figure in whatever unit the label carries; it is
-    // converted here so the grid and the manifest stay in pounds. Making them
-    // convert 34.5 kg in their head is how a wrong weight reaches a manifest.
+    // converted here so the grid and the manifest stay in pounds.
     const asLb = toPounds(newWeight, unit);
     const before = displayOf(row);
     if (asLb.weight === before && !asLb.convertedFrom) {
@@ -305,12 +228,7 @@ const createScanQueue = ({
       // What the label originally said, captured once so a second correction
       // does not overwrite it with the first correction.
       originalWeight: row.originalWeight || before,
-      // A corrected row that has NOT yet been sent has to go up as a manual
-      // entry. The server re-derives the weight from raw_barcode and refuses
-      // any disagreement, so sending a hand-typed weight with the original
-      // barcode attached would have the box rejected outright. Keeping the
-      // barcode here would not preserve verification — it would destroy the
-      // scan. The payload is retained under originalBarcode for the record.
+      // A corrected row that has NOT yet been sent has to go up as a manual entry.
       ...(row.serverItemId ? {} : {
         isManual: true,
         rawBarcode: null,
@@ -318,9 +236,7 @@ const createScanQueue = ({
       }),
     });
 
-    // Out with the old figure, in with the new. The two calls move the count by
-    // -1 then +1, so it lands where it started — a correction changes a box's
-    // weight, not how many boxes arrived.
+    // Out with the old figure, in with the new.
     await bumpStats(before, STORED_UNIT, -1);
     await bumpStats(asLb.weight, STORED_UNIT, +1);
     return { edited: true, record: patched };
@@ -339,10 +255,7 @@ const createScanQueue = ({
     const patched = await backend.patchScan(localId, {
       status: "voided",
       voidReason: reason,
-      // What this row was BEFORE it was struck off. patchScan overwrites
-      // `status`, so without this the fact that it was a duplicate — which
-      // never counted toward the total — is gone, and restoring it would credit
-      // the tally with a box that never existed.
+      // What this row was BEFORE it was struck off.
       preVoidStatus: row.preVoidStatus || row.status,
     });
     // A duplicate never counted toward the total, so voiding one must not
@@ -353,9 +266,7 @@ const createScanQueue = ({
     return { voided: true, record: patched };
   };
 
-  // Put a voided box back. The mirror of voidScan, including the ORDER: the
-  // server first, so a failed call leaves the row struck off rather than showing
-  // a box on the tally that the database still has voided.
+  // Put a voided box back.
   const restoreScan = async (localId, { restoreServer } = {}) => {
     const rows = await backend.listAll();
     const row = rows.find((r) => r.localId === localId);
@@ -364,11 +275,7 @@ const createScanQueue = ({
 
     if (row.serverItemId && restoreServer) await restoreServer(row.serverItemId);
 
-    // A row with a server id goes back to "synced". One WITHOUT has never been
-    // sent, and must go back to "pending" — anything else and flush() skips it
-    // for the rest of the session, so voiding an unsent box and restoring it
-    // would drop it silently. Losing a box is the one outcome this whole queue
-    // exists to prevent.
+    // A row with a server id goes back to "synced".
     const back = row.preVoidStatus || (row.serverItemId ? "synced" : "pending");
     const patched = await backend.patchScan(localId, {
       status: back,
@@ -398,8 +305,6 @@ const createScanQueue = ({
   const clearSession = () => backend.clearAll();
 
   // Sends every pending record and clears only what the server confirms.
-  // Returns a summary; never throws for transport failure, because a failed
-  // flush is a normal condition in a warehouse and must simply be retried.
   const flush = async () => {
     // Claim the flag synchronously, before the first await. Setting it after one
     // lets two calls in the same tick both get past the check and double-send.
@@ -443,16 +348,11 @@ const createScanQueue = ({
 
           if (result.status === "inserted") {
             summary.accepted += 1;
-            // The server's row id is carried back so this box can still be
-            // corrected or voided later — a row that has synced is no longer
-            // reachable through undo, and without the id it is unreachable
-            // altogether until the session is reopened from the manifest tab.
+            // The server's row id, so a synced box can still be corrected or voided.
             confirmed.push({ localId: record.localId, itemId: result.itemId ?? null });
           } else if (result.status === "duplicate") {
-            // The same physical box scanned twice — the server kept the first
-            // and refused this one. It must NOT be counted as a saved box: the
-            // running total has to match what the database actually holds, or
-            // the printed manifest overstates the shipment.
+            // The same physical box scanned twice — the server kept the first and
+            // refused this one.
             summary.duplicates += 1;
             duplicated.push(record);
           } else if (result.status === "rejected") {
@@ -463,10 +363,7 @@ const createScanQueue = ({
           }
         }
 
-        // Marked, not deleted. The operator's session grid shows every box
-        // scanned, so a confirmed record has to outlive its flush — it just
-        // leaves the pending queue. countPending() still drops to zero, which
-        // is what the unflushed-work warnings key off.
+        // Marked, not deleted.
         if (confirmed.length) await backend.markSynced(confirmed);
 
         // A duplicate stays visible so the operator can see the double-scan,
@@ -486,8 +383,6 @@ const createScanQueue = ({
 
   // Opens a batch server-side immediately (spec 6.2: never defer to Stop) and
   // records it locally so a crash between the two is recoverable.
-  // One session is one lot: every box scanned between start and stop belongs to
-  // the same lot, and that is what the weight manifest is built from.
   const start = async (clientUuid, meta = {}) => {
     const existing = await backend.getSession();
     if (existing && existing.batchId && existing.status === "open") return existing;
@@ -529,28 +424,12 @@ const createScanQueue = ({
   };
 
   // Rejoin a session that is open ON THE SERVER but unknown to this browser.
-  //
-  // findResumable above only sees what IndexedDB holds, so it covers "same
-  // iPad, came back later" and nothing else. A session opened on another
-  // device — or in a browser whose storage was cleared — was unreachable, and
-  // the only way forward was to start a SECOND session against the same lot.
-  // That splits one delivery across two manifests, which is the thing merged
-  // manifests exist to undo afterwards.
-  //
-  // Boxes already on the batch are seeded as SYNCED rows carrying their server
-  // item ids, which matters three separate ways:
-  //   - the grid and running total show the true state, not just this sitting
-  //   - flush() skips them, so nothing is sent twice
-  //   - serverItemId is what makes an already-sent box correctable mid-session,
-  //     so an adopted row stays as editable as a freshly scanned one
   const adopt = async ({ batch, items = [] }) => {
     if (!batch || batch.batchId == null) {
       throw new Error("adopt requires a batch with a batchId");
     }
 
-    // Unsent scans belong to whatever session is loaded now. Adopting over them
-    // would destroy the one thing the server has no copy of — the rule this
-    // whole queue is built around — so it refuses and lets the caller decide.
+    // Unsent scans belong to whatever session is loaded now.
     const pendingNow = await backend.countPending();
     if (pendingNow > 0) {
       return { adopted: false, reason: "pending-scans", pending: pendingNow };
@@ -568,8 +447,6 @@ const createScanQueue = ({
         weight: item.weight,
         weightUnit: item.weightUnit || STORED_UNIT,
         // Server weights are ALREADY in pounds, so this is the display weight.
-        // Running toPounds again would apply the kilogram ratio a second time
-        // to a figure that has had it once.
         displayWeight: item.weight,
         convertedFrom: item.convertedFrom || null,
         rawBarcode: item.rawBarcode || null,
@@ -577,10 +454,7 @@ const createScanQueue = ({
         serial: item.serial || null,
         productionDate: item.productionDate || null,
         isManual: !!item.isManual,
-        // Carried onto the adopted row, not dropped. Without these an adopted
-        // session shows a nominal batch-added box as though it were measured —
-        // exactly the confusion the estimated flag exists to prevent, and
-        // invisible because every other field looks normal.
+        // Carried onto the adopted row, not dropped.
         entryMethod: item.entryMethod || null,
         isEstimated: item.isEstimated === true,
         originalWeight: item.originalWeight || null,
@@ -588,13 +462,7 @@ const createScanQueue = ({
         voidedAt: item.voidedAt || null,
         voidReason: item.voidReason || null,
         status: voided ? "voided" : "synced",
-        // Set HERE rather than through markSynced, which forces status to
-        // "synced" and would quietly un-void a voided box — the total stayed
-        // right but the row stopped being struck through, so the grid would
-        // have shown a box that does not count as though it does.
-        //
-        // Neither status is "pending", which is what countPending and
-        // listPending key on, so these are never flushed either way.
+        // Set here, not via markSynced, which would quietly un-void a voided box.
         serverItemId: item.localId,
         scannedAt: item.scannedAt || new Date().toISOString(),
       };

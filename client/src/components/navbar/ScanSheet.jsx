@@ -7,11 +7,8 @@ import {
 } from "../../utils/weight";
 import { fmtDate } from "../../pages/noblesse/shared";
 
-// The scanned weights as a spreadsheet: one row per box, filling downward as
-// the operator scans, with the running total pinned in a footer row.
-//
-// This is the primary readout during a session, so it borrows the cell styling
-// already used by the incoming-records grid rather than inventing a new look.
+// The scanned weights as a spreadsheet: one row per box, filling downward as the
+// operator scans, with the running total pinned in a footer row.
 
 const COLS = [
   { key: "_n",       label: "#",         w: "48px",  align: "center" },
@@ -57,14 +54,8 @@ const StatusCell = ({ status }) => {
 
 const NOT_A_BOX = new Set(["duplicate", "rejected", "voided"]);
 
-// The grid shows pounds, always — it is the on-screen preview of the tally, so
-// it has to agree with the paper box for box.
-//
-// Rows arrive in three shapes: a live session row (carries displayWeight, its
-// converted twin), a row stored since conversion shipped (already LB), and a
-// row stored BEFORE it shipped (still kilograms). The last is why this converts
-// rather than trusting weightUnit — production ran without conversion for a
-// while, so those rows are real.
+// The grid shows pounds, always — it is the on-screen preview of the tally, so it
+// has to agree with the paper box for box.
 const inKg = (s) => String(s.weightUnit || "").toUpperCase() === "KG";
 const weightOf = (s) => {
   if (s.displayWeight) return s.displayWeight;
@@ -75,9 +66,7 @@ const unitOf = () => "LB";
 // conversion has no convertedFrom flag but is still a kilogram box.
 const kgOrigin = (s) => (s.convertedFrom || (inKg(s) ? "KG" : null));
 
-// Shown to two decimal places, like the paper tally. Rounded per box before
-// anything is summed, so the column on screen adds up to the figure under it —
-// and to the one that prints.
+// Shown to two decimal places, like the paper tally.
 const cents = (s) => Number(toDisplayHundredths(weightOf(s)));
 const show = (n) => fromHundredths(n);
 
@@ -95,14 +84,10 @@ const ScanSheet = ({
   const counted = countedRows.length;
   const skipped = scans.length - counted;
   // Derived from the rows on screen rather than taken from the caller's total,
-  // which is summed at storage precision. Displaying that beside per-box
-  // rounded figures would let the column disagree with its own footer by a
-  // cent — the disagreement a tally exists to rule out.
+  // which is summed at storage precision.
   const displayTotal = countedRows.reduce((acc, s) => acc + cents(s), 0);
-  // Estimated boxes stay IN the total — the truck carries them — but the two
-  // halves are never readable as one measured number. A yield computed off this
-  // lot has to be able to exclude them, and nobody can do that if the only
-  // figure on screen is the sum.
+  // Estimated boxes stay IN the total — the truck carries them — but the two halves
+  // are never readable as one measured number.
   const estimatedRows = countedRows.filter((s) => s.isEstimated);
   const estimatedTotal = estimatedRows.reduce((acc, s) => acc + cents(s), 0);
   const editable = Boolean(onEditWeight || onVoid);

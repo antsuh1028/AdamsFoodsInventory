@@ -7,16 +7,6 @@ import { toDisplay, toDisplayHundredths } from "../../utils/weight";
 import { fmtDate, today } from "./shared";
 
 // Ties weighing sessions to a registration form.
-//
-// The form records what came in; box weighing is how that figure is actually
-// measured. Before this, someone read a total off a printed manifest and typed
-// it into the form, which is a transcription step with nothing checking it.
-//
-// The link is a REFERENCE, not a copy — the same choice merged manifests make.
-// The form's own Original Weight stays a stable record of what was filed, and
-// the live box total is shown beside it, so a box corrected or voided after the
-// form was filled shows up here as a discrepancy instead of silently rewriting
-// a filed form and the yield calculated from it.
 
 const cents = (v) => {
   if (v === null || v === undefined || v === "") return null;
@@ -26,10 +16,6 @@ const cents = (v) => {
 };
 
 // `pendingBatchIds` / `onPendingChange` are how this works BEFORE a form exists.
-// The boxes are weighed on the dock first and the form is written up afterwards,
-// so requiring a saved form before sessions could be picked had the real
-// sequence backwards. On a new form the picks are held on the draft and the
-// links are written straight after it saves.
 const BoxWeightLink = ({
   formId, lotNumber, draft, setDraft,
   pendingBatchIds = [], onPendingChange,
@@ -49,16 +35,7 @@ const BoxWeightLink = ({
         formId
           ? axiosInstance.get(`/noblesse-registration-forms/${formId}/box-batches`)
           : Promise.resolve({ data: { sessions: [], boxCount: 0, totalWeight: "0", weightUnit: "LB" } }),
-        // ARRIVALS ONLY, and this one parameter is the whole guard on this
-        // screen. `options` and `suggested` below both derive from `available`,
-        // so filtering at the fetch removes outgoing sessions from the picker
-        // AND from the "Tie them" banner in one move.
-        //
-        // It mattered most here. An outgoing session deliberately carries the
-        // SAME lot_id as the arrival it came from, so the ★-suggestion below
-        // matched it exactly — this panel was actively recommending that
-        // finished product be filed as the measurement of a delivery, with a
-        // one-click button to do it in bulk.
+        // ARRIVALS ONLY, and this one parameter is the whole guard on this screen.
         axiosInstance.get("/box-batches", { params: { direction: "incoming" } }),
       ]);
       setLinked(links);
@@ -85,8 +62,7 @@ const BoxWeightLink = ({
     const chosen = available
       .filter((b) => pendingBatchIds.includes(b.batch_id))
       // /box-batches returns totals as [{unit,total}] while the linked endpoint
-      // returns a plain `total` string. Normalised here so one render path
-      // serves both, rather than the row silently showing an empty weight.
+      // returns a plain `total` string.
       .map((b) => ({ ...b, total: b.totals?.[0]?.total ?? "0" }));
     const totalWeight = chosen
       .reduce((sum, b) => sum + Math.round(Number(b.total) * 1000), 0) / 1000;
@@ -104,22 +80,13 @@ const BoxWeightLink = ({
   );
 
   // Sessions for this lot float to the top of the picker.
-  //
-  // Matched on lot_id when both sides have one — exact, and it cannot pair the
-  // wrong lot. The text contains-match stays as the fallback for sessions that
-  // predate the registry or whose lot cell never resolved ("P12 N26230-01").
-  // Every session stays selectable either way.
   const options = useMemo(() => {
     const lot = String(lotNumber || "").trim().toUpperCase();
     const formLotId = draft?.lotId ?? null;
     const todayStr = today();
     return available
       .filter((b) => !linkedIds.has(b.batch_id))
-      // Already claimed by another registration form. The tie route refuses a
-      // second claim with 409 SESSION_ALREADY_TIED, so offering these could
-      // only ever end in an error — the picker now shows what can actually be
-      // picked. Sessions tied to THIS form are excluded above and listed
-      // separately as the ones already on it.
+      // Already claimed by another registration form.
       .filter((b) => b.form_id == null)
       .map((b) => ({
         ...b,
@@ -127,8 +94,7 @@ const BoxWeightLink = ({
           || (formLotId == null && Boolean(lot)
               && String(b.lot_number || "").toUpperCase().includes(lot)),
         // Weighed today — the arrivals someone is most likely registering right
-        // now. Same green as the manifest list and the forms table, so the
-        // colour means one thing across the app.
+        // now.
         isToday: String(b.created_at).slice(0, 10) === todayStr,
       }))
       .sort((a, b) => (b.suggested ? 1 : 0) - (a.suggested ? 1 : 0));
@@ -136,9 +102,7 @@ const BoxWeightLink = ({
 
   const suggested = useMemo(() => options.filter((b) => b.suggested), [options]);
 
-  // Hidden because another form already claims them. Counted so the empty
-  // state can SAY that — a list that silently filters itself down to nothing
-  // reads as "there is no work here", which is the opposite of the truth.
+  // Hidden because another form already claims them.
   const tiedElsewhere = useMemo(
     () => available.filter((b) => b.form_id != null && !linkedIds.has(b.batch_id)).length,
     [available, linkedIds]
@@ -163,9 +127,8 @@ const BoxWeightLink = ({
     }
   };
 
-  // Several at once: a lot weighed across two pallets, or a session stopped
-  // and restarted, is one delivery on one form. The endpoint has always taken
-  // an array.
+  // Several at once: a lot weighed across two pallets, or a session stopped and
+  // restarted, is one delivery on one form.
   const link = (batchIds) => {
     if (pending) {
       // Nothing to POST to yet. The parent writes these links the moment the
@@ -195,18 +158,7 @@ const BoxWeightLink = ({
   };
 
   // The sessions do not just supply a weight — they are what the form is being
-  // written up FROM, so the heading comes across too. Only into fields still
-  // empty: whatever the operator already typed wins over anything inferred.
-  // Everything the weighing session already knows, copied onto the form.
-  //
-  // These were typed once, at the scale, against the boxes themselves — so the
-  // session is the better source, and retyping them here is both slower and a
-  // second chance to get them wrong.
-  //
-  // ONLY FIELDS THE FORM HAS LEFT BLANK are filled. Someone who has already
-  // typed a description meant it, and having it silently replaced by whatever
-  // the scanner operator wrote would be worse than leaving it alone. That also
-  // makes the button safe to press twice.
+  // written up FROM, so the heading comes across too.
   const FROM_SESSION = [
     ["vendor", "vendor", "vendor"],
     ["productDescription", "item_description", "description"],

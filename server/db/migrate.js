@@ -1,27 +1,5 @@
-// Every schema change for the Noblesse side, in one place, run IN ORDER before
-// the server starts listening.
-//
-// Why this file exists (CLAUDE.md §8, "fire-and-forget migrations race"): route
-// modules used to fire their own CREATE TABLE statements at require-time without
-// awaiting them. A pool hands concurrent queries to different connections, so a
-// child table could reach the server before its parent existed and die with
-// `relation "manifest_groups" does not exist` — and then never retry, leaving
-// the table missing for the whole boot. That happened in production.
-//
-// Rules this file keeps:
-//   - Sequential. Every statement awaits the one before it.
-//   - Idempotent. IF NOT EXISTS / ADD COLUMN IF NOT EXISTS / DROP ... IF EXISTS,
-//     so a retry from the top after a mid-run failure is always safe.
-//   - Loud. A failure THROWS and boot aborts. A server that comes up with a
-//     missing table is the exact bug this file kills; pm2 restarts a failed
-//     boot, and a transient Neon connection drop gets a few retries first.
-//   - `tenants` is NOT created here. It predates this file, lives in production
-//     with a shape this repo never defined, and every table references it. We
-//     check it is there and refuse to boot without it.
-//   - Adams-side modules (production, snapshots, history, s3) keep their own
-//     small IF NOT EXISTS statements at require-time. They reference nothing
-//     created here, and index.js requires them only after this has finished,
-//     so they cannot race it.
+// Every schema change for the Noblesse side, in one place, run IN ORDER before the
+// server starts listening.
 
 const pool = require("../utils/pg");
 
@@ -39,9 +17,7 @@ const run = async (label, sql) => {
   }
 };
 
-// Everything references tenants(id). If it is missing this is not a database
-// we know how to initialise, and starting the server against it would only
-// produce a stream of FK errors later.
+// Everything references tenants(id).
 const preflight = async () => {
   try {
     await pool.query("SELECT 1 FROM tenants LIMIT 1");
@@ -55,7 +31,6 @@ const preflight = async () => {
 const steps = async () => {
   // ══════════════════════════════════════════════════════════════════════════
   // Noblesse core — moved verbatim from routes/noblesse.pg.js, original order.
-  // ══════════════════════════════════════════════════════════════════════════
 
   await run("noblesse_receipts", `
     CREATE TABLE IF NOT EXISTS noblesse_receipts (
@@ -207,11 +182,7 @@ const steps = async () => {
     )
   `);
 
-  // form_id was originally NOT NULL REFERENCES noblesse_registration_forms(id) ON
-  // DELETE CASCADE, which makes a "deleted" audit row impossible to keep: log
-  // before the delete and the cascade removes it, log after and the FK has
-  // nothing to point at. An audit trail has to outlive the row it describes, so
-  // the constraint goes. Both statements are no-ops once applied.
+  // The FK is dropped so a "deleted" audit row can outlive the form it describes.
   await run("noblesse_registration_history drop form fk", `
     ALTER TABLE noblesse_registration_history
     DROP CONSTRAINT IF EXISTS noblesse_registration_history_form_id_fkey
@@ -219,9 +190,8 @@ const steps = async () => {
   await run("noblesse_registration_history form_id nullable",
     `ALTER TABLE noblesse_registration_history ALTER COLUMN form_id DROP NOT NULL`);
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // Box weighing — moved verbatim from routes/boxes.pg.js, original order.
-  // ══════════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════════ Box
+  // weighing — moved verbatim from routes/boxes.pg.js, original order.
 
   await run("box_batches", `
     CREATE TABLE IF NOT EXISTS box_batches (
@@ -234,9 +204,8 @@ const steps = async () => {
     )
   `);
 
-  // raw_barcode is nullable only because of the manual-entry fallback: a damaged
-  // or unbarcoded label has no payload to store. The CHECK keeps the guarantee
-  // that every *scanned* row carries the barcode it came from.
+  // raw_barcode is nullable only because of the manual-entry fallback: a damaged or
+  // unbarcoded label has no payload to store.
   await run("batch_items", `
     CREATE TABLE IF NOT EXISTS batch_items (
       item_id         SERIAL PRIMARY KEY,
@@ -263,19 +232,7 @@ const steps = async () => {
   await run("box_batches lot_number",
     `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS lot_number TEXT`);
 
-  // The rest of the tally sheet heading. Stored on the batch so a past session
-  // reprints as a complete form rather than one missing its header.
-  //
-  // brand / est_number / grade are CAPTURED BUT NOT PRINTED. They describe the
-  // product rather than the tally, so they stay off the manifest — which
-  // reproduces a paper form and must keep matching it. They are worth recording
-  // anyway: they are known at weighing time, they are tedious to reconstruct
-  // afterwards, and the registration form already carries the same three fields
-  // for the same lot, so having both makes them checkable against each other.
-  // remarks IS printed, unlike the three above — it is the operator explaining
-  // something about this tally to whoever reads it ("2 boxes re-weighed after
-  // the scale was re-zeroed"), which is worthless if it stays on a screen.
-  // Written at close rather than while scanning: a focused textarea on the
+  // The rest of the tally sheet heading.
   // scanning surface makes the global keydown handler bail and silently
   // swallow scans (CLAUDE.md §4).
   for (const col of ["vendor", "ship_to", "bill_of_lading", "item_description",
@@ -284,25 +241,11 @@ const steps = async () => {
       `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS ${col} TEXT`);
   }
 
-  // 'scanned' or 'imported'. A barcode-verified lot and one keyed in by hand on
-  // an iPad are both legitimate, but they carry different confidence and anyone
-  // reconciling a shipment needs to be able to tell them apart.
+  // 'scanned' or 'imported'.
   await run("box_batches source",
     `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'scanned'`);
 
   // Which end of the process this session weighed.
-  //
-  //   incoming  raw product as it arrives from the supplier
-  //   outgoing  finished product on its way out, weighed off the bench scale
-  //
-  // This is what makes yield calculable: yield is outgoing over incoming for
-  // the same lot. Before it, every session was an arrival and there was nothing
-  // to divide by.
-  //
-  // DEFAULT 'incoming' is load-bearing for the migration: every session that
-  // already exists WAS an arrival, so the default makes all of them correct
-  // with no backfill and no chance of mislabelling history. Old code that never
-  // mentions the column keeps working unchanged.
   await run("box_batches direction",
     `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL
        DEFAULT 'incoming' CHECK (direction IN ('incoming', 'outgoing'))`);
@@ -312,45 +255,19 @@ const steps = async () => {
        ON box_batches (tenant_id, direction, lot_id)`);
 
   // How many boxes the operator expects, entered before weighing starts.
-  //
-  // A PROMPT, NEVER A TRIGGER. Reaching the count offers to finalise; it does
-  // not finalise on its own. The count is a forecast made before the work, and
-  // reality breaks it routinely — a damaged box repacked into two, a partial
-  // pallet, a miscount. Auto-closing at 10 of 10 would either lock an operator
-  // out mid-job or orphan box 11. Nullable because it is optional.
   await run("box_batches expected_boxes",
     `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS expected_boxes INT`);
 
   // Where a box's weight actually came from.
-  //
-  //   scanned  read off a barcode and re-verified server-side
-  //   scale    read from the bench scale over serial
-  //   keyed    typed by a person
-  //
-  // is_manual cannot answer this. Its CHECK requires it to be true whenever
-  // there is no barcode, so a scale reading and a hand-typed figure are
-  // indistinguishable there — and they do not deserve equal trust. Nullable:
-  // existing rows predate the distinction and guessing for them would be
-  // inventing provenance that was never recorded.
   await run("batch_items entry_method",
     `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS entry_method TEXT
        CHECK (entry_method IN ('scanned', 'scale', 'keyed'))`);
 
-  // Every weight is stored in pounds. Non-American suppliers label in kilograms,
-  // so those are converted on the way in; this column records that it happened.
-  // It is provenance, not a second weight — the original figure is recoverable
-  // from raw_barcode, which still holds the kilogram payload it was read from.
+  // Every weight is stored in pounds.
   await run("batch_items converted_from",
     `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS converted_from TEXT`);
 
-  // Corrections. A weight that came off a barcode was verified against that
-  // barcode; once a person overtypes it that is no longer true, so the row has
-  // to carry its own history rather than quietly becoming indistinguishable
-  // from a scanned one. original_weight holds what the label actually said.
-  //
-  // Removal is a soft void. A box that was scanned and then taken off the tally
-  // is a fact about the shipment, and hard-deleting the row would erase the
-  // only record that it ever happened.
+  // Corrections.
   for (const ddl of [
     `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS original_weight NUMERIC(8,3)`,
     `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`,
@@ -363,42 +280,11 @@ const steps = async () => {
   }
 
   // A weight that was NOT measured.
-  //
-  // Thirty labels printed at a nominal 40 lb are thirty boxes that each actually
-  // weigh something else. The figure is real enough to ship against and useless
-  // as a measurement, and the two must never be summed into one number silently.
-  //
-  // NOT entry_method. That column answers HOW THE FIGURE ARRIVED, and a nominal
-  // weight genuinely IS keyed. These are independent axes: a keyed figure is
-  // usually a real measurement someone read off the indicator, and collapsing
-  // them would throw that away.
-  //
-  // NOT is_manual. Its CHECK already forces it true whenever there is no
-  // barcode, so every scale box is already is_manual — it distinguishes nothing.
-  //
-  // NOT NULL DEFAULT false, unlike entry_method, and the default is not a guess:
-  // every row written before this column existed was a real measurement.
-  //
-  // ANY FUTURE YIELD FIGURE MUST FILTER is_estimated = false. An estimate inside
-  // a yield is a lie about the process, not a rounding error.
   await run("batch_items is_estimated",
     `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS is_estimated BOOLEAN NOT NULL
        DEFAULT false`);
 
   // The client's own id for one box, minted when it is queued.
-  //
-  // Without it a serial-less row has NO resend protection. scanQueue.flush()
-  // leaves a chunk pending when a request fails, and a lost RESPONSE is
-  // indistinguishable from a lost REQUEST — so the next flush sends the same
-  // boxes again. The serial index below cannot catch that, because it is
-  // PARTIAL and every scale, typed and outgoing box has serial IS NULL.
-  //
-  // So "the server is idempotent on (batch_id, serial)" has only ever been true
-  // for scanned boxes. This is what makes it true for the rest.
-  //
-  // It also replaces the positional RETURNING mapping in the append route, which
-  // held only while every serial-less row in a chunk was interchangeable —
-  // a property entry_method and is_estimated destroy.
   await run("batch_items client_item_uuid",
     `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS client_item_uuid UUID`);
 
@@ -414,13 +300,8 @@ const steps = async () => {
     ON batch_items (batch_id, client_item_uuid) WHERE client_item_uuid IS NOT NULL
   `);
 
-  // A lot is sometimes weighed across several sessions — two people on two
-  // pallets, or a session stopped and restarted — but it ships on ONE manifest.
-  //
-  // The group stores which sessions it covers rather than copying their weights.
-  // Copying would fork the truth: correcting a box afterwards would fix the
-  // session and leave the manifest stale, which is exactly the disagreement
-  // this whole feature exists to prevent.
+  // A lot is sometimes weighed across several sessions — two people on two pallets,
+  // or a session stopped and restarted — but it ships on ONE manifest.
   await run("manifest_groups", `
     CREATE TABLE IF NOT EXISTS manifest_groups (
       group_id         SERIAL PRIMARY KEY,
@@ -447,22 +328,7 @@ const steps = async () => {
     )
   `);
 
-  // Weighing sessions feeding one registration form. A form records what came
-  // in; box weighing is how that number is actually measured, so this ties the
-  // two together instead of having someone read a total off a manifest and
-  // retype it.
-  //
-  // References, not a copy — the same reasoning as manifest groups. The form's
-  // own original_weight stays a stable record, and the live total is compared
-  // against it so a correction made after the fact shows up as a discrepancy
-  // rather than silently rewriting a filed form.
-  //
-  // No foreign key to noblesse_registration_forms. Historically that was
-  // because the two tables were created by different modules with no ordering
-  // guarantee; this file fixes the ordering, so the FK is now *possible* — but
-  // adding it is a Phase D change (it fails if any orphan link exists) and is
-  // not made here. Orphans are still handled explicitly: deleting a form clears
-  // its links, and deleting a session is refused while a form points at it.
+  // Weighing sessions feeding one registration form.
   await run("registration_form_batches", `
     CREATE TABLE IF NOT EXISTS registration_form_batches (
       form_id   INT NOT NULL,
@@ -477,17 +343,7 @@ const steps = async () => {
       ON registration_form_batches (form_id)
   `);
 
-  // Every removal, kept. Voiding leaves its trace on the row itself, but an
-  // erased box or a deleted session leaves nothing at all — and "where did that
-  // box go" is precisely the question a reconciliation asks months later.
-  //
-  // NO foreign keys to box_batches or batch_items, deliberately: an audit row
-  // has to outlive the row it describes. With an FK, logging before the delete
-  // gets cascaded away and logging after has nothing to point at. The same
-  // lesson is written into noblesse_registration_history above.
-  //
-  // `details` carries the destroyed row itself, because after a permanent
-  // delete this is the only copy that will ever exist.
+  // Every removal, kept.
   await run("box_removal_history", `
     CREATE TABLE IF NOT EXISTS box_removal_history (
       id           SERIAL PRIMARY KEY,
@@ -508,23 +364,8 @@ const steps = async () => {
       ON box_removal_history (tenant_id, created_at DESC)
   `);
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // Lot registry — Phase A. Additive, nullable, zero behaviour change.
-  //
-  // NTI is the processor, AdamsFoods the distributor. A lot is issued once when
-  // product arrives at NTI and only ever *referenced* after that — through
-  // processing, out to AdamsFoods or a customer, and back in again if AdamsFoods returns
-  // it. Six free-text lot columns across five tables cannot express that; this
-  // table is the one thing that owns a lot's identity. It is deliberately thin:
-  // the registration form stays the lot's descriptor and nti_inventory keeps
-  // the quantities. We are adding a key, not moving data.
-  //
-  // Every lot_id below is NULLABLE and nothing reads it yet. Phase B backfills
-  // them from the text columns (dry-run first, unmatched rows reviewed by
-  // hand); Phase C starts writing them; Phase D — a separate decision — makes
-  // them NOT NULL and drops the text. Until then the text columns remain
-  // exactly as authoritative as they are today.
-  // ══════════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════════ Lot
+  // registry — Phase A.
 
   await run("lots", `
     CREATE TABLE IF NOT EXISTS lots (
@@ -544,26 +385,6 @@ const steps = async () => {
   `);
 
   // Lots that are not ours.
-  //
-  // Some deliveries arrive under a supplier's or a customer's own number and
-  // there is no NTI lot to give them — but they still have to be TRACKED, which
-  // means they need a lot_id like anything else. Carrying only the text left
-  // them with no history, no timeline, and no way to add up.
-  //
-  // 'external' is a first-class lot with one difference: it carries no date and
-  // no sequence, because it genuinely has neither. Those two columns become
-  // nullable for exactly this, and the NOT NULL is kept in spirit by `kind` —
-  // an internal lot without a date is still impossible, since issuance derives
-  // both from the number it allocates.
-  //
-  // What this does NOT relax: downstream still cannot mint a lot
-  // (`POST /lots/resolve` never creates), and an external one is only ever made
-  // by an explicit, confirmed act on an incoming-side screen. The registry's
-  // rule was "issued once at Incoming, referenced afterwards" — that holds.
-  //
-  // UNIQUE (tenant_id, lot_date, seq) is unaffected: Postgres treats NULLs as
-  // distinct, so any number of external lots coexist under it, while two
-  // internal lots still cannot take the same sequence on the same day.
   await run("lots kind",
     `ALTER TABLE lots ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL
        DEFAULT 'internal' CHECK (kind IN ('internal', 'external'))`);
@@ -590,21 +411,14 @@ const steps = async () => {
       `CREATE INDEX IF NOT EXISTS ${table}_lot_id_idx ON ${table} (lot_id)`);
   }
 
-  // Raw in, processed out — both are stock, both carry the same lot. Today
-  // processed output never re-enters inventory at all (it is recorded on the
-  // processing order and vanishes from stock); this column is what lets it
-  // come back without being mistaken for the raw it was cut from. Existing
-  // rows are all raw, so the DEFAULT is also the backfill for this column.
+  // Raw in, processed out — both are stock, both carry the same lot.
   await run("nti_inventory stage", `
     ALTER TABLE nti_inventory
       ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'raw'
       CHECK (stage IN ('raw', 'processed'))
   `);
 
-  // Where a receipt came from. Without it, a lot returning from AdamsFoods for a
-  // second pass and a fresh delivery from a packer look identical, and the
-  // timeline cannot say which it was. Nullable: existing receipts predate the
-  // question.
+  // Where a receipt came from.
   await run("noblesse_receipts source_type", `
     ALTER TABLE noblesse_receipts
       ADD COLUMN IF NOT EXISTS source_type TEXT
@@ -613,11 +427,7 @@ const steps = async () => {
   await run("noblesse_receipts source_name",
     `ALTER TABLE noblesse_receipts ADD COLUMN IF NOT EXISTS source_name TEXT`);
 
-  // The stored value was 'afdc' before the business name was settled. The
-  // column already exists, so the ADD COLUMN above never revisits its CHECK —
-  // the constraint has to be replaced on its own. Drop, migrate any rows, then
-  // re-add: idempotent in that order, and the rows have to move BEFORE the new
-  // constraint exists or adding it would fail on them.
+  // The stored value was 'afdc' before the business name was settled.
   await run("noblesse_receipts source_type check drop",
     `ALTER TABLE noblesse_receipts DROP CONSTRAINT IF EXISTS noblesse_receipts_source_type_check`);
   await run("noblesse_receipts source_type rename",
@@ -629,12 +439,6 @@ const steps = async () => {
   `);
 
   // Ties a processed stock row back to the order that produced it.
-  //
-  // Processing used to deduct raw and record output_weight ON THE ORDER, so
-  // after NTI processed a lot there was nothing in stock to ship. The output
-  // now comes back as its own nti_inventory row, and this column is what makes
-  // that idempotent: editing the output later adjusts the existing row instead
-  // of adding a second one.
   await run("nti_inventory source_processing_order_id",
     `ALTER TABLE nti_inventory ADD COLUMN IF NOT EXISTS source_processing_order_id INT`);
 
@@ -647,29 +451,17 @@ const steps = async () => {
   `);
 
   // Registering product is what puts it in stock.
-  //
-  // Until now nothing did. The only writer of nti_inventory was
-  // push-to-inventory off an Incoming receipt, and the work had long since
-  // moved to registration forms — so forms recorded real weights while stock
-  // sat empty and Outgoing had nothing to draw on.
   await run("nti_inventory source_registration_form_id",
     `ALTER TABLE nti_inventory ADD COLUMN IF NOT EXISTS source_registration_form_id INT`);
 
-  // The figure the FORM last claimed, kept apart from `weight`, which is what
-  // is actually on hand after shipping. Re-syncing an edited form applies the
-  // difference between these two rather than overwriting — otherwise editing a
-  // form after a load went out would resurrect the shipped stock.
+  // The figure the FORM last claimed, kept apart from `weight`, which is what is
+  // actually on hand after shipping.
   await run("nti_inventory registered_weight",
     `ALTER TABLE nti_inventory ADD COLUMN IF NOT EXISTS registered_weight NUMERIC`);
   await run("nti_inventory registered_cases",
     `ALTER TABLE nti_inventory ADD COLUMN IF NOT EXISTS registered_cases INT`);
 
-  // One stock row per form, enforced by the database. Partial for the same
-  // reason as the order index above.
-  //
-  // No FK to noblesse_registration_forms, matching registration_form_batches:
-  // the ordering guarantee now exists so it is possible, but adding it is a
-  // Phase D step and would fail on any pre-existing orphan.
+  // One stock row per form, enforced by the database.
   await run("nti_inventory registration form uniq", `
     CREATE UNIQUE INDEX IF NOT EXISTS nti_inventory_source_reg_form_uniq
       ON nti_inventory (source_registration_form_id)
@@ -677,13 +469,7 @@ const steps = async () => {
   `);
 
   // ══════════════════════════════════════════════════════════════════════════
-  // Adams side. `history` and `inventory` predate this repo, like `tenants` —
-  // they are never created here, only altered. These two columns used to be
-  // fired at module load from routes/history.pg.js with a swallowed .catch();
-  // that is the pattern this file exists to remove, and it also broke a whole
-  // test suite, because a mocked pool returns undefined and `.catch` of
-  // undefined throws before the suite can even load.
-  // ══════════════════════════════════════════════════════════════════════════
+  // Adams side.
 
   await run("history old_data",
     `ALTER TABLE history ADD COLUMN IF NOT EXISTS old_data JSONB`);
@@ -691,15 +477,7 @@ const steps = async () => {
     `ALTER TABLE history ADD COLUMN IF NOT EXISTS scan_image_key TEXT`);
 
   // ══════════════════════════════════════════════════════════════════════════
-  // Outgoing. Product leaves NTI for one of two places: back to AdamsFoods for
-  // distribution, or straight to a customer. Until now neither was recorded at
-  // all — the right-hand side of the workflow simply did not exist, and the
-  // only trace of a load was ship_to / bill_of_lading on a weighing session.
-  //
-  // A shipment deducts stock when it ships, the way a processing order deducts
-  // when it is created. It is never edited or deleted once shipped; cancelling
-  // restores the stock and leaves the record, which is the audit-safe path.
-  // ══════════════════════════════════════════════════════════════════════════
+  // Outgoing.
 
   await run("noblesse_shipments", `
     CREATE TABLE IF NOT EXISTS noblesse_shipments (
@@ -726,10 +504,7 @@ const steps = async () => {
     `CREATE INDEX IF NOT EXISTS noblesse_shipments_tenant_date_idx
        ON noblesse_shipments (tenant_id, ship_date DESC)`);
 
-  // One line per lot on the load. nti_item_id is the stock row the weight comes
-  // out of — deduction is by id, never by matching lot text, so it cannot land
-  // on the wrong row. lot_id is NOT NULL: Outgoing is downstream, so it may only
-  // ever reference a lot that already exists.
+  // One line per lot on the load.
   await run("noblesse_shipment_items", `
     CREATE TABLE IF NOT EXISTS noblesse_shipment_items (
       item_id      SERIAL PRIMARY KEY,
@@ -751,9 +526,7 @@ const steps = async () => {
     `CREATE INDEX IF NOT EXISTS noblesse_shipment_items_lot_idx
        ON noblesse_shipment_items (lot_id)`);
 
-  // Box weighing for an outgoing load. Same shape as registration_form_batches
-  // because it is the same idea: the paper tally already carries Ship To and a
-  // BOL, so it IS the outgoing manifest. References, never copies.
+  // Box weighing for an outgoing load.
   await run("shipment_batches", `
     CREATE TABLE IF NOT EXISTS shipment_batches (
       shipment_id INT NOT NULL REFERENCES noblesse_shipments(shipment_id) ON DELETE CASCADE,
@@ -764,11 +537,7 @@ const steps = async () => {
     )
   `);
 
-  // Two modules used to define `pdfs`, with DIFFERENT shapes: routes/s3.pg.js
-  // (live, mounted in index.js) uses a uuid id and a tenants FK, while the
-  // legacy routes/s3.js used a SERIAL id and a bare TEXT tenant. Both were
-  // CREATE TABLE IF NOT EXISTS, so on a fresh database whichever ran first
-  // silently won. This is the live shape, which is what production has.
+  // Two modules once defined `pdfs` with different shapes; this settles on one.
   await run("pdfs", `
     CREATE TABLE IF NOT EXISTS pdfs (
       id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -782,9 +551,8 @@ const steps = async () => {
   `);
 };
 
-// Retries cover the one failure that is not our fault: Neon dropping the
-// connection between statements. A genuine schema error will fail all three
-// times, and the last error is the one that surfaces.
+// Retries cover the one failure that is not our fault: Neon dropping the connection
+// between statements.
 const migrate = async () => {
   for (let attempt = 1; ; attempt += 1) {
     try {

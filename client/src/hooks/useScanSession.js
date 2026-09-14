@@ -3,9 +3,7 @@ import axiosInstance from "../utils/axiosInstance";
 import { createScanQueue } from "../utils/scanQueue";
 import { createScanStore } from "../utils/scanStore";
 
-// Wiring only. Every decision about what is safe to delete lives in scanQueue,
-// which is unit-tested; this hook owns the browser-side concerns that cannot be
-// unit-tested without a device: timers, wake lock, and unload warnings.
+// Wiring only.
 
 const FLUSH_EVERY_SCANS = 5;
 const FLUSH_INTERVAL_MS = 4000;
@@ -15,9 +13,7 @@ const api = {
     axiosInstance.post("/box-batches", { clientUuid, ...meta }).then((r) => r.data),
   postItems: (batchId, items) =>
     axiosInstance.post(`/box-batches/${batchId}/items`, { items }).then((r) => r.data),
-  // Remarks travel with the close — the moment the operator knows what to say,
-  // and the only safe place to ask, since a focused textarea on the scanning
-  // surface silently swallows scans (CLAUDE.md §4).
+  // Remarks travel with the close; a focused textarea would swallow scans.
   closeBatch: (batchId, remarks) =>
     axiosInstance.post(`/box-batches/${batchId}/close`, { remarks })
       .then((r) => r.data),
@@ -34,9 +30,7 @@ const api = {
   voidItem: (batchId, itemId, reason) =>
     axiosInstance.delete(`/box-batches/${batchId}/items/${itemId}`,
       { data: { reason } }).then((r) => r.data),
-  // Un-voiding mid-session. The route has existed since row editing shipped,
-  // but only the manifest tab called it — so a box voided by mistake at the
-  // bench could not be put back without closing the session first.
+  // Un-voiding mid-session.
   restoreItem: (batchId, itemId) =>
     axiosInstance.post(`/box-batches/${batchId}/items/${itemId}/restore`)
       .then((r) => r.data),
@@ -131,10 +125,7 @@ export const useScanSession = () => {
     return opened;
   }, [acquireWakeLock, refreshPending]);
 
-  // Decline a recovered batch. The scans it holds never reached the server, so
-  // discarding them is the one action in this hook that destroys data the
-  // server has no copy of — the caller confirms it, and the count is returned
-  // so the confirmation can state exactly what is being thrown away.
+  // Decline a recovered batch.
   const discardResumable = useCallback(async () => {
     if (!queueRef.current) return { discarded: false };
     const lost = await queueRef.current.countPending();
@@ -157,24 +148,13 @@ export const useScanSession = () => {
     return existing;
   }, [acquireWakeLock, flush]);
 
-  // Sessions left open on the SERVER, whoever opened them and on whatever
-  // device. This is what `resume` cannot see: findResumable only reads local
-  // IndexedDB, so a session started on another iPad — or in a browser whose
-  // storage was cleared — was invisible and the operator had to open a second
-  // one against the same lot.
-  //
-  // Scoped by DIRECTION, which the server applies. The incoming bench must not
-  // offer to adopt an outgoing session and vice versa: they are different jobs
-  // at different benches, and adopting across would put an operator on a screen
-  // built for the other one.
+  // Sessions left open on the SERVER, whoever opened them and on whatever device.
   const listOpenSessions = useCallback(async (direction = null) => {
     const all = await api.listBatches(direction);
     return (all || []).filter((b) => b.status === "open");
   }, []);
 
-  // Rejoin one of them. The server is the source of truth here: its boxes are
-  // pulled and seeded so the grid and running total show the whole session
-  // rather than only what gets scanned from now on.
+  // Rejoin one of them.
   const adoptSession = useCallback(async (batchId) => {
     if (!queueRef.current) return { adopted: false, reason: "not-ready" };
     const detail = await api.getBatch(batchId);
@@ -216,10 +196,7 @@ export const useScanSession = () => {
     return scan;
   }, [flush, refreshPending]);
 
-  // `how` comes back so the caller can say what actually happened: a box still
-  // in the queue is removed outright, one the server already holds is voided —
-  // recorded and reversible. Conflating them would tell the operator a box
-  // vanished when it is struck through on a manifest somewhere.
+  // `how` says which happened: a pending box is removed, a sent one is voided.
   const undoLast = useCallback(async () => {
     if (!queueRef.current) return { undone: false, reason: "not-ready" };
     const batchId = session?.batchId;
@@ -231,9 +208,7 @@ export const useScanSession = () => {
     return result;
   }, [session, refreshPending]);
 
-  // Correcting a row that has already reached the server goes through the
-  // server first; scanQueue leaves the local copy alone if that call fails, so
-  // the grid never shows a weight the database does not hold.
+  // Server first, so a failed call leaves the grid matching the database.
   const editScan = useCallback(async (localId, weight, unit = "LB") => {
     if (!queueRef.current) return { edited: false, reason: "not-ready" };
     const batchId = session?.batchId;

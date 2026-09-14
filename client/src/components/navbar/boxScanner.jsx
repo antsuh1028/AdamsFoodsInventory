@@ -1,9 +1,6 @@
 /* global BigInt */
-// The directive is not decoration: CRA's linter fails the build on BigInt
-// without it, the same way utils/weight.js has always needed it. The batch
-// total below multiplies integer hundredths, because a float accumulator over
-// five hundred boxes drifts and the figure the operator agrees to has to be the
-// figure that gets stored.
+// The directive is not decoration: CRA's linter fails the build on BigInt without
+// it, the same way utils/weight.js has always needed it.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, Input, Textarea, ButtonGroup,
@@ -27,21 +24,15 @@ import {
 import { today, fmtDate, upper } from "../../pages/noblesse/shared";
 import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 
-// Operator-facing scanning screen. Designed to be read across a bench by
-// someone wearing gloves holding a box: big numbers, few controls, and an
-// error state that cannot be mistaken for a success.
+// Operator-facing scanning screen.
 
 // Inputs must not be "helped" by iPadOS — autocorrect on a lot number is
 // silent data corruption.
 const rawInputProps = {
-  // Cosmetic only — it restyles the glyphs and leaves the value alone. What
-  // actually gets stored is uppercased in setField; this just stops the field
-  // flickering between cases while someone types.
+  // Cosmetic only — it restyles the glyphs and leaves the value alone.
   textTransform: "uppercase",
   autoCorrect: "off",
-  // "characters" so the iPad keyboard itself is in caps, matching what the
-  // field stores — a lowercase keyboard producing uppercase text is a jarring
-  // thing to type into.
+  // "characters" so the iPad keyboard is in caps, matching what the field stores.
   autoCapitalize: "characters",
   spellCheck: false,
   style: { touchAction: "manipulation" },
@@ -61,25 +52,10 @@ const StatCard = ({ label, value, help, color = "gray.800", size = "3xl" }) => (
 );
 
 // The keypad panel: a permanent part of an open session, not something to go
-// looking for. Most boxes are scanned, but a damaged or unbarcoded label has to
-// be typed, and on the iPad that is only possible here — a paired Bluetooth
-// scanner is an HID keyboard, so iPadOS suppresses its own on-screen keyboard.
-//
-// Nothing on this panel is focusable by default. That is deliberate: the global
-// keydown handler below ignores keystrokes whose target is an INPUT, TEXTAREA or
-// SELECT, so any field left focused here would silently swallow scans instead of
-// recording them. The unit lives on the keypad as buttons, and the note — which
-// needs a real keyboard and so is desktop-only in practice — stays collapsed.
-//
-// It has two modes. ONE BOX is the original: a damaged label, weighed and typed.
-// BATCH is a run of identical cases — "30 at 50 lb" — where the weight is the
-// figure printed on the label rather than one anybody put on a scale. Those two
-// are different enough that the second is a mode rather than an extra field,
-// and its rows are marked estimated so the difference survives into the totals.
+// looking for.
 
-// A batch of one weight is still thirty boxes, and a mis-keyed count invents
-// every one of them. Capped so a stuck key cannot put five thousand rows on a
-// lot before anyone looks up.
+// A batch of one weight is still thirty boxes, and a mis-keyed count invents every
+// one of them.
 const MAX_BATCH = 500;
 
 const KeypadPanel = ({ onAdd, onAddMany, disabled }) => {
@@ -91,9 +67,7 @@ const KeypadPanel = ({ onAdd, onAddMany, disabled }) => {
   // one damaged box, so it is a mode rather than an extra field always on show.
   const [mode, setMode] = useState("one");
   const [cases, setCases] = useState("");
-  // Which readout the shared keypad is typing into. ONE keypad, not two: a
-  // second pad would double the height of a panel that already sits on the
-  // scanning screen, and two live readouts invite typing into the wrong one.
+  // Which readout the shared keypad is typing into.
   const [field, setField] = useState("cases");
   const [confirm, setConfirm] = useState(null);
   const cancelBatchRef = useRef(null);
@@ -103,9 +77,8 @@ const KeypadPanel = ({ onAdd, onAddMany, disabled }) => {
   const batchReady = valid && Number.isInteger(caseCount)
     && caseCount > 0 && caseCount <= MAX_BATCH;
 
-  // Shown before committing, because the operator is agreeing to a TOTAL, not
-  // to two numbers. Rounded per box then summed, the way every other total in
-  // this app is — see utils/weight.js.
+  // Shown before committing, because the operator is agreeing to a TOTAL, not to
+  // two numbers.
   const batchTotal = batchReady
     ? fromHundredths(toDisplayHundredths(toPounds(weight, unit).weight) * BigInt(caseCount))
     : null;
@@ -114,9 +87,7 @@ const KeypadPanel = ({ onAdd, onAddMany, disabled }) => {
     if (!valid) return;
     await onAdd({
       weight, weightUnit: unit, isManual: true, note,
-      // Typed by a person on the keypad. Distinct from a scale reading, which
-      // is_manual cannot tell apart — its CHECK forces it true whenever there
-      // is no barcode.
+      // Typed by a person on the keypad.
       entryMethod: "keyed",
     });
     setWeight("");
@@ -130,10 +101,7 @@ const KeypadPanel = ({ onAdd, onAddMany, disabled }) => {
     await onAddMany(Array.from({ length: caseCount }, () => ({
       weight, weightUnit: unit, isManual: true, note,
       entryMethod: "keyed",
-      // NOT MEASURED. Every one of these boxes actually weighs something else;
-      // the figure is the one printed on the label. Marked so it can never be
-      // read as a weighed figure — and so a yield can exclude it, because an
-      // estimate inside a yield is a lie about the process.
+      // NOT MEASURED.
       isEstimated: true,
     })));
     setCases("");
@@ -237,9 +205,6 @@ const KeypadPanel = ({ onAdd, onAddMany, disabled }) => {
             onUnitChange={mode === "batch" && field === "cases" ? undefined : setUnit}
             submitLabel="Add box"
             // In batch mode the pad's own submit is hidden and replaced below.
-            // Its button gates on whether the ACTIVE field is a valid number,
-            // which would let "30 cases of nothing" through the moment the
-            // count looked fine.
             hideSubmit={mode === "batch"}
             isDisabled={disabled}
           />
@@ -327,14 +292,8 @@ const totalsOf = (batch) =>
     ? batch.totals.map((t) => `${t.total} ${t.unit}`).join("  ·  ")
     : "—";
 
-// `direction` decides which end of the process this session belongs to:
-//
-//   incoming   raw product arriving — barcoded, scanned. The default, so every
-//              existing caller keeps its meaning without being changed.
-//   outgoing   finished product leaving — no barcodes, weights typed.
-//
-// It is a prop rather than a toggle because the two are different jobs at
-// different benches, and the difference decides what the panel offers.
+// `direction` decides which end of the process this session belongs to: incoming
+// raw product arriving — barcoded, scanned.
 const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incoming" }) => {
   const {
     ready, durable, session, pending, resumable, lastError, lastScan, scans,
@@ -343,10 +302,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
     listOpenSessions, adoptSession,
   } = useScanSession();
 
-  // Sessions still open on the server. Loaded when the panel opens with nothing
-  // running, so an operator can carry on with a lot rather than starting a
-  // second session against it — two sessions for one delivery is exactly what
-  // merged manifests exist to undo afterwards.
+  // Sessions still open on the server.
   const [openSessions, setOpenSessions] = useState([]);
   const [adopting, setAdopting] = useState(null);
 
@@ -355,10 +311,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
     let cancelled = false;
     (async () => {
       try {
-        // Scoped to this panel's own end of the process. Without it the
-        // incoming bench offered open OUTGOING sessions for adoption, which
-        // would drop the operator into a barcode screen for boxes that carry
-        // no barcode.
+        // Scoped to this panel's own end of the process.
         const rows = await listOpenSessions(direction);
         if (!cancelled) setOpenSessions(rows);
       } catch {
@@ -390,12 +343,8 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
     }
   };
 
-  // One session is one lot, so the manifest produced at Stop covers exactly
-  // these boxes. Defaults to today's lot; editable before the session opens.
-  // The lot used to default to lotNumberForDate() — the DAY PREFIX only,
-  // "N26247" — leaving the operator to type the "-01". That is how two people
-  // both took -01 on the same morning. It now starts empty and the picker
-  // offers the real next number from the server.
+  // One session is one lot, so the manifest produced at Stop covers exactly these
+  // boxes.
   const [header, setHeader] = useState({
     lotNumber: "", lotId: null, vendor: "", billOfLading: "", itemDescription: "",
     // Recorded on the session, deliberately absent from the printed manifest.
@@ -405,14 +354,6 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
     expectedBoxes: "",
   });
   // Uppercased HERE, not just displayed that way.
-  //
-  // textTransform on the input is cosmetic — it changes the glyphs and nothing
-  // else. Typing "humerus bone" looked like HUMERUS BONE on screen and was
-  // stored, sent and PRINTED ON THE MANIFEST in lower case, so the paper form
-  // disagreed with the screen it was filled in from.
-  //
-  // Matches how RegistrationFormTab and IncomingRecordsTab already do it, so
-  // the same field reads the same way whichever screen recorded it.
   const setField = (key) => (e) => {
     const value = upper(e.target.value);
     setHeader((h) => ({ ...h, [key]: value }));
@@ -432,9 +373,8 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
   const cancelStartRef = useRef(null);
   const [rejection, setRejection] = useState(null);
   const [busy, setBusy] = useState(false);
-  // Open by default: the keypad is part of the session, not something to go
-  // hunting for when a torn label turns up mid-pallet. Collapsible because the
-  // scan grid is the primary readout and sometimes wants the room.
+  // Open by default: the keypad is part of the session, not something to go hunting
+  // for when a torn label turns up mid-pallet.
   const [showManual, setShowManual] = useState(true);
   // Typing mode, for the outgoing bench where finished boxes carry no barcode.
   // OFF by default: the typing field HOLDS FOCUS, and a focused field makes the
@@ -442,15 +382,11 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
   // (CLAUDE.md §4). A deliberate mode, never a default.
   const [typeMode, setTypeMode] = useState(false);
 
-  // The session's own direction wins once one is open — an ADOPTED session
-  // carries what it was created as, which may not be what this panel was
-  // opened for. Falls back to the prop before a session exists, so the start
-  // form can already show the right shape.
+  // The session's own direction wins once one is open — an ADOPTED session carries
+  // what it was created as, which may not be what this panel was opened for.
   const isOutgoing = session ? session.direction === "outgoing" : direction === "outgoing";
 
-  // Typing is only ever on for an outgoing session. Belt and braces with the
-  // button being absent: adopting an INCOMING session while typing was left on
-  // would otherwise leave the scanner deaf with no visible cause.
+  // Typing is only ever on for an outgoing session.
   useEffect(() => {
     if (!isOutgoing && typeMode) setTypeMode(false);
   }, [isOutgoing, typeMode]);
@@ -463,10 +399,6 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
   const toast = useToast();
 
   // Opened by reopening a manifest, so the session to work on is already known.
-  //
-  // Guarded by a ref rather than by state: `ready` and `session` both settle
-  // asynchronously, so this effect runs more than once for a single open, and
-  // adopting twice would clear and reseed the grid under the operator.
   const adoptedRef = useRef(null);
   useEffect(() => {
     if (!isOpen) { adoptedRef.current = null; return; }
@@ -539,21 +471,15 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [isOpen, session, handleScanResult]);
 
-  // Confirmed before opening the batch, because the lot is fixed for the whole
-  // session: every box scanned after this belongs to it, and getting it wrong
-  // means re-scanning the pallet rather than editing a field.
+  // Confirmed first: the lot is fixed for the session and every box lands on it.
   const doStart = async () => {
     setBusy(true);
     try {
       await primeAudio(); // iOS needs a gesture before audio will play
       await start({
         lotNumber: header.lotNumber.trim() || null,
-        // The picker already knows exactly which lot was chosen, so send the id
-        // and let the server skip parsing entirely. Without it an OUTGOING
-        // session falls back to resolving the lot by TEXT, which cannot see an
-        // external lot at all — a supplier's own number has no N{YY}{JJJ}-{NN}
-        // to parse — and the start dies on NO_SUCH_LOT for a lot that is
-        // sitting right there in the registry.
+        // The picker already knows exactly which lot was chosen, so send the id and
+        // let the server skip parsing entirely.
         lotId: header.lotId ?? null,
         vendor: header.vendor.trim() || null,
         billOfLading: header.billOfLading.trim() || null,
@@ -660,13 +586,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
     }
   };
 
-  // Returns whether the box actually landed. The error is handled here — one
-  // beep, one toast — but the ANSWER has to go back to the caller: the scale
-  // panel shows a large "recorded" confirmation, and showing that for a box the
-  // server refused would be worse than showing nothing at all.
-  // A whole run of cases as ONE act. Not a loop over onManualAdd: that would be
-  // thirty IndexedDB writes, thirty re-renders and six interleaved flushes, and
-  // a half-failure would leave nobody able to say how many boxes landed.
+  // Returns whether the box actually landed.
   const onManualAddMany = async (entries) => {
     try {
       await addScanMany(entries);
@@ -715,15 +635,6 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
               isDisabled={!session}>
               {showManual ? "Hide keypad" : "Show keypad"}
             </Button>
-            {/* OUTGOING ONLY, and that is a safety property rather than tidiness.
-                The typing field holds focus, and a focused field makes the
-                global keydown handler bail — so while it is open the scanner is
-                deaf (CLAUDE.md §4). On an incoming session that would silently
-                swallow scans, so the control is not merely disabled there: it
-                does not exist. Finished boxes carry no barcode, so nothing is
-                lost at the outgoing bench.
-                Closes the keypad on the way in — both are manual entry, and two
-                panels only compete for the screen. */}
             {isOutgoing && (
               <Button size={{ base: "sm", md: "lg" }} variant={typeMode ? "solid" : "outline"}
                 colorScheme={typeMode ? "blue" : "gray"}
@@ -1186,9 +1097,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
       <TypeWeights
         disabled={busy}
         expected={session?.expectedBoxes ?? null}
-        // The lot so far, for the outlier check. Voided and duplicate rows are
-        // excluded: neither counts towards the manifest, so neither should
-        // shape what "normal" looks like for the next box.
+        // The lot so far, for the outlier check.
         weights={scans
           .filter((s) => s.status !== "voided" && s.status !== "duplicate")
           .map((s) => s.displayWeight || s.weight)}
