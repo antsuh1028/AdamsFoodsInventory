@@ -5,7 +5,7 @@ import {
 } from "@chakra-ui/react";
 import { DeleteIcon, ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
-import { fmtDate, today, Th, Td, timeNow, upper, fmtWeight, PROCESSING_TYPES } from "./shared";
+import { fmtDate, today, Th, Td, timeNow, upper, fmtWeight, PROCESSING_TYPES, SheetField, sheetInputProps, SectionBar } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
 import BoxWeightLink from "./BoxWeightLink";
 import ProcessingReportLink from "./ProcessingReportLink";
@@ -58,49 +58,6 @@ const sampleDraft = () => ({
   remarks: "Sample record for print preview — no backend data behind this.",
   checkedBy: "J. Rivera",
 });
-
-// Sheet-style field: bold right-aligned label + light-gray filled input,
-// laid out as a pair of grid columns to mirror the printed form's rows.
-// On mobile the sheet collapses to a single column, so each field becomes a
-// label row stacked above its input row; the right-aligned two-column pairing
-// only makes sense once there is room for it.
-const SheetField = ({ label, full, plain, children }) => (
-  <>
-    <GridItem
-      colSpan={1}
-      display="flex"
-      alignItems="center"
-      justifyContent={{ base: "flex-start", md: "flex-end" }}
-    >
-      <Text
-        fontSize="2xs" fontWeight="bold" p={2} color="gray.700"
-        textTransform="uppercase" letterSpacing="wide"
-        textAlign={{ base: "left", md: "right" }}
-      >
-        {label}
-      </Text>
-    </GridItem>
-    <GridItem
-      colSpan={{ base: 1, md: full ? 3 : 1 }}
-      bg={plain ? "transparent" : "#f0f0f0"}
-      borderRadius="sm"
-    >
-      {children}
-    </GridItem>
-  </>
-);
-
-// The paper forms this mirrors are filled in block capitals, so the app does
-// the same. textTransform makes it look right while typing; the value itself is
-// uppercased in the change handler, so it is STORED and printed that way rather
-// than only appearing so on screen.
-const sheetInputProps = { size: "sm", bg: "transparent", border: "none", borderRadius: 0, px: 2, textTransform: "uppercase", _focus: { boxShadow: "none", bg: "white" } };
-
-const SectionBar = ({ children }) => (
-  <GridItem colSpan={{ base: 1, md: 4 }} bg="#ccd3db" px={3} py={2} fontSize="xs" fontWeight="bold" color="gray.800">
-    {children}
-  </GridItem>
-);
 
 const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, saving }) => {
   const [isFullScreen, setIsFullScreen] = useState(false);

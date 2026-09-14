@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, Input, Select, Textarea, Spinner,
-  Alert, AlertIcon, useToast,
+  Grid, Alert, AlertIcon, useToast,
 } from "@chakra-ui/react";
 import axiosInstance from "../../utils/axiosInstance";
 import FloatingWindow from "../../components/FloatingWindow";
 import LotPicker from "../../components/LotPicker";
-import { fmtDate, today, upper, PROCESSING_TYPES } from "./shared";
+import {
+  fmtDate, today, upper, fmtWeight, PROCESSING_TYPES,
+  SheetField, sheetInputProps, SectionBar, SHEET_GRID,
+} from "./shared";
 import getRole from "../../utils/getRole";
 
 // The digital version of the paper processing report.
@@ -24,21 +27,12 @@ const emptyDraft = () => ({
   processingType: "", lineNo: "",
   customer: "", description: "", brand: "", grade: "", estNumber: "", packDate: "",
   pulls: [{ cases: "" }],
-  outputCases: "", outputWeight: "", inedibleWeight: "",
+  inedibleWeight: "",
   workers: [],
   notes: "",
 });
 
 const STATUS_COLOR = { submitted: "yellow", accepted: "green", rejected: "red" };
-
-const Field = ({ label, children, w }) => (
-  <Box flex={w ? `0 0 ${w}` : "1 1 160px"} minW="130px">
-    <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide" mb={1}>
-      {label}
-    </Text>
-    {children}
-  </Box>
-);
 
 const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const toast = useToast();
@@ -48,6 +42,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState("submitted");
+  const [stock, setStock] = useState([]);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [workerInput, setWorkerInput] = useState("");
@@ -64,7 +59,18 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     }
   }, []);
 
-  useEffect(() => { fetchReports(); }, [fetchReports]);
+  // The lot's registered total and what is left, so the manager sees the same
+  // context the paper carries on its total line.
+  const fetchStock = useCallback(async () => {
+    try {
+      const { data } = await axiosInstance.get("/nti-inventory");
+      setStock((data || []).filter((r) => r.stage === "raw"));
+    } catch {
+      // Context only. Losing it must not stop a report being filed.
+    }
+  }, []);
+
+  useEffect(() => { fetchReports(); fetchStock(); }, [fetchReports, fetchStock]);
 
   // Compared against a ref so the mount effect and the signal effect do not
   // both fire on first render.
@@ -73,7 +79,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     if (lastSignal.current === refreshSignal) return;
     lastSignal.current = refreshSignal;
     fetchReports();
-  }, [refreshSignal, fetchReports]);
+    fetchStock();
+  }, [refreshSignal, fetchReports, fetchStock]);
 
   const visible = useMemo(
     () => (filter ? reports.filter((r) => r.status === filter) : reports),
@@ -84,6 +91,13 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     () => (draft ? draft.pulls.reduce((sum, p) => sum + (parseInt(p.cases, 10) || 0), 0) : 0),
     [draft]
   );
+
+  const lotStock = useMemo(
+    () => (draft && draft.lotId ? stock.find((r) => r.lotId === draft.lotId) : null),
+    [stock, draft]
+  );
+  const casesLeft = lotStock ? Number(lotStock.qtyCases) || 0 : null;
+  const overdrawn = casesLeft != null && inputCases > casesLeft;
 
   const canSubmit = Boolean(draft && draft.lotId && inputCases > 0);
 
@@ -132,8 +146,6 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const openEdit = (r) => setDraft({
     ...emptyDraft(), ...r,
     pulls: r.pulls.length ? r.pulls.map((p) => ({ cases: String(p.cases) })) : [{ cases: "" }],
-    outputCases: r.outputCases != null ? String(r.outputCases) : "",
-    outputWeight: r.outputWeight != null ? String(r.outputWeight) : "",
     inedibleWeight: r.inedibleWeight != null ? String(r.inedibleWeight) : "",
   });
 
@@ -190,8 +202,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {r.description && <Text fontSize="xs" color="gray.600">{r.description}</Text>}
               <Text fontSize="sm" color="gray.700" ml="auto"
                 style={{ fontVariantNumeric: "tabular-nums" }}>
-                {r.inputCases} cs in
-                {r.outputCases != null ? ` · ${r.outputCases} cs out` : ""}
+                {r.inputCases} cases
+                {r.inedibleWeight ? ` · ${r.inedibleWeight} lb inedible` : ""}
               </Text>
               <Text fontSize="xs" color="gray.500">{fmtDate(r.processingDate)}</Text>
             </Flex>
@@ -252,147 +264,172 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               Submitting files the report. Cases come off the lot when reception accepts it.
             </Text>
 
-            {/* Never mints a lot: a report references one that already exists,
-                the same rule outgoing weighing follows. */}
-            <Field label="Lot">
-              <LotPicker
-                size="md"
-                allowCreate={false}
-                value={draft.lotId}
-                lotNumber={draft.lotNumber}
-                onChange={(lot) => setDraft((d) => ({
-                  ...d,
-                  lotId: lot ? lot.lotId : null,
-                  lotNumber: lot ? lot.lotNumber : "",
-                }))}
-              />
-            </Field>
+            <Grid {...SHEET_GRID} mb={5}>
+              <SectionBar>Lot &amp; Run</SectionBar>
 
-            <Flex gap={3} wrap="wrap" mt={3}>
-              <Field label="Processing date" w="160px">
-                <Input size="sm" type="date" value={draft.processingDate}
+              {/* Never mints a lot: a report references one that already
+                  exists, the same rule outgoing weighing follows. */}
+              <SheetField label="Lot" plain>
+                <Box px={1}>
+                  <LotPicker
+                    size="sm"
+                    allowCreate={false}
+                    value={draft.lotId}
+                    lotNumber={draft.lotNumber}
+                    onChange={(lot) => setDraft((d) => ({
+                      ...d,
+                      lotId: lot ? lot.lotId : null,
+                      lotNumber: lot ? lot.lotNumber : "",
+                    }))}
+                  />
+                </Box>
+              </SheetField>
+              <SheetField label="Processing Date">
+                <Input {...sheetInputProps} type="date" value={draft.processingDate}
                   onChange={(e) => setDraft({ ...draft, processingDate: e.target.value })} />
-              </Field>
-              <Field label="Type" w="250px">
-                <Select size="sm" placeholder="Select…" value={draft.processingType}
+              </SheetField>
+
+              <SheetField label="Processing Type" full>
+                <Select {...sheetInputProps} placeholder="Select…" value={draft.processingType}
                   onChange={(e) => setDraft({ ...draft, processingType: e.target.value })}>
                   {PROCESSING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </Select>
-              </Field>
-              <Field label="Line" w="90px">
-                <Input size="sm" value={draft.lineNo} placeholder="1"
+              </SheetField>
+
+              <SheetField label="Line #">
+                <Input {...sheetInputProps} placeholder="1" value={draft.lineNo}
                   onChange={(e) => setDraft({ ...draft, lineNo: upper(e.target.value) })} />
-              </Field>
-            </Flex>
+              </SheetField>
+              <SheetField label="Customer">
+                <Input {...sheetInputProps} value={draft.customer || ""}
+                  onChange={(e) => setDraft({ ...draft, customer: upper(e.target.value) })} />
+              </SheetField>
 
-            <Flex gap={3} wrap="wrap" mt={3}>
-              {[
-                ["customer", "Customer"], ["description", "Product"],
-                ["brand", "Brand"], ["grade", "Grade"], ["estNumber", "EST"],
-              ].map(([key, label]) => (
-                <Field key={key} label={label}>
-                  <Input size="sm" value={draft[key] || ""}
-                    onChange={(e) => setDraft({ ...draft, [key]: upper(e.target.value) })} />
-                </Field>
-              ))}
-              <Field label="Pack date" w="160px">
-                <Input size="sm" type="date" value={draft.packDate || ""}
+              <SectionBar>Product</SectionBar>
+
+              <SheetField label="Description" full>
+                <Input {...sheetInputProps} value={draft.description || ""}
+                  onChange={(e) => setDraft({ ...draft, description: upper(e.target.value) })} />
+              </SheetField>
+              <SheetField label="Brand">
+                <Input {...sheetInputProps} value={draft.brand || ""}
+                  onChange={(e) => setDraft({ ...draft, brand: upper(e.target.value) })} />
+              </SheetField>
+              <SheetField label="Grade">
+                <Input {...sheetInputProps} value={draft.grade || ""}
+                  onChange={(e) => setDraft({ ...draft, grade: upper(e.target.value) })} />
+              </SheetField>
+              <SheetField label="EST #">
+                <Input {...sheetInputProps} value={draft.estNumber || ""}
+                  onChange={(e) => setDraft({ ...draft, estNumber: upper(e.target.value) })} />
+              </SheetField>
+              <SheetField label="Pack Date">
+                <Input {...sheetInputProps} type="date" value={draft.packDate || ""}
                   onChange={(e) => setDraft({ ...draft, packDate: e.target.value })} />
-              </Field>
-            </Flex>
+              </SheetField>
 
-            {/* Raw pulled off the rack. Cases only — the manager counts cases,
-                and real weights come from the weighing benches. */}
-            <Text fontSize="xs" color="gray.500" textTransform="uppercase"
-              letterSpacing="wide" mt={5} mb={1}>
-              Raw pulled
-            </Text>
-            <Flex direction="column" gap={2}>
+              <SectionBar>Cases Processed</SectionBar>
+
+              {/* One row per batch off the rack. Cases only: the manager counts
+                  cases, and real weights come from the weighing benches. */}
               {draft.pulls.map((p, idx) => (
-                <Flex key={idx} gap={2} align="center">
-                  <Text fontSize="xs" color="gray.500" width="52px">Pull {idx + 1}</Text>
-                  <Input size="sm" width="110px" type="number" placeholder="cases"
-                    value={p.cases}
-                    onChange={(e) => {
-                      const pulls = [...draft.pulls];
-                      pulls[idx] = { cases: e.target.value };
-                      setDraft({ ...draft, pulls });
-                    }} />
-                  <Text fontSize="sm" color="gray.500">cases</Text>
-                  <Button size="xs" variant="ghost" colorScheme="red"
-                    isDisabled={draft.pulls.length <= 1}
-                    onClick={() => setDraft({
-                      ...draft, pulls: draft.pulls.filter((_, i) => i !== idx),
-                    })}>
-                    ×
-                  </Button>
-                  {idx === draft.pulls.length - 1 && (
-                    <Button size="xs" variant="outline" colorScheme="blue"
-                      onClick={() => setDraft({ ...draft, pulls: [...draft.pulls, { cases: "" }] })}>
-                      + pull
+                <SheetField key={idx} label={`(${idx + 1}) Cases`} full>
+                  <Flex gap={3} align="center" px={3} py={1.5}>
+                    <Input
+                      {...sheetInputProps}
+                      bg="white" flex="0 0 130px" type="number" placeholder="cases"
+                      value={p.cases}
+                      onChange={(e) => {
+                        const pulls = [...draft.pulls];
+                        pulls[idx] = { cases: e.target.value };
+                        setDraft({ ...draft, pulls });
+                      }}
+                    />
+                    <Button size="xs" variant="ghost" colorScheme="red" px={1} minW="auto"
+                      isDisabled={draft.pulls.length <= 1}
+                      title={draft.pulls.length <= 1 ? "Cannot delete last row" : "Delete this row"}
+                      onClick={() => setDraft({
+                        ...draft, pulls: draft.pulls.filter((_, i) => i !== idx),
+                      })}>
+                      ×
                     </Button>
+                    {idx === draft.pulls.length - 1 && (
+                      <Button size="xs" variant="outline" colorScheme="blue" px={2} minW="auto"
+                        title="Add another batch"
+                        onClick={() => setDraft({ ...draft, pulls: [...draft.pulls, { cases: "" }] })}>
+                        +
+                      </Button>
+                    )}
+                  </Flex>
+                </SheetField>
+              ))}
+
+              <SheetField label="Total" full plain>
+                <Flex align="baseline" gap={3} wrap="wrap" px={3} py={2}>
+                  <Text fontSize="sm" fontWeight="bold" color="gray.800"
+                    style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {inputCases} cases
+                  </Text>
+                  {lotStock && (
+                    <Text fontSize="xs" color="gray.500"
+                      style={{ fontVariantNumeric: "tabular-nums" }}>
+                      lot registered {lotStock.registeredCases ?? "?"} cases
+                      {lotStock.registeredWeight ? ` = ${fmtWeight(lotStock.registeredWeight)} lb` : ""}
+                      {" · "}{casesLeft} left now
+                      {inputCases > 0 && !overdrawn ? ` · ${casesLeft - inputCases} after this` : ""}
+                    </Text>
                   )}
                 </Flex>
-              ))}
-            </Flex>
-            <Text fontSize="sm" fontWeight="600" color="gray.700" mt={2}
-              style={{ fontVariantNumeric: "tabular-nums" }}>
-              {inputCases} cases total
-            </Text>
+              </SheetField>
 
-            <Text fontSize="xs" color="gray.500" textTransform="uppercase"
-              letterSpacing="wide" mt={5} mb={1}>
-              Output
-            </Text>
-            <Flex gap={3} wrap="wrap">
-              <Field label="Cases out" w="130px">
-                <Input size="sm" type="number" value={draft.outputCases}
-                  onChange={(e) => setDraft({ ...draft, outputCases: e.target.value })} />
-              </Field>
-              <Field label="Weight out (lb)" w="160px">
-                <Input size="sm" type="number" value={draft.outputWeight}
-                  onChange={(e) => setDraft({ ...draft, outputWeight: e.target.value })} />
-              </Field>
-              <Field label="Inedible (lb)" w="150px">
-                <Input size="sm" type="number" value={draft.inedibleWeight}
+              <SheetField label="Inedible (lb)">
+                <Input {...sheetInputProps} type="number" value={draft.inedibleWeight}
                   onChange={(e) => setDraft({ ...draft, inedibleWeight: e.target.value })} />
-              </Field>
-            </Flex>
+              </SheetField>
 
-            <Text fontSize="xs" color="gray.500" textTransform="uppercase"
-              letterSpacing="wide" mt={5} mb={1}>
-              Who ran it
-            </Text>
-            <Flex gap={2} wrap="wrap" align="center" mb={2}>
-              {draft.workers.map((w, idx) => (
-                <Badge key={idx} colorScheme="blue" borderRadius="full" px={2} py={1}
-                  fontSize="sm" fontWeight="500">
-                  {w}
-                  <Box as="button" type="button" ml={2} color="blue.600"
-                    onClick={() => setDraft({
-                      ...draft, workers: draft.workers.filter((_, i) => i !== idx),
-                    })}>
-                    ×
-                  </Box>
-                </Badge>
-              ))}
-            </Flex>
-            <Flex gap={2}>
-              <Input size="sm" width="220px" placeholder="Name, then Enter"
-                value={workerInput}
-                onChange={(e) => setWorkerInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); addWorker(); }
-                }} />
-              <Button size="sm" variant="outline" onClick={addWorker}>Add</Button>
-            </Flex>
+              <SectionBar>Crew &amp; Notes</SectionBar>
 
-            <Text fontSize="xs" color="gray.500" textTransform="uppercase"
-              letterSpacing="wide" mt={5} mb={1}>
-              Notes
-            </Text>
-            <Textarea size="sm" rows={2} value={draft.notes || ""}
-              onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
+              <SheetField label="Who Ran It" full plain>
+                <Box px={3} py={2}>
+                  <Flex gap={2} wrap="wrap" align="center" mb={draft.workers.length ? 2 : 0}>
+                    {draft.workers.map((w, idx) => (
+                      <Badge key={idx} colorScheme="blue" borderRadius="full" px={2} py={1}
+                        fontSize="sm" fontWeight="500">
+                        {w}
+                        <Box as="button" type="button" ml={2} color="blue.600"
+                          onClick={() => setDraft({
+                            ...draft, workers: draft.workers.filter((_, i) => i !== idx),
+                          })}>
+                          ×
+                        </Box>
+                      </Badge>
+                    ))}
+                  </Flex>
+                  <Flex gap={2}>
+                    <Input size="sm" bg="white" width="220px" placeholder="Name, then Enter"
+                      value={workerInput}
+                      onChange={(e) => setWorkerInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); addWorker(); }
+                      }} />
+                    <Button size="sm" variant="outline" onClick={addWorker}>Add</Button>
+                  </Flex>
+                </Box>
+              </SheetField>
+
+              <SheetField label="Remarks" full>
+                <Textarea {...sheetInputProps} rows={2} value={draft.notes || ""}
+                  onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
+              </SheetField>
+            </Grid>
+
+            {overdrawn && (
+              <Alert status="warning" borderRadius="md" fontSize="xs" py={2} mb={3}>
+                <AlertIcon boxSize={3} />
+                That is more than the {casesLeft} cases left on this lot. Reception will
+                not be able to accept it.
+              </Alert>
+            )}
           </Box>
         )}
       </FloatingWindow>

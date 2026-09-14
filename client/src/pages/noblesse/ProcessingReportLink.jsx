@@ -93,11 +93,9 @@ const ProcessingReportLink = ({ lotId, formId, onApplied }) => {
                 Accept
               </Button>
             </Flex>
-            {r.outputCases != null && (
+            {r.inedibleWeight && (
               <Text fontSize="xs" color="gray.500" mt={1}>
-                {r.outputCases} cases out
-                {r.outputWeight ? ` · ${r.outputWeight} lb` : ""}
-                {r.inedibleWeight ? ` · ${r.inedibleWeight} lb inedible` : ""}
+                {r.inedibleWeight} lb inedible
               </Text>
             )}
             {rejecting === r.reportId && (

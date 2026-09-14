@@ -1,4 +1,5 @@
-import { Box } from "@chakra-ui/react";
+import React from "react";
+import { Box, GridItem, Text } from "@chakra-ui/react";
 
 // Every date in this app is a Pacific business date. The warehouse is in
 // Maywood, CA, so "today" means today in Maywood — not in UTC, and not in
@@ -142,3 +143,60 @@ export const Td = ({ children, ...props }) => (
     {children}
   </Box>
 );
+
+// ── The sheet look ───────────────────────────────────────────────────────────
+// The paper forms these screens mirror are grids of label/value pairs, so the
+// screens are too. Shared so the processing report and the registration form
+// are visibly the same document family rather than two takes on it.
+
+// Bold right-aligned label plus a filled cell, as a pair of grid columns.
+// Collapses to one column on mobile, where the right-aligned pairing has no
+// room to mean anything.
+export const SheetField = ({ label, full, plain, children }) => (
+  <>
+    <GridItem
+      colSpan={1}
+      display="flex"
+      alignItems="center"
+      justifyContent={{ base: "flex-start", md: "flex-end" }}
+    >
+      <Text
+        fontSize="2xs" fontWeight="bold" p={2} color="gray.700"
+        textTransform="uppercase" letterSpacing="wide"
+        textAlign={{ base: "left", md: "right" }}
+      >
+        {label}
+      </Text>
+    </GridItem>
+    <GridItem
+      colSpan={{ base: 1, md: full ? 3 : 1 }}
+      bg={plain ? "transparent" : "#f0f0f0"}
+      borderRadius="sm"
+    >
+      {children}
+    </GridItem>
+  </>
+);
+
+// Block capitals on screen; the value is uppercased in the change handler so it
+// is stored and printed that way too, not merely displayed.
+export const sheetInputProps = {
+  size: "sm", bg: "transparent", border: "none", borderRadius: 0, px: 2,
+  textTransform: "uppercase", _focus: { boxShadow: "none", bg: "white" },
+};
+
+export const SectionBar = ({ children }) => (
+  <GridItem colSpan={{ base: 1, md: 4 }} bg="#ccd3db" px={3} py={2}
+    fontSize="xs" fontWeight="bold" color="gray.800">
+    {children}
+  </GridItem>
+);
+
+// The grid the two above live in.
+export const SHEET_GRID = {
+  templateColumns: { base: "1fr", md: "1fr 2fr 1fr 2fr" },
+  gap: "1px",
+  bg: "gray.200",
+  border: "1px solid",
+  borderColor: "gray.200",
+};

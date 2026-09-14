@@ -117,6 +117,11 @@ const fmtNtiItem = (row) => ({
   // the two are indistinguishable in the picker and output gets reprocessed.
   // Defaulted here because rows predating the column read back NULL.
   stage:        row.stage || "raw",
+  lotId:        row.lot_id ?? null,
+  // What the registration form claimed on arrival, kept apart from weight and
+  // qty_cases, which are what is left after shipping and processing.
+  registeredWeight: row.registered_weight != null ? Number(row.registered_weight) : null,
+  registeredCases:  row.registered_cases ?? null,
   createdAt:    row.created_at,
 });
 
