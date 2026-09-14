@@ -125,14 +125,25 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
           .map((p) => ({ cases: parseInt(p.cases, 10) }))
           .filter((p) => Number.isInteger(p.cases) && p.cases > 0),
       };
-      if (draft.reportId) {
+      const editing = Boolean(draft.reportId);
+      const wasRejected = draft.status === "rejected";
+      if (editing) {
         await axiosInstance.patch(`/processing-reports/${draft.reportId}`, payload);
       } else {
         await axiosInstance.post("/processing-reports", payload);
       }
+      const lot = draft.lotNumber || "the lot";
       setDraft(null);
       await fetchReports();
-      toast({ status: "success", title: "Report submitted", duration: 3000, position: "top" });
+      toast({
+        status: "success", position: "top", duration: 6000, isClosable: true,
+        title: wasRejected
+          ? `Resubmitted — ${inputCases} case${inputCases === 1 ? "" : "s"} on ${lot}`
+          : editing
+            ? `Report updated — ${inputCases} case${inputCases === 1 ? "" : "s"} on ${lot}`
+            : `Report filed — ${inputCases} case${inputCases === 1 ? "" : "s"} on ${lot}`,
+        description: "Nothing moves until reception accepts it.",
+      });
     } catch (err) {
       toast({
         status: "error", position: "top", duration: 7000, isClosable: true,
@@ -153,6 +164,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     try {
       await axiosInstance.delete(`/processing-reports/${report.reportId}`);
       await fetchReports();
+      toast({
+        status: "success", position: "top", duration: 4000,
+        title: `Report for ${report.lotNumber} deleted`,
+        description: "It had not been accepted, so no stock moved.",
+      });
     } catch (err) {
       toast({ status: "error", position: "top", title: "Could not delete",
         description: err.response?.data?.error || err.message });

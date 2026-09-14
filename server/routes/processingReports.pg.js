@@ -444,7 +444,13 @@ router.post("/processing-reports/:id/accept", verifyToken, async (req, res) => {
        req.username]
     ).catch((err) => console.error("nti history log error:", err.message));
 
-    res.json({ ...(await loadReport(id, req.tenantId)), appliedFormId: updated.rows[0].applied_form_id });
+    res.json({
+      ...(await loadReport(id, req.tenantId)),
+      appliedFormId: updated.rows[0].applied_form_id,
+      lotNumber: report.lot_number,
+      casesTaken: report.input_cases,
+      casesLeft: onHand - report.input_cases,
+    });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     console.error("accept processing report:", err);
@@ -510,10 +516,11 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
       return res.status(409).json({ code: "NOT_ACCEPTED", error: "This report has not been accepted." });
     }
 
-    await client.query(
+    const restored = await client.query(
       `UPDATE nti_inventory SET qty_cases = COALESCE(qty_cases, 0) + $1
         WHERE tenant_id = $3 AND stage = 'raw'
-          AND (lot_id = $2 OR (lot_id IS NULL AND lot = $4))`,
+          AND (lot_id = $2 OR (lot_id IS NULL AND lot = $4))
+      RETURNING qty_cases`,
       [report.input_cases, report.lot_id, req.tenantId, report.lot_number]
     );
 
@@ -538,7 +545,12 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
     );
 
     await client.query("COMMIT");
-    res.json(await loadReport(id, req.tenantId));
+    res.json({
+      ...(await loadReport(id, req.tenantId)),
+      lotNumber: report.lot_number,
+      casesReturned: report.input_cases,
+      casesLeft: restored.rows.length ? Number(restored.rows[0].qty_cases) : null,
+    });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     console.error("unaccept processing report:", err);
