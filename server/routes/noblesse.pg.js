@@ -48,7 +48,11 @@ const fmtRegistrationForm = (row) => {
       // Cases processed. Rows written before this existed have no `cases` key,
       // so it reads as null rather than 0 — nobody entered zero, it was never
       // asked for.
-      cases: pd.cases != null && pd.cases !== "" ? Number(pd.cases) : null
+      cases: pd.cases != null && pd.cases !== "" ? Number(pd.cases) : null,
+      // Which accepted processing report wrote this row. Dropping it here made
+      // the row render as editable AND made the save path merge the original
+      // back alongside the client's id-less copy, so every save duplicated it.
+      reportId: pd.reportId != null ? Number(pd.reportId) : null,
     }));
   } else {
     // Fallback to legacy columns for existing data

@@ -401,9 +401,18 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       px={1}
                       ml={1}
                       flexShrink={0}
-                      isDisabled={draft.processingDates.length <= 1}
-                      title={draft.processingDates.length <= 1 ? "Cannot delete last row" : "Delete this row"}
+                      // A row from an accepted report is never hand-deleted:
+                      // its cases are off the lot, and removing the row here
+                      // would leave the stock moved with nothing explaining it.
+                      // Un-accept is the way back, and it restores both.
+                      isDisabled={pd.reportId != null || draft.processingDates.length <= 1}
+                      title={pd.reportId != null
+                        ? "From a processing report — un-accept it instead"
+                        : draft.processingDates.length <= 1
+                          ? "Cannot delete last row"
+                          : "Delete this row"}
                       onClick={() => {
+                        if (pd.reportId != null) return;
                         const newDates = draft.processingDates.filter((_, i) => i !== idx);
                         setDraft({ ...draft, processingDates: newDates });
                       }}
