@@ -610,6 +610,10 @@ const processedPercent = (draft) => {
 // Returns both halves, not just the difference: "nothing left to do" and
 // "nothing done yet" both read as a remainder of zero, and only the processed
 // figure tells them apart.
+// A week of intake per page. Counted in days rather than rows so one busy
+// Tuesday does not split a week across two pages.
+const DAYS_PER_PAGE = 7;
+
 const caseTally = (draft) => {
   if (!draft) return null;
   const total = parseFloat(draft.totalQuantity);
@@ -634,6 +638,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   const [draft, setDraft]     = useState(null);
   const [saving, setSaving]   = useState(false);
   const [statusFilter, setStatusFilter] = useState("in_progress");
+  const [page, setPage] = useState(0);
   const [allHistoryOpen, setAllHistoryOpen] = useState(false);
   const [allHistory, setAllHistory] = useState([]);
   const [allHistoryLoading, setAllHistoryLoading] = useState(false);
@@ -777,7 +782,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   // can be parsed wrong (CLAUDE.md §3). Upper-cased and trimmed so casing or a
   // stray space cannot split one lot across two positions, and a form with no
   // lot yet sorts LAST rather than riding above today's work.
-  const filteredForms = forms
+  const matching = forms
     .filter((f) => !statusFilter || f.status === statusFilter)
     .slice()
     .sort((a, b) => {
@@ -787,6 +792,23 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
       // Same lot — two forms against one lot happens. Newest first.
       return String(b.dateReceived || "").localeCompare(String(a.dateReceived || ""));
     });
+
+  // Every distinct day, newest first. A form with no date sorts last and rides
+  // on the oldest page rather than vanishing.
+  const days = [...new Set(matching.map((f) => f.dateReceived || ""))]
+    .sort((a, b) => (a && b ? b.localeCompare(a) : a ? -1 : 1));
+  const pageCount = Math.max(1, Math.ceil(days.length / DAYS_PER_PAGE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageDays = new Set(days.slice(safePage * DAYS_PER_PAGE, (safePage + 1) * DAYS_PER_PAGE));
+  const filteredForms = matching.filter((f) => pageDays.has(f.dateReceived || ""));
+
+  const pageLabel = (() => {
+    const shown = [...pageDays].filter(Boolean).sort();
+    if (!shown.length) return "No date";
+    const first = fmtDate(shown[0]);
+    const last = fmtDate(shown[shown.length - 1]);
+    return first === last ? first : `${first} – ${last}`;
+  })();
 
   // Pacific business date, never the browser's local one — see shared.jsx.
   const todayStr = today();
@@ -804,7 +826,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
               size="xs"
               variant={statusFilter === null ? "solid" : "outline"}
               colorScheme={statusFilter === null ? "teal" : "gray"}
-              onClick={() => setStatusFilter(null)}
+              onClick={() => { setStatusFilter(null); setPage(0); }}
             >
               All
             </Button>
@@ -812,7 +834,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
               size="xs"
               variant={statusFilter === "in_progress" ? "solid" : "outline"}
               colorScheme={statusFilter === "in_progress" ? "blue" : "gray"}
-              onClick={() => setStatusFilter("in_progress")}
+              onClick={() => { setStatusFilter("in_progress"); setPage(0); }}
             >
               In Progress
             </Button>
@@ -820,7 +842,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
               size="xs"
               variant={statusFilter === "completed" ? "solid" : "outline"}
               colorScheme={statusFilter === "completed" ? "green" : "gray"}
-              onClick={() => setStatusFilter("completed")}
+              onClick={() => { setStatusFilter("completed"); setPage(0); }}
             >
               Completed
             </Button>
@@ -985,6 +1007,31 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
           </tbody>
         </table>
         </Box>
+      )}
+
+      {/* Only when there is more than a week of it. A pager over a single page
+          is furniture. */}
+      {pageCount > 1 && (
+        <Flex align="center" justify="space-between" gap={3} wrap="wrap" mt={3}>
+          <Text fontSize="xs" color="gray.500">
+            {pageLabel} · {filteredForms.length} form{filteredForms.length === 1 ? "" : "s"}
+          </Text>
+          <Flex align="center" gap={2}>
+            <Button size="xs" variant="outline"
+              isDisabled={safePage === 0}
+              onClick={() => setPage(safePage - 1)}>
+              Newer
+            </Button>
+            <Text fontSize="xs" color="gray.600">
+              Week {safePage + 1} of {pageCount}
+            </Text>
+            <Button size="xs" variant="outline"
+              isDisabled={safePage >= pageCount - 1}
+              onClick={() => setPage(safePage + 1)}>
+              Older
+            </Button>
+          </Flex>
+        </Flex>
       )}
 
       <FloatingWindow

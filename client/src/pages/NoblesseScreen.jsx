@@ -1,14 +1,38 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Box, Flex, Text, Spinner, Badge, IconButton, Tooltip, Image, Button,
-  Tabs, TabList, TabPanels, Tab, TabPanel,
-  Drawer, DrawerOverlay, DrawerContent, DrawerHeader, DrawerFooter,
-  Stack, Divider, useDisclosure,
+  Box,
+  Flex,
+  Text,
+  Spinner,
+  Badge,
+  IconButton,
+  Tooltip,
+  Image,
+  Button,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  Drawer,
+  DrawerOverlay,
+  DrawerContent,
+  DrawerHeader,
+  DrawerFooter,
+  Stack,
+  Divider,
+  useDisclosure,
 } from "@chakra-ui/react";
-import { RepeatIcon, WarningIcon, HamburgerIcon, CloseIcon } from "@chakra-ui/icons";
+import {
+  RepeatIcon,
+  WarningIcon,
+  HamburgerIcon,
+  CloseIcon,
+} from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
+// eslint-disable-next-line no-unused-vars -- Incoming Records is commented out below, not removed
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import ProcessingReportsTab from "./noblesse/ProcessingReportsTab";
 import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
@@ -23,15 +47,19 @@ const REFRESH_INTERVAL_MS = 60 * 1000;
 
 const NoblesseScreen = () => {
   const navigate = useNavigate();
-  const isAdmin  = getRole() === "admin";
-  const canEdit  = true; // all roles permitted on this screen are trusted to edit
+  const isAdmin = getRole() === "admin";
+  const canEdit = true; // all roles permitted on this screen are trusted to edit
 
   // Box weighing belongs to Noblesse Trading, so it lives here rather than in
   // the Adams Foods navbar. The diagnostic sits alongside it because it exists
   // to configure the same scanner.
   const [scanDiagOpen, setScanDiagOpen] = useState(false);
   const [scaleDiagOpen, setScaleDiagOpen] = useState(false);
-  const { isOpen: drawerOpen, onOpen: openDrawer, onClose: closeDrawer } = useDisclosure();
+  const {
+    isOpen: drawerOpen,
+    onOpen: openDrawer,
+    onClose: closeDrawer,
+  } = useDisclosure();
 
   const logOut = () => {
     localStorage.removeItem("token");
@@ -41,26 +69,35 @@ const NoblesseScreen = () => {
 
   // Runs the action and closes the drawer behind it, matching the Adams navbar.
   const drawerBtn = (label, handler) => (
-    <Button bg="white" justifyContent="flex-start"
-      onClick={() => { handler(); closeDrawer(); }}>
+    <Button
+      bg="white"
+      justifyContent="flex-start"
+      onClick={() => {
+        handler();
+        closeDrawer();
+      }}
+    >
       {label}
     </Button>
   );
 
-  const [receipts, setReceipts]           = useState([]);
+  // Still fetched and still counted on the hidden Incoming tab's badge, so
+  // uncommenting that tab needs no other change.
+  // eslint-disable-next-line no-unused-vars
+  const [receipts, setReceipts] = useState([]);
   // Weighed, closed, and on no registration form yet — the work waiting on
   // someone. Drives the tab badge and the notice below the tabs.
-  const [unregistered, setUnregistered]   = useState([]);
+  const [unregistered, setUnregistered] = useState([]);
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   // Submitted reports waiting on reception. Drives the tab badge and the nudge.
   const [waitingReports, setWaitingReports] = useState(0);
-  const [tabIndex, setTabIndex]           = useState(0);
+  const [tabIndex, setTabIndex] = useState(0);
   const [refreshSignal, setRefreshSignal] = useState(0);
-  const [loading, setLoading]             = useState(true);
-  const [refreshing, setRefreshing]       = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(null);
-  const [error, setError]                 = useState(null);
-  const intervalRef  = useRef(null);
+  const [error, setError] = useState(null);
+  const intervalRef = useRef(null);
   const fetchDataRef = useRef(null); // always points at the latest fetchData, so the interval never closes over a stale one
 
   const stopAutoRefresh = () => {
@@ -70,7 +107,10 @@ const NoblesseScreen = () => {
 
   const startAutoRefresh = () => {
     if (intervalRef.current) return; // already running
-    intervalRef.current = setInterval(() => fetchDataRef.current?.(), REFRESH_INTERVAL_MS);
+    intervalRef.current = setInterval(
+      () => fetchDataRef.current?.(),
+      REFRESH_INTERVAL_MS,
+    );
   };
 
   const fetchData = useCallback(async (isManual = false) => {
@@ -82,13 +122,15 @@ const NoblesseScreen = () => {
       const [receiptsRes, unregRes, reportsRes] = await Promise.all([
         axiosInstance.get("/noblesse-receipts"),
         axiosInstance.get("/box-batches/unregistered").catch((e) => e),
-        axiosInstance.get("/processing-reports", { params: { status: "submitted" } })
+        axiosInstance
+          .get("/processing-reports", { params: { status: "submitted" } })
           .catch((e) => e),
       ]);
       setReceipts(receiptsRes.data || []);
       if (!(unregRes instanceof Error)) setUnregistered(unregRes.data || []);
       // Only for the tab badge; the tab fetches its own list.
-      if (!(reportsRes instanceof Error)) setWaitingReports((reportsRes.data || []).length);
+      if (!(reportsRes instanceof Error))
+        setWaitingReports((reportsRes.data || []).length);
 
       // Tabs that load their own data watch this and re-fetch. Without it the
       // timestamp below ticks while their contents stay frozen at page load.
@@ -98,7 +140,11 @@ const NoblesseScreen = () => {
       startAutoRefresh();
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.error || err.message || "Failed to load Noblesse data");
+      setError(
+        err.response?.data?.error ||
+          err.message ||
+          "Failed to load Noblesse data",
+      );
       stopAutoRefresh();
     } finally {
       setLoading(false);
@@ -113,13 +159,20 @@ const NoblesseScreen = () => {
     return () => stopAutoRefresh();
   }, [fetchData]);
 
-  const handleReceiptAdded  = (r) => setReceipts((prev) => [r, ...prev]);
-  const handleReceiptUpdate = (r) => setReceipts((prev) => prev.map((x) => x.id === r.id ? r : x));
-  const handleReceiptDelete = (id) => setReceipts((prev) => prev.filter((x) => x.id !== id));
+  /* eslint-disable no-unused-vars -- passed to the hidden Incoming tab */
+  const handleReceiptAdded = (r) => setReceipts((prev) => [r, ...prev]);
+  const handleReceiptUpdate = (r) =>
+    setReceipts((prev) => prev.map((x) => (x.id === r.id ? r : x)));
+  const handleReceiptDelete = (id) =>
+    setReceipts((prev) => prev.filter((x) => x.id !== id));
+  /* eslint-enable no-unused-vars */
 
-  // Chakra pairs tabs to panels by position, so these are positions, not names.
-  const PROCESSING_TAB = 1;
-  const REGISTRATION_TAB = 2;
+  // Positions in the TabList, counting only the tabs that are rendered.
+  // Incoming is commented out, so everything shifted up by one — Chakra pairs
+  // tabs to panels by position and these buttons jump by index, so hiding a tab
+  // moves both.
+  const REGISTRATION_TAB = 0;
+  const PROCESSING_TAB = 2;
 
   if (loading) {
     return (
@@ -131,23 +184,53 @@ const NoblesseScreen = () => {
 
   return (
     <Flex direction="column" h="100vh" overflow="hidden" bg="gray.50">
-      <Box bg="white" borderBottom="1px" borderColor="gray.200" px={6} py={4} flexShrink={0}>
+      <Box
+        bg="white"
+        borderBottom="1px"
+        borderColor="gray.200"
+        px={6}
+        py={4}
+        flexShrink={0}
+      >
         <Flex align="center" justify="space-between">
           <Flex align="center" gap={3}>
-            <IconButton icon={<HamburgerIcon />} size="sm" variant="ghost"
-              colorScheme="gray" aria-label="Menu" onClick={openDrawer} />
-            <Image src={ntiLogo} alt="Noblesse Trading Inc" height="36px" objectFit="contain" />
+            <IconButton
+              icon={<HamburgerIcon />}
+              size="sm"
+              variant="ghost"
+              colorScheme="gray"
+              aria-label="Menu"
+              onClick={openDrawer}
+            />
+            <Image
+              src={ntiLogo}
+              alt="Noblesse Trading Inc"
+              height="36px"
+              objectFit="contain"
+            />
 
             {/* Recomputed on every render rather than memoised, so the 60s
                 auto-refresh rolls it over shortly after midnight without a
                 page reload. */}
             <Box borderLeft="1px solid" borderColor="gray.200" pl={4} ml={1}>
-              <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
+              <Text
+                fontSize="xs"
+                color="gray.500"
+                textTransform="uppercase"
+                letterSpacing="wide"
+              >
                 {fmtLongDate()}
               </Text>
               <Flex align="baseline" gap={2}>
-                <Text fontSize="xs" color="gray.500">Lot</Text>
-                <Text fontSize="lg" fontWeight="bold" color="red.800" lineHeight="1.1">
+                <Text fontSize="xs" color="gray.500">
+                  Lot
+                </Text>
+                <Text
+                  fontSize="lg"
+                  fontWeight="bold"
+                  color="red.800"
+                  lineHeight="1.1"
+                >
                   {lotNumberForDate()}
                 </Text>
               </Flex>
@@ -156,14 +239,23 @@ const NoblesseScreen = () => {
           <Flex align="center" gap={3}>
             {lastRefreshed && (
               <Text fontSize="sm" color="gray.400">
-                Updated {lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                Updated{" "}
+                {lastRefreshed.toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}
               </Text>
             )}
             <Tooltip label="Refresh now">
               <IconButton
                 icon={refreshing ? <Spinner size="xs" /> : <RepeatIcon />}
-                size="sm" variant="ghost" colorScheme="gray"
-                aria-label="Refresh" onClick={() => fetchData(true)} isDisabled={refreshing}
+                size="sm"
+                variant="ghost"
+                colorScheme="gray"
+                aria-label="Refresh"
+                onClick={() => fetchData(true)}
+                isDisabled={refreshing}
               />
             </Tooltip>
           </Flex>
@@ -171,19 +263,44 @@ const NoblesseScreen = () => {
       </Box>
 
       {error && (
-        <Flex align="center" justify="space-between" bg="red.50" borderBottom="1px" borderColor="red.200"
-          px={6} py={2} flexShrink={0}>
+        <Flex
+          align="center"
+          justify="space-between"
+          bg="red.50"
+          borderBottom="1px"
+          borderColor="red.200"
+          px={6}
+          py={2}
+          flexShrink={0}
+        >
           <Flex align="center" gap={2}>
             <WarningIcon color="red.400" boxSize={3.5} />
             <Text fontSize="sm" color="red.600">
-              {lastRefreshed
-                ? <>Couldn't refresh ({error}). Auto-refresh paused — showing data from{" "}
-                    {lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</>
-                : <>Couldn't load Noblesse Trading data ({error}). Auto-refresh paused — Registration Forms below still work independently.</>
-              }
+              {lastRefreshed ? (
+                <>
+                  Couldn't refresh ({error}). Auto-refresh paused — showing data
+                  from{" "}
+                  {lastRefreshed.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                  .
+                </>
+              ) : (
+                <>
+                  Couldn't load Noblesse Trading data ({error}). Auto-refresh
+                  paused — Registration Forms below still work independently.
+                </>
+              )}
             </Text>
           </Flex>
-          <Button size="xs" colorScheme="red" variant="outline" onClick={() => fetchData(true)} isLoading={refreshing}>
+          <Button
+            size="xs"
+            colorScheme="red"
+            variant="outline"
+            onClick={() => fetchData(true)}
+            isLoading={refreshing}
+          >
             Retry
           </Button>
         </Flex>
@@ -192,112 +309,178 @@ const NoblesseScreen = () => {
       <Flex flex={1} overflow="hidden" direction="column" p={4} gap={0}>
         {/* Controlled so the notice below can send someone to the right tab.
             The index it uses is derived, never hardcoded — see REGISTRATION_TAB. */}
-        <Tabs colorScheme="blue" variant="line" size="sm"
-          index={tabIndex} onChange={setTabIndex}
-          display="flex" flexDirection="column" flex={1} overflow="hidden">
+        <Tabs
+          colorScheme="blue"
+          variant="line"
+          size="sm"
+          index={tabIndex}
+          onChange={setTabIndex}
+          display="flex"
+          flexDirection="column"
+          flex={1}
+          overflow="hidden"
+        >
           {/* The notice rides on the tab row itself. TabList keeps only Tab
               children — Chakra registers those as descendants to pair them with
               panels by position, so a stray child in there is asking for the
               off-by-one this file already carries a warning about. */}
           <Flex align="center" gap={3} mb={3} flexShrink={0} flexWrap="wrap">
-          <TabList gap={2} flexWrap="wrap" flex="1 1 auto">
-            <Tab>
+            <TabList gap={2} flexWrap="wrap" flex="1 1 auto">
+              {/* <Tab>
               Incoming Records
               {receipts.length > 0 && <Badge ml={2} colorScheme="blue" borderRadius="full">{receipts.length}</Badge>}
-            </Tab>
-            {/* Sits between Incoming and Outgoing because that is the order the
+            </Tab> */}
+              {/* Sits between Incoming and Outgoing because that is the order the
                 product actually moves through the building. Chakra pairs tabs
                 to panels by position, so a tab and its panel must always be
                 added or removed together. */}
-            <Tab>
-              Processing
-              {waitingReports > 0 && (
-                <Badge ml={2} colorScheme="yellow" borderRadius="full">{waitingReports}</Badge>
-              )}
-            </Tab>
-            <Tab>
-              Registration Forms
-              {unregistered.length > 0 && (
-                <Badge ml={2} colorScheme="blue" borderRadius="full">{unregistered.length}</Badge>
-              )}
-            </Tab>
-            <Tab>Weight Manifests</Tab>
-            <Tab>Outgoing</Tab>
-          </TabList>
+              <Tab>
+                Registration Forms
+                {unregistered.length > 0 && (
+                  <Badge ml={2} colorScheme="blue" borderRadius="full">
+                    {unregistered.length}
+                  </Badge>
+                )}
+              </Tab>
+              <Tab>Weight Manifests</Tab>
 
-          {/* Weighed lots nobody has registered yet. Compact, because it sits on
+              <Tab>
+                Processing
+                {waitingReports > 0 && (
+                  <Badge ml={2} colorScheme="yellow" borderRadius="full">
+                    {waitingReports}
+                  </Badge>
+                )}
+              </Tab>
+
+              <Tab>Outgoing</Tab>
+            </TabList>
+
+            {/* Weighed lots nobody has registered yet. Compact, because it sits on
               the tab row — the lots themselves are in the tooltip so the row
               cannot grow and push the panels down. Dismissible (the answer is
               sometimes "not today") but it returns on reload, since the work
               has not gone away. */}
-          {/* Reception works on the Registration Forms tab, so without this a
+            {/* Reception works on the Registration Forms tab, so without this a
               waiting report is only found by opening a form and noticing.
               Same shape as the registering nudge beside it. */}
-          {waitingReports > 0 && (
-            <Flex align="center" gap={2} flexShrink={0}
-              bg="yellow.50" border="1px solid" borderColor="yellow.300"
-              borderRadius="full" pl={3} pr={1.5} py={1}>
-              <WarningIcon color="yellow.700" boxSize={3} />
-              <Text fontSize="xs" fontWeight="600" color="yellow.900" whiteSpace="nowrap">
-                {waitingReports} processing report{waitingReports === 1 ? "" : "s"} waiting
-              </Text>
-              <Button size="xs" colorScheme="yellow" borderRadius="full"
-                onClick={() => setTabIndex(PROCESSING_TAB)}>
-                Review
-              </Button>
-            </Flex>
-          )}
-
-          {unregistered.length > 0 && !noticeDismissed && (
-            <Tooltip
-              hasArrow
-              placement="bottom-end"
-              label={
-                <Box>
-                  {unregistered.slice(0, 6).map((b) => (
-                    <Text key={b.batch_id} fontSize="xs">
-                      {b.lot_number || `Session ${b.batch_id}`}
-                      {b.vendor ? ` · ${b.vendor}` : ""}
-                      {` · ${b.box_count} box${b.box_count === 1 ? "" : "es"}`}
-                      {` · ${Number(b.total).toFixed(2)} lb`}
-                      {b.manifest_name ? ` · manifest "${b.manifest_name}"` : ""}
-                    </Text>
-                  ))}
-                  {unregistered.length > 6 && (
-                    <Text fontSize="xs" opacity={0.8}>
-                      …and {unregistered.length - 6} more
-                    </Text>
-                  )}
-                </Box>
-              }
-            >
-              <Flex align="center" gap={2} flexShrink={0}
-                bg="blue.50" border="1px solid" borderColor="blue.200"
-                borderRadius="full" pl={3} pr={1.5} py={1}>
-                <WarningIcon color="blue.600" boxSize={3} />
-                <Text fontSize="xs" fontWeight="600" color="blue.900" whiteSpace="nowrap">
-                  {unregistered.length} weighed lot{unregistered.length === 1 ? "" : "s"} need
-                  {unregistered.length === 1 ? "s" : ""} registering
+            {waitingReports > 0 && (
+              <Flex
+                align="center"
+                gap={2}
+                flexShrink={0}
+                bg="yellow.50"
+                border="1px solid"
+                borderColor="yellow.300"
+                borderRadius="full"
+                pl={3}
+                pr={1.5}
+                py={1}
+              >
+                <WarningIcon color="yellow.700" boxSize={3} />
+                <Text
+                  fontSize="xs"
+                  fontWeight="600"
+                  color="yellow.900"
+                  whiteSpace="nowrap"
+                >
+                  {waitingReports} processing report
+                  {waitingReports === 1 ? "" : "s"} waiting
                 </Text>
-                <Button size="xs" colorScheme="blue" borderRadius="full"
-                  onClick={() => setTabIndex(REGISTRATION_TAB)}>
-                  Register
+                <Button
+                  size="xs"
+                  colorScheme="yellow"
+                  borderRadius="full"
+                  onClick={() => setTabIndex(PROCESSING_TAB)}
+                >
+                  Review
                 </Button>
-                <IconButton
-                  aria-label="Dismiss until reload"
-                  icon={<CloseIcon boxSize={2} />}
-                  size="xs" variant="ghost" colorScheme="blue" borderRadius="full"
-                  onClick={() => setNoticeDismissed(true)}
-                />
               </Flex>
-            </Tooltip>
-          )}
+            )}
+
+            {unregistered.length > 0 && !noticeDismissed && (
+              <Tooltip
+                hasArrow
+                placement="bottom-end"
+                label={
+                  <Box>
+                    {unregistered.slice(0, 6).map((b) => (
+                      <Text key={b.batch_id} fontSize="xs">
+                        {b.lot_number || `Session ${b.batch_id}`}
+                        {b.vendor ? ` · ${b.vendor}` : ""}
+                        {` · ${b.box_count} box${b.box_count === 1 ? "" : "es"}`}
+                        {` · ${Number(b.total).toFixed(2)} lb`}
+                        {b.manifest_name
+                          ? ` · manifest "${b.manifest_name}"`
+                          : ""}
+                      </Text>
+                    ))}
+                    {unregistered.length > 6 && (
+                      <Text fontSize="xs" opacity={0.8}>
+                        …and {unregistered.length - 6} more
+                      </Text>
+                    )}
+                  </Box>
+                }
+              >
+                <Flex
+                  align="center"
+                  gap={2}
+                  flexShrink={0}
+                  bg="blue.50"
+                  border="1px solid"
+                  borderColor="blue.200"
+                  borderRadius="full"
+                  pl={3}
+                  pr={1.5}
+                  py={1}
+                >
+                  <WarningIcon color="blue.600" boxSize={3} />
+                  <Text
+                    fontSize="xs"
+                    fontWeight="600"
+                    color="blue.900"
+                    whiteSpace="nowrap"
+                  >
+                    {unregistered.length} weighed lot
+                    {unregistered.length === 1 ? "" : "s"} need
+                    {unregistered.length === 1 ? "s" : ""} registering
+                  </Text>
+                  <Button
+                    size="xs"
+                    colorScheme="blue"
+                    borderRadius="full"
+                    onClick={() => setTabIndex(REGISTRATION_TAB)}
+                  >
+                    Register
+                  </Button>
+                  <IconButton
+                    aria-label="Dismiss until reload"
+                    icon={<CloseIcon boxSize={2} />}
+                    size="xs"
+                    variant="ghost"
+                    colorScheme="blue"
+                    borderRadius="full"
+                    onClick={() => setNoticeDismissed(true)}
+                  />
+                </Flex>
+              </Tooltip>
+            )}
           </Flex>
 
-          <Box bg="white" borderRadius="lg" boxShadow="sm" border="1px" borderColor="gray.200"
-            flex={1} overflow="hidden" display="flex" flexDirection="column">
+          <Box
+            bg="white"
+            borderRadius="lg"
+            boxShadow="sm"
+            border="1px"
+            borderColor="gray.200"
+            flex={1}
+            overflow="hidden"
+            display="flex"
+            flexDirection="column"
+          >
             <TabPanels flex={1} overflow="hidden">
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
+              {/* <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
                 <IncomingRecordsTab
                   receipts={receipts}
                   onReceiptAdded={handleReceiptAdded}
@@ -306,22 +489,28 @@ const NoblesseScreen = () => {
                   isAdmin={canEdit}
                   canDelete={isAdmin}
                 />
-              </TabPanel>
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
-                <ProcessingReportsTab refreshSignal={refreshSignal} />
-              </TabPanel>
+              </TabPanel> */}
+
               {/* There is still no NTI Inventory tab. Stock is visible through
                   the lot picker here and through Outgoing, so it has no screen
                   of its own. The half-built NtiInventoryTab.jsx that used to sit
                   unimported alongside this was deleted rather than left to rot;
                   git history has it if it is ever wanted back. */}
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
-                <RegistrationFormTab isAdmin={canEdit} canDelete={isAdmin}
-                  isAdminUser={isAdmin} refreshSignal={refreshSignal} />
+                <RegistrationFormTab
+                  isAdmin={canEdit}
+                  canDelete={isAdmin}
+                  isAdminUser={isAdmin}
+                  refreshSignal={refreshSignal}
+                />
               </TabPanel>
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
                 <WeightManifestTab refreshSignal={refreshSignal} />
               </TabPanel>
+              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
+                <ProcessingReportsTab refreshSignal={refreshSignal} />
+              </TabPanel>
+
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
                 <OutgoingTab refreshSignal={refreshSignal} />
               </TabPanel>
@@ -349,8 +538,12 @@ const NoblesseScreen = () => {
           </Stack>
 
           <DrawerFooter justifyContent="center">
-            <Button bg="red.400" color="black"
-              _hover={{ bg: "red.500", color: "white" }} onClick={logOut}>
+            <Button
+              bg="red.400"
+              color="black"
+              _hover={{ bg: "red.500", color: "white" }}
+              onClick={logOut}
+            >
               Log Out
             </Button>
           </DrawerFooter>
@@ -365,8 +558,14 @@ const NoblesseScreen = () => {
           them out of the way is the whole requirement. */}
       {isAdmin && (
         <>
-          <ScannerDiagnostic isOpen={scanDiagOpen} onClose={() => setScanDiagOpen(false)} />
-          <ScaleDiagnostic isOpen={scaleDiagOpen} onClose={() => setScaleDiagOpen(false)} />
+          <ScannerDiagnostic
+            isOpen={scanDiagOpen}
+            onClose={() => setScanDiagOpen(false)}
+          />
+          <ScaleDiagnostic
+            isOpen={scaleDiagOpen}
+            onClose={() => setScaleDiagOpen(false)}
+          />
         </>
       )}
     </Flex>

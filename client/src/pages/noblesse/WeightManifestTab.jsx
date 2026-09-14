@@ -7,6 +7,7 @@ import {
 } from "@chakra-ui/react";
 import { ChevronDownIcon, ChevronUpIcon, SearchIcon, CloseIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
+import DeleteBatchDialog from "./DeleteBatchDialog";
 import ScanSheet from "../../components/navbar/ScanSheet";
 import BoxScanner from "../../components/navbar/boxScanner";
 import printWeightManifest from "./printWeightManifest";
@@ -553,27 +554,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const [mergeHeader, setMergeHeader] = useState(null);
   // The whole session, not one box inside it.
   const [confirmDeleteBatch, setConfirmDeleteBatch] = useState(null);
-  // What is holding this session, read when the dialog opens. null while it is
-  // still loading — which is why the Delete button waits rather than assuming
-  // "nothing found yet" means "nothing holds it".
-  const [deleteBlockers, setDeleteBlockers] = useState(null);
 
-  // Opening the dialog asks the server what would refuse the delete, so the
-  // answer is on screen BEFORE the button is pressed instead of arriving as a
-  // failed request afterwards.
-  const askToDelete = useCallback(async (batch) => {
-    setConfirmDeleteBatch(batch);
-    setDeleteBlockers(null);
-    try {
-      const { data } = await axiosInstance.get(`/box-batches/${batch.batch_id}/references`);
-      setDeleteBlockers(data);
-    } catch {
-      // The dialog still works without this: the delete itself is guarded
-      // server-side and will say no. Falling back to "deletable" keeps the
-      // button live rather than trapping someone behind a failed lookup.
-      setDeleteBlockers({ groups: [], forms: [], shipments: [], deletable: true, unknown: true });
-    }
-  }, []);
   // Removing a merged manifest destroys a saved, filed form — it gets the same
   // confirmation the session delete does.
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(null);
@@ -598,8 +579,6 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       return next;
     });
   }, []);
-  const [deletingBatch, setDeletingBatch] = useState(false);
-  const cancelDeleteBatchRef = useRef(null);
   const [merging, setMerging] = useState(false);
   const cancelMergeRef = useRef(null);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -902,41 +881,13 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   // Deletes the session and every box in it. The server refuses when the
   // session belongs to a merged manifest and says which one, so that message is
   // surfaced verbatim rather than flattened into a generic failure.
-  const deleteBatch = async () => {
-    const batch = confirmDeleteBatch;
-    if (!batch) return;
-    setDeletingBatch(true);
-    try {
-      const { data } = await axiosInstance.delete(`/box-batches/${batch.batch_id}`);
-      toast({
-        title: "Session deleted",
-        description: `${batch.lot_number || `Batch ${batch.batch_id}`} and its ${data.boxesDeleted} box(es) are gone.`,
-        status: "success", duration: 4000, position: "top",
-      });
-      setConfirmDeleteBatch(null);
-      if (expandedId === batch.batch_id) setExpandedId(null);
-      setDetails((prev) => {
-        const next = { ...prev };
-        delete next[batch.batch_id];
-        return next;
-      });
-      setSelected((prev) => {
-        const next = new Set(prev);
-        next.delete(batch.batch_id);
-        return next;
-      });
-      fetchBatches();
-      if (showRemovals) loadRemovals();
-    } catch (err) {
-      toast({
-        title: "Could not delete that session",
-        description: err.response?.data?.error || err.message,
-        status: "error", duration: 8000, position: "top", isClosable: true,
-      });
-      setConfirmDeleteBatch(null);
-    } finally {
-      setDeletingBatch(false);
-    }
+  // The dialog owns the request; this is the list's own tidy-up afterwards.
+  const afterBatchDeleted = async (batchId) => {
+    if (expandedId === batchId) setExpandedId(null);
+    setDetails((prev) => { const next = { ...prev }; delete next[batchId]; return next; });
+    setSelected((prev) => { const next = new Set(prev); next.delete(batchId); return next; });
+    fetchBatches();
+    if (showRemovals) loadRemovals();
   };
 
   const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
@@ -1390,7 +1341,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                               only, and gated server-side too. */}
                           {isAdmin && (
                             <Button size="xs" variant="ghost" colorScheme="red"
-                              onClick={(e) => { e.stopPropagation(); askToDelete(b); }}>
+                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteBatch(b); }}>
                               Delete
                             </Button>
                           )}
@@ -1558,100 +1509,11 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       {/* Deleting a whole session destroys every weight in it, so the dialog
           states the count rather than asking "are you sure". leastDestructiveRef
           keeps focus on the safe button. */}
-      <AlertDialog
-        isOpen={Boolean(confirmDeleteBatch)}
-        leastDestructiveRef={cancelDeleteBatchRef}
+      <DeleteBatchDialog
+        batch={confirmDeleteBatch}
         onClose={() => setConfirmDeleteBatch(null)}
-        isCentered
-      >
-        <AlertDialogOverlay>
-          <AlertDialogContent>
-            <AlertDialogHeader fontSize="lg" fontWeight="bold">
-              Delete this whole session?
-            </AlertDialogHeader>
-            <AlertDialogBody>
-              {confirmDeleteBatch && (
-                <>
-                  <Text fontSize="sm" mb={3}>
-                    This removes the session and every box weighed in it. It cannot
-                    be undone.
-                  </Text>
-                  <Box px={3} py={2} bg="gray.50" borderRadius="md"
-                    border="1px solid" borderColor="gray.200">
-                    <Flex gap={3} align="baseline" wrap="wrap">
-                      <Text fontSize="sm" fontWeight="bold" color="red.800">
-                        {confirmDeleteBatch.lot_number || `Batch ${confirmDeleteBatch.batch_id}`}
-                      </Text>
-                      {confirmDeleteBatch.vendor && (
-                        <Text fontSize="sm" color="gray.600">{confirmDeleteBatch.vendor}</Text>
-                      )}
-                    </Flex>
-                    <Text fontSize="sm" color="gray.700" mt={1}>
-                      {confirmDeleteBatch.box_count} box
-                      {confirmDeleteBatch.box_count === 1 ? "" : "es"}
-                      {" · "}{totalsText(confirmDeleteBatch.totals)}
-                    </Text>
-                  </Box>
-                  {confirmDeleteBatch.status === "open" && (
-                    <Text fontSize="sm" color="yellow.800" mt={3}>
-                      This session is still open. If someone is scanning into it
-                      right now, their work goes too.
-                    </Text>
-                  )}
-
-                  {/* What is holding it, and where to go and undo that. Closing
-                      the session does NOT clear any of these — the session's own
-                      status and what references it are separate questions, and
-                      conflating them is what sends people looking in the wrong
-                      place. */}
-                  {deleteBlockers && !deleteBlockers.deletable && (
-                    <Alert status="warning" borderRadius="md" mt={3}
-                      alignItems="flex-start" py={2}>
-                      <AlertIcon />
-                      <Box minW={0}>
-                        <Text fontSize="sm" fontWeight="600" mb={1}>
-                          This cannot be deleted yet
-                        </Text>
-                        {deleteBlockers.groups.map((g) => (
-                          <Text key={`g${g.group_id}`} fontSize="xs" color="gray.700">
-                            On merged manifest <b>{g.name || g.lot_number || `#${g.group_id}`}</b>
-                            {" "}— remove it from that manifest first.
-                          </Text>
-                        ))}
-                        {deleteBlockers.forms.map((f) => (
-                          <Text key={`f${f.id}`} fontSize="xs" color="gray.700">
-                            Tied to registration form <b>{f.lot_number || `#${f.id}`}</b>
-                            {" "}— untie it there first.
-                          </Text>
-                        ))}
-                        {deleteBlockers.shipments.map((s) => (
-                          <Text key={`s${s.shipment_id}`} fontSize="xs" color="gray.700">
-                            On shipment <b>#{s.shipment_id} {s.destination_name}</b>
-                            {" "}({s.status}) —{" "}
-                            {s.status === "draft"
-                              ? "untie it in Outgoing, or delete that draft."
-                              : "a shipped load must be cancelled first."}
-                          </Text>
-                        ))}
-                      </Box>
-                    </Alert>
-                  )}
-                </>
-              )}
-            </AlertDialogBody>
-            <AlertDialogFooter gap={2}>
-              <Button ref={cancelDeleteBatchRef} onClick={() => setConfirmDeleteBatch(null)}>
-                Go back
-              </Button>
-              <Button colorScheme="red" onClick={deleteBatch}
-                isLoading={deletingBatch || deleteBlockers === null}
-                isDisabled={Boolean(deleteBlockers && !deleteBlockers.deletable)}>
-                Delete session
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialogOverlay>
-      </AlertDialog>
+        onDeleted={afterBatchDeleted}
+      />
 
       {/* Removing a merged manifest destroys a saved form somebody may have
           printed and filed. The sessions survive, and the dialog says so, since

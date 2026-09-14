@@ -6,6 +6,7 @@ import {
 } from "@chakra-ui/react";
 import axiosInstance from "../../utils/axiosInstance";
 import WeighFinishedBoxes from "../../components/navbar/WeighFinishedBoxes";
+import DeleteBatchDialog from "./DeleteBatchDialog";
 import { toDisplay } from "../../utils/weight";
 import { fmtDate, today, upper } from "./shared";
 import getRole from "../../utils/getRole";
@@ -55,6 +56,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // A session to reopen the weighing window on, so an interrupted lot can be
   // carried on with instead of started again.
   const [adoptBatchId, setAdoptBatchId] = useState(null);
+  // A weighed session an admin wants gone. The route refuses while a load or a
+  // form still references it, and the dialog says which.
+  const [deletingBatch, setDeletingBatch] = useState(null);
 
   const [confirmShip, setConfirmShip] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -310,6 +314,14 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                   <Button size="xs" variant="ghost" colorScheme="blue"
                     onClick={() => { setAdoptBatchId(b.batch_id); setWeighOpen(true); }}>
                     Carry on weighing
+                  </Button>
+                )}
+                {/* The client check is a courtesy; requireRole("admin") on the
+                    route is the control. */}
+                {isAdmin && (
+                  <Button size="xs" variant="ghost" colorScheme="red"
+                    onClick={() => setDeletingBatch(b)}>
+                    Delete
                   </Button>
                 )}
               </Flex>
@@ -779,6 +791,15 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           screen is built around reading barcodes — a scan grid, a keypad, a
           global keydown handler — and finished boxes carry no barcode, so all
           of it was between the operator and the scale. */}
+      <DeleteBatchDialog
+        batch={deletingBatch}
+        onClose={() => setDeletingBatch(null)}
+        onDeleted={fetchBatches}
+        // On this screen "untie it in Outgoing" is a pointer at the screen you
+        // are already standing on.
+        shipmentHint="untie it from the load below, or delete that draft."
+      />
+
       <WeighFinishedBoxes
         isOpen={weighOpen}
         adoptBatchId={adoptBatchId}
