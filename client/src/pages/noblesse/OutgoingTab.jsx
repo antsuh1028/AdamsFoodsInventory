@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Spinner, Input, Select, Checkbox, Alert, AlertIcon,
+  Box, Flex, Text, Button, Badge, Spinner, Input, Select, Checkbox, Alert, AlertIcon, Tooltip,
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
   AlertDialogContent, AlertDialogOverlay, useToast,
 } from "@chakra-ui/react";
@@ -274,6 +274,39 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     }
   };
 
+  // One line per weighed lot, from the sessions already tied to this load.
+  // The bench has said what is leaving; this is that, in the form shipping
+  // understands.
+  const addWeighedAsLines = () => run(async () => {
+    const already = new Set((detail.items || []).map((it) => it.lotId));
+    const pending = [...weighedByLot.entries()].filter(([lotId]) => !already.has(lotId));
+    if (!pending.length) throw new Error("Every weighed lot is already on this load.");
+
+    try {
+      for (const [lotId, w] of pending) {
+        // Matched to a stock row where there is one, so shipping deducts what
+        // it should; without one the line still ships and `movedNothing` says
+        // so. /shipments/available orders processed stock first, so a lot with
+        // both raw and processed rows matches the processed one — which is
+        // what was just weighed off the bench.
+        const stock = available.find((a) => a.lotId === lotId);
+        const session = (detail.sessions || []).find((b) => b.lotId === lotId);
+        await axiosInstance.post(`/shipments/${openId}/items`, {
+          lotId,
+          ntiItemId: stock ? stock.ntiItemId : null,
+          // Thousandths, as the route requires.
+          weight: (w.mils / 1000).toFixed(3),
+          qtyCases: w.boxes,
+          description: session?.itemDescription || stock?.description || null,
+        });
+      }
+    } finally {
+      // Whatever happened, show what actually landed: a run that failed on the
+      // second lot still added the first, and leaving the screen stale hides it.
+      await refreshOpen(openId);
+    }
+  }, "Weighed lots added to this load");
+
   const removeLine = (itemId) => run(async () => {
     await axiosInstance.delete(`/shipments/${openId}/items/${itemId}`);
     await refreshOpen(openId);
@@ -332,6 +365,11 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // Named in the ship dialog: leaving without weighing means that lot can never
   // have a yield.
   const unweighed = (detail?.items || []).filter((it) => !weighedByLot.has(it.lotId));
+
+  // The mirror: boxes weighed onto this load whose lot is not a line yet, so
+  // they count for nothing when it ships.
+  const lineLots = new Set((detail?.items || []).map((it) => it.lotId));
+  const weighedNotOnLoad = [...weighedByLot.keys()].filter((id) => !lineLots.has(id));
 
   const selectedStock = available.find((a) => String(a.ntiItemId) === String(line.stockKey));
   const tiedIds = new Set((detail?.sessions || []).map((b) => b.batchId));
@@ -673,6 +711,35 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                               )}
                             </Flex>
                           ))}
+
+                          {/* Weighing a lot onto a load does not put it ON the
+                              load: lines are what ship and what move stock. The
+                              two were never joined, so a load could hold
+                              thousands of weighed pounds and still refuse to
+                              ship as empty. */}
+                          {isDraft && weighedNotOnLoad.length > 0 && (
+                            <Alert status="warning" borderRadius="md" fontSize="xs" py={2} mt={2}
+                              alignItems="flex-start">
+                              <AlertIcon boxSize={3} />
+                              <Box flex="1">
+                                <Text fontWeight="600">
+                                  {weighedNotOnLoad.length} weighed lot
+                                  {weighedNotOnLoad.length === 1 ? " is" : "s are"} not on this
+                                  load yet.
+                                </Text>
+                                <Text color="gray.700" mt={0.5}>
+                                  Boxes weighed here do not ship on their own — a lot has to be
+                                  on the load for stock to move and for it to reach the packing
+                                  list.
+                                </Text>
+                                <Button size="xs" colorScheme="blue" mt={2} isLoading={busy}
+                                  onClick={addWeighedAsLines}>
+                                  Add {weighedNotOnLoad.length} weighed lot
+                                  {weighedNotOnLoad.length === 1 ? "" : "s"} to the load
+                                </Button>
+                              </Box>
+                            </Alert>
+                          )}
                         </Box>
                       )}
 
@@ -719,11 +786,18 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                           Packing list
                         </Button>
                         {isDraft && (
-                          <Button size="sm" colorScheme="green" isLoading={busy}
-                            isDisabled={detail.items.length === 0}
-                            onClick={() => setConfirmShip(true)}>
-                            Ship
-                          </Button>
+                          <Tooltip isDisabled={detail.items.length > 0} hasArrow
+                            label={weighedNotOnLoad.length
+                              ? "Weighed boxes are tied to this load but no lot is on it yet. Add them as lines first."
+                              : "Add at least one lot to ship."}>
+                            <Box>
+                              <Button size="sm" colorScheme="green" isLoading={busy}
+                                isDisabled={detail.items.length === 0}
+                                onClick={() => setConfirmShip(true)}>
+                                Ship
+                              </Button>
+                            </Box>
+                          </Tooltip>
                         )}
                         {/* Destination, date and BOL are all typed before the
                             truck is loaded, so they are all wrong sometimes. */}

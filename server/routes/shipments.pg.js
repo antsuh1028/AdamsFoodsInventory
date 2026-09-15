@@ -45,6 +45,9 @@ const fmtShipment = (r, items = [], sessions = []) => ({
     // The id, not just the text — it is what matches a session to a line.
     lotId: b.lot_id,
     lotNumber: b.lot_number,
+    // What the bench said was in the boxes, so a line built from this session
+    // can carry it rather than shipping as "—".
+    itemDescription: b.item_description,
     vendor: b.vendor,
     status: b.status,
     source: b.source,
@@ -71,7 +74,8 @@ const itemsFor = (shipmentId, tenantId, client = pool) =>
 // Weighing sessions tied to a load.
 const sessionsFor = (shipmentId, tenantId, client = pool) =>
   client.query(
-    `SELECT b.batch_id, b.lot_id, b.lot_number, b.vendor, b.status, b.source, b.created_at,
+    `SELECT b.batch_id, b.lot_id, b.lot_number, b.vendor, b.item_description,
+            b.status, b.source, b.created_at,
             (SELECT COUNT(*)::int FROM batch_items i
               WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL) AS box_count,
             COALESCE((SELECT SUM(${weightInLb("i")})::text FROM batch_items i
