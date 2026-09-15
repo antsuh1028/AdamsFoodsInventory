@@ -147,6 +147,15 @@ router.get("/shipments/available", verifyToken, async (req, res) => {
               -- dropping it: an inner join here made a real stock row vanish
               -- with no explanation.
               (s.lot_id IS NULL) AS unlinked,
+              -- What was typed at the outgoing bench for this lot, for stock
+              -- rows carrying no description of their own. The bench sees the
+              -- boxes, so it is the better answer where the two differ.
+              (SELECT NULLIF(TRIM(b.item_description), '')
+                 FROM box_batches b
+                WHERE b.tenant_id = s.tenant_id AND b.lot_id = s.lot_id
+                  AND b.direction = 'outgoing'
+                  AND NULLIF(TRIM(b.item_description), '') IS NOT NULL
+                ORDER BY b.created_at DESC LIMIT 1) AS weighed_description,
               -- Flagged, not filtered: a lot mid-processing can still be
               -- shipped, but the screen should say so.
               EXISTS (SELECT 1 FROM noblesse_processing_order_items pi
@@ -167,6 +176,9 @@ router.get("/shipments/available", verifyToken, async (req, res) => {
       unlinked: r.unlinked,
       stage: r.stage,
       description: r.description,
+      // Only set when it differs from the row's own; the screen shows one or
+      // the other, never both.
+      weighedDescription: r.weighed_description,
       brand: r.brand,
       species: r.species,
       grade: r.grade,

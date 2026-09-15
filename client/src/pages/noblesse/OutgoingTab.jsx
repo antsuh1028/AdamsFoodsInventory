@@ -23,6 +23,16 @@ const STATUS = {
 
 const lb = (v) => (v === null || v === undefined || v === "" ? "0.00" : toDisplay(v));
 
+// The stock row's own description, or what the bench typed when weighing it out.
+// Trimmed so the lot number itself is not pushed off a narrow select.
+const MAX_DESC = 32;
+
+const stockDescription = (a) => {
+  const d = (a.description || a.weighedDescription || "").trim();
+  if (!d) return "";
+  return d.length > MAX_DESC ? `${d.slice(0, MAX_DESC - 1)}\u2026` : d;
+};
+
 const Field = ({ label, children, w }) => (
   <Box flex={w ? `0 0 ${w}` : "1 1 150px"} minW="120px">
     <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide" mb={1}>
@@ -542,11 +552,15 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                               {available.map((a) => (
                                 <option key={a.ntiItemId} value={a.ntiItemId}>
                                   {a.lotNumber} · {a.stage === "raw" ? "RAW · " : ""}
+                                  {/* A lot number says nothing about what it
+                                      is, and picking the wrong one here ships
+                                      the wrong product. */}
+                                  {stockDescription(a) ? `${stockDescription(a)} · ` : ""}
                                   {a.stage === "raw"
                                     ? `${a.qtyCases ?? "?"} cs left · ${lb(a.onHand)} lb registered`
                                     : `${lb(a.onHand)} lb`}
                                   {a.inProcessing ? " · in processing" : ""}
-                                  {a.unlinked ? " · NOT IN LOT REGISTRY" : ""}
+                                  {a.unlinked ? " · NOT IN LOT REGISTRY — cannot ship" : ""}
                                 </option>
                               ))}
                             </Select>
@@ -559,8 +573,12 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                             <Input size="sm" bg="white" type="number" value={line.qtyCases}
                               onChange={(e) => setLine((l) => ({ ...l, qtyCases: e.target.value }))} />
                           </Field>
+                          {/* Refused here rather than by the server: the route
+                              answers "lotId is required", which says nothing
+                              about which row or what to do. */}
                           <Button size="sm" colorScheme="blue" isLoading={busy}
-                            isDisabled={!line.stockKey || !String(line.weight).trim()}
+                            isDisabled={!line.stockKey || !String(line.weight).trim()
+                              || Boolean(selectedStock && selectedStock.unlinked)}
                             onClick={addLine}>
                             Add lot
                           </Button>
@@ -578,10 +596,10 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                           {selectedStock && selectedStock.unlinked && (
                             <Alert status="warning" borderRadius="md" fontSize="xs" py={2} flex="1 1 100%">
                               <AlertIcon boxSize={3} />
-                              {selectedStock.lotNumber} is not in the lot registry. It can
-                              ship, but it will not appear on that lot's history or count
-                              towards its yield. Set the lot on its registration form to fix
-                              that.
+                              <b>{selectedStock.lotNumber} is not in the lot registry</b>, so it
+                              cannot go on a load: every line is attributed to a lot, which is
+                              what makes a yield possible. Open its registration form and set
+                              the lot, then come back — it will be selectable here.
                             </Alert>
                           )}
 
