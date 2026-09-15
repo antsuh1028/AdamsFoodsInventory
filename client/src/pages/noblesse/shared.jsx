@@ -161,7 +161,10 @@ export const SheetField = ({ label, full, plain, children }) => (
       justifyContent={{ base: "flex-start", md: "flex-end" }}
     >
       <Text
-        fontSize="2xs" fontWeight="bold" p={2} color="gray.700"
+        // 10px reads as fine print on a desktop sheet and as unreadable at
+        // arm's length on a tablet, which is where this form is filled in.
+        fontSize={{ base: "xs", md: "2xs" }}
+        fontWeight="bold" p={2} color="gray.700"
         textTransform="uppercase" letterSpacing="wide"
         textAlign={{ base: "left", md: "right" }}
       >
@@ -183,6 +186,15 @@ export const SheetField = ({ label, full, plain, children }) => (
 export const sheetInputProps = {
   size: "sm", bg: "transparent", border: "none", borderRadius: 0, px: 2,
   textTransform: "uppercase", _focus: { boxShadow: "none", bg: "white" },
+  // 16px ON TOUCH IS NOT A STYLE CHOICE. iOS Safari zooms the whole page in
+  // when a field smaller than that takes focus, and it does not zoom back out
+  // - so on a tablet every tap into this sheet left the operator scrolling a
+  // magnified form sideways to find the next field.
+  fontSize: { base: "16px", md: "sm" },
+  // A fingertip is about 9mm; 44px is the smallest target it reliably hits.
+  // minH rather than height because these props are spread onto Textareas and
+  // plain Boxes too, and a fixed height would flatten those.
+  minH: { base: "44px", md: "auto" },
 };
 
 export const SectionBar = ({ children }) => (

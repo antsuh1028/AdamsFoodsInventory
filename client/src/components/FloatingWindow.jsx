@@ -117,7 +117,7 @@ const FloatingWindow = ({
   }, [isOpen, viewport.w, viewport.h]);
 
   useEffect(() => {
-    const onMouseMove = (e) => {
+    const onPointerMove = (e) => {
       if (resizeState.current) {
         const { edge, startX, startY, startWidth, startHeight, startLeft, startTop } = resizeState.current;
         const dx = e.clientX - startX;
@@ -151,12 +151,16 @@ const FloatingWindow = ({
         });
       }
     };
-    const onMouseUp = () => { dragState.current = null; resizeState.current = null; };
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    const onPointerUp = () => { dragState.current = null; resizeState.current = null; };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    // iOS ends a gesture with pointercancel rather than pointerup - without this
+    // the window keeps following the finger after it has been lifted.
+    window.addEventListener("pointercancel", onPointerUp);
     return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
     };
   }, []);
 
@@ -164,6 +168,8 @@ const FloatingWindow = ({
 
   const startDrag = (e) => {
     if (isFullScreen) return;
+    // One finger moves a window; a second is a pinch and belongs to the page.
+    if (e.isPrimary === false) return;
     // Titles can contain interactive JSX (buttons, toggles) — don't let a
     // click on one of those get swallowed by an armed drag.
     if (e.target.closest('button, input, select, textarea, a, [role="button"]')) return;
@@ -215,7 +221,10 @@ const FloatingWindow = ({
           bg={dark ? "gray.800" : "gray.200"} borderBottom="1px" borderColor={dark ? "gray.700" : "gray.300"}
           px={4} py={2} flexShrink={0}
           cursor={isFullScreen ? "default" : "move"}
-          onMouseDown={startDrag}
+          onPointerDown={startDrag}
+          // Without touchAction none the browser claims the gesture as a page
+          // scroll and the move events simply stop arriving.
+          style={isFullScreen ? undefined : { touchAction: "none" }}
           userSelect="none"
         >
           <Box fontSize="sm" fontWeight="semibold" color={dark ? "whiteAlpha.900" : "gray.700"} minW={0} flex={1}>

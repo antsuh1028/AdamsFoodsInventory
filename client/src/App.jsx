@@ -35,6 +35,20 @@ const theme = extendTheme({
     orange: base.colors.yellow,
     purple: base.colors.blue,
   },
+  styles: {
+    global: {
+      // iOS Safari ZOOMS THE WHOLE PAGE IN when a field smaller than 16px takes
+      // focus, and it never zooms back out. This app uses size="sm" inputs
+      // almost everywhere, so on a tablet every tap into a form left the
+      // operator dragging a magnified page sideways to find the next field.
+      //
+      // Set once for touch devices rather than on ~48 call sites, and scoped to
+      // `pointer: coarse` so the dense desktop layouts are untouched.
+      "@media (pointer: coarse)": {
+        "input, select, textarea": { fontSize: "16px !important" },
+      },
+    },
+  },
   components: {
     Alert: {
       variants: {
