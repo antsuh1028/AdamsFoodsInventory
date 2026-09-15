@@ -17,12 +17,27 @@ import FloatingWindow from "./FloatingWindow";
 // made anywhere shows up here on the next open instead of going stale.
 
 const KIND = {
-  received:        { label: "Received",   color: "blue" },
-  weighed:         { label: "Weighed",    color: "blue" },
-  registered:      { label: "Registered", color: "gray" },
-  processing:      { label: "Processing", color: "yellow" },
-  processing_done: { label: "Processed",  color: "teal" },
-  processed:       { label: "Re-stocked", color: "teal" },
+  received:           { label: "Received",       color: "blue" },
+  registered:         { label: "Registered",     color: "gray" },
+  processing:         { label: "Processing",     color: "yellow" },
+  processing_done:    { label: "Processed",      color: "teal" },
+  processed:          { label: "Re-stocked",     color: "teal" },
+  report_filed:       { label: "Report filed",   color: "yellow" },
+  report_rejected:    { label: "Rejected",       color: "red" },
+  shipped:            { label: "Shipped",        color: "green" },
+  shipment_draft:     { label: "On a load",      color: "gray" },
+  shipment_cancelled: { label: "Load cancelled", color: "red" },
+};
+
+// A departure is not an arrival, and they rendered identically before the
+// timeline carried a direction.
+const kindOf = (e) => {
+  if (e.kind === "weighed") {
+    return e.direction === "outgoing"
+      ? { label: "Weighed out", color: "green" }
+      : { label: "Weighed in", color: "blue" };
+  }
+  return KIND[e.kind] || { label: e.kind, color: "gray" };
 };
 
 const STATUS = {
@@ -267,7 +282,7 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
           {events && events.length > 0 && (
             <Box borderLeft="2px solid" borderColor="gray.200" ml={2} pl={4}>
               {events.map((e, i) => {
-                const k = KIND[e.kind] || { label: e.kind, color: "gray" };
+                const k = kindOf(e);
                 return (
                   <Box key={`${e.kind}-${e.ref}-${i}`} position="relative" pb={4}>
                     <Box

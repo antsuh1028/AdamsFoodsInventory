@@ -166,6 +166,7 @@ export const useScanSession = () => {
         lotId: detail.lot_id ?? null,
         vendor: detail.vendor,
         billOfLading: detail.bill_of_lading,
+        shipTo: detail.ship_to,
         itemDescription: detail.item_description,
         brand: detail.brand,
         estNumber: detail.est_number,

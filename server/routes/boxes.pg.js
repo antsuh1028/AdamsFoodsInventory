@@ -981,7 +981,7 @@ router.get("/box-batches", verifyToken, async (req, res) => {
     // Both aggregates are independent scalar subqueries rather than joins.
     const result = await pool.query(
       `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description,
-              b.bill_of_lading, b.brand, b.est_number, b.grade, b.source,
+              b.ship_to, b.bill_of_lading, b.brand, b.est_number, b.grade, b.source,
               b.direction, b.status, b.created_at, b.closed_at,
               (SELECT COUNT(*)::int
                  FROM batch_items i

@@ -382,6 +382,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                 {b.item_description && (
                   <Text fontSize="xs" color="gray.600">{b.item_description}</Text>
                 )}
+                {b.ship_to && (
+                  <Badge colorScheme="blue" fontSize="9px">to {b.ship_to}</Badge>
+                )}
                 {/* The listing returns totals as [{unit,total}] — a session can
                     hold more than one unit — where the shipment detail returns a
                     plain string. Read the LB entry rather than assuming [0]. */}
@@ -489,6 +492,10 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                                   onClick={() => setWeighFor({
                                     shipmentId: detail.shipmentId,
                                     lotId: it.lotId, lotNumber: it.lotNumber,
+                                    // The load already says what is on the truck
+                                    // and where it is going.
+                                    description: it.description || "",
+                                    shipTo: detail.shipTo || detail.destinationName || "",
                                   })}>
                                   Weigh boxes
                                 </Button>

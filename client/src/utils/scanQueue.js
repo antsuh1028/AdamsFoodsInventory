@@ -401,8 +401,6 @@ const createScanQueue = ({
     return session;
   };
 
-  // Flushes what is left, then closes. If anything is still unflushed the batch
-  // is deliberately left open — closing over unsent scans would strand them.
   // The batch no longer exists on the server — deleted, normally. Nothing can
   // be closed and nothing pending can ever be sent to it, so the session is
   // cleared rather than left on the device: keeping it 404s every close and the
@@ -412,6 +410,8 @@ const createScanQueue = ({
     return { closed: true, gone: true, batchId, lost };
   };
 
+  // Flushes what is left, then closes. If anything is still unflushed the batch
+  // is deliberately left open — closing over unsent scans would strand them.
   const stop = async (remarks = null) => {
     const session = await backend.getSession();
     if (!session || !session.batchId) return { closed: false, reason: "no-open-batch" };
@@ -503,6 +503,7 @@ const createScanQueue = ({
       lotId: batch.lotId ?? null,
       vendor: batch.vendor || null,
       billOfLading: batch.billOfLading || null,
+      shipTo: batch.shipTo || null,
       itemDescription: batch.itemDescription || null,
       brand: batch.brand || null,
       estNumber: batch.estNumber || null,

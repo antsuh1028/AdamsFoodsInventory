@@ -31,6 +31,13 @@ const WeighFinishedBoxes = ({
 
   const [lot, setLot] = useState({ lotId: null, lotNumber: "" });
   const [expectedBoxes, setExpectedBoxes] = useState("");
+  // What is actually in the boxes. Left blank the server inherits it from the
+  // incoming session, which is often wrong out here: what leaves is the
+  // PROCESSED product, not what arrived.
+  const [itemDescription, setItemDescription] = useState("");
+  // Who the boxes are going to. Stored on the session, so a manifest printed
+  // from it says where the product went.
+  const [shipTo, setShipTo] = useState("");
   const [busy, setBusy] = useState(false);
   const [typeMode, setTypeMode] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -43,6 +50,9 @@ const WeighFinishedBoxes = ({
   useEffect(() => {
     if (!isOpen || !presetLot || session) return;
     setLot({ lotId: presetLot.lotId ?? null, lotNumber: presetLot.lotNumber || "" });
+    // The load already says what is going on the truck.
+    if (presetLot.description) setItemDescription(presetLot.description);
+    if (presetLot.shipTo) setShipTo(presetLot.shipTo);
   }, [isOpen, presetLot, session]);
 
   // Opened on a session that is already running, so the lot is already known and
@@ -94,6 +104,9 @@ const WeighFinishedBoxes = ({
         lotId: lot.lotId ?? null,
         lotNumber: lot.lotNumber.trim() || null,
         expectedBoxes: expectedBoxes.trim() || null,
+        // Blank falls back to the incoming session's description server-side.
+        itemDescription: itemDescription.trim().toUpperCase() || null,
+        shipTo: shipTo.trim().toUpperCase() || null,
         direction: "outgoing",
       });
     } catch (err) {
@@ -155,6 +168,8 @@ const WeighFinishedBoxes = ({
       setRemarks("");
       setLot({ lotId: null, lotNumber: "" });
       setExpectedBoxes("");
+      setItemDescription("");
+      setShipTo("");
       onClose();
     } catch (err) {
       toast({ title: "Could not stop the session", description: err.message,
@@ -324,6 +339,24 @@ const WeighFinishedBoxes = ({
             />
 
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mt={4} mb={1}>
+              Item <Text as="span" textTransform="none">(optional)</Text>
+            </Text>
+            <Input size="md" value={itemDescription} autoComplete="off"
+              placeholder="e.g. HUMERUS BONE"
+              onChange={(e) => setItemDescription(e.target.value.toUpperCase())} />
+            <Text fontSize="xs" color="gray.500" mt={1}>
+              What is in the boxes. Left blank it is taken from the lot&apos;s
+              incoming session, which is the raw product rather than this one.
+            </Text>
+
+            <Text fontSize="xs" color="gray.500" textTransform="uppercase" mt={4} mb={1}>
+              Going to <Text as="span" textTransform="none">(optional)</Text>
+            </Text>
+            <Input size="md" value={shipTo} autoComplete="off"
+              placeholder="e.g. ADAMSFOODS"
+              onChange={(e) => setShipTo(e.target.value.toUpperCase())} />
+
+            <Text fontSize="xs" color="gray.500" textTransform="uppercase" mt={4} mb={1}>
               Boxes expected <Text as="span" textTransform="none">(optional)</Text>
             </Text>
             <Input size="md" width="140px" value={expectedBoxes} placeholder="80"
@@ -336,6 +369,21 @@ const WeighFinishedBoxes = ({
           </Box>
         ) : (
           <Box>
+            {/* Lot and item together, so the operator can see what they are
+                weighing in BOTH modes — the scale panel says it, the typing
+                panel does not. */}
+            <Flex align="baseline" gap={2} wrap="wrap" mb={2}>
+              <Text fontSize="sm" fontWeight="bold" color="blue.700">
+                {session.lotNumber || "No lot"}
+              </Text>
+              {session.itemDescription
+                ? <Text fontSize="sm" color="gray.700">{session.itemDescription}</Text>
+                : <Text fontSize="sm" color="gray.400">item not recorded</Text>}
+              {session.shipTo && (
+                <Badge colorScheme="blue" fontSize="9px">to {session.shipTo}</Badge>
+              )}
+            </Flex>
+
             {supported && (
               <Flex justify="flex-end" mb={2}>
                 {/* Typing is the fallback for a scale that is not connected.

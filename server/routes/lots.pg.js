@@ -581,19 +581,21 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
              ${stockWeightInLb("s")}::text AS weight,
              s.qty_cases::int AS cases,
              s.notes AS detail,
-             s.id AS ref
+             s.id AS ref,
+             NULL::text AS direction
         FROM nti_inventory s
        WHERE s.lot_id = $1 AND s.tenant_id = $2
 
       UNION ALL
       -- Weighing sessions.
       SELECT b.created_at, 'weighed',
-             CASE WHEN b.source = 'imported' THEN 'Weighed (tally sheet imported)' ELSE 'Weighed' END,
+             (CASE WHEN b.direction = 'outgoing' THEN 'Weighed out' ELSE 'Weighed in' END
+              || CASE WHEN b.source = 'imported' THEN ' (tally sheet imported)' ELSE '' END),
              COALESCE((SELECT SUM(${weightInLb("bi")}) FROM batch_items bi
                         WHERE bi.batch_id = b.batch_id AND bi.voided_at IS NULL), 0)::text,
              (SELECT COUNT(*)::int FROM batch_items bi
                WHERE bi.batch_id = b.batch_id AND bi.voided_at IS NULL),
-             b.vendor, b.batch_id
+             b.vendor, b.batch_id, b.direction
         FROM box_batches b
        WHERE b.lot_id = $1 AND b.tenant_id = $2
 
@@ -601,7 +603,7 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
       -- The registration form for the lot.
       SELECT f.created_at, 'registered', 'Registered',
              f.original_weight::text, NULL::int,
-             COALESCE(f.product_description, f.vendor), f.id
+             COALESCE(f.product_description, f.vendor), f.id, NULL::text
         FROM noblesse_registration_forms f
        WHERE f.lot_id = $1 AND f.tenant_id = $2
 
@@ -614,11 +616,55 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
              CASE WHEN o.status = 'completed' THEN o.output_weight::text
                   ELSE SUM(i.weight_in)::text END,
              CASE WHEN o.status = 'completed' THEN o.output_cases ELSE NULL END,
-             o.notes, o.id
+             o.notes, o.id, NULL::text
         FROM noblesse_processing_orders o
         JOIN noblesse_processing_order_items i ON i.processing_order_id = o.id
        WHERE i.lot_id = $1 AND o.tenant_id = $2
        GROUP BY o.id, o.completed_at, o.created_at, o.status, o.output_weight, o.output_cases, o.notes
+
+      UNION ALL
+      -- Processing as it is actually recorded today. The branch above reads
+      -- noblesse_processing_orders, which has no client and no rows, so until
+      -- this one existed a lot's processing never appeared at all.
+      SELECT COALESCE(r.accepted_at, r.submitted_at),
+             CASE r.status WHEN 'accepted' THEN 'processing_done'
+                           WHEN 'rejected' THEN 'report_rejected'
+                           ELSE 'report_filed' END,
+             CASE r.status WHEN 'accepted' THEN 'Processing report accepted'
+                           WHEN 'rejected' THEN 'Processing report rejected'
+                           ELSE 'Processing report filed' END,
+             -- Written on the report but never weighed, so it creates no stock.
+             r.output_weight::text,
+             COALESCE(r.output_cases, r.input_cases)::int,
+             NULLIF(CONCAT_WS(' · ', r.processing_type,
+                    NULLIF('Line ' || r.line_no, 'Line '), r.reject_reason), ''),
+             r.report_id, NULL::text
+        FROM noblesse_processing_reports r
+       WHERE r.lot_id = $1 AND r.tenant_id = $2
+
+      UNION ALL
+      -- Loads leaving. Nothing here read the shipment tables at all, so a lot
+      -- could ship out entirely and its history showed nothing — the biggest
+      -- single gap in this query. Aggregated per load: one lot can sit on two
+      -- lines of the same shipment, and that is one departure, not two.
+      SELECT COALESCE(sh.shipped_at, sh.cancelled_at, sh.created_at),
+             CASE sh.status WHEN 'shipped'   THEN 'shipped'
+                            WHEN 'cancelled' THEN 'shipment_cancelled'
+                            ELSE 'shipment_draft' END,
+             CASE sh.status
+               WHEN 'shipped'   THEN 'Shipped to ' || COALESCE(sh.destination_name, 'a customer')
+               WHEN 'cancelled' THEN 'Load cancelled (' || COALESCE(sh.destination_name, 'a customer') || ')'
+               ELSE 'On a draft load for ' || COALESCE(sh.destination_name, 'a customer')
+             END,
+             ROUND(SUM(si.weight), 2)::text,
+             NULLIF(SUM(COALESCE(si.qty_cases, 0)), 0)::int,
+             NULLIF(CONCAT_WS(' · ', NULLIF('BOL ' || sh.bill_of_lading, 'BOL '), sh.carrier), ''),
+             sh.shipment_id, 'outgoing'
+        FROM noblesse_shipment_items si
+        JOIN noblesse_shipments sh ON sh.shipment_id = si.shipment_id
+       WHERE si.lot_id = $1 AND sh.tenant_id = $2
+       GROUP BY sh.shipment_id, sh.shipped_at, sh.cancelled_at, sh.created_at,
+                sh.status, sh.destination_name, sh.bill_of_lading, sh.carrier
 
       ORDER BY at
       `,
@@ -633,6 +679,9 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
       cases: r.cases,
       detail: r.detail,
       ref: r.ref,
+      // 'incoming' | 'outgoing' | null. An arrival and a departure rendered
+      // identically before this.
+      direction: r.direction,
     })));
   } catch (err) {
     console.error("lot timeline:", err);
