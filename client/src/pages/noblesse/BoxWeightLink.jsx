@@ -209,9 +209,15 @@ const BoxWeightLink = ({
   const drifted = live !== null && onForm !== null && live !== onForm;
   const hasBoxes = Boolean(view && view.sessions.length);
 
-  // Anything WRONG keeps the section open: a collapsed panel must never be the
-  // reason nobody saw a discrepancy.
-  const needsAttention = drifted || suggested.length > 0;
+  // Boxes tied but nothing on the form yet. `drifted` cannot catch this — it
+  // compares two figures and there is only one — so collapsing hid "Use these
+  // boxes", the button that fills Original Weight and Total Quantity, behind a
+  // "Change" nobody would think to press. Tying then appeared to do nothing.
+  const notApplied = live !== null && onForm === null;
+
+  // Anything WRONG or UNFINISHED keeps the section open: a collapsed panel must
+  // never be the reason nobody saw a discrepancy, or never applied the weights.
+  const needsAttention = drifted || notApplied || suggested.length > 0;
   const collapsed = hasBoxes && !open && !needsAttention;
 
   if (collapsed) {
