@@ -458,9 +458,6 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             </SheetField>
             <SheetField label="Remaining (c/s)">
               <Box {...sheetInputProps} bg="white" border="1px solid" borderColor="gray.200" py={1}>
-                {/* Shown in red when it goes negative rather than hidden or
-                    clamped: more cases processed than arrived means a figure
-                    somewhere is wrong, and that is worth seeing. */}
                 <Flex align="center" gap={2} wrap="wrap">
                   <Text
                     fontSize="sm"
@@ -471,7 +468,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                   </Text>
                   {suggestComplete && (
                     <Button size="xs" colorScheme="green" variant="outline"
-                      height="20px" fontSize="10px" px={2}
+                      height="20px" fontSize="10px" px={4}
                       title="All cases arrived have been processed"
                       onClick={() => setDraft({ ...draft, status: "completed" })}>
                       Mark complete
@@ -869,13 +866,13 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
           <thead>
             <tr>
               <Th>Lot #</Th>
+              <Th>Date Received</Th>
               <Th>Vendor</Th>
               <Th>Product Description</Th>
-              {/* Weight and quantity sit together, matching the paper form —
-                  Original Weight and Total Quantity are read as a pair. */}
+              
               <Th textAlign="right">Weight</Th>
-              <Th textAlign="right">Qty</Th>
-              <Th>Date Received</Th>
+              <Th textAlign="right">Rem. Qty</Th>
+              
               <Th>Status</Th>
               <Th>Actions</Th>
             </tr>
@@ -893,6 +890,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
               const rowHoverBg = isToday
                 ? "rgb(198, 246, 213)"                                   // green.100
                 : i % 2 === 0 ? "rgb(245, 245, 245)" : "rgb(230, 230, 230)";
+              const remainingCases = caseTally(f)?.remaining;
               return (
               <React.Fragment key={f.id}>
                 <tr
@@ -933,17 +931,6 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                       )}
                     </Flex>
                   </Td>
-                  <Td>{f.vendor || "—"}</Td>
-                  <Td>{f.productDescription || "—"}</Td>
-                  {/* tabular-nums so the decimal points line up down the
-                      column; without it proportional digits make the figures
-                      ragged and hard to compare at a glance. */}
-                  <Td textAlign="right" style={{ fontVariantNumeric: "tabular-nums" }}>
-                    {f.originalWeight ? `${fmtWeight(f.originalWeight)} lb` : "—"}
-                  </Td>
-                  <Td textAlign="right" style={{ fontVariantNumeric: "tabular-nums" }}>
-                    {f.totalQuantity || "—"}
-                  </Td>
                   <Td>
                     <Flex align="center" gap={2}>
                       <Text as="span">{fmtDate(f.dateReceived)}</Text>
@@ -953,6 +940,17 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                         </Badge>
                       )}
                     </Flex>
+                  </Td>
+                  <Td>{f.vendor || "—"}</Td>
+                  <Td>{f.productDescription || "—"}</Td>
+                  {/* tabular-nums so the decimal points line up down the
+                      column; without it proportional digits make the figures
+                      ragged and hard to compare at a glance. */}
+                  <Td textAlign="right" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {f.originalWeight ? `${fmtWeight(f.originalWeight)} lb` : "—"}
+                  </Td>
+                  <Td textAlign="right" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {remainingCases || "—"}/{f.totalQuantity || "—"}
                   </Td>
                   <Td>
                     <Menu>

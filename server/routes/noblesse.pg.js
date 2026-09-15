@@ -53,7 +53,10 @@ const fmtRegistrationForm = (row) => {
       // Which accepted processing report wrote this row. Dropping it here made
       // the row render as editable AND made the save path merge the original
       // back alongside the client's id-less copy, so every save duplicated it.
-      reportId: pd.reportId != null ? Number(pd.reportId) : null,
+      // Set to null it did the same thing by another route: the merge guard
+      // tested for the KEY, which a null still has. So a manual row carries no
+      // reportId key at all.
+      ...(pd.reportId != null ? { reportId: Number(pd.reportId) } : {}),
     }));
   } else {
     // Fallback to legacy columns for existing data
@@ -984,7 +987,9 @@ const MERGE_REPORT_RUNS = `(
       SELECT e FROM jsonb_array_elements(COALESCE($19::jsonb, '[]'::jsonb)) e
       UNION ALL
       SELECT e FROM jsonb_array_elements(COALESCE(processing_dates, '[]'::jsonb)) e
-       WHERE e ? 'reportId'
+       -- Not a key-exists test: that is true for a manual row carrying
+       -- reportId:null. Only a row with a real id is a report row to protect.
+       WHERE e->>'reportId' IS NOT NULL
          AND NOT EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE($19::jsonb, '[]'::jsonb)) p
             WHERE p->>'reportId' = e->>'reportId')
@@ -994,7 +999,12 @@ const MERGE_REPORT_RUNS = `(
 const regFormValues = (body, lot) => {
   // Handle processingDates: convert array to JSON for storage
   const processingDatesJSON = body.processingDates && Array.isArray(body.processingDates)
-    ? JSON.stringify(body.processingDates.filter(pd => pd.date || pd.weight || pd.cases))
+    ? JSON.stringify(body.processingDates
+        .filter(pd => pd.date || pd.weight || pd.cases)
+        // A null reportId is not an answer, and stored as one it makes the
+        // merge guard treat a hand-typed row as a report row.
+        .map(({ reportId, ...rest }) =>
+          (reportId != null ? { ...rest, reportId } : rest)))
     : null;
 
   return [
