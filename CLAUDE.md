@@ -140,11 +140,12 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 
 ## 2. Branch / deploy state
 
-- **Production CODE runs `master` = `3235a37`** — verified 2026-09-08 by reading
-  `git log` in `~/AdamsFoodsInventory` on the box. Don't deploy without being
-  asked. The lot registry, Outgoing, merged manifests and the processing-tab
-  gating ARE deployed; the note that said prod was still on `da604e2` with all of
-  that undeployed was stale.
+- **Production CODE runs `master` = `18771e1`** — deployed and verified
+  2026-09-15 (box at that SHA, `[migrate] schema ready`, bundle
+  `main.63ec5915.js` byte-matching the local build). Don't deploy without being
+  asked. Now live: the yield aggregation, the lot lifecycle (`status`,
+  `closed_*`), shipments and processing reports on the lot timeline, the
+  weigh-into-a-load flow, and the Spanish toggle on the weighing window.
 - **The dev server points at the PRODUCTION database.** Running it locally
   applies `db/migrate.js` to prod and writes real rows. "Not deployed" therefore
   means the *code* on the server is old; schema and data changes made locally
@@ -185,9 +186,9 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
    daemon only** (admin's is separate; its copy must survive).
 2. `deploy:server` uses `npm install`, which dirties `server/package-lock.json` on
    the box and makes the next `git pull` refuse. Should be `npm ci`.
-   **It is dirty right now** (confirmed 2026-09-08) — the next commit that
-   touches that file will make the deploy's pull fail. Clear it on the box with
-   `git checkout -- server/package-lock.json`.
+   It was dirty again before the 2026-09-15 deploy and was cleared on the box
+   with `git checkout -- server/package-lock.json` before pulling. Assume it is
+   dirty and clear it first every time, until `deploy:server` uses `npm ci`.
 3. **The TLS cert renews through Apache, not standalone.** Apache2 owns :80 and
    :443. The renewal conf was set to `authenticator = standalone`, which binds
    :80 itself, so every renewal failed with `Could not bind TCP port 80` — daily,
