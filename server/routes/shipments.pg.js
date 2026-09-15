@@ -136,10 +136,15 @@ router.get("/shipments", verifyToken, async (req, res) => {
 router.get("/shipments/available", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT s.id AS nti_item_id, s.lot_id, l.lot_number, s.stage,
+      `SELECT s.id AS nti_item_id, s.lot_id, l.lot_number, s.lot, s.stage,
               s.description, s.brand, s.species, s.grade,
               ${stockWeightInLb("s")}::text AS on_hand,
               s.qty_cases,
+              -- Shippable, but its lot is not in the registry, so nothing
+              -- downstream can attribute it. The screen says so rather than
+              -- dropping it: an inner join here made a real stock row vanish
+              -- with no explanation.
+              (s.lot_id IS NULL) AS unlinked,
               -- Flagged, not filtered: a lot mid-processing can still be
               -- shipped, but the screen should say so.
               EXISTS (SELECT 1 FROM noblesse_processing_order_items pi
@@ -147,15 +152,17 @@ router.get("/shipments/available", verifyToken, async (req, res) => {
                        WHERE pi.lot_id = s.lot_id AND po.tenant_id = s.tenant_id
                          AND po.status <> 'completed') AS in_processing
          FROM nti_inventory s
-         JOIN lots l ON l.lot_id = s.lot_id
+         LEFT JOIN lots l ON l.lot_id = s.lot_id
         WHERE s.tenant_id = $1 AND s.weight > 0
-        ORDER BY (s.stage = 'processed') DESC, l.lot_number DESC`,
+        ORDER BY (s.stage = 'processed') DESC,
+                 COALESCE(l.lot_number, s.lot) DESC`,
       [req.tenantId]
     );
     res.json(result.rows.map((r) => ({
       ntiItemId: r.nti_item_id,
       lotId: r.lot_id,
-      lotNumber: r.lot_number,
+      lotNumber: r.lot_number || r.lot,
+      unlinked: r.unlinked,
       stage: r.stage,
       description: r.description,
       brand: r.brand,
@@ -390,7 +397,32 @@ router.post("/shipments/:id/box-batches", verifyToken, async (req, res) => {
       });
     }
 
-    // Tying the same session twice is what a double tap produces, not an error.
+    // A weighing session belongs to ONE load. Counting the same boxes on two
+    // would inflate the lot's outgoing weight, which is the yield numerator, and
+    // nothing downstream could tell which load was right. The mirror of
+    // SESSION_ALREADY_TIED on the registration-form side.
+    const claimed = await pool.query(
+      `SELECT sb.batch_id, sb.shipment_id, b.lot_number, s.destination_name, s.status
+         FROM shipment_batches sb
+         JOIN box_batches b ON b.batch_id = sb.batch_id
+         JOIN noblesse_shipments s ON s.shipment_id = sb.shipment_id
+        WHERE sb.batch_id = ANY($1::int[]) AND sb.tenant_id = $2 AND sb.shipment_id <> $3`,
+      [ids, req.tenantId, id]
+    );
+    if (claimed.rows.length) {
+      const names = claimed.rows
+        .map((c) => `${c.lot_number || `batch ${c.batch_id}`} (load #${c.shipment_id} ${c.destination_name})`)
+        .join(", ");
+      return res.status(409).json({
+        code: "SESSION_ALREADY_TIED",
+        error: `Already on another load: ${names}. Untie it there first.`,
+        sessions: claimed.rows.map((c) => ({
+          batchId: c.batch_id, shipmentId: c.shipment_id, status: c.status,
+        })),
+      });
+    }
+
+    // Tying the same session twice to the SAME load is a double tap, not an error.
     await pool.query(
       `INSERT INTO shipment_batches (shipment_id, batch_id, tenant_id, position)
        SELECT $1, b, $2, p FROM UNNEST($3::int[], $4::int[]) AS t(b, p)
@@ -491,8 +523,12 @@ router.post("/shipments/:id/ship", verifyToken, async (req, res) => {
       });
     }
 
+    const movedNothing = [];
     for (const item of items.rows) {
-      if (!item.nti_item_id) continue;
+      if (!item.nti_item_id) {
+        movedNothing.push({ lotNumber: item.lot_number, weight: String(item.weight) });
+        continue;
+      }
       await client.query(
         `UPDATE nti_inventory SET weight = GREATEST(0, weight - $1)
           WHERE id = $2 AND tenant_id = $3`,
@@ -524,7 +560,12 @@ router.post("/shipments/:id/ship", verifyToken, async (req, res) => {
     }
 
     const found = await loadShipment(id, req.tenantId);
-    res.json(fmtShipment(found.row, found.items, found.sessions));
+    res.json({
+      ...fmtShipment(found.row, found.items, found.sessions),
+      // Lines that had no stock row behind them, so the load left without any
+      // inventory moving for them.
+      movedNothing,
+    });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     console.error("ship shipment:", err);

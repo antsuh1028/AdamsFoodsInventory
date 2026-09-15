@@ -41,6 +41,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   const [openId, setOpenId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [available, setAvailable] = useState([]);
+  const [stockError, setStockError] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const [creating, setCreating] = useState(false);
@@ -85,9 +86,12 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     try {
       const { data } = await axiosInstance.get("/shipments/available");
       setAvailable(data || []);
-    } catch {
-      // The list of what can be shipped failing must not blank the shipments
-      // themselves, which is the part people need to keep working.
+      setStockError(null);
+    } catch (err) {
+      // Tolerated so a failure here cannot blank the shipments themselves — but
+      // NOT swallowed: an empty dropdown with no explanation reads as "there is
+      // nothing to ship".
+      setStockError(err.response?.data?.error || err.message);
     }
   }, []);
 
@@ -197,7 +201,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
 
   const addLine = () => run(async () => {
     const stock = available.find((a) => String(a.ntiItemId) === String(line.stockKey));
-    if (!stock) return;
+    // Thrown rather than returned: `run` reports a throw and swallows a return,
+    // so this used to no-op and still say "Lot added".
+    if (!stock) throw new Error("That stock row is no longer available — refresh and pick again.");
     await axiosInstance.post(`/shipments/${openId}/items`, {
       lotId: stock.lotId,
       ntiItemId: stock.ntiItemId,
@@ -216,8 +222,20 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
 
   const ship = () => run(async () => {
     setConfirmShip(false);
-    await axiosInstance.post(`/shipments/${openId}/ship`);
+    const { data } = await axiosInstance.post(`/shipments/${openId}/ship`);
     await refreshOpen(openId);
+    // A line with no stock row behind it ships and deducts nothing. That is
+    // correct — there is nothing to take off — but silent it reads as though
+    // inventory moved.
+    const nil = data?.movedNothing || [];
+    if (nil.length) {
+      toast({
+        status: "warning", position: "top", duration: 10000, isClosable: true,
+        title: `${nil.length} line${nil.length === 1 ? "" : "s"} moved no stock`,
+        description: `${nil.map((n) => `${n.lotNumber} (${lb(n.weight)} lb)`).join(", ")}`
+          + " — not in NTI inventory, so nothing was deducted.",
+      });
+    }
   }, "Shipped — stock deducted");
 
   const cancel = () => run(async () => {
@@ -434,6 +452,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                                     ? `${a.qtyCases ?? "?"} cs left · ${lb(a.onHand)} lb registered`
                                     : `${lb(a.onHand)} lb`}
                                   {a.inProcessing ? " · in processing" : ""}
+                                  {a.unlinked ? " · NOT IN LOT REGISTRY" : ""}
                                 </option>
                               ))}
                             </Select>
@@ -451,6 +470,26 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                             onClick={addLine}>
                             Add lot
                           </Button>
+
+                          {stockError && (
+                            <Alert status="error" borderRadius="md" fontSize="xs" py={2} flex="1 1 100%">
+                              <AlertIcon boxSize={3} />
+                              Could not load what is in stock — the list above may be
+                              incomplete. {stockError}
+                            </Alert>
+                          )}
+
+                          {/* Shippable, but nothing downstream can attribute it:
+                              no lot_id means no yield, no lot timeline. */}
+                          {selectedStock && selectedStock.unlinked && (
+                            <Alert status="warning" borderRadius="md" fontSize="xs" py={2} flex="1 1 100%">
+                              <AlertIcon boxSize={3} />
+                              {selectedStock.lotNumber} is not in the lot registry. It can
+                              ship, but it will not appear on that lot's history or count
+                              towards its yield. Set the lot on its registration form to fix
+                              that.
+                            </Alert>
+                          )}
 
                           {/* Warned, not blocked: there may be a good reason to
                               ship a lot that is mid-processing. */}
@@ -632,7 +671,11 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                     <Input size="sm" type="date" value={draft.shipDate}
                       onChange={(e) => setDraft({ ...draft, shipDate: e.target.value })} />
                   </Field>
-                  <Field label="BOL #" w="120px">
+                  <Field label="Ship to" w="220px">
+                <Input size="sm" bg="white" value={draft.shipTo}
+                  onChange={(e) => setDraft({ ...draft, shipTo: upper(e.target.value) })} />
+              </Field>
+              <Field label="BOL #" w="120px">
                     <Input size="sm" value={draft.billOfLading}
                       onChange={(e) => setDraft({ ...draft, billOfLading: upper(e.target.value) })} />
                   </Field>
