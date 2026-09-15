@@ -188,12 +188,15 @@ const NoblesseScreen = () => {
         bg="white"
         borderBottom="1px"
         borderColor="gray.200"
-        px={6}
-        py={4}
+        px={{ base: 3, md: 6 }}
+        py={{ base: 2, md: 4 }}
         flexShrink={0}
       >
-        <Flex align="center" justify="space-between">
-          <Flex align="center" gap={3}>
+        <Flex align="center" justify="space-between" gap={2}>
+          {/* minW 0 so this half can actually shrink: a flex item defaults to
+              its content width, which is what pushed the date off the screen
+              instead of letting it give way. */}
+          <Flex align="center" gap={{ base: 2, md: 3 }} minW={0}>
             <IconButton
               icon={<HamburgerIcon />}
               size="sm"
@@ -205,40 +208,56 @@ const NoblesseScreen = () => {
             <Image
               src={ntiLogo}
               alt="Noblesse Trading Inc"
-              height="36px"
+              height={{ base: "26px", md: "36px" }}
               objectFit="contain"
+              flexShrink={0}
             />
 
             {/* Recomputed on every render rather than memoised, so the 60s
                 auto-refresh rolls it over shortly after midnight without a
                 page reload. */}
-            <Box borderLeft="1px solid" borderColor="gray.200" pl={4} ml={1}>
+            <Box
+              borderLeft={{ base: "none", md: "1px solid" }}
+              borderColor="gray.200"
+              pl={{ base: 0, md: 4 }}
+              ml={{ base: 0, md: 1 }}
+              minW={0}
+            >
+              {/* "TUESDAY, SEPTEMBER 15, 2026" is most of a phone's width and
+                  the device already shows the date. The lot number below is the
+                  part that belongs to the day's work, so that stays. */}
               <Text
                 fontSize="xs"
                 color="gray.500"
                 textTransform="uppercase"
                 letterSpacing="wide"
+                display={{ base: "none", md: "block" }}
               >
                 {fmtLongDate()}
               </Text>
-              <Flex align="baseline" gap={2}>
-                <Text fontSize="xs" color="gray.500">
+              <Flex align="baseline" gap={2} minW={0}>
+                <Text fontSize="xs" color="gray.500" flexShrink={0}>
                   Lot
                 </Text>
                 <Text
-                  fontSize="lg"
+                  fontSize={{ base: "sm", md: "lg" }}
                   fontWeight="bold"
                   color="red.800"
                   lineHeight="1.1"
+                  whiteSpace="nowrap"
                 >
                   {lotNumberForDate()}
                 </Text>
               </Flex>
             </Box>
           </Flex>
-          <Flex align="center" gap={3}>
+          <Flex align="center" gap={3} flexShrink={0}>
+            {/* The refresh button stays at every width; the timestamp beside it
+                is the first thing to go, since the spinner already says when a
+                refresh is happening. */}
             {lastRefreshed && (
-              <Text fontSize="sm" color="gray.400">
+              <Text fontSize="sm" color="gray.400" whiteSpace="nowrap"
+                display={{ base: "none", md: "block" }}>
                 Updated{" "}
                 {lastRefreshed.toLocaleTimeString([], {
                   hour: "2-digit",
@@ -269,7 +288,7 @@ const NoblesseScreen = () => {
           bg="red.50"
           borderBottom="1px"
           borderColor="red.200"
-          px={6}
+          px={{ base: 3, md: 6 }}
           py={2}
           flexShrink={0}
         >
@@ -306,7 +325,7 @@ const NoblesseScreen = () => {
         </Flex>
       )}
 
-      <Flex flex={1} overflow="hidden" direction="column" p={4} gap={0}>
+      <Flex flex={1} overflow="hidden" direction="column" p={{ base: 2, md: 4 }} gap={0}>
         {/* Controlled so the notice below can send someone to the right tab.
             The index it uses is derived, never hardcoded — see REGISTRATION_TAB. */}
         <Tabs
@@ -480,7 +499,7 @@ const NoblesseScreen = () => {
             flexDirection="column"
           >
             <TabPanels flex={1} overflow="hidden">
-              {/* <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
+              {/* <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
                 <IncomingRecordsTab
                   receipts={receipts}
                   onReceiptAdded={handleReceiptAdded}
@@ -496,7 +515,7 @@ const NoblesseScreen = () => {
                   of its own. The half-built NtiInventoryTab.jsx that used to sit
                   unimported alongside this was deleted rather than left to rot;
                   git history has it if it is ever wanted back. */}
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
+              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
                 <RegistrationFormTab
                   isAdmin={canEdit}
                   canDelete={isAdmin}
@@ -504,14 +523,14 @@ const NoblesseScreen = () => {
                   refreshSignal={refreshSignal}
                 />
               </TabPanel>
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
+              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
                 <WeightManifestTab refreshSignal={refreshSignal} />
               </TabPanel>
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
+              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
                 <ProcessingReportsTab refreshSignal={refreshSignal} />
               </TabPanel>
 
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={5}>
+              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
                 <OutgoingTab refreshSignal={refreshSignal} />
               </TabPanel>
             </TabPanels>
