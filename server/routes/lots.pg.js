@@ -34,6 +34,9 @@ const fmtLot = (row) => ({
   // because it genuinely has neither — callers group on this rather than
   // inferring it from a null date.
   kind: row.kind || "internal",
+  // What the lot IS, for screens that only ever showed a number. Present only
+  // where the query joined it in; a lot number alone tells nobody what it is.
+  description: row.description ?? null,
   notes: row.notes,
   createdAt: row.created_at,
   // Set by a person, never derived: see the close route.
@@ -273,13 +276,32 @@ router.get("/lots", verifyToken, async (req, res) => {
       // under DESC in Postgres, so left in the same ordering they would sit
       // above today's work and push the lot someone actually wants off the top
       // of the list. The client renders the two blocks as separate groups.
-      `SELECT * FROM lots
-        WHERE tenant_id = $1
-          AND ($2 = '' OR lot_number ILIKE '%' || $2 || '%')
-        ORDER BY (kind = 'external'),
-                 lot_date DESC NULLS LAST,
-                 seq DESC NULLS LAST,
-                 created_at DESC
+      `SELECT l.*, d.description
+         FROM lots l
+         -- The registration form is what says what a lot is; the incoming
+         -- weighing session is the fallback for a lot never registered.
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(
+             (SELECT NULLIF(TRIM(f.product_description), '')
+                FROM noblesse_registration_forms f
+               WHERE f.tenant_id = l.tenant_id
+                 AND (f.lot_id = l.lot_id OR f.lot_number = l.lot_number)
+                 AND NULLIF(TRIM(f.product_description), '') IS NOT NULL
+               ORDER BY f.created_at DESC LIMIT 1),
+             (SELECT NULLIF(TRIM(b.item_description), '')
+                FROM box_batches b
+               WHERE b.tenant_id = l.tenant_id AND b.lot_id = l.lot_id
+                 AND b.direction = 'incoming'
+                 AND NULLIF(TRIM(b.item_description), '') IS NOT NULL
+               ORDER BY b.created_at DESC LIMIT 1)
+           ) AS description
+         ) d ON TRUE
+        WHERE l.tenant_id = $1
+          AND ($2 = '' OR l.lot_number ILIKE '%' || $2 || '%')
+        ORDER BY (l.kind = 'external'),
+                 l.lot_date DESC NULLS LAST,
+                 l.seq DESC NULLS LAST,
+                 l.created_at DESC
         LIMIT $3`,
       [req.tenantId, q, limit]
     );

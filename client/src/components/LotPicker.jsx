@@ -24,6 +24,18 @@ import axiosInstance from "../utils/axiosInstance";
 // The sequence is never typed. It used to be, which is why production has
 // N26132-03 and N26132-08 with nothing between them.
 
+// A native option takes text only, so the description is appended rather than
+// styled. Trimmed: a long product line pushes the lot number itself off a narrow
+// select, and the number is the part being looked for.
+const MAX_DESC = 38;
+
+const optionLabel = (l) => {
+  const d = (l.description || "").trim();
+  if (!d) return l.lotNumber;
+  const short = d.length > MAX_DESC ? `${d.slice(0, MAX_DESC - 1)}\u2026` : d;
+  return `${l.lotNumber} \u2014 ${short}`;
+};
+
 const LotPicker = ({
   value = null,                 // selected lotId, or null
   lotNumber = "",               // the text, needed when there is no lotId to show
@@ -214,12 +226,12 @@ const LotPicker = ({
               thing by a key it does not have — and the operator loses the top
               of the list, which is where today's lot lives. */}
           {ours.map((l) => (
-            <option key={l.lotId} value={l.lotId}>{l.lotNumber}</option>
+            <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
           ))}
           {outside.length > 0 && (
             <optgroup label="Not our lot numbers">
               {outside.map((l) => (
-                <option key={l.lotId} value={l.lotId}>{l.lotNumber}</option>
+                <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
               ))}
             </optgroup>
           )}

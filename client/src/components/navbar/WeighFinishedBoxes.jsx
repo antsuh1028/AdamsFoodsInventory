@@ -26,7 +26,7 @@ const WeighFinishedBoxes = ({
   const toast = useToast();
   const {
     ready, durable, session, pending, scans, lastError, resumable,
-    start, stop, addScan, undoLast, resume, discardResumable, adoptSession,
+    start, stop, addScan, addScanMany, undoLast, resume, discardResumable, adoptSession,
   } = useScanSession();
 
   const [lot, setLot] = useState({ lotId: null, lotNumber: "" });
@@ -125,6 +125,24 @@ const WeighFinishedBoxes = ({
       beepError();
       toast({ title: "That box was not recorded", description: err.message,
         status: "error", position: "top", duration: 6000, isClosable: true });
+      return false;
+    }
+  };
+
+  // A pallet of identical cases off the line. Marked estimated by the panel:
+  // the label figure, not a weighed one.
+  const onAddMany = async (entries) => {
+    try {
+      await addScanMany(entries);
+      beepSuccess();
+      toast({ title: entries.length + ' boxes added', status: 'success',
+        position: 'top', duration: 4000,
+        description: 'Marked estimated — the label figure, not a weighed one.' });
+      return true;
+    } catch (err) {
+      beepError();
+      toast({ title: 'Could not add those boxes', description: err.message,
+        status: 'error', position: 'top', duration: 6000 });
       return false;
     }
   };
@@ -402,6 +420,7 @@ const WeighFinishedBoxes = ({
                 expected={session.expectedBoxes ?? null}
                 weights={weights}
                 onAdd={onAdd}
+                onAddMany={onAddMany}
                 onUndo={undoLast}
               />
             ) : (

@@ -1,20 +1,33 @@
+/* global BigInt */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Input, Button, Badge, Progress,
+  Box, Flex, Text, Input, Button, Badge, Progress, ButtonGroup,
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
   AlertDialogContent, AlertDialogOverlay,
 } from "@chakra-ui/react";
 import { parseTypedWeight, looksWrong, looksLikeReweigh } from "../../utils/typedWeight";
 import { beepError } from "../../utils/scanFeedback";
+import { toDisplayHundredths, fromHundredths } from "../../utils/weight";
+
+// Same ceiling as the incoming keypad: a typo in the count is otherwise
+// thousands of rows.
+const MAX_BATCH = 500;
 
 // Typing weights at the bench, one box at a time as each is weighed.
 // on the scanning screen. The global keydown handler in boxScanner.jsx bails
 // when focus is in an INPUT, so a focused field normally SWALLOWS SCANS (CLAUDE.md
 // §4).
-const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = false }) => {
+const TypeWeights = ({
+  onAdd, onAddMany, onUndo, weights = [], expected = null, disabled = false,
+}) => {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(null);   // an outlier awaiting a yes/no
+  // "one" | "batch". A pallet of identical cases off the line is a different act
+  // from weighing one box, so it is a mode rather than a field always on show.
+  const [mode, setMode] = useState("one");
+  const [cases, setCases] = useState("");
+  const [confirmBatch, setConfirmBatch] = useState(false);
   const inputRef = useRef(null);
   const cancelRef = useRef(null);
 
@@ -29,6 +42,36 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
 
   const parsed = useMemo(() => parseTypedWeight(typed), [typed]);
   const preview = parsed.ok ? parsed.weight : null;
+
+  const caseCount = parseInt(cases, 10);
+  const batchReady = parsed.ok && Number.isInteger(caseCount)
+    && caseCount > 0 && caseCount <= MAX_BATCH;
+  // Shown before committing: the operator agrees to a TOTAL, not to two numbers.
+  // Rounded per box then multiplied, like every other total here.
+  const batchTotal = batchReady
+    ? fromHundredths(toDisplayHundredths(parsed.weight) * BigInt(caseCount))
+    : null;
+
+  const submitBatch = async () => {
+    if (!batchReady) return;
+    setConfirmBatch(false);
+    setBusy(true);
+    try {
+      await onAddMany(Array.from({ length: caseCount }, () => ({
+        weight: parsed.weight, weightUnit: "LB", isManual: true,
+        entryMethod: "keyed",
+        // NOT MEASURED - the figure on the label, and the boxes vary.
+        isEstimated: true,
+      })));
+      setCases("");
+      setTyped("");
+    } catch {
+      beepError();
+    } finally {
+      setBusy(false);
+      refocus();
+    }
+  };
 
   // onAdd beeps and reports for itself; what it RETURNS is whether the box actually
   // landed.
@@ -71,7 +114,14 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
   };
 
   const onKeyDown = (e) => {
-    if (e.key === "Enter") { e.preventDefault(); submit(); return; }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // In batch mode Enter raises the confirmation rather than recording one
+      // box, so the same keystroke cannot mean two different things.
+      if (mode === "batch") { if (batchReady) setConfirmBatch(true); return; }
+      submit();
+      return;
+    }
     // Backspace on an empty field takes back the last box.
     if (e.key === "Backspace" && !typed && onUndo) {
       e.preventDefault();
@@ -96,6 +146,52 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
         {/* Said plainly: with focus in this field the scanner is deaf. */}
         <Badge colorScheme="yellow" fontSize="9px">scanning is off while typing</Badge>
       </Flex>
+
+      {onAddMany && (
+        <ButtonGroup size="xs" isAttached variant="outline" mb={3}>
+          {/* tabIndex -1 and mousedown prevented, like the keypad: a scanner
+              types Enter, and a button holding focus would be re-pressed. */}
+          {[["one", "One box"], ["batch", "Batch"]].map(([m, label]) => (
+            <Button key={m} tabIndex={-1} onMouseDown={(e) => e.preventDefault()}
+              colorScheme={mode === m ? "blue" : "gray"}
+              variant={mode === m ? "solid" : "outline"}
+              onClick={() => { setMode(m); refocus(); }}>
+              {label}
+            </Button>
+          ))}
+        </ButtonGroup>
+      )}
+
+      {mode === "batch" && (
+        <Flex gap={3} align="flex-end" wrap="wrap" mb={3}>
+          <Box>
+            <Text fontSize="xs" color="gray.600" mb={1}>How many boxes</Text>
+            <Input value={cases}
+              onChange={(e) => setCases(e.target.value.replace(/[^0-9]/g, ""))}
+              isDisabled={disabled || busy} placeholder="30" inputMode="numeric"
+              autoComplete="off" size="lg" bg="white" width="120px"
+              fontSize="2xl" fontWeight="bold" textAlign="center"
+              style={{ fontVariantNumeric: "tabular-nums" }} />
+          </Box>
+          <Box mb={2}>
+            <Text fontSize="xs" color="gray.600" mb={1}>Comes to</Text>
+            <Text fontSize="xl" fontWeight="bold" color="blue.700" lineHeight="1"
+              style={{ fontVariantNumeric: "tabular-nums" }}>
+              {batchTotal ? `${batchTotal} lb` : "—"}
+            </Text>
+          </Box>
+          <Button size="sm" colorScheme="blue" mb={2}
+            isLoading={busy} isDisabled={disabled || !batchReady}
+            onClick={() => setConfirmBatch(true)}>
+            Add {batchReady ? caseCount : ""} boxes
+          </Button>
+          {caseCount > MAX_BATCH && (
+            <Text fontSize="xs" color="red.600" mb={3}>
+              {MAX_BATCH} at a time is the limit.
+            </Text>
+          )}
+        </Flex>
+      )}
 
       <Flex gap={3} align="center" wrap="wrap">
         <Input
@@ -137,10 +233,12 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
           )}
         </Box>
 
-        <Button size="sm" colorScheme="blue" onClick={submit}
-          isLoading={busy} isDisabled={disabled || !parsed.ok}>
-          Add
-        </Button>
+        {mode === "one" && (
+          <Button size="sm" colorScheme="blue" onClick={submit}
+            isLoading={busy} isDisabled={disabled || !parsed.ok}>
+            Add
+          </Button>
+        )}
         {onUndo && (
           <Button size="sm" variant="ghost" onClick={() => { onUndo(); refocus(); }}
             isDisabled={disabled || count === 0}>
@@ -172,6 +270,44 @@ const TypeWeights = ({ onAdd, onUndo, weights = [], expected = null, disabled = 
       ) : (
         <Text fontSize="sm" color="gray.600" mt={2}>{count} box{count === 1 ? "" : "es"}</Text>
       )}
+
+      <AlertDialog isOpen={confirmBatch} leastDestructiveRef={cancelRef}
+        onClose={() => { setConfirmBatch(false); refocus(); }} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Add {caseCount} boxes?
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              <Text fontSize="3xl" fontWeight="bold" color="blue.700" lineHeight="1.2"
+                style={{ fontVariantNumeric: "tabular-nums" }}>
+                {caseCount} × {preview} lb
+              </Text>
+              <Text fontSize="md" color="gray.700" mb={3}>
+                = <b>{batchTotal} lb</b> on this lot
+              </Text>
+              <Text fontSize="sm">
+                Each one is recorded as its own box, so any of them can be
+                corrected or voided on its own afterwards.
+              </Text>
+              <Text fontSize="xs" color="gray.600" mt={2}>
+                They are marked <b>estimated</b>: this is the figure on the label,
+                and the boxes themselves vary.
+              </Text>
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              {/* Focus on the safe option - Enter is the key being hammered. */}
+              <Button ref={cancelRef}
+                onClick={() => { setConfirmBatch(false); refocus(); }}>
+                Go back
+              </Button>
+              <Button colorScheme="blue" onClick={submitBatch}>
+                Add {caseCount} boxes
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
 
       <AlertDialog isOpen={Boolean(confirm)} leastDestructiveRef={cancelRef}
         onClose={() => { setConfirm(null); refocus(); }} isCentered>
