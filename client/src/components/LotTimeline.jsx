@@ -35,6 +35,52 @@ const STATUS = {
 // against the manifest this is meant to reconcile with.
 const lb = (v) => (v === null || v === undefined || v === "" ? null : toDisplay(v));
 
+// The yield, stated as a claim rather than a number. A lot nothing has left
+// yet reads "not measured", never 0%.
+const YieldLine = ({ y }) => {
+  if (!y) return null;
+  if (!y.measured) {
+    return (
+      <Flex gap={2} align="baseline" wrap="wrap">
+        <Badge colorScheme="gray">Yield not measured</Badge>
+        <Text fontSize="sm" color="gray.600">
+          {y.inLb
+            ? `${y.inLb} lb came in. Nothing has been weighed out of this lot yet.`
+            : "Nothing has been weighed on either side of this lot."}
+        </Text>
+      </Flex>
+    );
+  }
+  if (y.percent == null) {
+    return (
+      <Flex gap={2} align="baseline" wrap="wrap">
+        <Badge colorScheme="gray">Yield not measured</Badge>
+        <Text fontSize="sm" color="gray.600">
+          {y.outLb} lb weighed out, but nothing recorded coming in to divide it by.
+        </Text>
+      </Flex>
+    );
+  }
+  return (
+    <Flex gap={3} align="baseline" wrap="wrap">
+      <Text fontSize="2xl" fontWeight="bold" color="green.700"
+        style={{ fontVariantNumeric: "tabular-nums" }}>
+        {y.percent.toFixed(1)}%
+      </Text>
+      <Text fontSize="sm" color="gray.700" style={{ fontVariantNumeric: "tabular-nums" }}>
+        {y.outLb} out of {y.inLb} lb · {y.unaccountedLb} unaccounted
+      </Text>
+      {/* A yield on a typed Original Weight is not the same claim as one on
+          bench weights, so it never passes for one. */}
+      {y.basis === "registered" && (
+        <Badge colorScheme="yellow" fontSize="9px">
+          against the form&apos;s original weight, not bench weights
+        </Badge>
+      )}
+    </Flex>
+  );
+};
+
 const Figure = ({ label, value, unit = "lb", strong }) => (
   <Box>
     <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">{label}</Text>
@@ -111,14 +157,26 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
               hide exactly the distinction someone is checking. */}
           <Flex gap={6} wrap="wrap" px={3} py={3} bg="gray.50" borderRadius="md"
             border="1px solid" borderColor="gray.200" mb={4}>
-            <Figure label="Weighed" value={lb(f.weighed)} strong />
-            <Figure label="Boxes" value={f.boxCount || null} unit="" />
+            <Figure label="Weighed in" value={lb(f.weighedIn)} strong />
+            <Figure label="Boxes in" value={f.boxesIn || null} unit="" />
+            <Divider orientation="vertical" height="40px" />
+            <Figure label="Weighed out" value={lb(f.weighedOut)} strong />
+            <Figure label="Boxes out" value={f.boxesOut || null} unit="" />
             <Divider orientation="vertical" height="40px" />
             <Figure label="Raw on hand" value={lb(f.rawOnHand)} />
             <Figure label="In processing" value={lb(f.inProcessing)} />
             <Figure label="Processed" value={lb(f.processedOnHand)} />
             {f.processedCases > 0 && <Figure label="Cases out" value={f.processedCases} unit="" />}
           </Flex>
+
+          <Box px={3} py={3} bg="green.50" borderRadius="md" border="1px solid"
+            borderColor="green.200" mb={4}>
+            <Text fontSize="xs" color="gray.500" textTransform="uppercase"
+              letterSpacing="wide" mb={1}>
+              Yield
+            </Text>
+            <YieldLine y={data.yield} />
+          </Box>
 
           <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide" mb={2}>
             History

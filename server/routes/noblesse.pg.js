@@ -5,6 +5,7 @@ const requireRole = require("../middleware/requireRole");
 const { lotColumns, lookupLot } = require("../utils/lotRegistry");
 const { syncProcessedStock } = require("../utils/processedStock");
 const { syncRegistrationStock } = require("../utils/registrationStock");
+const { yieldLateralSql, yieldFrom } = require("../utils/lotYield");
 
 // Schema lives in ../db/migrate.js and is applied, in order, before this
 // module is ever required. Nothing here fires DDL at load any more — that
@@ -93,7 +94,13 @@ const fmtRegistrationForm = (row) => {
     originalWeight:         row.original_weight      != null ? Number(row.original_weight)      : null,
     totalQuantity:          row.total_quantity,
     processingDates:        processingDates,
+    // Hand-typed and no longer editable anywhere. Kept so old forms still
+    // show what someone once wrote, but `yield` below is the real figure.
     actualYield:            row.actual_yield         != null ? Number(row.actual_yield)         : null,
+    // Present only where the query joined the figures in.
+    yield: row.boxes_out !== undefined
+      ? yieldFrom({ ...row, form_weight: row.original_weight })
+      : null,
     temp:                   row.temp,
     remarks:                row.remarks,
     checkedBy:              row.checked_by,
@@ -1020,7 +1027,10 @@ const regFormValues = (body, lot) => {
 router.get("/noblesse-registration-forms", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM noblesse_registration_forms WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 200`,
+      `SELECT f.*, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out
+         FROM noblesse_registration_forms f
+         ${yieldLateralSql("f")}
+        WHERE f.tenant_id = $1 ORDER BY f.created_at DESC LIMIT 200`,
       [req.tenantId]
     );
     res.json(result.rows.map(fmtRegistrationForm));
@@ -1057,7 +1067,10 @@ router.get("/noblesse-registration-forms/all/history", verifyToken, async (req, 
 router.get("/noblesse-registration-forms/:id", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2`,
+      `SELECT f.*, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out
+         FROM noblesse_registration_forms f
+         ${yieldLateralSql("f")}
+        WHERE f.id = $1 AND f.tenant_id = $2`,
       [req.params.id, req.tenantId]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });

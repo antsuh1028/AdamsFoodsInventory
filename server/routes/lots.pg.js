@@ -4,6 +4,7 @@ const verifyToken = require("../middleware/verifyToken.pg");
 const { parseLot, formatLot, pacificToday, dayOfYearFromDate } = require("../utils/lot");
 // Shared with routes/boxes.pg.js so a lot's totals and a manifest agree.
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
+const { weighedSql, boxesSql, formWeightSql, yieldFrom } = require("../utils/lotYield");
 
 // The lot registry.
 //
@@ -336,14 +337,15 @@ const lotFigures = async (tenantId, lotId) => {
        COALESCE((SELECT SUM(i.weight_in) FROM noblesse_processing_order_items i
                    JOIN noblesse_processing_orders o ON o.id = i.processing_order_id
                   WHERE i.lot_id = $1 AND o.tenant_id = $2 AND o.status <> 'completed'), 0)::text AS in_processing,
-       -- What the boxes actually weighed. Voided rows excluded, exactly as on
-       -- the manifest.
-       COALESCE((SELECT SUM(${weightInLb("bi")}) FROM batch_items bi
-                   JOIN box_batches b ON b.batch_id = bi.batch_id
-                  WHERE b.lot_id = $1 AND b.tenant_id = $2 AND bi.voided_at IS NULL), 0)::text AS weighed,
-       COALESCE((SELECT COUNT(*) FROM batch_items bi
-                   JOIN box_batches b ON b.batch_id = bi.batch_id
-                  WHERE b.lot_id = $1 AND b.tenant_id = $2 AND bi.voided_at IS NULL), 0)::int AS box_count,
+       -- What the boxes actually weighed, split by direction. Summed together
+       -- these added an arrival to a departure and reported the total as the
+       -- lot's weight, which made every figure below it wrong.
+       ${weighedSql("incoming")} AS weighed_in,
+       ${boxesSql("incoming")}   AS boxes_in,
+       ${weighedSql("outgoing")} AS weighed_out,
+       ${boxesSql("outgoing")}   AS boxes_out,
+       -- Only used when nothing was weighed in, and the basis says so.
+       ${formWeightSql} AS form_weight,
        COALESCE((SELECT COUNT(*) FROM noblesse_processing_orders o
                    JOIN noblesse_processing_order_items i ON i.processing_order_id = o.id
                   WHERE i.lot_id = $1 AND o.tenant_id = $2 AND o.status <> 'completed'), 0)::int AS open_orders,
@@ -383,10 +385,13 @@ router.get("/lots/:id", verifyToken, async (req, res) => {
         processedOnHand: f.processed_on_hand,
         processedCases: f.processed_cases,
         inProcessing: f.in_processing,
-        weighed: f.weighed,
-        boxCount: f.box_count,
+        weighedIn: f.weighed_in,
+        boxesIn: f.boxes_in,
+        weighedOut: f.weighed_out,
+        boxesOut: f.boxes_out,
         weightUnit: "LB",
       },
+      yield: yieldFrom(f),
     });
   } catch (err) {
     console.error("read lot:", err);

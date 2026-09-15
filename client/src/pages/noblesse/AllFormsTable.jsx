@@ -25,7 +25,7 @@ const COLUMNS = [
   { key: "originalWeight",     label: "Weight",          filter: "none",   width: "100px", align: "right", kind: "number" },
   // Paired with the weight, the way the paper form reads them.
   { key: "totalQuantity",      label: "Qty",             filter: "none",   width: "70px",  align: "right", kind: "number" },
-  { key: "actualYield",        label: "Yield %",         filter: "none",   width: "85px",  align: "right", kind: "number" },
+  { key: "actualYield",        label: "Yield %",         filter: "none",   width: "95px",  align: "right", kind: "number" },
   { key: "status",             label: "Status",          filter: "select", width: "110px", align: "center" },
   { key: "remarks",            label: "Remarks",         filter: "text",   width: "200px" },
 ];
@@ -273,7 +273,14 @@ const AllFormsTable = ({ forms = [], onEdit }) => {
                         ) : col.key === "totalQuantity" ? (
                           form.totalQuantity || "—"
                         ) : col.key === "actualYield" ? (
-                          form.actualYield ? `${form.actualYield}%` : "—"
+                          // Computed from the bench, not the retired typed
+                          // column. A lot nothing has left yet is blank, not 0%.
+                          form.yield?.percent != null ? (
+                            <Text as="span"
+                              color={form.yield.basis === "registered" ? "gray.500" : "gray.800"}>
+                              {form.yield.percent.toFixed(1)}%
+                            </Text>
+                          ) : "—"
                         ) : (
                           cellText(form, col) || "—"
                         )}
