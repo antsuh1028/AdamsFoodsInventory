@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  Box, Flex, Text, Badge, Spinner, Alert, AlertIcon, Divider,
+  Box, Flex, Text, Badge, Spinner, Alert, AlertIcon, Divider, Button, useToast,
 } from "@chakra-ui/react";
 import axiosInstance from "../utils/axiosInstance";
+import getRole from "../utils/getRole";
 import { toDisplay } from "../utils/weight";
 import FloatingWindow from "./FloatingWindow";
 
@@ -99,9 +100,12 @@ const Figure = ({ label, value, unit = "lb", strong }) => (
 );
 
 const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
+  const isAdmin = getRole() === "admin";
+  const toast = useToast();
   const [data, setData] = useState(null);
   const [events, setEvents] = useState(null);
   const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!lotId) return;
@@ -121,6 +125,22 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
   }, [lotId]);
 
   useEffect(() => { if (isOpen) load(); }, [isOpen, load]);
+
+  // Closing states a result, so the server's refusal is shown in full — it
+  // names the draft load still holding the lot.
+  const lifecycle = async (action) => {
+    setBusy(true);
+    try {
+      await axiosInstance.post(`/lots/${lotId}/${action}`);
+      await load();
+      toast({ title: action === "close" ? "Lot closed" : "Lot reopened",
+        status: "success", duration: 3000, position: "top" });
+    } catch (err) {
+      toast({ title: `Could not ${action} this lot`,
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 9000, position: "top", isClosable: true });
+    } finally { setBusy(false); }
+  };
 
   const f = data?.figures;
   const status = STATUS[data?.status] || null;
@@ -148,6 +168,7 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
           <Flex align="baseline" gap={3} wrap="wrap" mb={3}>
             <Text fontSize="xl" fontWeight="bold" color="blue.800">{data.lot.lotNumber}</Text>
             {status && <Badge colorScheme={status.color}>{status.label}</Badge>}
+            {data.lot.status === "closed" && <Badge colorScheme="gray">Closed</Badge>}
             <Text fontSize="sm" color="gray.500">{data.lot.lotDate}</Text>
             {data.lot.notes && <Text fontSize="sm" color="gray.500">· {data.lot.notes}</Text>}
           </Flex>
@@ -176,7 +197,60 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
               Yield
             </Text>
             <YieldLine y={data.yield} />
+            {/* The figures as they stood at close, shown beside the live ones
+                rather than instead of them: a correction made afterwards moves
+                one and not the other, and that difference is worth seeing. */}
+            {data.lot.status === "closed" && (
+              <Text fontSize="xs" color="gray.600" mt={2}>
+                Closed{data.lot.closedBy ? ` by ${data.lot.closedBy}` : ""}
+                {data.lot.closedAt ? ` on ${String(data.lot.closedAt).slice(0, 10)}` : ""}
+                {data.lot.closedYield != null
+                  ? ` — frozen at ${data.lot.closedYield.toFixed(1)}% `
+                    + `(${lb(data.lot.closedOutLb)} out of ${lb(data.lot.closedInLb)} lb)`
+                  : " — no yield was measured"}
+              </Text>
+            )}
           </Box>
+
+          {/* Offered, never applied. The app cannot tell "finished, with a 28%
+              loss" from "more going out tomorrow". */}
+          {data.closeSuggestion && (
+            <Alert status="warning" borderRadius="md" mb={4} alignItems="flex-start">
+              <AlertIcon />
+              <Box flex="1">
+                <Text fontSize="sm" fontWeight="bold">
+                  Nothing has left this lot in {data.closeSuggestion.idleDays} days.
+                </Text>
+                <Text fontSize="sm" mt={1} style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {lb(data.closeSuggestion.inLb)} lb in, {lb(data.closeSuggestion.outLb)} lb
+                  out, {lb(data.closeSuggestion.unaccountedLb)} unaccounted
+                  {data.closeSuggestion.percent != null
+                    && ` (${(100 - data.closeSuggestion.percent).toFixed(1)}%)`}.
+                </Text>
+                <Button size="sm" colorScheme="blue" mt={3} isLoading={busy}
+                  onClick={() => lifecycle("close")}>
+                  Close lot
+                </Button>
+              </Box>
+            </Alert>
+          )}
+
+          {/* Always available, not only when prompted — a lot can plainly be
+              finished before the idle window is up. */}
+          <Flex gap={2} mb={4} wrap="wrap">
+            {data.lot.status !== "closed" && !data.closeSuggestion && (
+              <Button size="sm" variant="outline" isLoading={busy}
+                onClick={() => lifecycle("close")}>
+                Close lot
+              </Button>
+            )}
+            {data.lot.status === "closed" && isAdmin && (
+              <Button size="sm" variant="ghost" isLoading={busy}
+                onClick={() => lifecycle("reopen")}>
+                Reopen lot
+              </Button>
+            )}
+          </Flex>
 
           <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide" mb={2}>
             History

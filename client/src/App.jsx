@@ -23,10 +23,33 @@ import PrivateRoute from "./PrivateRoute";
 //
 // Doing it in one place also means a `status="warning"` written later cannot
 // quietly bring orange back.
+//
+// Re-pointing the scale is not quite enough for TOASTS. Inline alerts render
+// the `subtle` variant (a light tint), but a toast renders `solid`, which
+// reaches for the 600 step — yellow.600 is #B7791F, a brown that still reads
+// orange. So a solid warning is given a real yellow with dark text instead.
+const solid = base.components.Alert.variants.solid;
+
 const theme = extendTheme({
   colors: {
     orange: base.colors.yellow,
     purple: base.colors.blue,
+  },
+  components: {
+    Alert: {
+      variants: {
+        solid: (props) => {
+          const styles = solid(props);
+          // 'orange' is what status="warning" resolves to, remap or no remap.
+          if (props.colorScheme !== "orange") return styles;
+          const fg = { "--alert-fg": "colors.gray.900", "--alert-bg": "colors.yellow.300" };
+          return {
+            ...styles,
+            container: { ...styles.container, ...fg, _dark: fg, color: "var(--alert-fg)" },
+          };
+        },
+      },
+    },
   },
 });
 

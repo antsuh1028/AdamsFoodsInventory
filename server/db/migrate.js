@@ -396,6 +396,27 @@ const steps = async () => {
   await run("lots seq nullable",
     `ALTER TABLE lots ALTER COLUMN seq DROP NOT NULL`);
 
+  // A lot's life ends when a PERSON says so, never on a computed signal:
+  // weight = 0 cannot mean it, because shipping moves weight while an accepted
+  // processing report moves only cases, and cancelling a load puts weight back.
+  await run("lots status",
+    `ALTER TABLE lots ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open'
+       CHECK (status IN ('open', 'closed'))`);
+  await run("lots closed_at",
+    `ALTER TABLE lots ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ`);
+  await run("lots closed_by",
+    `ALTER TABLE lots ADD COLUMN IF NOT EXISTS closed_by TEXT`);
+  // The yield AS IT STOOD at close, so a correction made afterwards cannot
+  // silently rewrite a figure somebody has already reported.
+  await run("lots closed_yield",
+    `ALTER TABLE lots ADD COLUMN IF NOT EXISTS closed_yield NUMERIC(6,3)`);
+  await run("lots closed_in_lb",
+    `ALTER TABLE lots ADD COLUMN IF NOT EXISTS closed_in_lb NUMERIC(12,3)`);
+  await run("lots closed_out_lb",
+    `ALTER TABLE lots ADD COLUMN IF NOT EXISTS closed_out_lb NUMERIC(12,3)`);
+  await run("lots status index",
+    `CREATE INDEX IF NOT EXISTS lots_status_idx ON lots (tenant_id, status)`);
+
   // Back-references. ADD COLUMN IF NOT EXISTS skips the whole clause, FK
   // included, when the column is already there — so re-running is safe.
   for (const table of [

@@ -257,6 +257,9 @@ export const useScanSession = () => {
     await refreshPending();
     if (result.closed) {
       setSession(null);
+      // Recomputed, not assumed: leaving the mount-time value behind kept
+      // "Start" disabled against a session that had already been stopped.
+      setResumable(await queueRef.current.findResumable());
       await releaseWakeLock();
     }
     return result;

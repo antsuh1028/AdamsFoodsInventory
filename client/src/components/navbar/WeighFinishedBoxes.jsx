@@ -26,7 +26,7 @@ const WeighFinishedBoxes = ({
   const toast = useToast();
   const {
     ready, durable, session, pending, scans, lastError, resumable,
-    start, stop, addScan, undoLast, resume, adoptSession,
+    start, stop, addScan, undoLast, resume, discardResumable, adoptSession,
   } = useScanSession();
 
   const [lot, setLot] = useState({ lotId: null, lotNumber: "" });
@@ -34,6 +34,7 @@ const WeighFinishedBoxes = ({
   const [busy, setBusy] = useState(false);
   const [typeMode, setTypeMode] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [remarks, setRemarks] = useState("");
   const cancelStopRef = useRef(null);
 
@@ -169,6 +170,24 @@ const WeighFinishedBoxes = ({
     onClose();
   };
 
+  const onDiscard = async () => {
+    setConfirmDiscard(false);
+    setBusy(true);
+    try {
+      const { lost } = await discardResumable();
+      toast({
+        status: "info", position: "top", duration: 5000,
+        title: "Unfinished session discarded",
+        description: lost
+          ? `${lost} weight(s) that never reached the server were thrown away.`
+          : "Nothing was pending.",
+      });
+    } catch (err) {
+      toast({ title: "Could not discard it", description: err.message,
+        status: "error", position: "top", duration: 5000 });
+    } finally { setBusy(false); }
+  };
+
   const count = live.length;
 
   return (
@@ -249,13 +268,22 @@ const WeighFinishedBoxes = ({
                 reached the server.
               </Text>
               {resumable.direction === "outgoing" ? (
-                <Button size="sm" colorScheme="yellow" mt={3} isLoading={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    try { await resume(); } finally { setBusy(false); }
-                  }}>
-                  Carry on with it
-                </Button>
+                <Flex gap={2} mt={3} wrap="wrap">
+                  <Button size="sm" colorScheme="yellow" isLoading={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      try { await resume(); } finally { setBusy(false); }
+                    }}>
+                    Carry on with it
+                  </Button>
+                  {/* The only way out when the batch cannot be resumed at all —
+                      deleted on the server, say. Without it Start stays disabled
+                      and the bench is stuck. */}
+                  <Button size="sm" variant="ghost" isDisabled={busy}
+                    onClick={() => setConfirmDiscard(true)}>
+                    Discard it
+                  </Button>
+                </Flex>
               ) : (
                 <Text fontSize="xs" color="gray.700" mt={2}>
                   It is an <b>incoming</b> session. Finish or close it on the box
@@ -373,6 +401,38 @@ const WeighFinishedBoxes = ({
         )}
       </Box>
     </FloatingWindow>
+
+    <AlertDialog isOpen={confirmDiscard} leastDestructiveRef={cancelStopRef}
+      onClose={() => setConfirmDiscard(false)} isCentered>
+      <AlertDialogOverlay>
+        <AlertDialogContent>
+          <AlertDialogHeader fontSize="lg" fontWeight="bold">
+            Throw this unfinished session away?
+          </AlertDialogHeader>
+          <AlertDialogBody>
+            <Text fontSize="sm">
+              {resumable?.pending
+                ? `${resumable.pending} weight(s) on this device never reached the `
+                  + `server. Discarding loses them for good — those boxes would have `
+                  + `to be weighed again.`
+                : "Nothing is waiting to be sent, so nothing is lost."}
+            </Text>
+            <Text fontSize="sm" mt={2} color="gray.600">
+              Use this when the session cannot be carried on with — deleted on the
+              server, or belonging to a lot that is long gone.
+            </Text>
+          </AlertDialogBody>
+          <AlertDialogFooter gap={2}>
+            <Button ref={cancelStopRef} onClick={() => setConfirmDiscard(false)}>
+              Keep it
+            </Button>
+            <Button colorScheme="red" onClick={onDiscard} isLoading={busy}>
+              Discard it
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogOverlay>
+    </AlertDialog>
 
     <AlertDialog isOpen={confirmStop} leastDestructiveRef={cancelStopRef}
       onClose={() => setConfirmStop(false)} isCentered>

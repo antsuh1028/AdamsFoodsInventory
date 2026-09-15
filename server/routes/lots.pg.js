@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
+const requireRole = require("../middleware/requireRole");
 const { parseLot, formatLot, pacificToday, dayOfYearFromDate } = require("../utils/lot");
 // Shared with routes/boxes.pg.js so a lot's totals and a manifest agree.
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
@@ -35,6 +36,15 @@ const fmtLot = (row) => ({
   kind: row.kind || "internal",
   notes: row.notes,
   createdAt: row.created_at,
+  // Set by a person, never derived: see the close route.
+  status: row.status || "open",
+  closedAt: row.closed_at ?? null,
+  closedBy: row.closed_by ?? null,
+  // The figures AS THEY STOOD at close. A later correction moves the live
+  // numbers; these stay put, because somebody has already reported them.
+  closedYield: row.closed_yield != null ? Number(row.closed_yield) : null,
+  closedInLb: row.closed_in_lb ?? null,
+  closedOutLb: row.closed_out_lb ?? null,
 });
 
 // The sequence is the last two digits of the lot number, so 99 is the ceiling.
@@ -323,8 +333,8 @@ router.get("/lots/next", verifyToken, async (req, res) => {
 // reading had gone to zero. So the numbers are computed and the label follows
 // from them, rather than the other way round.
 
-const lotFigures = async (tenantId, lotId) => {
-  const { rows } = await pool.query(
+const lotFigures = async (tenantId, lotId, client = pool) => {
+  const { rows } = await client.query(
     `SELECT
        COALESCE((SELECT SUM(${stockWeightInLb()}) FROM nti_inventory
                   WHERE lot_id = $1 AND tenant_id = $2 AND stage = 'raw'), 0)::text        AS raw_on_hand,
@@ -351,7 +361,21 @@ const lotFigures = async (tenantId, lotId) => {
                   WHERE i.lot_id = $1 AND o.tenant_id = $2 AND o.status <> 'completed'), 0)::int AS open_orders,
        COALESCE((SELECT COUNT(*) FROM noblesse_processing_orders o
                    JOIN noblesse_processing_order_items i ON i.processing_order_id = o.id
-                  WHERE i.lot_id = $1 AND o.tenant_id = $2 AND o.status = 'completed'), 0)::int AS done_orders`,
+                  WHERE i.lot_id = $1 AND o.tenant_id = $2 AND o.status = 'completed'), 0)::int AS done_orders,
+       -- A draft load still holding this lot means that product has not left,
+       -- so the lot cannot be finished and no close is suggested.
+       COALESCE((SELECT COUNT(*) FROM noblesse_shipment_items si
+                   JOIN noblesse_shipments sh ON sh.shipment_id = si.shipment_id
+                  WHERE si.lot_id = $1 AND sh.tenant_id = $2 AND sh.status = 'draft'), 0)::int AS draft_loads,
+       -- Last time anything actually moved. GREATEST skips NULLs, so a lot with
+       -- only one kind of activity still reports it.
+       GREATEST(
+         (SELECT MAX(COALESCE(b.closed_at, b.created_at)) FROM box_batches b
+           WHERE b.lot_id = $1 AND b.tenant_id = $2),
+         (SELECT MAX(sh.shipped_at) FROM noblesse_shipment_items si
+            JOIN noblesse_shipments sh ON sh.shipment_id = si.shipment_id
+           WHERE si.lot_id = $1 AND sh.tenant_id = $2)
+       ) AS last_movement_at`,
     [lotId, tenantId]
   );
   return rows[0];
@@ -360,6 +384,27 @@ const lotFigures = async (tenantId, lotId) => {
 // The label follows from the figures. Partial states are normal — half a lot
 // processed, half still raw — so this is a summary, and the numbers beside it
 // are the truth.
+// How long a lot sits untouched before the app raises the question. It only
+// ever asks: the app cannot tell "finished, with a 28% loss" from "more going
+// out tomorrow", and only a person can.
+const IDLE_DAYS_BEFORE_SUGGESTING = 7;
+
+const closeSuggestion = (lot, f, y) => {
+  if ((lot.status || "open") === "closed") return null;
+  // Nothing has been weighed out, so there is no yield to freeze.
+  if (!y.measured) return null;
+  // That load has not left yet.
+  if (Number(f.draft_loads) > 0) return null;
+  if (!f.last_movement_at) return null;
+
+  const idleDays = Math.floor(
+    (Date.now() - new Date(f.last_movement_at).getTime()) / 86400000);
+  if (idleDays < IDLE_DAYS_BEFORE_SUGGESTING) return null;
+
+  return { suggested: true, idleDays, inLb: y.inLb, outLb: y.outLb,
+    unaccountedLb: y.unaccountedLb, percent: y.percent };
+};
+
 const lotStatus = (f) => {
   if (Number(f.processed_on_hand) > 0) return "processed";
   if (Number(f.open_orders) > 0) return "processing";
@@ -380,6 +425,7 @@ router.get("/lots/:id", verifyToken, async (req, res) => {
     res.json({
       lot: fmtLot(lot.rows[0]),
       status: lotStatus(f),
+      closeSuggestion: closeSuggestion(lot.rows[0], f, yieldFrom(f)),
       figures: {
         rawOnHand: f.raw_on_hand,
         processedOnHand: f.processed_on_hand,
@@ -395,6 +441,116 @@ router.get("/lots/:id", verifyToken, async (req, res) => {
     });
   } catch (err) {
     console.error("read lot:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Closing a lot.
+//
+// A person decides this, prompted by closeSuggestion above and never by the
+// app on its own. `weight = 0` cannot stand in for it: shipping deducts weight
+// while an accepted processing report deducts only cases, so a lot consumed
+// entirely by processing still shows its whole arrival weight — and cancelling
+// a load puts weight back, so the signal is reversible anyway.
+//
+// The yield is FROZEN into the row here. A correction made afterwards moves the
+// live figures, and it must not silently rewrite a number somebody has already
+// reported.
+router.post("/lots/:id/close", verifyToken, async (req, res) => {
+  const lotId = Number(req.params.id);
+  if (!Number.isInteger(lotId)) return res.status(400).json({ error: "Invalid lot id" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Locked for the whole decision, so two people closing at once cannot both
+    // compute the figures and write different ones.
+    const lot = await client.query(
+      `SELECT * FROM lots WHERE lot_id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [lotId, req.tenantId]
+    );
+    if (!lot.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Lot not found" });
+    }
+    if ((lot.rows[0].status || "open") === "closed") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        code: "ALREADY_CLOSED",
+        error: `${lot.rows[0].lot_number} was already closed. Reopen it first to ` +
+               `change anything.`,
+      });
+    }
+
+    const f = await lotFigures(req.tenantId, lotId, client);
+
+    // A draft load still holds this lot, so the product has not left.
+    if (Number(f.draft_loads) > 0) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        code: "DRAFT_SHIPMENT",
+        error: `${lot.rows[0].lot_number} is on ${f.draft_loads} draft load` +
+               `${Number(f.draft_loads) === 1 ? "" : "s"} that has not shipped. ` +
+               `Ship or delete that load first.`,
+        draftLoads: Number(f.draft_loads),
+      });
+    }
+
+    const y = yieldFrom(f);
+    const upd = await client.query(
+      `UPDATE lots
+          SET status = 'closed', closed_at = now(), closed_by = $3,
+              closed_yield = $4, closed_in_lb = $5, closed_out_lb = $6
+        WHERE lot_id = $1 AND tenant_id = $2
+      RETURNING *`,
+      [lotId, req.tenantId, req.username || req.userId || null,
+       y.percent, y.inLb, y.outLb]
+    );
+
+    await client.query("COMMIT");
+    res.json({ lot: fmtLot(upd.rows[0]), yield: y });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("close lot:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
+  }
+});
+
+// Reopening drops the frozen figures rather than keeping them beside live ones:
+// two sets of numbers for the same lot is how a report ends up quoting the wrong
+// one. Admin only — closing states a result, and undoing that is not routine.
+router.post("/lots/:id/reopen", verifyToken, requireRole("admin"), async (req, res) => {
+  const lotId = Number(req.params.id);
+  if (!Number.isInteger(lotId)) return res.status(400).json({ error: "Invalid lot id" });
+
+  try {
+    const upd = await pool.query(
+      `UPDATE lots
+          SET status = 'open', closed_at = NULL, closed_by = NULL,
+              closed_yield = NULL, closed_in_lb = NULL, closed_out_lb = NULL
+        WHERE lot_id = $1 AND tenant_id = $2 AND status = 'closed'
+      RETURNING *`,
+      [lotId, req.tenantId]
+    );
+    if (!upd.rows.length) {
+      // Either it does not exist or it was never closed; both mean there is
+      // nothing here to undo.
+      const exists = await pool.query(
+        `SELECT lot_number FROM lots WHERE lot_id = $1 AND tenant_id = $2`,
+        [lotId, req.tenantId]
+      );
+      if (!exists.rows.length) return res.status(404).json({ error: "Lot not found" });
+      return res.status(409).json({
+        code: "NOT_CLOSED",
+        error: `${exists.rows[0].lot_number} is already open.`,
+      });
+    }
+    res.json({ lot: fmtLot(upd.rows[0]) });
+  } catch (err) {
+    console.error("reopen lot:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
