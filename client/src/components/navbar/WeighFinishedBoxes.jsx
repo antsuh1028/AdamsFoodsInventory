@@ -5,6 +5,8 @@ import {
   AlertDialogContent, AlertDialogOverlay,
 } from "@chakra-ui/react";
 import FloatingWindow from "../FloatingWindow";
+import LangToggle from "../LangToggle";
+import useLang from "../../hooks/useLang";
 import LotPicker from "../LotPicker";
 import useScanSession from "../../hooks/useScanSession";
 import ScaleWeigh from "./ScaleWeigh";
@@ -24,6 +26,12 @@ const WeighFinishedBoxes = ({
   onSessionClosed = null,
 }) => {
   const toast = useToast();
+  // English or Spanish, remembered on this device. Only the labels and the
+  // window's own words change; anything typed into a field is data and stays.
+  const { lang, t, toggle: toggleLang } = useLang();
+  // Read by effects that must not re-run when the language changes.
+  const tRef = useRef(t);
+  tRef.current = t;
   const {
     ready, durable, session, pending, scans, lastError, resumable,
     start, stop, addScan, addScanMany, undoLast, resume, discardResumable, adoptSession,
@@ -69,10 +77,9 @@ const WeighFinishedBoxes = ({
         // Refused rather than destroying unsent work.
         toast({
           status: "warning", duration: 12000, isClosable: true, position: "top",
-          title: "Another session on this device has unsent weights",
-          description:
-            `${result.pending} weight(s) here have not reached the server yet. Carry ` +
-            `on with that session and let it send, then come back to this one.`,
+          title: tRef.current("Another session on this device has unsent weights"),
+          description: tRef.current("{n} weight(s) here have not reached the server yet. Carry on with that session and let it send, then come back to this one.",
+            { n: result.pending }),
         });
       }
     })();
@@ -110,7 +117,7 @@ const WeighFinishedBoxes = ({
         direction: "outgoing",
       });
     } catch (err) {
-      toast({ title: "Could not start weighing", description: err.message,
+      toast({ title: t("Could not start weighing"), description: err.message,
         status: "error", position: "top", duration: 6000, isClosable: true });
     } finally { setBusy(false); }
   };
@@ -123,7 +130,7 @@ const WeighFinishedBoxes = ({
       return true;
     } catch (err) {
       beepError();
-      toast({ title: "That box was not recorded", description: err.message,
+      toast({ title: t("That box was not recorded"), description: err.message,
         status: "error", position: "top", duration: 6000, isClosable: true });
       return false;
     }
@@ -135,14 +142,14 @@ const WeighFinishedBoxes = ({
     try {
       await addScanMany(entries);
       beepSuccess();
-      toast({ title: entries.length + ' boxes added', status: 'success',
-        position: 'top', duration: 4000,
-        description: 'Marked estimated — the label figure, not a weighed one.' });
+      toast({ title: t("{n} boxes added", { n: entries.length }), status: "success",
+        position: "top", duration: 4000,
+        description: t("Marked estimated — the label figure, not a weighed one.") });
       return true;
     } catch (err) {
       beepError();
-      toast({ title: 'Could not add those boxes', description: err.message,
-        status: 'error', position: 'top', duration: 6000 });
+      toast({ title: t("Could not add those boxes"), description: err.message,
+        status: "error", position: "top", duration: 6000 });
       return false;
     }
   };
@@ -159,9 +166,9 @@ const WeighFinishedBoxes = ({
       if (!result?.closed) {
         toast({
           status: "warning", position: "top", duration: 9000, isClosable: true,
-          title: "Not stopped — weights still unsent",
-          description: `${result?.stillPending ?? 0} weight(s) have not reached `
-            + `the server. Stay on this screen until they do.`,
+          title: t("Not stopped — weights still unsent"),
+          description: t("{n} weight(s) have not reached the server. Stay on this screen until they do.",
+            { n: result?.stillPending ?? 0 }),
         });
         return;
       }
@@ -170,7 +177,7 @@ const WeighFinishedBoxes = ({
       if (result.gone) {
         toast({
           status: "warning", position: "top", duration: 14000, isClosable: true,
-          title: "That session no longer exists",
+          title: t("That session no longer exists"),
           description: `Session ${result.batchId} was deleted on the server, so `
             + `there was nothing to stop.`
             + (result.lost
@@ -190,7 +197,7 @@ const WeighFinishedBoxes = ({
       setShipTo("");
       onClose();
     } catch (err) {
-      toast({ title: "Could not stop the session", description: err.message,
+      toast({ title: t("Could not stop the session"), description: err.message,
         status: "error", position: "top" });
     } finally { setBusy(false); }
   };
@@ -210,13 +217,13 @@ const WeighFinishedBoxes = ({
       const { lost } = await discardResumable();
       toast({
         status: "info", position: "top", duration: 5000,
-        title: "Unfinished session discarded",
+        title: t("Unfinished session discarded"),
         description: lost
-          ? `${lost} weight(s) that never reached the server were thrown away.`
-          : "Nothing was pending.",
+          ? t("{n} weight(s) that never reached the server were thrown away.", { n: lost })
+          : t("Nothing was pending."),
       });
     } catch (err) {
-      toast({ title: "Could not discard it", description: err.message,
+      toast({ title: t("Could not discard it"), description: err.message,
         status: "error", position: "top", duration: 5000 });
     } finally { setBusy(false); }
   };
@@ -228,22 +235,25 @@ const WeighFinishedBoxes = ({
     <FloatingWindow
       isOpen={isOpen}
       onClose={onClose}
-      title={session ? `Weighing out of ${session.lotNumber || "lot"}` : "Weigh finished boxes"}
+      title={session
+        ? t("Weighing out of {lot}", { lot: session.lotNumber || t("Lot") })
+        : t("Weigh finished boxes")}
+      headerActions={<LangToggle lang={lang} onToggle={toggleLang} />}
       width={560}
       footer={
         <Flex gap={2} width="100%" justify="space-between" align="center" wrap="wrap">
           <Flex gap={2} align="center">
             {session && pending > 0 && (
-              <Badge colorScheme="yellow">{pending} not yet sent</Badge>
+              <Badge colorScheme="yellow">{t("{n} not yet sent", { n: pending })}</Badge>
             )}
             {session && pending === 0 && count > 0 && (
-              <Badge colorScheme="green">all saved</Badge>
+              <Badge colorScheme="green">{t("all saved")}</Badge>
             )}
           </Flex>
           <Flex gap={2}>
             {session && (
               <Button size="md" variant="ghost" onClick={undoLast} isDisabled={count === 0}>
-                Undo last
+                {t("Undo last")}
               </Button>
             )}
             {!session ? (
@@ -251,12 +261,12 @@ const WeighFinishedBoxes = ({
                 isLoading={busy}
                 // The lot is required: every box recorded lands on it.
                 isDisabled={!ready || !lot.lotId || Boolean(resumable)}>
-                Start weighing
+                {t("Start weighing")}
               </Button>
             ) : (
               <Button size="md" colorScheme="red" onClick={() => setConfirmStop(true)}
                 isLoading={busy}>
-                Stop session
+                {t("Stop session")}
               </Button>
             )}
           </Flex>
@@ -267,15 +277,14 @@ const WeighFinishedBoxes = ({
         {!durable && (
           <Alert status="warning" borderRadius="md" mb={3} fontSize="sm" py={2}>
             <AlertIcon />
-            This browser will not keep weights through a refresh. Finish the lot in
-            one go.
+            {t("This browser will not keep weights through a refresh. Finish the lot in one go.")}
           </Alert>
         )}
         {lastError && (
           <Alert status="warning" borderRadius="md" mb={3} fontSize="sm" py={2}>
             <AlertIcon />
-            {lastError} — weights are held on this device and will be sent when it
-            reconnects.
+            {t("{error} — weights are held on this device and will be sent when it reconnects.",
+              { error: lastError })}
           </Alert>
         )}
 
@@ -293,12 +302,14 @@ const WeighFinishedBoxes = ({
             <AlertIcon />
             <Box>
               <Text fontWeight="bold" fontSize="sm">
-                An unfinished session is still on this device.
+                {t("An unfinished session is still on this device.")}
               </Text>
               <Text fontSize="sm" mt={1}>
-                Batch {resumable.batchId} ({resumable.lotNumber || "no lot"}) has{" "}
-                {resumable.pending} weight{resumable.pending === 1 ? "" : "s"} that never
-                reached the server.
+                {t("Batch {id} ({lot}) has {n} weight(s) that never reached the server.", {
+                  id: resumable.batchId,
+                  lot: resumable.lotNumber || "—",
+                  n: resumable.pending,
+                })}
               </Text>
               {resumable.direction === "outgoing" ? (
                 <Flex gap={2} mt={3} wrap="wrap">
@@ -307,20 +318,19 @@ const WeighFinishedBoxes = ({
                       setBusy(true);
                       try { await resume(); } finally { setBusy(false); }
                     }}>
-                    Carry on with it
+                    {t("Carry on with it")}
                   </Button>
                   {/* The only way out when the batch cannot be resumed at all —
                       deleted on the server, say. Without it Start stays disabled
                       and the bench is stuck. */}
                   <Button size="sm" variant="ghost" isDisabled={busy}
                     onClick={() => setConfirmDiscard(true)}>
-                    Discard it
+                    {t("Discard it")}
                   </Button>
                 </Flex>
               ) : (
                 <Text fontSize="xs" color="gray.700" mt={2}>
-                  It is an <b>incoming</b> session. Finish or close it on the box
-                  weighing screen first — starting here would throw its weights away.
+                  {t("It is an incoming session. Finish or close it on the box weighing screen first — starting here would throw its weights away.")}
                 </Text>
               )}
             </Box>
@@ -329,21 +339,20 @@ const WeighFinishedBoxes = ({
           // The start form is two fields.
           <Box>
             <Text fontSize="sm" color="gray.600" mb={4}>
-              Pick the lot these finished boxes came out of. Everything else about
-              the product is taken from the lot.
+              {t("Pick the lot these finished boxes came out of. Everything else about the product is taken from the lot.")}
             </Text>
 
             {/* Opened from a load, so say where the weights are going to land. */}
             {presetLot && (
               <Alert status="info" borderRadius="md" mb={4} fontSize="sm" py={2}>
                 <AlertIcon />
-                These boxes go on the load for {presetLot.lotNumber}. The session is
-                tied to it when you close.
+                {t("These boxes go on the load for {lot}. The session is tied to it when you close.",
+                  { lot: presetLot.lotNumber })}
               </Alert>
             )}
 
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>
-              Lot
+              {t("Lot")}
             </Text>
             <LotPicker
               size="md"
@@ -357,32 +366,31 @@ const WeighFinishedBoxes = ({
             />
 
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mt={4} mb={1}>
-              Item <Text as="span" textTransform="none">(optional)</Text>
+              {t("Item")} <Text as="span" textTransform="none">{t("(optional)")}</Text>
             </Text>
             <Input size="md" value={itemDescription} autoComplete="off"
               placeholder="e.g. HUMERUS BONE"
               onChange={(e) => setItemDescription(e.target.value.toUpperCase())} />
             <Text fontSize="xs" color="gray.500" mt={1}>
-              What is in the boxes. Left blank it is taken from the lot&apos;s
-              incoming session, which is the raw product rather than this one.
+              {t("What is in the boxes. Left blank it is taken from the lot's incoming session, which is the raw product rather than this one.")}
             </Text>
 
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mt={4} mb={1}>
-              Going to <Text as="span" textTransform="none">(optional)</Text>
+              {t("Going to")} <Text as="span" textTransform="none">{t("(optional)")}</Text>
             </Text>
             <Input size="md" value={shipTo} autoComplete="off"
               placeholder="e.g. ADAMSFOODS"
               onChange={(e) => setShipTo(e.target.value.toUpperCase())} />
 
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mt={4} mb={1}>
-              Boxes expected <Text as="span" textTransform="none">(optional)</Text>
+              {t("Boxes expected")} <Text as="span" textTransform="none">{t("(optional)")}</Text>
             </Text>
             <Input size="md" width="140px" value={expectedBoxes} placeholder="80"
               inputMode="numeric" autoComplete="off"
               onChange={(e) => setExpectedBoxes(e.target.value)} />
             {/* A prompt, never a limit — box N+1 is not refused, it just says so. */}
             <Text fontSize="xs" color="gray.500" mt={1}>
-              Only used to show progress. Going over is not blocked.
+              {t("Only used to show progress. Going over is not blocked.")}
             </Text>
           </Box>
         ) : (
@@ -396,9 +404,11 @@ const WeighFinishedBoxes = ({
               </Text>
               {session.itemDescription
                 ? <Text fontSize="sm" color="gray.700">{session.itemDescription}</Text>
-                : <Text fontSize="sm" color="gray.400">item not recorded</Text>}
+                : <Text fontSize="sm" color="gray.400">{t("item not recorded")}</Text>}
               {session.shipTo && (
-                <Badge colorScheme="blue" fontSize="9px">to {session.shipTo}</Badge>
+                <Badge colorScheme="blue" fontSize="9px">
+                  {t("to {shipTo}", { shipTo: session.shipTo })}
+                </Badge>
               )}
             </Flex>
 
@@ -409,7 +419,7 @@ const WeighFinishedBoxes = ({
                     otherwise be recordable twice, once by each. */}
                 <Button size="xs" variant="ghost"
                   onClick={() => setTypeMode((v) => !v)}>
-                  {typeMode ? "Use the scale" : "Type weights instead"}
+                  {typeMode ? t("Use the scale") : t("Type weights instead")}
                 </Button>
               </Flex>
             )}
@@ -422,6 +432,7 @@ const WeighFinishedBoxes = ({
                 onAdd={onAdd}
                 onAddMany={onAddMany}
                 onUndo={undoLast}
+                t={t}
               />
             ) : (
               <ScaleWeigh
@@ -431,6 +442,7 @@ const WeighFinishedBoxes = ({
                 expected={session.expectedBoxes ?? null}
                 weights={weights}
                 onAdd={onAdd}
+                t={t}
               />
             )}
 
@@ -441,17 +453,17 @@ const WeighFinishedBoxes = ({
               <Flex justify="space-between" align="baseline" mb={2}>
                 <Text fontSize="xs" color="gray.500" textTransform="uppercase"
                   letterSpacing="wide">
-                  Recorded
+                  {t("Recorded")}
                 </Text>
                 <Text fontSize="sm" fontWeight="600" color="gray.700"
                   style={{ fontVariantNumeric: "tabular-nums" }}>
-                  {count} box{count === 1 ? "" : "es"} · {total} lb
+                  {t(count === 1 ? "{n} box" : "{n} boxes", { n: count })} · {total} lb
                 </Text>
               </Flex>
               <Flex wrap="wrap" gap={2} maxH="150px" overflowY="auto"
                 p={2} border="1px solid" borderColor="gray.200" borderRadius="md">
                 {count === 0 ? (
-                  <Text fontSize="sm" color="gray.400">Nothing yet.</Text>
+                  <Text fontSize="sm" color="gray.400">{t("Nothing yet.")}</Text>
                 ) : (
                   live.slice().reverse().map((s, i) => (
                     <Badge key={s.localId ?? i}
@@ -474,27 +486,25 @@ const WeighFinishedBoxes = ({
       <AlertDialogOverlay>
         <AlertDialogContent>
           <AlertDialogHeader fontSize="lg" fontWeight="bold">
-            Throw this unfinished session away?
+            {t("Throw this unfinished session away?")}
           </AlertDialogHeader>
           <AlertDialogBody>
             <Text fontSize="sm">
               {resumable?.pending
-                ? `${resumable.pending} weight(s) on this device never reached the `
-                  + `server. Discarding loses them for good — those boxes would have `
-                  + `to be weighed again.`
-                : "Nothing is waiting to be sent, so nothing is lost."}
+                ? t("{n} weight(s) on this device never reached the server. Discarding loses them for good — those boxes would have to be weighed again.",
+                    { n: resumable.pending })
+                : t("Nothing is waiting to be sent, so nothing is lost.")}
             </Text>
             <Text fontSize="sm" mt={2} color="gray.600">
-              Use this when the session cannot be carried on with — deleted on the
-              server, or belonging to a lot that is long gone.
+              {t("Use this when the session cannot be carried on with — deleted on the server, or belonging to a lot that is long gone.")}
             </Text>
           </AlertDialogBody>
           <AlertDialogFooter gap={2}>
             <Button ref={cancelStopRef} onClick={() => setConfirmDiscard(false)}>
-              Keep it
+              {t("Keep it")}
             </Button>
             <Button colorScheme="red" onClick={onDiscard} isLoading={busy}>
-              Discard it
+              {t("Discard it")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -506,12 +516,12 @@ const WeighFinishedBoxes = ({
       <AlertDialogOverlay>
         <AlertDialogContent>
           <AlertDialogHeader fontSize="lg" fontWeight="bold">
-            Stop this weighing session?
+            {t("Stop this weighing session?")}
           </AlertDialogHeader>
           <AlertDialogBody>
             <Text fontSize="sm" mb={3}>
-              {count} box{count === 1 ? "" : "es"} · <b>{total} lb</b> out of{" "}
-              <b>{session?.lotNumber}</b>.
+              {t(count === 1 ? "{n} box" : "{n} boxes", { n: count })} ·{" "}
+              <b>{total} lb</b> — <b>{session?.lotNumber}</b>.
             </Text>
             {/* This closes a BATCH, never the lot — stop() calls closeBatch and
                 touches nothing else. Saying "close the lot" read as a decision
@@ -519,29 +529,26 @@ const WeighFinishedBoxes = ({
             <Alert status="info" borderRadius="md" fontSize="sm" py={2} mb={3}>
               <AlertIcon />
               <Box>
-                This closes <b>this session</b>, not the lot.{" "}
-                {session?.lotNumber} stays open — weigh more boxes into it
-                whenever the next run comes off the line. To pick this same
-                session back up, leave it open and use <b>Carry on weighing</b>
-                on the Outgoing tab.
+                <b>{t("This closes this session, not the lot.")}</b>{" "}
+                {t("{lot} stays open — weigh more boxes into it whenever the next run comes off the line. To pick this same session back up, leave it open and use Carry on weighing on the Outgoing tab.",
+                  { lot: session?.lotNumber })}
               </Box>
             </Alert>
             {count === 0 && (
               <Alert status="warning" borderRadius="md" fontSize="sm" py={2} mb={3}>
                 <AlertIcon />
-                Nothing has been recorded yet, so this would close an empty
-                session. Leave it open instead if you are coming back to it.
+                {t("Nothing has been recorded yet, so this would close an empty session. Leave it open instead if you are coming back to it.")}
               </Alert>
             )}
             {pending > 0 && (
               <Alert status="warning" borderRadius="md" fontSize="sm" py={2} mb={3}>
                 <AlertIcon />
-                {pending} still to send. Stopping sends them first; leaving it
-                open keeps them on this device until it reconnects.
+                {t("{n} still to send. Stopping sends them first; leaving it open keeps them on this device until it reconnects.",
+                  { n: pending })}
               </Alert>
             )}
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>
-              Remarks (optional)
+              {t("Remarks (optional)")}
             </Text>
             <Textarea size="sm" value={remarks} rows={2}
               onChange={(e) => setRemarks(e.target.value)}
@@ -549,17 +556,17 @@ const WeighFinishedBoxes = ({
           </AlertDialogBody>
           <AlertDialogFooter gap={2} flexWrap="wrap">
             <Button ref={cancelStopRef} onClick={() => setConfirmStop(false)}>
-              Keep weighing
+              {t("Keep weighing")}
             </Button>
             {/* Done for now, but the lot is not finished — the answer that was
                 missing, and the one a part-processed lot needs. */}
             <Button variant="outline" onClick={onLeaveOpen} isDisabled={busy}>
-              Leave it open
+              {t("Leave it open")}
             </Button>
             {/* Finishing a session is not destructive, so it does not wear the
                 colour of something that is. */}
             <Button colorScheme="blue" onClick={onStop} isLoading={busy}>
-              Stop session
+              {t("Stop session")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -59,6 +59,9 @@ const FloatingWindow = ({
   isOpen, onClose, title, children, footer,
   width = "70%", height, isFullScreen = false, onToggleFullScreen,
   bodyProps, dark = false,
+  // Rendered in the title bar, left of the window controls. For things that
+  // belong to the window itself rather than to its content.
+  headerActions = null,
   // "center" (default) or "right". Only affects where the window first appears;
   // the user can drag it anywhere afterwards.
   placement = "center",
@@ -219,6 +222,7 @@ const FloatingWindow = ({
             {title}
           </Box>
           <Flex align="center" gap={1}>
+            {headerActions}
             {onToggleFullScreen && (
               <Tooltip label={isFullScreen ? "Exit full screen" : "Full screen"}>
                 <IconButton

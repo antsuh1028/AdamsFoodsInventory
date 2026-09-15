@@ -19,6 +19,8 @@ const MAX_BATCH = 500;
 // §4).
 const TypeWeights = ({
   onAdd, onAddMany, onUndo, weights = [], expected = null, disabled = false,
+  // Identity by default, so the untranslated incoming screen is unaffected.
+  t = (text) => text,
 }) => {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -137,21 +139,21 @@ const TypeWeights = ({
       <Flex align="baseline" gap={3} wrap="wrap" mb={2}>
         <Text fontSize="xs" color="blue.900" fontWeight="600" textTransform="uppercase"
           letterSpacing="wide">
-          Type weights
+          {t("Type weights")}
         </Text>
         <Text fontSize="xs" color="gray.600">
-          Digits only — <b>4061</b> is 40.61. Enter records it.
+          {t("Digits only — 4061 is 40.61. Enter records it.")}
         </Text>
         <Box flex={1} />
         {/* Said plainly: with focus in this field the scanner is deaf. */}
-        <Badge colorScheme="yellow" fontSize="9px">scanning is off while typing</Badge>
+        <Badge colorScheme="yellow" fontSize="9px">{t("scanning is off while typing")}</Badge>
       </Flex>
 
       {onAddMany && (
         <ButtonGroup size="xs" isAttached variant="outline" mb={3}>
           {/* tabIndex -1 and mousedown prevented, like the keypad: a scanner
               types Enter, and a button holding focus would be re-pressed. */}
-          {[["one", "One box"], ["batch", "Batch"]].map(([m, label]) => (
+          {[["one", t("One box")], ["batch", t("Batch")]].map(([m, label]) => (
             <Button key={m} tabIndex={-1} onMouseDown={(e) => e.preventDefault()}
               colorScheme={mode === m ? "blue" : "gray"}
               variant={mode === m ? "solid" : "outline"}
@@ -165,7 +167,7 @@ const TypeWeights = ({
       {mode === "batch" && (
         <Flex gap={3} align="flex-end" wrap="wrap" mb={3}>
           <Box>
-            <Text fontSize="xs" color="gray.600" mb={1}>How many boxes</Text>
+            <Text fontSize="xs" color="gray.600" mb={1}>{t("How many boxes")}</Text>
             <Input value={cases}
               onChange={(e) => setCases(e.target.value.replace(/[^0-9]/g, ""))}
               isDisabled={disabled || busy} placeholder="30" inputMode="numeric"
@@ -174,7 +176,7 @@ const TypeWeights = ({
               style={{ fontVariantNumeric: "tabular-nums" }} />
           </Box>
           <Box mb={2}>
-            <Text fontSize="xs" color="gray.600" mb={1}>Comes to</Text>
+            <Text fontSize="xs" color="gray.600" mb={1}>{t("Comes to")}</Text>
             <Text fontSize="xl" fontWeight="bold" color="blue.700" lineHeight="1"
               style={{ fontVariantNumeric: "tabular-nums" }}>
               {batchTotal ? `${batchTotal} lb` : "—"}
@@ -183,11 +185,11 @@ const TypeWeights = ({
           <Button size="sm" colorScheme="blue" mb={2}
             isLoading={busy} isDisabled={disabled || !batchReady}
             onClick={() => setConfirmBatch(true)}>
-            Add {batchReady ? caseCount : ""} boxes
+            {t("Add {n} boxes", { n: batchReady ? caseCount : "" })}
           </Button>
           {caseCount > MAX_BATCH && (
             <Text fontSize="xs" color="red.600" mb={3}>
-              {MAX_BATCH} at a time is the limit.
+              {t("{n} at a time is the limit.", { n: MAX_BATCH })}
             </Text>
           )}
         </Flex>
@@ -228,7 +230,7 @@ const TypeWeights = ({
             </Flex>
           ) : (
             <Text fontSize="sm" color={typed.trim() ? "red.600" : "gray.400"}>
-              {typed.trim() ? parsed.reason : "waiting"}
+              {typed.trim() ? parsed.reason : t("waiting")}
             </Text>
           )}
         </Box>
@@ -236,13 +238,13 @@ const TypeWeights = ({
         {mode === "one" && (
           <Button size="sm" colorScheme="blue" onClick={submit}
             isLoading={busy} isDisabled={disabled || !parsed.ok}>
-            Add
+            {t("Add")}
           </Button>
         )}
         {onUndo && (
           <Button size="sm" variant="ghost" onClick={() => { onUndo(); refocus(); }}
             isDisabled={disabled || count === 0}>
-            Undo last
+            {t("Undo last")}
           </Button>
         )}
       </Flex>
@@ -253,22 +255,24 @@ const TypeWeights = ({
         <Box mt={3}>
           <Flex justify="space-between" align="baseline" mb={1}>
             <Text fontSize="sm" fontWeight="600" color="gray.700">
-              Box {count} of {expected}
+              {t("Box {n} of {total}", { n: count, total: expected })}
             </Text>
             <Text fontSize="xs" color={remaining === 0 ? "green.700" : "gray.500"}>
-              {remaining === 0 ? "all expected boxes weighed" : `${remaining} to go`}
+              {remaining === 0 ? t("all expected boxes weighed") : t("{n} to go", { n: remaining })}
             </Text>
           </Flex>
           <Progress value={Math.min(100, (count / expected) * 100)} size="sm"
             colorScheme={count > expected ? "yellow" : "blue"} borderRadius="full" />
           {count > expected && (
             <Text fontSize="xs" color="yellow.800" mt={1}>
-              {count - expected} more than expected — not blocked, but worth a look.
+              {t("{n} more than expected — not blocked, but worth a look.", { n: count - expected })}
             </Text>
           )}
         </Box>
       ) : (
-        <Text fontSize="sm" color="gray.600" mt={2}>{count} box{count === 1 ? "" : "es"}</Text>
+        <Text fontSize="sm" color="gray.600" mt={2}>
+          {t(count === 1 ? "{n} box" : "{n} boxes", { n: count })}
+        </Text>
       )}
 
       <AlertDialog isOpen={confirmBatch} leastDestructiveRef={cancelRef}
@@ -276,7 +280,7 @@ const TypeWeights = ({
         <AlertDialogOverlay>
           <AlertDialogContent>
             <AlertDialogHeader fontSize="lg" fontWeight="bold">
-              Add {caseCount} boxes?
+              {t("Add {n} boxes?", { n: caseCount })}
             </AlertDialogHeader>
             <AlertDialogBody>
               <Text fontSize="3xl" fontWeight="bold" color="blue.700" lineHeight="1.2"
@@ -284,25 +288,23 @@ const TypeWeights = ({
                 {caseCount} × {preview} lb
               </Text>
               <Text fontSize="md" color="gray.700" mb={3}>
-                = <b>{batchTotal} lb</b> on this lot
+                {t("= {total} lb on this lot", { total: batchTotal })}
               </Text>
               <Text fontSize="sm">
-                Each one is recorded as its own box, so any of them can be
-                corrected or voided on its own afterwards.
+                {t("Each one is recorded as its own box, so any of them can be corrected or voided on its own afterwards.")}
               </Text>
               <Text fontSize="xs" color="gray.600" mt={2}>
-                They are marked <b>estimated</b>: this is the figure on the label,
-                and the boxes themselves vary.
+                {t("They are marked estimated: this is the figure on the label, and the boxes themselves vary.")}
               </Text>
             </AlertDialogBody>
             <AlertDialogFooter gap={2}>
               {/* Focus on the safe option - Enter is the key being hammered. */}
               <Button ref={cancelRef}
                 onClick={() => { setConfirmBatch(false); refocus(); }}>
-                Go back
+                {t("Go back")}
               </Button>
               <Button colorScheme="blue" onClick={submitBatch}>
-                Add {caseCount} boxes
+                {t("Add {n} boxes", { n: caseCount })}
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -315,8 +317,8 @@ const TypeWeights = ({
           <AlertDialogContent>
             <AlertDialogHeader fontSize="lg" fontWeight="bold">
               {confirm?.kind === "reweigh"
-                ? "Same weight as the last box"
-                : "Is that weight right?"}
+                ? t("Same weight as the last box")
+                : t("Is that weight right?")}
             </AlertDialogHeader>
             <AlertDialogBody>
               <Flex align="baseline" gap={2} mb={3}>
@@ -330,26 +332,23 @@ const TypeWeights = ({
               {confirm?.kind === "reweigh" ? (
                 <>
                   <Text fontSize="sm">
-                    The box before this one weighed exactly the same. That usually
-                    means the <b>same box came back</b> — a torn label, or a re-weigh
-                    to reprint one.
+                    {t("The box before this one weighed exactly the same. That usually means the same box came back — a torn label, or a re-weigh to reprint one.")}
                   </Text>
                   <Text fontSize="xs" color="gray.600" mt={2}>
-                    If it is the same box it is already on the manifest, and recording
-                    it again would count one box as two. Two different boxes landing on
-                    the same figure does happen — if that is what this is, add it.
+                    {t("If it is the same box it is already on the manifest, and recording it again would count one box as two. Two different boxes landing on the same figure does happen — if that is what this is, add it.")}
                   </Text>
                 </>
               ) : (
                 <>
                   <Text fontSize="sm">
-                    That is about <b>{confirm ? Math.round(confirm.ratio > 1 ? confirm.ratio : 1 / confirm.ratio) : ""}×</b>
-                    {" "}{confirm?.direction === "high" ? "heavier" : "lighter"} than the rest of this
-                    lot, which is running around <b>{confirm ? confirm.median.toFixed(2) : ""} lb</b> a box.
+                    {t("That is about {ratio}× {direction} than the rest of this lot, which is running around {median} lb a box.", {
+                      ratio: confirm ? Math.round(confirm.ratio > 1 ? confirm.ratio : 1 / confirm.ratio) : "",
+                      direction: confirm?.direction === "high" ? t("heavier") : t("lighter"),
+                      median: confirm ? confirm.median.toFixed(2) : "",
+                    })}
                   </Text>
                   <Text fontSize="xs" color="gray.600" mt={2}>
-                    A misplaced decimal looks exactly like this. If the box really does weigh
-                    that, record it.
+                    {t("A misplaced decimal looks exactly like this. If the box really does weigh that, record it.")}
                   </Text>
                 </>
               )}
@@ -361,11 +360,13 @@ const TypeWeights = ({
                   counted twice inflates the lot and nothing downstream notices. */}
               <Button ref={cancelRef}
                 onClick={() => { setConfirm(null); setTyped(""); refocus(); }}>
-                {confirm?.kind === "reweigh" ? "Same box — don't record" : "Let me retype it"}
+                {confirm?.kind === "reweigh" ? t("Same box — don't record") : t("Let me retype it")}
               </Button>
               <Button colorScheme="yellow"
                 onClick={async () => { const w = confirm.weight; setConfirm(null); await commit(w); }}>
-                {confirm?.kind === "reweigh" ? "Different box — record it" : `Record ${confirm?.weight}`}
+                {confirm?.kind === "reweigh"
+                  ? t("Different box — record it")
+                  : t("Record {weight}", { weight: confirm?.weight })}
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>

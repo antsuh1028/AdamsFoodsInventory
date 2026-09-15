@@ -14,20 +14,20 @@ import { beepError } from "../../utils/scanFeedback";
 // short enough to be gone before the next box lands.
 const FLASH_MS = 2500;
 
-const StateLine = ({ state, weight, queried }) => {
+const StateLine = ({ state, weight, queried, t }) => {
   // Queried outranks the machine's own state.
   if (queried) {
-    return <Text fontSize="lg" color="yellow.700" fontWeight="600">Held — answer below</Text>;
+    return <Text fontSize="lg" color="yellow.700" fontWeight="600">{t("Held — answer below")}</Text>;
   }
   if (state === "DONE") {
-    return <Text fontSize="lg" color="green.700" fontWeight="600">Recorded — take the box off</Text>;
+    return <Text fontSize="lg" color="green.700" fontWeight="600">{t("Recorded — take the box off")}</Text>;
   }
   if (state === "SETTLING") {
-    return <Text fontSize="lg" color="yellow.700" fontWeight="600">Settling…</Text>;
+    return <Text fontSize="lg" color="yellow.700" fontWeight="600">{t("Settling…")}</Text>;
   }
   return (
     <Text fontSize="lg" color="gray.500" fontWeight="600">
-      {weight > 0 ? "Settling…" : "Place a box on the scale"}
+      {weight > 0 ? t("Settling…") : t("Place a box on the scale")}
     </Text>
   );
 };
@@ -35,6 +35,8 @@ const StateLine = ({ state, weight, queried }) => {
 const ScaleWeigh = ({
   onAdd, weights = [], expected = null, disabled = false,
   lotNumber = null, itemDescription = null,
+  // Identity by default, so the untranslated incoming screen is unaffected.
+  t = (text) => text,
 }) => {
   const toast = useToast();
   const [connected, setConnected] = useState(false);
@@ -150,9 +152,9 @@ const ScaleWeigh = ({
       <Alert status="warning" borderRadius="md" alignItems="flex-start">
         <AlertIcon />
         <Box>
-          <Text fontWeight="600" fontSize="sm">This browser cannot read the scale.</Text>
+          <Text fontWeight="600" fontSize="sm">{t("This browser cannot read the scale.")}</Text>
           <Text fontSize="xs" color="gray.700">
-            Web Serial is Chrome or Edge on the desktop. Type the weights instead.
+            {t("Web Serial is Chrome or Edge on the desktop. Type the weights instead.")}
           </Text>
         </Box>
       </Alert>
@@ -168,7 +170,7 @@ const ScaleWeigh = ({
       <Box mb={3} px={3} py={2} bg="blue.50" borderRadius="md"
         borderLeft="4px solid" borderLeftColor="blue.400">
         <Text fontSize="xs" color="blue.900" textTransform="uppercase" letterSpacing="wide">
-          Weighing out of lot
+          {t("Weighing out of lot")}
         </Text>
         <Text fontSize="xl" fontWeight="bold" color="blue.900" lineHeight="1.2">
           {lotNumber || "—"}
@@ -181,17 +183,17 @@ const ScaleWeigh = ({
       <Flex align="center" gap={3} wrap="wrap" mb={3}>
         {!connected ? (
           <Button colorScheme="blue" onClick={connect} isLoading={connecting} isDisabled={disabled}>
-            Connect scale
+            {t("Connect scale")}
           </Button>
         ) : (
           <>
-            <Badge colorScheme="green" borderRadius="full" px={2}>connected</Badge>
-            <Button size="xs" variant="ghost" onClick={disconnect}>Disconnect</Button>
+            <Badge colorScheme="green" borderRadius="full" px={2}>{t("connected")}</Badge>
+            <Button size="xs" variant="ghost" onClick={disconnect}>{t("Disconnect")}</Button>
           </>
         )}
         <Box flex={1} />
         <Text fontSize="xs" color="gray.500">
-          Reads the scale. BarTender keeps its own connection.
+          {t("Reads the scale. BarTender keeps its own connection.")}
         </Text>
       </Flex>
 
@@ -209,7 +211,7 @@ const ScaleWeigh = ({
         borderColor={queried ? "yellow.300" : captured ? "green.300" : "gray.200"}
         transition="background-color 0.15s, border-color 0.15s">
         <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
-          On the scale
+          {t("On the scale")}
         </Text>
         <Flex align="baseline" justify="center" gap={3}>
           <Text fontSize="7xl" fontWeight="bold" lineHeight="1"
@@ -219,7 +221,7 @@ const ScaleWeigh = ({
           </Text>
           <Text fontSize="2xl" color="gray.500">lb</Text>
         </Flex>
-        <Box mt={2}><StateLine state={state} weight={live} queried={queried} /></Box>
+        <Box mt={2}><StateLine state={state} weight={live} queried={queried} t={t} /></Box>
       </Box>
 
       {/* The confirmation. Separate from the live reading on purpose: the number
@@ -232,7 +234,7 @@ const ScaleWeigh = ({
             <Text fontSize="3xl">✓</Text>
             <Box>
               <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" opacity={0.9}>
-                Box {count} recorded
+                {t("Box {n} recorded", { n: count })}
               </Text>
               <Flex align="baseline" gap={2}>
                 <Text fontSize="4xl" fontWeight="bold" lineHeight="1"
@@ -248,8 +250,8 @@ const ScaleWeigh = ({
             bg="gray.50" border="1px dashed" borderColor="gray.200">
             <Text fontSize="sm" color="gray.500">
               {count === 0
-                ? "Nothing recorded yet."
-                : `Last recorded: ${weights[weights.length - 1]} lb`}
+                ? t("Nothing recorded yet.")
+                : t("Last recorded: {weight} lb", { weight: weights[weights.length - 1] })}
             </Text>
           </Flex>
         )}
@@ -259,10 +261,10 @@ const ScaleWeigh = ({
         <Box mt={3}>
           <Flex justify="space-between" align="baseline" mb={1}>
             <Text fontSize="sm" fontWeight="600" color="gray.700">
-              Box {count} of {expected}
+              {t("Box {n} of {total}", { n: count, total: expected })}
             </Text>
             <Text fontSize="xs" color={remaining === 0 ? "green.700" : "gray.500"}>
-              {remaining === 0 ? "all expected boxes weighed" : `${remaining} to go`}
+              {remaining === 0 ? t("all expected boxes weighed") : t("{n} to go", { n: remaining })}
             </Text>
           </Flex>
           <Progress value={Math.min(100, (count / expected) * 100)} size="sm"
@@ -270,7 +272,7 @@ const ScaleWeigh = ({
         </Box>
       ) : (
         <Text fontSize="sm" color="gray.600" mt={3}>
-          {count} box{count === 1 ? "" : "es"} recorded
+          {t(count === 1 ? "{n} box recorded" : "{n} boxes recorded", { n: count })}
         </Text>
       )}
 
@@ -285,31 +287,31 @@ const ScaleWeigh = ({
               style={{ fontVariantNumeric: "tabular-nums" }}>
               {queried.weight}
             </Text>
-            <Text fontSize="md" color="gray.600">lb — not recorded yet</Text>
+            <Text fontSize="md" color="gray.600">{t("lb — not recorded yet")}</Text>
           </Flex>
 
           {queried.kind === "reweigh" ? (
             <Text fontSize="sm" color="gray.800">
-              Exactly the same as the box before. That usually means the{" "}
-              <b>same box came back</b> — a torn label, or a re-weigh to reprint one.
-              Recording it again would count one box as two.
+              {t("Exactly the same as the box before. That usually means the same box came back — a torn label, or a re-weigh to reprint one. Recording it again would count one box as two.")}
             </Text>
           ) : (
             <Text fontSize="sm" color="gray.800">
-              About <b>{Math.round(queried.ratio > 1 ? queried.ratio : 1 / queried.ratio)}×</b>{" "}
-              {queried.direction === "high" ? "heavier" : "lighter"} than the rest of this lot,
-              which is running around <b>{queried.median.toFixed(2)} lb</b> a box.
+              {t("About {ratio}× {direction} than the rest of this lot, which is running around {median} lb a box.", {
+                ratio: Math.round(queried.ratio > 1 ? queried.ratio : 1 / queried.ratio),
+                direction: queried.direction === "high" ? t("heavier") : t("lighter"),
+                median: queried.median.toFixed(2),
+              })}
             </Text>
           )}
 
           <Flex gap={2} mt={3}>
             <Button size="sm" variant="outline"
               onClick={() => setQueried(null)}>
-              {queried.kind === "reweigh" ? "Same box — skip it" : "Skip it"}
+              {queried.kind === "reweigh" ? t("Same box — skip it") : t("Skip it")}
             </Button>
             <Button size="sm" colorScheme="yellow"
               onClick={() => { const w = queried.weight; setQueried(null); record(w); }}>
-              Record {queried.weight} lb
+              {t("Record {weight} lb", { weight: queried.weight })}
             </Button>
           </Flex>
         </Box>
