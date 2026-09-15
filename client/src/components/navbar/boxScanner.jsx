@@ -509,12 +509,21 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
     try {
       const result = await stop(remarks.trim() || null);
       setRemarks("");
-      if (result.closed) {
-        toast({ title: "Batch closed",
+      if (result.gone) {
+        // Deleted on the server while this bench still had it open. There is
+        // nothing to close and nothing held here can reach it.
+        toast({ title: "That session no longer exists",
+          description: `Session ${result.batchId} was deleted on the server.`
+            + (result.lost
+              ? ` ${result.lost} scan(s) held here could not be saved.`
+              : " This screen has been cleared."),
+          status: "warning", position: "top", duration: 14000, isClosable: true });
+      } else if (result.closed) {
+        toast({ title: "Session stopped",
           description: `${result.summary.totalBoxes} boxes recorded`,
           status: "success", position: "top", duration: 4000 });
       } else if (result.reason === "unflushed-scans") {
-        toast({ title: "Not closed — scans still unsent",
+        toast({ title: "Not stopped — scans still unsent",
           description: `${result.stillPending} scan(s) have not reached the server. Stay on this screen until they do.`,
           status: "warning", position: "top", duration: 8000, isClosable: true });
       }
@@ -660,7 +669,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
             ) : (
               <Button size={{ base: "sm", md: "lg" }} colorScheme="red"
                 onClick={() => setConfirmStop(true)} isLoading={busy}>
-                Stop &amp; close
+                Stop session
               </Button>
             )}
           </Flex>
@@ -727,7 +736,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
         <AlertDialogOverlay>
           <AlertDialogContent>
             <AlertDialogHeader fontSize="lg" fontWeight="bold">
-              Close this session?
+              Stop this session?
             </AlertDialogHeader>
             <AlertDialogBody>
               <Text fontSize="sm" mb={3}>
@@ -755,7 +764,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
                 Go back
               </Button>
               <Button colorScheme="red" onClick={onStop} isLoading={busy}>
-                Stop &amp; close
+                Stop session
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>

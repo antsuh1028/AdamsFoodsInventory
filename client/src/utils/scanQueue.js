@@ -330,6 +330,9 @@ const createScanQueue = ({
           // Continuing would just pile up more failures against the same cause.
           summary.failedChunks += 1;
           summary.error = err && err.message ? err.message : String(err);
+          // 404 is different in kind: the batch is GONE, so retrying can never
+          // succeed and the caller has to be told rather than left looping.
+          if (err && err.response && err.response.status === 404) summary.gone = true;
           break;
         }
 
@@ -400,6 +403,15 @@ const createScanQueue = ({
 
   // Flushes what is left, then closes. If anything is still unflushed the batch
   // is deliberately left open — closing over unsent scans would strand them.
+  // The batch no longer exists on the server — deleted, normally. Nothing can
+  // be closed and nothing pending can ever be sent to it, so the session is
+  // cleared rather than left on the device: keeping it 404s every close and the
+  // resumable guard then blocks starting a new one, which traps the operator.
+  const abandonGoneBatch = async (batchId, lost) => {
+    await clearSession();
+    return { closed: true, gone: true, batchId, lost };
+  };
+
   const stop = async (remarks = null) => {
     const session = await backend.getSession();
     if (!session || !session.batchId) return { closed: false, reason: "no-open-batch" };
@@ -407,10 +419,19 @@ const createScanQueue = ({
     const flushed = await flush();
     const stillPending = await backend.countPending();
     if (stillPending > 0) {
+      if (flushed.gone) return abandonGoneBatch(session.batchId, stillPending);
       return { closed: false, reason: "unflushed-scans", stillPending, flushed };
     }
 
-    const summary = await api.closeBatch(session.batchId, remarks);
+    let summary;
+    try {
+      summary = await api.closeBatch(session.batchId, remarks);
+    } catch (err) {
+      if (err && err.response && err.response.status === 404) {
+        return abandonGoneBatch(session.batchId, 0);
+      }
+      throw err;
+    }
     await backend.setSession({ ...session, status: "closed" });
     return { closed: true, summary, flushed };
   };

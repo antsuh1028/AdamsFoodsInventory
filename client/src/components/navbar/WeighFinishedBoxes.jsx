@@ -120,17 +120,53 @@ const WeighFinishedBoxes = ({
     // Read before stop() clears it — the caller needs the id to tie it.
     const closedId = session?.batchId ?? null;
     try {
-      await stop(remarks.trim() || null);
-      if (closedId != null && onSessionClosed) await onSessionClosed(closedId);
+      const result = await stop(remarks.trim() || null);
+
+      // Weights the server has not taken yet. The window stays where it is:
+      // closing it here would hide the only screen that can still send them.
+      if (!result?.closed) {
+        toast({
+          status: "warning", position: "top", duration: 9000, isClosable: true,
+          title: "Not stopped — weights still unsent",
+          description: `${result?.stillPending ?? 0} weight(s) have not reached `
+            + `the server. Stay on this screen until they do.`,
+        });
+        return;
+      }
+
+      // The batch was deleted while this bench had it open.
+      if (result.gone) {
+        toast({
+          status: "warning", position: "top", duration: 14000, isClosable: true,
+          title: "That session no longer exists",
+          description: `Session ${result.batchId} was deleted on the server, so `
+            + `there was nothing to stop.`
+            + (result.lost
+              ? ` ${result.lost} weight(s) held here could not be saved and will `
+                + `have to be weighed again.`
+              : " This bench has been cleared."),
+        });
+      } else if (closedId != null && onSessionClosed) {
+        await onSessionClosed(closedId);
+      }
+
       setConfirmStop(false);
       setRemarks("");
       setLot({ lotId: null, lotNumber: "" });
       setExpectedBoxes("");
       onClose();
     } catch (err) {
-      toast({ title: "Could not close", description: err.message,
+      toast({ title: "Could not stop the session", description: err.message,
         status: "error", position: "top" });
     } finally { setBusy(false); }
+  };
+
+  // Neither finishing nor carrying on: the batch stays open on the server and
+  // on this device, so the next run picks it up where this one stopped.
+  const onLeaveOpen = () => {
+    setConfirmStop(false);
+    setRemarks("");
+    onClose();
   };
 
   const count = live.length;
@@ -168,7 +204,7 @@ const WeighFinishedBoxes = ({
             ) : (
               <Button size="md" colorScheme="red" onClick={() => setConfirmStop(true)}
                 isLoading={busy}>
-                Stop &amp; close
+                Stop session
               </Button>
             )}
           </Flex>
@@ -343,17 +379,38 @@ const WeighFinishedBoxes = ({
       <AlertDialogOverlay>
         <AlertDialogContent>
           <AlertDialogHeader fontSize="lg" fontWeight="bold">
-            Close this lot?
+            Stop this weighing session?
           </AlertDialogHeader>
           <AlertDialogBody>
             <Text fontSize="sm" mb={3}>
               {count} box{count === 1 ? "" : "es"} · <b>{total} lb</b> out of{" "}
               <b>{session?.lotNumber}</b>.
             </Text>
+            {/* This closes a BATCH, never the lot — stop() calls closeBatch and
+                touches nothing else. Saying "close the lot" read as a decision
+                nobody wanted to take with product still to come. */}
+            <Alert status="info" borderRadius="md" fontSize="sm" py={2} mb={3}>
+              <AlertIcon />
+              <Box>
+                This closes <b>this session</b>, not the lot.{" "}
+                {session?.lotNumber} stays open — weigh more boxes into it
+                whenever the next run comes off the line. To pick this same
+                session back up, leave it open and use <b>Carry on weighing</b>
+                on the Outgoing tab.
+              </Box>
+            </Alert>
+            {count === 0 && (
+              <Alert status="warning" borderRadius="md" fontSize="sm" py={2} mb={3}>
+                <AlertIcon />
+                Nothing has been recorded yet, so this would close an empty
+                session. Leave it open instead if you are coming back to it.
+              </Alert>
+            )}
             {pending > 0 && (
               <Alert status="warning" borderRadius="md" fontSize="sm" py={2} mb={3}>
                 <AlertIcon />
-                {pending} still to send. Closing will send them first.
+                {pending} still to send. Stopping sends them first; leaving it
+                open keeps them on this device until it reconnects.
               </Alert>
             )}
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>
@@ -361,14 +418,21 @@ const WeighFinishedBoxes = ({
             </Text>
             <Textarea size="sm" value={remarks} rows={2}
               onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Anything worth noting about this lot" />
+              placeholder="Anything worth noting about this run" />
           </AlertDialogBody>
-          <AlertDialogFooter gap={2}>
+          <AlertDialogFooter gap={2} flexWrap="wrap">
             <Button ref={cancelStopRef} onClick={() => setConfirmStop(false)}>
               Keep weighing
             </Button>
-            <Button colorScheme="red" onClick={onStop} isLoading={busy}>
-              Close the lot
+            {/* Done for now, but the lot is not finished — the answer that was
+                missing, and the one a part-processed lot needs. */}
+            <Button variant="outline" onClick={onLeaveOpen} isDisabled={busy}>
+              Leave it open
+            </Button>
+            {/* Finishing a session is not destructive, so it does not wear the
+                colour of something that is. */}
+            <Button colorScheme="blue" onClick={onStop} isLoading={busy}>
+              Stop session
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
