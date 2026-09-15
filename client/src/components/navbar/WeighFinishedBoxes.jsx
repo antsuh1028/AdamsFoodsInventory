@@ -15,7 +15,14 @@ import { toDisplayHundredths, fromHundredths } from "../../utils/weight";
 
 // Weighing finished boxes on their way out.
 
-const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
+const WeighFinishedBoxes = ({
+  isOpen, onClose, adoptBatchId = null,
+  // Opened from a shipment line: the lot is already decided, so the start form
+  // shows it rather than asking again.
+  presetLot = null,
+  // Told which session was closed, so the caller can tie it to a load.
+  onSessionClosed = null,
+}) => {
   const toast = useToast();
   const {
     ready, durable, session, pending, scans, lastError, resumable,
@@ -31,6 +38,11 @@ const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
   const cancelStopRef = useRef(null);
 
   const supported = scaleSupported();
+
+  useEffect(() => {
+    if (!isOpen || !presetLot || session) return;
+    setLot({ lotId: presetLot.lotId ?? null, lotNumber: presetLot.lotNumber || "" });
+  }, [isOpen, presetLot, session]);
 
   // Opened on a session that is already running, so the lot is already known and
   // the start form is skipped entirely.
@@ -105,8 +117,11 @@ const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
 
   const onStop = async () => {
     setBusy(true);
+    // Read before stop() clears it — the caller needs the id to tie it.
+    const closedId = session?.batchId ?? null;
     try {
       await stop(remarks.trim() || null);
+      if (closedId != null && onSessionClosed) await onSessionClosed(closedId);
       setConfirmStop(false);
       setRemarks("");
       setLot({ lotId: null, lotNumber: "" });
@@ -220,6 +235,15 @@ const WeighFinishedBoxes = ({ isOpen, onClose, adoptBatchId = null }) => {
               Pick the lot these finished boxes came out of. Everything else about
               the product is taken from the lot.
             </Text>
+
+            {/* Opened from a load, so say where the weights are going to land. */}
+            {presetLot && (
+              <Alert status="info" borderRadius="md" mb={4} fontSize="sm" py={2}>
+                <AlertIcon />
+                These boxes go on the load for {presetLot.lotNumber}. The session is
+                tied to it when you close.
+              </Alert>
+            )}
 
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>
               Lot

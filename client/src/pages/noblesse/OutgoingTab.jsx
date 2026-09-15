@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, Spinner, Input, Select, Checkbox, Alert, AlertIcon,
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
@@ -46,6 +46,8 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
 
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState(null);
+  // Set while the same form is editing an existing draft rather than making one.
+  const [editingId, setEditingId] = useState(null);
 
   // A new line being added to the open draft.
   const [line, setLine] = useState({ stockKey: "", weight: "", qtyCases: "" });
@@ -67,6 +69,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // Weighing finished product. Opens the same session machinery the incoming
   // bench uses, pointed the other way.
   const [weighOpen, setWeighOpen] = useState(false);
+  // Weighing straight into a line: the lot is already decided, so the window
+  // opens bound to it and the finished session is tied to this load on close.
+  const [weighFor, setWeighFor] = useState(null);
   const cancelRef = useRef(null);
 
   const fetchShipments = useCallback(async () => {
@@ -190,10 +195,32 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     setCreating(true);
   };
 
+  const startEdit = () => {
+    setDraft({
+      shipDate: detail.shipDate || today(),
+      destinationType: detail.destinationType || "adamsfoods",
+      destinationName: detail.destinationName || "",
+      billOfLading: detail.billOfLading || "",
+      carrier: detail.carrier || "",
+      driver: detail.driver || "",
+      shipTo: detail.shipTo || "",
+    });
+    setEditingId(detail.shipmentId);
+    setCreating(true);
+  };
+
+  const closeForm = () => { setCreating(false); setEditingId(null); setDraft(null); };
+
+  const saveHeader = () => run(async () => {
+    await axiosInstance.patch(`/shipments/${editingId}`, draft);
+    closeForm();
+    await fetchShipments();
+    await refreshOpen(editingId);
+  }, "Shipment updated");
+
   const createDraft = () => run(async () => {
     const { data } = await axiosInstance.post("/shipments", draft);
-    setCreating(false);
-    setDraft(null);
+    closeForm();
     await fetchShipments();
     setOpenId(data.shipmentId);
     setDetail(data);
@@ -214,6 +241,28 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     setLine({ stockKey: "", weight: "", qtyCases: "" });
     await refreshOpen(openId);
   }, "Lot added");
+
+  // Called by the weighing window as it closes, with the session it just shut.
+  const tieClosedSession = async (batchId) => {
+    const target = weighFor?.shipmentId;
+    if (!target) return;
+    try {
+      await axiosInstance.post(`/shipments/${target}/box-batches`,
+        { batchIds: [batchId] });
+      toast({ title: "Boxes tied to this load", status: "success",
+        duration: 3000, position: "top" });
+      if (openId === target) await refreshOpen(target);
+    } catch (err) {
+      // The boxes are recorded whatever happens here; only the link failed, and
+      // it can still be made by hand from the session list.
+      toast({
+        status: "warning", duration: 10000, isClosable: true, position: "top",
+        title: "Weights saved, but not tied to the load",
+        description: `${err.response?.data?.error || err.message} — tie the `
+          + `session to the load by hand below.`,
+      });
+    }
+  };
 
   const removeLine = (itemId) => run(async () => {
     await axiosInstance.delete(`/shipments/${openId}/items/${itemId}`);
@@ -254,6 +303,25 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     await fetchShipments();
     if (data?.stockRestored) await fetchAvailable();
   }, "Shipment deleted");
+
+  // Weighed boxes per lot on the open load, so a line can say whether its
+  // product has been on the bench. Thousandths, per the weight rules.
+  const weighedByLot = useMemo(() => {
+    const m = new Map();
+    for (const b of detail?.sessions || []) {
+      if (b.lotId == null) continue;
+      const cur = m.get(b.lotId) || { boxes: 0, mils: 0 };
+      m.set(b.lotId, {
+        boxes: cur.boxes + (Number(b.boxCount) || 0),
+        mils: cur.mils + Math.round(Number(b.total || 0) * 1000),
+      });
+    }
+    return m;
+  }, [detail]);
+
+  // Named in the ship dialog: leaving without weighing means that lot can never
+  // have a yield.
+  const unweighed = (detail?.items || []).filter((it) => !weighedByLot.has(it.lotId));
 
   const selectedStock = available.find((a) => String(a.ntiItemId) === String(line.stockKey));
   const tiedIds = new Set((detail?.sessions || []).map((b) => b.batchId));
@@ -402,10 +470,29 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                                 <Badge colorScheme="yellow" fontSize="9px">Raw</Badge>
                               )}
                               <Text fontSize="sm" color="gray.600">{it.description || "—"}</Text>
+                              {/* Weighed or not is the whole point of the load now
+                                  — an unweighed lot leaves with no yield. */}
+                              {weighedByLot.has(it.lotId) ? (
+                                <Badge colorScheme="green" fontSize="9px">
+                                  {weighedByLot.get(it.lotId).boxes} boxes ·{" "}
+                                  {lb(weighedByLot.get(it.lotId).mils / 1000)} lb weighed
+                                </Badge>
+                              ) : (
+                                <Badge colorScheme="gray" fontSize="9px">Not weighed</Badge>
+                              )}
                               <Text fontSize="sm" color="gray.700" ml="auto"
                                 style={{ fontVariantNumeric: "tabular-nums" }}>
                                 {it.qtyCases != null ? `${it.qtyCases} cs · ` : ""}{lb(it.weight)} lb
                               </Text>
+                              {isDraft && (
+                                <Button size="xs" variant="ghost" colorScheme="blue"
+                                  onClick={() => setWeighFor({
+                                    shipmentId: detail.shipmentId,
+                                    lotId: it.lotId, lotNumber: it.lotNumber,
+                                  })}>
+                                  Weigh boxes
+                                </Button>
+                              )}
                               {isDraft && (
                                 <Button size="xs" variant="ghost" colorScheme="red"
                                   isLoading={busy} onClick={() => removeLine(it.itemId)}>
@@ -613,6 +700,13 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                             Ship
                           </Button>
                         )}
+                        {/* Destination, date and BOL are all typed before the
+                            truck is loaded, so they are all wrong sometimes. */}
+                        {isDraft && (
+                          <Button size="sm" variant="outline" onClick={startEdit}>
+                            Edit details
+                          </Button>
+                        )}
                         {detail.status === "shipped" && isAdmin && (
                           <Button size="sm" variant="ghost" colorScheme="red"
                             onClick={() => setConfirmCancel(true)}>
@@ -645,12 +739,14 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
         })}
       </Flex>
 
-      {/* New draft */}
+      {/* One form for both: making a draft and correcting its header. */}
       <AlertDialog isOpen={creating} leastDestructiveRef={cancelRef}
-        onClose={() => setCreating(false)} isCentered>
+        onClose={closeForm} isCentered>
         <AlertDialogOverlay>
           <AlertDialogContent maxW="560px">
-            <AlertDialogHeader fontSize="lg" fontWeight="bold">New shipment</AlertDialogHeader>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              {editingId ? "Edit shipment" : "New shipment"}
+            </AlertDialogHeader>
             <AlertDialogBody>
               {draft && (
                 <Flex gap={3} wrap="wrap">
@@ -672,10 +768,10 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                       onChange={(e) => setDraft({ ...draft, shipDate: e.target.value })} />
                   </Field>
                   <Field label="Ship to" w="220px">
-                <Input size="sm" bg="white" value={draft.shipTo}
-                  onChange={(e) => setDraft({ ...draft, shipTo: upper(e.target.value) })} />
-              </Field>
-              <Field label="BOL #" w="120px">
+                    <Input size="sm" value={draft.shipTo}
+                      onChange={(e) => setDraft({ ...draft, shipTo: upper(e.target.value) })} />
+                  </Field>
+                  <Field label="BOL #" w="120px">
                     <Input size="sm" value={draft.billOfLading}
                       onChange={(e) => setDraft({ ...draft, billOfLading: upper(e.target.value) })} />
                   </Field>
@@ -691,11 +787,12 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
               )}
             </AlertDialogBody>
             <AlertDialogFooter gap={2}>
-              <Button ref={cancelRef} onClick={() => setCreating(false)}>Go back</Button>
-              <Button colorScheme="blue" onClick={createDraft} isLoading={busy}
+              <Button ref={cancelRef} onClick={closeForm}>Go back</Button>
+              <Button colorScheme="blue" onClick={editingId ? saveHeader : createDraft}
+                isLoading={busy}
                 isDisabled={!draft || !draft.shipDate ||
                   (draft.destinationType === "customer" && !draft.destinationName.trim())}>
-                Create draft
+                {editingId ? "Save changes" : "Create draft"}
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -715,6 +812,25 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                     This deducts every lot below from stock and closes the shipment
                     to further changes. Cancelling afterwards puts the stock back.
                   </Text>
+                  {/* Warned, not blocked — but it is in the dialog someone has to
+                      read to ship, because it cannot be put right afterwards. */}
+                  {unweighed.length > 0 && (
+                    <Alert status="warning" borderRadius="md" fontSize="sm" py={2} mb={3}>
+                      <AlertIcon />
+                      <Box>
+                        <Text fontWeight="600">
+                          {unweighed.length} lot{unweighed.length === 1 ? "" : "s"} shipping
+                          unweighed — {unweighed.map((it) => it.lotNumber).join(", ")}.
+                        </Text>
+                        <Text fontSize="xs" color="gray.700">
+                          Nothing was weighed off the bench for
+                          {unweighed.length === 1 ? " it" : " them"}, so
+                          {unweighed.length === 1 ? " that lot" : " those lots"} will
+                          never have a yield. Weigh the boxes first if they are still here.
+                        </Text>
+                      </Box>
+                    </Alert>
+                  )}
                   <Box px={3} py={2} bg="gray.50" borderRadius="md"
                     border="1px solid" borderColor="gray.200">
                     <Text fontSize="sm" fontWeight="bold" color="gray.800">
@@ -844,9 +960,13 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
       />
 
       <WeighFinishedBoxes
-        isOpen={weighOpen}
+        isOpen={weighOpen || Boolean(weighFor)}
         adoptBatchId={adoptBatchId}
-        onClose={() => { setWeighOpen(false); setAdoptBatchId(null); fetchBatches(); }}
+        presetLot={weighFor}
+        onSessionClosed={weighFor ? tieClosedSession : null}
+        onClose={() => {
+          setWeighOpen(false); setAdoptBatchId(null); setWeighFor(null); fetchBatches();
+        }}
       />
     </Box>
   );
