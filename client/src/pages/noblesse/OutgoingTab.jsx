@@ -8,7 +8,7 @@ import axiosInstance from "../../utils/axiosInstance";
 import WeighFinishedBoxes from "../../components/navbar/WeighFinishedBoxes";
 import DeleteBatchDialog from "./DeleteBatchDialog";
 import { toDisplay } from "../../utils/weight";
-import { fmtDate, today, upper } from "./shared";
+import { fmtDate, fmtDateTime, today, upper } from "./shared";
 import getRole from "../../utils/getRole";
 import printPackingList from "./printPackingList";
 
@@ -31,6 +31,91 @@ const stockDescription = (a) => {
   const d = (a.description || a.weighedDescription || "").trim();
   if (!d) return "";
   return d.length > MAX_DESC ? `${d.slice(0, MAX_DESC - 1)}\u2026` : d;
+};
+
+// One weighed session opened up: what it was, and every box in it.
+//
+// Read-only on purpose. Correcting or voiding a box is the Weight Manifests
+// tab's job and it carries the guards for that; this is the Outgoing tab
+// answering "what is actually in this session".
+const BatchBoxes = ({ detail, totalLb }) => {
+  if (!detail) {
+    return <Flex justify="center" py={4}><Spinner size="sm" color="blue.500" /></Flex>;
+  }
+  const items = detail.items || [];
+  const live = items.filter((it) => !it.voidedAt);
+  const voided = items.length - live.length;
+
+  const facts = [
+    ["Item", detail.item_description],
+    ["Going to", detail.ship_to],
+    ["Vendor", detail.vendor],
+    ["BOL", detail.bill_of_lading],
+    ["Brand", detail.brand],
+    ["EST", detail.est_number],
+    ["Grade", detail.grade],
+    ["Expected", detail.expected_boxes],
+    ["Added", fmtDateTime(detail.created_at)],
+    ["Closed", fmtDateTime(detail.closed_at)],
+  ].filter(([, v]) => v !== null && v !== undefined && v !== "");
+
+  return (
+    <Box mt={1} mb={2} px={3} py={3} bg="gray.50" borderRadius="md"
+      border="1px solid" borderColor="blue.200">
+      {facts.length > 0 && (
+        <Flex gap={4} wrap="wrap" mb={3}>
+          {facts.map(([label, value]) => (
+            <Box key={label}>
+              <Text fontSize="9px" color="gray.500" textTransform="uppercase"
+                letterSpacing="wide">{label}</Text>
+              <Text fontSize="sm" color="gray.800">{value}</Text>
+            </Box>
+          ))}
+        </Flex>
+      )}
+
+      {detail.remarks && (
+        <Text fontSize="xs" color="gray.600" mb={3}>Remarks: {detail.remarks}</Text>
+      )}
+
+      <Flex align="baseline" gap={3} wrap="wrap" mb={2}>
+        <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
+          Boxes
+        </Text>
+        <Text fontSize="sm" fontWeight="600" color="gray.800"
+          style={{ fontVariantNumeric: "tabular-nums" }}>
+          {live.length} · {lb(totalLb)} lb
+        </Text>
+        {voided > 0 && (
+          <Text fontSize="xs" color="gray.500">({voided} voided, not in that total)</Text>
+        )}
+      </Flex>
+
+      {items.length === 0 ? (
+        <Text fontSize="sm" color="gray.500">No boxes were recorded in this session.</Text>
+      ) : (
+        // Wrapping badges rather than a wide table: this list is read on a
+        // tablet, where a ten-column grid would scroll sideways.
+        <Flex wrap="wrap" gap={2}>
+          {items.map((it, i) => (
+            <Badge key={it.localId ?? i}
+              colorScheme={it.voidedAt ? "red" : "gray"}
+              fontSize="sm" px={2} py={1} borderRadius="md"
+              title={it.voidedAt ? `Voided: ${it.voidReason || "no reason given"}` : undefined}
+              style={{
+                fontVariantNumeric: "tabular-nums",
+                textDecoration: it.voidedAt ? "line-through" : "none",
+              }}>
+              {/* A tilde marks a figure nobody weighed - a batch entry off the
+                  label, where the boxes themselves vary. */}
+              {it.isEstimated ? "~" : ""}{it.weight}
+              {it.weightUnit && it.weightUnit !== "LB" ? ` ${it.weightUnit}` : ""}
+            </Badge>
+          ))}
+        </Flex>
+      )}
+    </Box>
+  );
 };
 
 const Field = ({ label, children, w }) => (
@@ -79,6 +164,10 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // Weighing finished product. Opens the same session machinery the incoming
   // bench uses, pointed the other way.
   const [weighOpen, setWeighOpen] = useState(false);
+  // Which weighed session is expanded, and its boxes once fetched. Cached by
+  // id so collapsing and reopening does not refetch.
+  const [openBatch, setOpenBatch] = useState(null);
+  const [batchDetail, setBatchDetail] = useState({});
   // Weighing straight into a line: the lot is already decided, so the window
   // opens bound to it and the finished session is tied to this load on close.
   const [weighFor, setWeighFor] = useState(null);
@@ -307,6 +396,24 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     }
   }, "Weighed lots added to this load");
 
+  // Double-click a weighed session to see the individual boxes, the way the
+  // Weight Manifests tab does. Read-only here: correcting or voiding a box is
+  // that tab's job, and it has the guards for it.
+  const toggleBatch = async (batchId) => {
+    if (openBatch === batchId) { setOpenBatch(null); return; }
+    setOpenBatch(batchId);
+    if (batchDetail[batchId]) return;
+    try {
+      const { data } = await axiosInstance.get(`/box-batches/${batchId}`);
+      setBatchDetail((prev) => ({ ...prev, [batchId]: data }));
+    } catch (err) {
+      toast({ title: "Could not open that session",
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 5000, position: "top" });
+      setOpenBatch(null);
+    }
+  };
+
   const removeLine = (itemId) => run(async () => {
     await axiosInstance.delete(`/shipments/${openId}/items/${itemId}`);
     await refreshOpen(openId);
@@ -418,9 +525,12 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           </Text>
           <Flex direction="column" gap={1}>
             {batches.map((b) => (
-              <Flex key={b.batch_id} align="baseline" gap={3} wrap="wrap"
+              <Box key={b.batch_id}>
+              <Flex align="baseline" gap={3} wrap="wrap"
                 px={3} py={2} bg="white" borderRadius="md"
-                border="1px solid" borderColor="gray.200">
+                border="1px solid" borderColor={openBatch === b.batch_id ? "blue.300" : "gray.200"}
+                cursor="pointer" title="Double-click to see the boxes"
+                onDoubleClick={() => toggleBatch(b.batch_id)}>
                 <Text fontSize="sm" fontWeight="600" color="blue.700">
                   {b.lot_number || `Batch ${b.batch_id}`}
                 </Text>
@@ -436,7 +546,11 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                 {/* The listing returns totals as [{unit,total}] — a session can
                     hold more than one unit — where the shipment detail returns a
                     plain string. Read the LB entry rather than assuming [0]. */}
-                <Text fontSize="sm" color="gray.700" ml="auto"
+                <Text fontSize="xs" color="gray.500" ml="auto" whiteSpace="nowrap"
+                  title={`Added ${b.created_at}`}>
+                  {fmtDateTime(b.created_at) || "—"}
+                </Text>
+                <Text fontSize="sm" color="gray.700"
                   style={{ fontVariantNumeric: "tabular-nums" }}>
                   {b.box_count} × {lb((b.totals || []).find((t) => t.unit === "LB")?.total)} lb
                 </Text>
@@ -449,7 +563,8 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                 )}
                 {b.status === "open" && (
                   <Button size="xs" variant="ghost" colorScheme="blue"
-                    onClick={() => { setAdoptBatchId(b.batch_id); setWeighOpen(true); }}>
+                    onClick={() => { setAdoptBatchId(b.batch_id); setWeighOpen(true); }}
+                    onDoubleClick={(e) => e.stopPropagation()}>
                     Carry on weighing
                   </Button>
                 )}
@@ -457,11 +572,18 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                     route is the control. */}
                 {isAdmin && (
                   <Button size="xs" variant="ghost" colorScheme="red"
-                    onClick={() => setDeletingBatch(b)}>
+                    onClick={() => setDeletingBatch(b)}
+                    onDoubleClick={(e) => e.stopPropagation()}>
                     Delete
                   </Button>
                 )}
               </Flex>
+
+              {openBatch === b.batch_id && (
+                <BatchBoxes detail={batchDetail[b.batch_id]}
+                  totalLb={(b.totals || []).find((t) => t.unit === "LB")?.total} />
+              )}
+              </Box>
             ))}
           </Flex>
         </Box>

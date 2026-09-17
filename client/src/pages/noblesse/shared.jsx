@@ -56,6 +56,19 @@ export const today = (date = new Date()) => {
 // expects. Pacific for the same reason the dates are: it is the warehouse's
 // clock, and a device left on another timezone would otherwise stamp a receipt
 // with an hour nobody was on the dock.
+// A stored timestamp as Pacific date AND time — "Sep 15, 2:41 PM". For lists
+// ordered by when a row was added, where the date alone cannot show the order
+// within a day.
+export const fmtDateTime = (ts) => {
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: PACIFIC_TZ,
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  }).format(d);
+};
+
 export const timeNow = (date = new Date()) =>
   new Intl.DateTimeFormat("en-GB", {
     timeZone: PACIFIC_TZ, hour: "2-digit", minute: "2-digit", hour12: false,
