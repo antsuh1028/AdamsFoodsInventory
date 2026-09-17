@@ -37,6 +37,10 @@ const fmtLot = (row) => ({
   // What the lot IS, for screens that only ever showed a number. Present only
   // where the query joined it in; a lot number alone tells nobody what it is.
   description: row.description ?? null,
+  // Whether a registration form already exists for this lot. Present only where
+  // the query joined it in; a picker choosing a lot for a NEW form wants the
+  // ones nobody has written up yet.
+  registered: row.registered ?? null,
   notes: row.notes,
   createdAt: row.created_at,
   // Set by a person, never derived: see the close route.
@@ -276,7 +280,7 @@ router.get("/lots", verifyToken, async (req, res) => {
       // under DESC in Postgres, so left in the same ordering they would sit
       // above today's work and push the lot someone actually wants off the top
       // of the list. The client renders the two blocks as separate groups.
-      `SELECT l.*, d.description
+      `SELECT l.*, d.description, d.registered
          FROM lots l
          -- The registration form is what says what a lot is; the incoming
          -- weighing session is the fallback for a lot never registered.
@@ -294,7 +298,12 @@ router.get("/lots", verifyToken, async (req, res) => {
                  AND b.direction = 'incoming'
                  AND NULLIF(TRIM(b.item_description), '') IS NOT NULL
                ORDER BY b.created_at DESC LIMIT 1)
-           ) AS description
+           ) AS description,
+           EXISTS (
+             SELECT 1 FROM noblesse_registration_forms f2
+              WHERE f2.tenant_id = l.tenant_id
+                AND (f2.lot_id = l.lot_id OR f2.lot_number = l.lot_number)
+           ) AS registered
          ) d ON TRUE
         WHERE l.tenant_id = $1
           AND ($2 = '' OR l.lot_number ILIKE '%' || $2 || '%')

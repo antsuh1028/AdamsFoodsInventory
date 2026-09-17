@@ -45,6 +45,10 @@ const LotPicker = ({
   isDisabled = false,
   size = "sm",
   placeholder = "Select a lot…",
+  // Drop lots that already have a registration form. Only the form writing
+  // those up wants this - everywhere else a registered lot is a perfectly good
+  // choice, so it is opt-in rather than the default.
+  hideRegistered = false,
 }) => {
   const [lots, setLots] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -89,10 +93,16 @@ const LotPicker = ({
   // A lot that was picked but is not in the loaded page (an older one, or one
   // just created) still has to render as selected rather than silently
   // reverting the field to the placeholder.
-  const options = useMemo(() => {
-    if (!selected && value) return lots;
-    return lots;
-  }, [lots, selected, value]);
+  const visible = useMemo(
+    () => (hideRegistered
+      // The one already on this form is registered by definition; dropping it
+      // would leave the select bound to a value it has no option for.
+      ? lots.filter((l) => !l.registered || l.lotId === value)
+      : lots),
+    [lots, hideRegistered, value]
+  );
+
+  const options = visible;
 
   // The server already returns ours first and outside numbers after; splitting
   // here only puts a heading between them. Kept as a filter rather than a slice

@@ -137,19 +137,43 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             justify="space-between" gap={{ base: 3, md: 0 }}
             borderBottom="2px solid #2b6cb0" pb={2} mb={3}
           >
-            <Image
-              src={ntiLogo} alt="Noblesse Trading Inc."
-              width={{ base: "160px", md: "220px" }} objectFit="contain"
-            />
+            <Flex align="center" gap={3} minW={0}>
+              <Image
+                src={ntiLogo} alt="Noblesse Trading Inc."
+                width={{ base: "130px", md: "200px" }} objectFit="contain"
+                flexShrink={0}
+              />
+              {draft.lotNumber && (
+                <Box borderLeft="2px solid" borderColor="blue.200" pl={3} minW={0}>
+                  <Text fontSize="10px" color="gray.500" textTransform="uppercase"
+                    letterSpacing="wide" lineHeight="1">
+                    Lot
+                  </Text>
+                  <Text fontSize={{ base: "md", md: "xl" }} fontWeight="bold"
+                    color="blue.800" lineHeight="1.2" whiteSpace="nowrap">
+                    {draft.lotNumber}
+                  </Text>
+                </Box>
+              )}
+            </Flex>
             <Flex direction="column" gap={2} align={{ base: "stretch", md: "flex-end" }}>
               <Flex align="center" gap={2}>
-                <Text fontSize="sm" fontWeight="bold" color="blue.700" minW="40px">Lot#:</Text>
+                <Text fontSize="sm" fontWeight="bold" color="blue.700" minW="40px">
+                  {draft.lotNumber ? "Change:" : "Lot#:"}
+                </Text>
                 {/* A registration form is an incoming-side record, so it may
                     issue a lot. Picking one here is also what makes the box
-                    weights below findable — they are matched by lot. */}
+                    weights below findable — they are matched by lot.
+
+                    hideRegistered because this IS the screen that registers a
+                    lot: one that already has a form is not a candidate, and it
+                    made up three quarters of the list. The form's own lot is
+                    kept so the select stays bound to it, and it is read off the
+                    masthead above rather than out of this control. */}
                 <Box width={{ base: "100%", md: "260px" }}>
                   <LotPicker
                     allowCreate
+                    hideRegistered
                     value={draft.lotId ?? null}
                     lotNumber={draft.lotNumber || ""}
                     onChange={(lot) => setDraft({
@@ -634,7 +658,9 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   const [loading, setLoading] = useState(true);
   const [draft, setDraft]     = useState(null);
   const [saving, setSaving]   = useState(false);
-  const [statusFilter, setStatusFilter] = useState("in_progress");
+  // All, not just in progress: a completed form is still the thing someone
+  // opens to check what a lot was registered as.
+  const [statusFilter, setStatusFilter] = useState(null);
   const [page, setPage] = useState(0);
   const [allHistoryOpen, setAllHistoryOpen] = useState(false);
   const [allHistory, setAllHistory] = useState([]);
@@ -837,7 +863,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
             </Button>
             <Button
               size="xs"
-              variant={statusFilter === "completed" ? "solid" : "outline"}
+              variant={statusFilter === "completed" ? "solid" : "outline"} 
               colorScheme={statusFilter === "completed" ? "green" : "gray"}
               onClick={() => { setStatusFilter("completed"); setPage(0); }}
             >
