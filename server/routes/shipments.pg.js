@@ -2,6 +2,7 @@ const router = require("express").Router();
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
+const { RECEPTION_ROLES } = require("../middleware/receptionRoles");
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
 
 // Outgoing.
@@ -211,7 +212,7 @@ router.get("/shipments/:id", verifyToken, async (req, res) => {
 
 // ── Create and edit a draft ──────────────────────────────────────────────────
 
-router.post("/shipments", verifyToken, async (req, res) => {
+router.post("/shipments", verifyToken, requireRole(...RECEPTION_ROLES), async (req, res) => {
   const { shipDate, destinationType, destinationName, shipTo, billOfLading,
           carrier, driver, notes } = req.body || {};
 
@@ -256,7 +257,7 @@ const draftOnly = async (id, tenantId, client = pool) => {
   return { ok: true };
 };
 
-router.patch("/shipments/:id", verifyToken, async (req, res) => {
+router.patch("/shipments/:id", verifyToken, requireRole(...RECEPTION_ROLES), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid shipment id" });
 
@@ -305,7 +306,7 @@ router.patch("/shipments/:id", verifyToken, async (req, res) => {
 
 // ── Lines ────────────────────────────────────────────────────────────────────
 
-router.post("/shipments/:id/items", verifyToken, async (req, res) => {
+router.post("/shipments/:id/items", verifyToken, requireRole(...RECEPTION_ROLES), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid shipment id" });
 
@@ -349,7 +350,7 @@ router.post("/shipments/:id/items", verifyToken, async (req, res) => {
   }
 });
 
-router.delete("/shipments/:id/items/:itemId", verifyToken, async (req, res) => {
+router.delete("/shipments/:id/items/:itemId", verifyToken, requireRole(...RECEPTION_ROLES), async (req, res) => {
   const id = Number(req.params.id);
   const itemId = Number(req.params.itemId);
   if (!Number.isInteger(id) || !Number.isInteger(itemId)) {
@@ -374,7 +375,7 @@ router.delete("/shipments/:id/items/:itemId", verifyToken, async (req, res) => {
 
 // Weighing sessions on a load. The paper tally already carries Ship To and a BOL.
 
-router.post("/shipments/:id/box-batches", verifyToken, async (req, res) => {
+router.post("/shipments/:id/box-batches", verifyToken, requireRole(...RECEPTION_ROLES), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid shipment id" });
 
@@ -456,7 +457,7 @@ router.post("/shipments/:id/box-batches", verifyToken, async (req, res) => {
   }
 });
 
-router.delete("/shipments/:id/box-batches/:batchId", verifyToken, async (req, res) => {
+router.delete("/shipments/:id/box-batches/:batchId", verifyToken, requireRole(...RECEPTION_ROLES), async (req, res) => {
   const id = Number(req.params.id);
   const batchId = Number(req.params.batchId);
   if (!Number.isInteger(id) || !Number.isInteger(batchId)) {
@@ -483,7 +484,7 @@ router.delete("/shipments/:id/box-batches/:batchId", verifyToken, async (req, re
 // ── Ship ─────────────────────────────────────────────────────────────────────
 // The point of no return: stock moves here.
 
-router.post("/shipments/:id/ship", verifyToken, async (req, res) => {
+router.post("/shipments/:id/ship", verifyToken, requireRole(...RECEPTION_ROLES), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid shipment id" });
 

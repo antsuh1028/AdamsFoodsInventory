@@ -2,6 +2,7 @@ const router = require("express").Router();
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
+const { RECEPTION_ROLES } = require("../middleware/receptionRoles");
 const { parseLot, formatLot, pacificToday, dayOfYearFromDate } = require("../utils/lot");
 // Shared with routes/boxes.pg.js so a lot's totals and a manifest agree.
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
@@ -487,7 +488,7 @@ router.get("/lots/:id", verifyToken, async (req, res) => {
 // The yield is FROZEN into the row here. A correction made afterwards moves the
 // live figures, and it must not silently rewrite a number somebody has already
 // reported.
-router.post("/lots/:id/close", verifyToken, async (req, res) => {
+router.post("/lots/:id/close", verifyToken, requireRole(...RECEPTION_ROLES), async (req, res) => {
   const lotId = Number(req.params.id);
   if (!Number.isInteger(lotId)) return res.status(400).json({ error: "Invalid lot id" });
 
