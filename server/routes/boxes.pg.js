@@ -839,9 +839,15 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
 
     // The heading may be corrected in the preview before committing — real sheets
     // carry things like "P12 N26230-01" in the lot cell.
+    //
+    // Stored in block capitals, like every other heading in this app: the paper
+    // forms are filled in caps, and a sheet typed as "ibp" would otherwise sit
+    // apart from the same vendor entered anywhere else. Applied here rather than
+    // at the INSERT so the preview shows exactly what will be filed.
     const pick = (override, fromSheet) => {
       const v = typeof override === "string" ? override.trim() : "";
-      return v || fromSheet || null;
+      const value = v || fromSheet || null;
+      return typeof value === "string" ? value.toUpperCase() : value;
     };
 
     // Converted only after the sheet has been reconciled against its own checksums
@@ -850,8 +856,60 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
     const converted = isKg
       ? parsed.weights.map((w) => trimTrailingZeros(kgToLb(w)))
       : parsed.weights;
-    const subtotal = isKg ? trimTrailingZeros(sumWeights(converted)) : parsed.computed.subtotal;
     const storedUnit = "LB";
+
+    // A weight the sheet got wrong.
+    //
+    // The checksums still have to pass first — they prove the sheet adds up to
+    // what it claims, which is a different thing from the figure being right.
+    // Someone reading the paper can see a transcription error the arithmetic
+    // never will, so this is a per-box override ON TOP of a validated sheet,
+    // recorded rather than silent: the sheet's figure goes to original_weight
+    // exactly as a mid-session correction does.
+    //
+    // In POUNDS, because the preview being corrected is in pounds — on a KG
+    // sheet the operator is looking at converted figures, not what was written.
+    let edits = [];
+    if (req.body.weightEdits) {
+      try {
+        edits = JSON.parse(req.body.weightEdits);
+        if (!Array.isArray(edits)) throw new Error("not an array");
+      } catch {
+        return res.status(400).json({ error: "weightEdits must be a JSON array" });
+      }
+    }
+
+    // Null where the sheet stands, the sheet's figure where it was overridden.
+    const sheetFigures = converted.map(() => null);
+    for (const e of edits) {
+      const i = Number(e && e.index);
+      const w = e && typeof e.weight === "string" ? e.weight.trim() : "";
+      if (!Number.isInteger(i) || i < 0 || i >= converted.length) {
+        return res.status(400).json({ error: `weightEdits: no box at index ${e && e.index}` });
+      }
+      if (!DECIMAL_RE.test(w)) {
+        return res.status(400).json({
+          error: `weightEdits: box ${i + 1} must be a decimal with at most 3 places`,
+        });
+      }
+      if (toThousandths(w) > MAX_WEIGHT_THOUSANDTHS) {
+        return res.status(400).json({
+          code: "IMPLAUSIBLE_WEIGHT",
+          error: `weightEdits: box ${i + 1} is outside the plausible range`,
+        });
+      }
+      // Re-editing the same box keeps the SHEET's figure as the original, not
+      // the previous edit.
+      if (sheetFigures[i] === null) sheetFigures[i] = converted[i];
+      converted[i] = trimTrailingZeros(w);
+    }
+
+    const editedCount = sheetFigures.filter((v) => v !== null).length;
+    // Recomputed once the overrides are in, so the stored total is the total of
+    // what is stored rather than what the sheet declared.
+    const subtotal = (isKg || editedCount)
+      ? trimTrailingZeros(sumWeights(converted))
+      : parsed.computed.subtotal;
 
     const summary = {
       lotNumber: pick(req.body.lotNumber, parsed.lotNumber),
@@ -863,6 +921,9 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
       convertedFrom: weightUnit === "KG" ? "KG" : null,
       boxes: parsed.computed.boxes,
       subtotal,
+      // So the preview and the response can say the stored total no longer
+      // matches the paper, and why.
+      edited: editedCount,
       declared: parsed.declared,
       weights: converted,
       // What the sheet itself said, so the preview can show the operator the
@@ -914,10 +975,15 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
       // batch's source column is what marks the whole lot as imported.
       await client.query(
         `INSERT INTO batch_items
-           (tenant_id, batch_id, weight, weight_unit, is_manual, converted_from)
-         SELECT $1, $2, w, $3, true, $5
-           FROM UNNEST($4::numeric[]) AS w`,
-        [req.tenantId, batchId, storedUnit, summary.weights, summary.convertedFrom]
+           (tenant_id, batch_id, weight, weight_unit, is_manual, converted_from,
+            original_weight, edited_at, edited_by)
+         SELECT $1, $2, t.w, $3, true, $6,
+                t.o,
+                CASE WHEN t.o IS NULL THEN NULL ELSE now() END,
+                CASE WHEN t.o IS NULL THEN NULL ELSE $7 END
+           FROM UNNEST($4::numeric[], $5::numeric[]) AS t(w, o)`,
+        [req.tenantId, batchId, storedUnit, summary.weights, sheetFigures,
+         summary.convertedFrom, req.username || req.userId || null]
       );
 
       await client.query("COMMIT");

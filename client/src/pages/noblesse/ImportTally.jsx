@@ -2,6 +2,8 @@ import React, { useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, Select, Spinner, Input,
   Alert, AlertIcon, useToast,
+  AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogContent, AlertDialogOverlay,
 } from "@chakra-ui/react";
 import FloatingWindow from "../../components/FloatingWindow";
 import axiosInstance from "../../utils/axiosInstance";
@@ -54,6 +56,12 @@ const ReadOnlyField = ({ label, value }) => (
 // sheet's own figures stay visible via asWritten for comparison against paper.
 const show = (w) => (w === null || w === undefined || w === "" ? "—" : toDisplay(w));
 
+// The same shape the server accepts, so a correction cannot be confirmed here
+// and then refused on commit.
+const WEIGHT_RE = /^\d{1,5}(\.\d{1,3})?$/;
+
+const cents = (w) => Math.round(Number(w) * 100);
+
 const ImportTally = ({ isOpen, onClose, onImported }) => {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -61,16 +69,45 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
   const [busy, setBusy] = useState(false);
   const [unit, setUnit] = useState("LB");
   const [heading, setHeading] = useState({ lotNumber: "", vendor: "", itemDescription: "", shipTo: "" });
+  // Corrected weights, keyed by position: { 3: "41.20" }. The sheet's own
+  // figures stay in `preview.weights` so both can be shown.
+  const [edits, setEdits] = useState({});
+  // The box being corrected, awaiting its own confirmation.
+  const [editing, setEditing] = useState(null);
+  const cancelEditRef = useRef(null);
   const setField = (k) => (v) => setHeading((h) => ({ ...h, [k]: v }));
   const fileRef = useRef(null);
   const toast = useToast();
 
   const reset = () => {
-    setFile(null); setPreview(null); setError(null);
+    setFile(null); setPreview(null); setError(null); setEdits({}); setEditing(null);
     setHeading({ lotNumber: "", vendor: "", itemDescription: "", shipTo: "" });
   };
 
   const close = () => { reset(); onClose(); };
+
+  // What is corrected, and what the load will actually weigh once it is.
+  const editedCount = Object.keys(edits).length;
+  const correctedTotal = (preview?.weights || [])
+    .reduce((sum, w, i) => sum + cents(edits[i] ?? w), 0);
+
+  const editValid = editing !== null && WEIGHT_RE.test(String(editing.value).trim());
+  const sheetSaid = editing !== null ? preview?.weights?.[editing.index] : null;
+  // Confirming the same figure back is not a correction; drop it instead of
+  // recording an edit that changes nothing.
+  const editChangesIt = editValid
+    && cents(String(editing.value).trim()) !== cents(sheetSaid);
+
+  const applyEdit = () => {
+    const value = String(editing.value).trim();
+    setEdits((prev) => {
+      const next = { ...prev };
+      if (editChangesIt) next[editing.index] = value;
+      else delete next[editing.index];
+      return next;
+    });
+    setEditing(null);
+  };
 
   const send = async (chosen, { commit }) => {
     const form = new FormData();
@@ -78,9 +115,13 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
     form.append("weightUnit", unit);
     if (commit) {
       form.append("clientUuid", newUuid());
-      // Corrections made in the preview. Weights are never sent back — they
-      // came from the sheet and passed its checksums.
       for (const [k, v] of Object.entries(heading)) if (v.trim()) form.append(k, v.trim());
+      // Weights the operator corrected box by box. The sheet still had to pass
+      // its own checksums to get here; these are overrides on top of that, and
+      // each one was confirmed on its own.
+      const changed = Object.entries(edits)
+        .map(([index, weight]) => ({ index: Number(index), weight }));
+      if (changed.length) form.append("weightEdits", JSON.stringify(changed));
     }
     else form.append("dryRun", "true");
 
@@ -100,6 +141,7 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
     try {
       const data = await send(chosen, { commit: false });
       setPreview(data);
+      setEdits({});
       setHeading({
         lotNumber: data.lotNumber || "",
         vendor: data.vendor || "",
@@ -223,30 +265,143 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
             <ReadOnlyField label="Total" value={`${show(preview.subtotal)} ${preview.weightUnit}`} />
           </Box>
 
-          <Text fontSize="xs" color="gray.500" mb={1} textTransform="uppercase" letterSpacing="wide">
-            Weights read ({preview.weights.length})
-          </Text>
+          <Flex align="baseline" gap={3} wrap="wrap" mb={1}>
+            <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
+              Weights read ({preview.weights.length})
+            </Text>
+            <Text fontSize="xs" color="gray.500">
+              Tap a box to correct what was written.
+            </Text>
+            {editedCount > 0 && (
+              <Badge colorScheme="yellow" fontSize="9px">
+                {editedCount} corrected
+              </Badge>
+            )}
+          </Flex>
           <Box maxH="180px" overflowY="auto" p={2} bg="gray.50" borderRadius="md"
             border="1px solid" borderColor="gray.200">
             <Flex wrap="wrap" gap={2}>
-              {preview.weights.map((w, i) => (
-                <Box key={i} px={2} py={1} bg="white" borderRadius="sm"
-                  border="1px solid" borderColor="gray.200" fontSize="sm"
-                  style={{ fontVariantNumeric: "tabular-nums" }}>
-                  <Text as="span" color="gray.400" fontSize="xs" mr={1}>{i + 1}</Text>
-                  {show(w)}
-                </Box>
-              ))}
+              {preview.weights.map((w, i) => {
+                const corrected = edits[i] !== undefined;
+                return (
+                  <Box key={i} as="button" type="button" textAlign="left"
+                    px={2} py={1} borderRadius="sm" fontSize="sm"
+                    bg={corrected ? "yellow.50" : "white"}
+                    border="1px solid"
+                    borderColor={corrected ? "yellow.400" : "gray.200"}
+                    _hover={{ borderColor: "blue.400" }}
+                    onClick={() => setEditing({ index: i, value: edits[i] ?? String(w) })}
+                    title={corrected ? `The sheet said ${show(w)}` : "Correct this weight"}
+                    style={{ fontVariantNumeric: "tabular-nums" }}>
+                    <Text as="span" color="gray.400" fontSize="xs" mr={1}>{i + 1}</Text>
+                    {corrected ? (
+                      <>
+                        <Text as="span" color="gray.400" textDecoration="line-through" mr={1}>
+                          {show(w)}
+                        </Text>
+                        <Text as="span" fontWeight="600" color="yellow.800">
+                          {show(edits[i])}
+                        </Text>
+                      </>
+                    ) : show(w)}
+                  </Box>
+                );
+              })}
             </Flex>
           </Box>
 
-          {preview.declared?.subtotal && (
+          {preview.declared?.subtotal && editedCount === 0 && (
             <Text fontSize="xs" color="gray.500" mt={2}>
               The sheet's own subtotal ({preview.declared.subtotal}) matches the weights read.
             </Text>
           )}
+
+          {/* Once a box is corrected the stored total no longer matches the
+              paper, and saying so is the whole point of showing it. */}
+          {editedCount > 0 && (
+            <Alert status="warning" borderRadius="md" fontSize="xs" mt={2} py={2}
+              alignItems="flex-start">
+              <AlertIcon boxSize={3} />
+              <Box>
+                <Text fontWeight="600">
+                  {editedCount} box{editedCount === 1 ? "" : "es"} corrected — this will
+                  be filed as {show(String(correctedTotal / 100))}
+                  {preview.declared?.subtotal
+                    ? `, not the ${preview.declared.subtotal} on the sheet.`
+                    : "."}
+                </Text>
+                <Text color="gray.700">
+                  What the sheet said is kept against each box, so the manifest
+                  shows both.
+                </Text>
+              </Box>
+            </Alert>
+          )}
         </Box>
       )}
+      <AlertDialog isOpen={editing !== null} leastDestructiveRef={cancelEditRef}
+        onClose={() => setEditing(null)} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Correct box {editing !== null ? editing.index + 1 : ""}?
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              <Flex align="baseline" gap={3} mb={3} wrap="wrap">
+                <Box>
+                  <Text fontSize="xs" color="gray.500" textTransform="uppercase">
+                    The sheet says
+                  </Text>
+                  <Text fontSize="2xl" fontWeight="bold" color="gray.700"
+                    style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {show(sheetSaid)}
+                  </Text>
+                </Box>
+                <Text fontSize="xl" color="gray.400">&rarr;</Text>
+                <Box>
+                  <Text fontSize="xs" color="gray.500" textTransform="uppercase">
+                    File it as
+                  </Text>
+                  <Input autoFocus size="lg" width="150px" inputMode="decimal"
+                    value={editing?.value ?? ""}
+                    onChange={(e) => setEditing((v) => ({ ...v, value: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && editValid) { e.preventDefault(); applyEdit(); }
+                    }}
+                    fontSize="2xl" fontWeight="bold" textAlign="center"
+                    style={{ fontVariantNumeric: "tabular-nums" }} />
+                </Box>
+                <Text fontSize="md" color="gray.600">{preview?.weightUnit}</Text>
+              </Flex>
+
+              {!editValid && String(editing?.value ?? "").trim() !== "" && (
+                <Text fontSize="sm" color="red.600" mb={2}>
+                  Pounds, with at most three decimal places.
+                </Text>
+              )}
+
+              <Text fontSize="sm">
+                The sheet passed its own totals, so this is a deliberate override
+                of one box. {show(sheetSaid)} is kept against it and prints on the
+                manifest beside the corrected figure.
+              </Text>
+              {editValid && !editChangesIt && (
+                <Text fontSize="xs" color="gray.600" mt={2}>
+                  That is what the sheet already says — confirming leaves it alone.
+                </Text>
+              )}
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelEditRef} onClick={() => setEditing(null)}>
+                Leave it
+              </Button>
+              <Button colorScheme="yellow" onClick={applyEdit} isDisabled={!editValid}>
+                {editChangesIt ? "Correct this box" : "Keep the sheet's figure"}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </FloatingWindow>
   );
 };
