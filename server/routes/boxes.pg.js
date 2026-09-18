@@ -980,10 +980,13 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
          SELECT $1, $2, t.w, $3, true, $6,
                 t.o,
                 CASE WHEN t.o IS NULL THEN NULL ELSE now() END,
-                CASE WHEN t.o IS NULL THEN NULL ELSE $7 END
+                CASE WHEN t.o IS NULL THEN NULL ELSE $7::uuid END
            FROM UNNEST($4::numeric[], $5::numeric[]) AS t(w, o)`,
+        // edited_by is a UUID, like every other writer of this column — the
+        // username is an email and the cast is explicit so a CASE arm cannot
+        // infer text.
         [req.tenantId, batchId, storedUnit, summary.weights, sheetFigures,
-         summary.convertedFrom, req.username || req.userId || null]
+         summary.convertedFrom, req.userId || null]
       );
 
       await client.query("COMMIT");
