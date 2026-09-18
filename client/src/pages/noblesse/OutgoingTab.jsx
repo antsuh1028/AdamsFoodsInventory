@@ -8,9 +8,11 @@ import axiosInstance from "../../utils/axiosInstance";
 import WeighFinishedBoxes from "../../components/navbar/WeighFinishedBoxes";
 import DeleteBatchDialog from "./DeleteBatchDialog";
 import { toDisplay } from "../../utils/weight";
-import { fmtDate, fmtDateTime, today, upper } from "./shared";
-import getRole from "../../utils/getRole";
+import { fmtDate, fmtDateOnly, fmtDateTime, today, upper } from "./shared";
+import getRole, { canReceive } from "../../utils/getRole";
+import LotTimeline from "../../components/LotTimeline";
 import printPackingList from "./printPackingList";
+import printOutgoingTag from "./printOutgoingTag";
 
 // Outgoing: product leaving NTI, either back to AdamsFoods for distribution or
 // straight to a customer.
@@ -82,6 +84,19 @@ const BatchBoxes = ({ detail, totalLb }) => {
         <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">
           Boxes
         </Text>
+        <Button size="xs" variant="outline" colorScheme="blue" ml="auto"
+          onClick={() => printOutgoingTag({
+            lotNumber: detail.lot_number,
+            date: fmtDateOnly(detail.closed_at || detail.created_at),
+            shipTo: detail.ship_to,
+            itemDescription: detail.item_description,
+            billOfLading: detail.bill_of_lading,
+            boxes: items,
+            weighedBy: detail.vendor || "",
+            memo: detail.remarks || "",
+          })}>
+          Print tag
+        </Button>
         <Text fontSize="sm" fontWeight="600" color="gray.800"
           style={{ fontVariantNumeric: "tabular-nums" }}>
           {live.length} · {lb(totalLb)} lb
@@ -129,6 +144,10 @@ const Field = ({ label, children, w }) => (
 
 export const OutgoingTab = ({ refreshSignal = 0 }) => {
   const isAdmin = getRole() === "admin";
+  // The dock weighs; reception owns the load and calls a lot finished. The
+  // server enforces this — hiding it here only keeps the dock's screen to the
+  // one job it has.
+  const reception = canReceive();
   const toast = useToast();
 
   const [shipments, setShipments] = useState([]);
@@ -171,6 +190,8 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // Weighing straight into a line: the lot is already decided, so the window
   // opens bound to it and the finished session is tied to this load on close.
   const [weighFor, setWeighFor] = useState(null);
+  // Which lot's history is open, for reception to read the figures and close it.
+  const [timelineLot, setTimelineLot] = useState(null);
   const cancelRef = useRef(null);
 
   const fetchShipments = useCallback(async () => {
@@ -489,7 +510,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
         <Box>
           <Text fontSize="lg" fontWeight="bold" color="gray.800">Outgoing</Text>
           <Text fontSize="sm" color="gray.500">
-            Loads leaving for AdamsFoods or a customer. Stock moves when a load ships.
+            {reception
+              ? "Weigh the boxes, then tie them to a load and ship it. Stock moves when a load ships."
+              : "Weigh the boxes going out. Reception ties them to a load."}
           </Text>
         </Box>
         <Flex gap={2} wrap="wrap">
@@ -501,7 +524,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
             onClick={() => setWeighOpen(true)}>
             Weigh finished boxes
           </Button>
-          <Button size="sm" colorScheme="blue" onClick={startDraft}>New shipment</Button>
+          {reception && (
+            <Button size="sm" colorScheme="blue" onClick={startDraft}>New shipment</Button>
+          )}
         </Flex>
       </Flex>
 
@@ -531,9 +556,21 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                 border="1px solid" borderColor={openBatch === b.batch_id ? "blue.300" : "gray.200"}
                 cursor="pointer" title="Double-click to see the boxes"
                 onDoubleClick={() => toggleBatch(b.batch_id)}>
-                <Text fontSize="sm" fontWeight="600" color="blue.700">
-                  {b.lot_number || `Batch ${b.batch_id}`}
-                </Text>
+                {reception && b.lot_id ? (
+                  <Button variant="link" size="sm" fontWeight="600" colorScheme="blue"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTimelineLot({ lotId: b.lot_id, lotNumber: b.lot_number });
+                    }}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    title="Open this lot — its figures, and whether it is finished">
+                    {b.lot_number}
+                  </Button>
+                ) : (
+                  <Text fontSize="sm" fontWeight="600" color="blue.700">
+                    {b.lot_number || `Batch ${b.batch_id}`}
+                  </Text>
+                )}
                 <Badge colorScheme={b.status === "closed" ? "green" : "yellow"} fontSize="9px">
                   {b.status === "closed" ? "Closed" : "Open"}
                 </Badge>
@@ -588,6 +625,19 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           </Flex>
         </Box>
       )}
+
+      {/* Reception's half: the loads. A dock account never sees it, and the
+          server refuses those calls regardless. */}
+      {reception && (<>
+      <Flex align="baseline" gap={3} wrap="wrap" mb={2}>
+        <Text fontSize="sm" fontWeight="bold" color="gray.800">Loads</Text>
+        {untiedBatches.length > 0 && (
+          <Badge colorScheme="yellow" fontSize="9px">
+            {untiedBatches.length} weighed session
+            {untiedBatches.length === 1 ? "" : "s"} not on a load
+          </Badge>
+        )}
+      </Flex>
 
       {loading && <Flex justify="center" py={8}><Spinner color="blue.500" /></Flex>}
 
@@ -1161,6 +1211,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           </AlertDialogContent>
         </AlertDialogOverlay>
       </AlertDialog>
+      </>)}
 
       {/* The same session machinery the incoming bench uses, pointed the other
           way: direction="outgoing" is what makes these weights the numerator of
@@ -1178,6 +1229,15 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
         // On this screen "untie it in Outgoing" is a pointer at the screen you
         // are already standing on.
         shipmentHint="untie it from the load below, or delete that draft."
+      />
+
+      {/* Reception reads the lot's figures here and decides whether it is
+          finished; the close itself is gated server-side too. */}
+      <LotTimeline
+        lotId={timelineLot?.lotId ?? null}
+        lotNumber={timelineLot?.lotNumber ?? ""}
+        isOpen={Boolean(timelineLot)}
+        onClose={() => setTimelineLot(null)}
       />
 
       <WeighFinishedBoxes

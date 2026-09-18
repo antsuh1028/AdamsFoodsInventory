@@ -5,6 +5,7 @@ import {
 } from "@chakra-ui/react";
 import axiosInstance from "../../utils/axiosInstance";
 import FloatingWindow from "../../components/FloatingWindow";
+import printProcessingReport from "./printProcessingReport";
 import LotPicker from "../../components/LotPicker";
 import {
   fmtDate, today, upper, fmtWeight, PROCESSING_TYPES,
@@ -33,6 +34,52 @@ const emptyDraft = () => ({
   notes: "",
 });
 
+// What the Product section covers. One list: the completeness check and the
+// collapsed summary both read it, so they cannot drift apart.
+const PRODUCT_FIELDS = [
+  ["description", "Description"],
+  ["brand", "Brand"],
+  ["grade", "Grade"],
+  ["estNumber", "EST"],
+  ["packDate", "Packed"],
+];
+
+const productIncomplete = (d) =>
+  PRODUCT_FIELDS.some(([k]) => !String(d[k] || "").trim());
+
+// What a lot already knows about itself, copied into a new run.
+//
+// Blanks only: what the manager has typed outranks the lot, so re-picking can
+// never overwrite work. Pure and module-scope so the JSX stays readable.
+const withLotDefaults = (draft, lot, row) => {
+  const next = {
+    ...draft,
+    lotId: lot ? lot.lotId : null,
+    lotNumber: lot ? lot.lotNumber : "",
+  };
+  if (!row) return next;
+
+  const fill = (key, value, transform = upper) => {
+    if (String(next[key] || "").trim() || !String(value ?? "").trim()) return;
+    next[key] = transform(String(value));
+  };
+  fill("description", row.description);
+  fill("brand", row.brand);
+  fill("grade", row.grade);
+  fill("estNumber", row.est);
+  // Already ISO from the server's own fmtDate, which is what type=date wants.
+  // Not uppercased: it is a date, not a typed label.
+  fill("packDate", row.packDate, (v) => v);
+
+  // The cases still on the lot: processing what is left is the common case.
+  // Never a zero, which is not a quantity anyone would submit.
+  const left = Number(row.qtyCases) || 0;
+  if (left > 0 && next.pulls.length === 1 && !next.pulls[0].cases) {
+    next.pulls = [{ cases: String(left) }];
+  }
+  return next;
+};
+
 const STATUS_COLOR = { submitted: "yellow", accepted: "green", rejected: "red" };
 
 const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
@@ -45,6 +92,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [filter, setFilter] = useState("submitted");
   const [stock, setStock] = useState([]);
   const [draft, setDraft] = useState(null);
+  // Collapsed once the product is described, open while any of it is blank.
+  const [productOpen, setProductOpen] = useState(true);
   const [saving, setSaving] = useState(false);
   const [workerInput, setWorkerInput] = useState("");
   const [busyId, setBusyId] = useState(null);
@@ -175,7 +224,14 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     }
   };
 
-  const openReport = (r) => setDraft({
+  // Opening a draft decides the section with it, rather than an effect
+  // correcting the panel after it has already painted.
+  const openDraft = (d) => {
+    setProductOpen(productIncomplete(d));
+    setDraft(d);
+  };
+
+  const openReport = (r) => openDraft({
     readOnly: r.status === "accepted",
     ...emptyDraft(), ...r,
     pulls: r.pulls.length ? r.pulls.map((p) => ({ cases: String(p.cases) })) : [{ cases: "" }],
@@ -208,7 +264,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </Button>
             ))}
           </Flex>
-          <Button size="sm" colorScheme="blue" onClick={() => setDraft(emptyDraft())}>
+          <Button size="sm" colorScheme="blue" onClick={() => openDraft(emptyDraft())}>
             New report
           </Button>
         </Flex>
@@ -327,6 +383,12 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {inputCases} case{inputCases === 1 ? "" : "s"} off the lot
             </Text>
             <Flex gap={2}>
+              {/* Prints what is on screen, saved or not: the floor wants the
+                  sheet in hand while the run is happening. */}
+              <Button size="md" variant="outline"
+                onClick={() => printProcessingReport(draft)}>
+                Print
+              </Button>
               <Button size="md" variant="ghost" onClick={() => setDraft(null)}>
                 {draft?.readOnly ? "Close" : "Cancel"}
               </Button>
@@ -361,11 +423,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                     isDisabled={draft.readOnly}
                     value={draft.lotId}
                     lotNumber={draft.lotNumber}
-                    onChange={(lot) => setDraft((d) => ({
-                      ...d,
-                      lotId: lot ? lot.lotId : null,
-                      lotNumber: lot ? lot.lotNumber : "",
-                    }))}
+                    onChange={(lot) => setDraft((d) => withLotDefaults(
+                      d, lot, lot && stock.find((r) => r.lotId === lot.lotId)))}
                   />
                 </Box>
               </SheetField>
@@ -390,8 +449,22 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   onChange={(e) => setDraft({ ...draft, customer: upper(e.target.value) })} />
               </SheetField>
 
-              <SectionBar>Product</SectionBar>
+              {/* Five fields describing what the product IS, which is the same
+                  on every run of a lot and is read far more often than changed.
+                  Open while any of it is still blank, so collapsing can never be
+                  why a field went unfilled. */}
+              <SectionBar
+                isOpen={productOpen}
+                onToggle={() => setProductOpen((v) => !v)}
+                summary={PRODUCT_FIELDS
+                  .filter(([k]) => String(draft[k] || "").trim())
+                  .map(([k, label]) => `${label} ${draft[k]}`)
+                  .join(" · ") || "nothing filled in"}
+              >
+                Product
+              </SectionBar>
 
+              {productOpen && (<>
               <SheetField label="Description" full>
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.description || ""}
                   onChange={(e) => setDraft({ ...draft, description: upper(e.target.value) })} />
@@ -412,6 +485,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="date" value={draft.packDate || ""}
                   onChange={(e) => setDraft({ ...draft, packDate: e.target.value })} />
               </SheetField>
+              </>)}
 
               <SectionBar>Cases Processed</SectionBar>
 

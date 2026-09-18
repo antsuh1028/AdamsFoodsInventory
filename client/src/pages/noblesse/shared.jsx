@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, GridItem, Text } from "@chakra-ui/react";
+import { ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
 
 // Every date in this app is a Pacific business date. The warehouse is in
 // Maywood, CA, so "today" means today in Maywood — not in UTC, and not in
@@ -27,6 +28,7 @@ export const PROCESSING_TYPES = [
   "103 PRTN-PK Portioning & Packing",
   "104 CUT-PK 1/2 Cutting & Packing",
   "105 BONE CUT Bone Cut",
+  "105A OX-CUT Oxtail Cut",
   "106 CUT-RL Cutting & Rolling",
   "108 SHR-CT Short Rib Cut",
   "109 CHK-RL Chicken & Rolling",
@@ -36,11 +38,25 @@ export const PROCESSING_TYPES = [
 
 export const PACIFIC_TZ = "America/Los_Angeles";
 
+// Built once each: constructing an Intl formatter is the expensive part, and
+// these run per row in lists that re-render on every keystroke.
+const PARTS_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: PACIFIC_TZ,
+  year: "numeric", month: "2-digit", day: "2-digit",
+});
+const DATE_TIME_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: PACIFIC_TZ,
+  month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+});
+const TIME_FMT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: PACIFIC_TZ, hour: "2-digit", minute: "2-digit", hour12: false,
+});
+const DATE_ONLY_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: PACIFIC_TZ, month: "numeric", day: "numeric", year: "numeric",
+});
+
 const pacificParts = (date = new Date()) => {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: PACIFIC_TZ,
-    year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(date);
+  const parts = PARTS_FMT.formatToParts(date);
   const get = (type) => Number(parts.find((p) => p.type === type).value);
   return { year: get("year"), month: get("month"), day: get("day") };
 };
@@ -52,10 +68,6 @@ export const today = (date = new Date()) => {
   return `${year}-${pad(month)}-${pad(day)}`;
 };
 
-// "HH:MM" for the current Pacific time, which is what an <input type="time">
-// expects. Pacific for the same reason the dates are: it is the warehouse's
-// clock, and a device left on another timezone would otherwise stamp a receipt
-// with an hour nobody was on the dock.
 // A stored timestamp as Pacific date AND time — "Sep 15, 2:41 PM". For lists
 // ordered by when a row was added, where the date alone cannot show the order
 // within a day.
@@ -63,16 +75,23 @@ export const fmtDateTime = (ts) => {
   if (!ts) return null;
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: PACIFIC_TZ,
-    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-  }).format(d);
+  return DATE_TIME_FMT.format(d);
 };
 
-export const timeNow = (date = new Date()) =>
-  new Intl.DateTimeFormat("en-GB", {
-    timeZone: PACIFIC_TZ, hour: "2-digit", minute: "2-digit", hour12: false,
-  }).format(date);
+// A stored timestamp as just the Pacific date — "9/16/2026". fmtDate renders a
+// timestamp with the time appended, which is noise on a printed tag.
+export const fmtDateOnly = (ts) => {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "";
+  return DATE_ONLY_FMT.format(d);
+};
+
+// "HH:MM" for the current Pacific time, which is what an <input type="time">
+// expects. Pacific for the same reason the dates are: it is the warehouse's
+// clock, and a device left on another timezone would otherwise stamp a receipt
+// with an hour nobody was on the dock.
+export const timeNow = (date = new Date()) => TIME_FMT.format(date);
 
 // Lot numbers are N{YY}{JJJ} — two-digit year plus zero-padded day of the year —
 // with a per-record sequence appended downstream. 2026-09-01 is N26244.
@@ -210,12 +229,29 @@ export const sheetInputProps = {
   minH: { base: "44px", md: "auto" },
 };
 
-export const SectionBar = ({ children }) => (
-  <GridItem colSpan={{ base: 1, md: 4 }} bg="#ccd3db" px={3} py={2}
-    fontSize="xs" fontWeight="bold" color="gray.800">
-    {children}
-  </GridItem>
-);
+// Pass onToggle to make a section collapsible; without it this renders exactly
+// as before, so the sections that are not are unaffected.
+export const SectionBar = ({ children, isOpen, onToggle, summary }) => {
+  const Chevron = isOpen ? ChevronDownIcon : ChevronRightIcon;
+  return (
+    <GridItem colSpan={{ base: 1, md: 4 }} bg="#ccd3db" px={3} py={2}
+      fontSize="xs" fontWeight="bold" color="gray.800"
+      display="flex" alignItems="center" gap={2}
+      cursor={onToggle ? "pointer" : undefined}
+      onClick={onToggle}
+      title={onToggle ? (isOpen ? "Hide these fields" : "Show these fields") : undefined}>
+      {onToggle && <Chevron boxSize={4} color="gray.700" />}
+      {children}
+      {/* Collapsed, the bar still says what is under it. */}
+      {!isOpen && summary && (
+        <Text as="span" fontWeight="normal" color="gray.600" textTransform="none"
+          noOfLines={1} minW={0}>
+          {summary}
+        </Text>
+      )}
+    </GridItem>
+  );
+};
 
 // The grid the two above live in.
 export const SHEET_GRID = {
