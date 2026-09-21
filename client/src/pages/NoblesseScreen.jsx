@@ -31,7 +31,7 @@ import {
 } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
-import getRole from "../utils/getRole";
+import getRole, { isOutgoingOnly } from "../utils/getRole";
 // eslint-disable-next-line no-unused-vars -- Incoming Records is commented out below, not removed
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import ProcessingReportsTab from "./noblesse/ProcessingReportsTab";
@@ -49,6 +49,9 @@ const NoblesseScreen = () => {
   const navigate = useNavigate();
   const isAdmin = getRole() === "admin";
   const canEdit = true; // all roles permitted on this screen are trusted to edit
+  // Outgoing is the only tab this role has, so the rest are not rendered and
+  // the screen-level fetches behind them are not made.
+  const outgoingOnly = isOutgoingOnly();
 
   // Box weighing belongs to Noblesse Trading, so it lives here rather than in
   // the Adams Foods navbar. The diagnostic sits alongside it because it exists
@@ -116,21 +119,26 @@ const NoblesseScreen = () => {
   const fetchData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
-      // Receipts stay the load-bearing fetch: if they fail the screen says so.
-      // The other two are prompts, not content, so losing either must not blank
-      // Incoming Records.
-      const [receiptsRes, unregRes, reportsRes] = await Promise.all([
-        axiosInstance.get("/noblesse-receipts"),
-        axiosInstance.get("/box-batches/unregistered").catch((e) => e),
-        axiosInstance
-          .get("/processing-reports", { params: { status: "submitted" } })
-          .catch((e) => e),
-      ]);
-      setReceipts(receiptsRes.data || []);
-      if (!(unregRes instanceof Error)) setUnregistered(unregRes.data || []);
-      // Only for the tab badge; the tab fetches its own list.
-      if (!(reportsRes instanceof Error))
-        setWaitingReports((reportsRes.data || []).length);
+      // All three belong to tabs this role does not have, and the server
+      // refuses them — asking anyway would fail the load-bearing one and blank
+      // the screen on its own gate.
+      if (!outgoingOnly) {
+        // Receipts stay the load-bearing fetch: if they fail the screen says so.
+        // The other two are prompts, not content, so losing either must not blank
+        // Incoming Records.
+        const [receiptsRes, unregRes, reportsRes] = await Promise.all([
+          axiosInstance.get("/noblesse-receipts"),
+          axiosInstance.get("/box-batches/unregistered").catch((e) => e),
+          axiosInstance
+            .get("/processing-reports", { params: { status: "submitted" } })
+            .catch((e) => e),
+        ]);
+        setReceipts(receiptsRes.data || []);
+        if (!(unregRes instanceof Error)) setUnregistered(unregRes.data || []);
+        // Only for the tab badge; the tab fetches its own list.
+        if (!(reportsRes instanceof Error))
+          setWaitingReports((reportsRes.data || []).length);
+      }
 
       // Tabs that load their own data watch this and re-fetch. Without it the
       // timestamp below ticks while their contents stay frozen at page load.
@@ -150,7 +158,7 @@ const NoblesseScreen = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [outgoingOnly]);
 
   fetchDataRef.current = fetchData;
 
@@ -171,8 +179,11 @@ const NoblesseScreen = () => {
   // Incoming is commented out, so everything shifted up by one — Chakra pairs
   // tabs to panels by position and these buttons jump by index, so hiding a tab
   // moves both.
-  const REGISTRATION_TAB = 0;
-  const PROCESSING_TAB = 2;
+  // Outgoing-only drops the three before it, so it becomes the only tab and
+  // these two address nothing. Both notices that use them are hidden in that
+  // case anyway — their counts come from fetches this role does not make.
+  const REGISTRATION_TAB = outgoingOnly ? -1 : 0;
+  const PROCESSING_TAB = outgoingOnly ? -1 : 2;
 
   if (loading) {
     return (
@@ -353,24 +364,28 @@ const NoblesseScreen = () => {
                 product actually moves through the building. Chakra pairs tabs
                 to panels by position, so a tab and its panel must always be
                 added or removed together. */}
-              <Tab>
-                Registration Forms
-                {unregistered.length > 0 && (
-                  <Badge ml={2} colorScheme="blue" borderRadius="full">
-                    {unregistered.length}
-                  </Badge>
-                )}
-              </Tab>
-              <Tab>Weight Manifests</Tab>
-
-              <Tab>
-                Processing
-                {waitingReports > 0 && (
-                  <Badge ml={2} colorScheme="yellow" borderRadius="full">
-                    {waitingReports}
-                  </Badge>
-                )}
-              </Tab>
+              {/* One condition per Tab, matching the panels below one for one. */}
+              {!outgoingOnly && (
+                <Tab>
+                  Registration Forms
+                  {unregistered.length > 0 && (
+                    <Badge ml={2} colorScheme="blue" borderRadius="full">
+                      {unregistered.length}
+                    </Badge>
+                  )}
+                </Tab>
+              )}
+              {!outgoingOnly && <Tab>Weight Manifests</Tab>}
+              {!outgoingOnly && (
+                <Tab>
+                  Processing
+                  {waitingReports > 0 && (
+                    <Badge ml={2} colorScheme="yellow" borderRadius="full">
+                      {waitingReports}
+                    </Badge>
+                  )}
+                </Tab>
+              )}
 
               <Tab>Outgoing</Tab>
             </TabList>
@@ -515,20 +530,31 @@ const NoblesseScreen = () => {
                   of its own. The half-built NtiInventoryTab.jsx that used to sit
                   unimported alongside this was deleted rather than left to rot;
                   git history has it if it is ever wanted back. */}
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
-                <RegistrationFormTab
-                  isAdmin={canEdit}
-                  canDelete={isAdmin}
-                  isAdminUser={isAdmin}
-                  refreshSignal={refreshSignal}
-                />
-              </TabPanel>
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
-                <WeightManifestTab refreshSignal={refreshSignal} />
-              </TabPanel>
-              <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
-                <ProcessingReportsTab refreshSignal={refreshSignal} />
-              </TabPanel>
+              {/* Paired with the three Tabs above — Chakra matches them by
+                  POSITION, so each panel carries its own condition. A fragment
+                  around the three counts as one child and the pairing slips:
+                  that is the off-by-one this file warns about, and it blanks
+                  whichever tab lands past the gap. */}
+              {!outgoingOnly && (
+                <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
+                  <RegistrationFormTab
+                    isAdmin={canEdit}
+                    canDelete={isAdmin}
+                    isAdminUser={isAdmin}
+                    refreshSignal={refreshSignal}
+                  />
+                </TabPanel>
+              )}
+              {!outgoingOnly && (
+                <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
+                  <WeightManifestTab refreshSignal={refreshSignal} />
+                </TabPanel>
+              )}
+              {!outgoingOnly && (
+                <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
+                  <ProcessingReportsTab refreshSignal={refreshSignal} />
+                </TabPanel>
+              )}
 
               <TabPanel h="100%" overflowY="auto" overflowX="hidden" p={{ base: 3, md: 5 }}>
                 <OutgoingTab refreshSignal={refreshSignal} />

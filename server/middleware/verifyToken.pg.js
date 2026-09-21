@@ -1,6 +1,10 @@
 const jwt = require("jsonwebtoken");
+const roleScope = require("./roleScope");
 
-// Same as verifyToken.js but also extracts tenantId from the JWT payload
+// Same as verifyToken.js but also extracts tenantId from the JWT payload.
+// The role scope runs from here because this is the one gate every protected
+// route passes through — a scoped role cannot then reach a route by way of one
+// that forgot to ask.
 const verifyToken = (req, res, next) => {
   const token = req.headers["authorization"];
   if (!token) return res.status(403).json({ message: "No token provided" });
@@ -11,7 +15,7 @@ const verifyToken = (req, res, next) => {
     req.role     = decoded.role     || "user";
     req.username = decoded.username || "";
     req.tenantId = decoded.tenantId;
-    next();
+    roleScope(req, res, next);
   });
 };
 

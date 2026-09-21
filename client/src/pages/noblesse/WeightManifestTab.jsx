@@ -15,6 +15,7 @@ import ImportTally from "./ImportTally";
 import FloatingWindow from "../../components/FloatingWindow";
 import { fmtDate, today, upper } from "./shared";
 import getRole from "../../utils/getRole";
+import SearchBar from "../../components/SearchBar";
 
 // Past weighing sessions, one row per session. Expanding a row pulls its boxes
 // and shows them in the same sheet they were scanned into, so a manifest can be
@@ -537,6 +538,10 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
+  // Run on the server, so it reaches sessions past the newest 50 a plain
+  // listing shows. The column filters below still narrow what comes back.
+  const [q, setQ] = useState("");
+  const [searching, setSearching] = useState(false);
   const [filters, setFilters] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
@@ -597,28 +602,41 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   // Filtered by the SERVER, not here: the listing returns 50 rows by default, so
   // filtering client-side would have quietly dropped arrivals off the end of the
   // page as outgoing sessions accumulated.
+  // Each fetch drops its answer if a newer one has been asked for since, so a
+  // slow reply to an old search cannot overwrite the current one.
+  const batchSeq = useRef(0);
+  const groupSeq = useRef(0);
+
   const fetchBatches = useCallback(async () => {
+    const mine = ++batchSeq.current;
     try {
       const { data } = await axiosInstance.get("/box-batches",
-        { params: { direction: "incoming" } });
+        { params: { direction: "incoming", q: q || undefined } });
+      if (mine !== batchSeq.current) return;
       setBatches(data || []);
       setError(null);
     } catch (err) {
+      if (mine !== batchSeq.current) return;
       setError(err.response?.data?.error || err.message || "Could not load sessions");
     } finally {
-      setLoading(false);
+      if (mine === batchSeq.current) { setLoading(false); setSearching(false); }
     }
-  }, []);
+  }, [q]);
 
+  // Searched too, and by its sessions as well as its own heading: the table
+  // shows a manifest in place of its sessions, so the two must be found together.
   const fetchGroups = useCallback(async () => {
+    const mine = ++groupSeq.current;
     try {
-      const { data } = await axiosInstance.get("/manifest-groups");
+      const { data } = await axiosInstance.get("/manifest-groups",
+        { params: { q: q || undefined } });
+      if (mine !== groupSeq.current) return;
       setGroups(data || []);
     } catch {
       // A merged-manifest listing failing must not blank the sessions table,
       // which is the part people actually need to keep working.
     }
-  }, []);
+  }, [q]);
 
   useEffect(() => { fetchBatches(); fetchGroups(); }, [fetchBatches, fetchGroups]);
 
@@ -964,9 +982,17 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
 
   // Counted over `rows` (what is actually on screen) rather than everything
   // loaded, so the number always matches the dots someone can point at.
+  // "New" means arrived since you last looked. A search reaches rows this
+  // device never loaded, which were never marked seen, so while searching
+  // nothing is called new — an old lot found by search would otherwise light up.
+  const isUnseen = useCallback(
+    (key) => !q && !seen.has(key),
+    [q, seen]
+  );
+
   const newCount = useMemo(
-    () => rows.reduce((n, r) => (seen.has(r.key) ? n : n + 1), 0),
-    [rows, seen]
+    () => rows.reduce((n, r) => (isUnseen(r.key) ? n + 1 : n), 0),
+    [rows, isUnseen]
   );
 
   const markAllSeen = useCallback(() => {
@@ -1020,6 +1046,11 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
             textTransform="uppercase" letterSpacing="wide">
             Sessions
           </Text>
+          <SearchBar
+            placeholder="Search lot, vendor, item, BOL…"
+            isSearching={searching}
+            onSearch={(text) => { setSearching(true); setQ(text); }}
+          />
           <Flex gap={1}>
             {[["", "All"], ["open", "Open"], ["closed", "Closed"]].map(([value, label]) => (
               <Button key={label} size="xs"
@@ -1102,9 +1133,13 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
           still there. */}
       {rows.length === 0 ? (
         <Text fontSize="sm" color="gray.400">
-          {batches.length === 0 && groups.length === 0
-            ? "No weighing sessions yet. Start one to begin scanning boxes."
-            : "Nothing matches these filters."}
+          {/* A search that finds nothing also empties both lists — which, read
+              the old way, claimed there were no sessions at all. */}
+          {q
+            ? `Nothing matches “${q}”.`
+            : batches.length === 0 && groups.length === 0
+              ? "No weighing sessions yet. Start one to begin scanning boxes."
+              : "Nothing matches these filters."}
         </Text>
       ) : (
         <Box overflowX="auto" width="100%">
@@ -1175,12 +1210,12 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                             {/* The teal left edge is what marks a row as a
                                 merged manifest, so an unseen one takes the dot
                                 and the pill and leaves that edge alone. */}
-                            {!seen.has(row.key) && (
+                            {isUnseen(row.key) && (
                               <Box as="span" width="7px" height="7px" borderRadius="full"
                                 bg="blue.500" flexShrink={0} title="Not opened on this device yet" />
                             )}
                             <Text as="span">{g.name || g.lot_number || `Manifest ${g.group_id}`}</Text>
-                            {!seen.has(row.key) && (
+                            {isUnseen(row.key) && (
                               <Badge colorScheme="blue" fontSize="9px" px={1.5} borderRadius="full">
                                 NEW
                               </Badge>
@@ -1255,7 +1290,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                 // row is often BOTH. Today keeps the background and the left
                 // edge; unseen adds the dot and the NEW pill, and only claims
                 // the left edge when today has not.
-                const isNew = !seen.has(row.key);
+                const isNew = isUnseen(row.key);
                 return (
                   <React.Fragment key={row.key}>
                     <Box as="tr"

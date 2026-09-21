@@ -5,8 +5,8 @@
 // "weigh.stop.title" to someone holding a box. That also keeps the JSX readable
 // — t("Stop session") still says what it puts on screen.
 //
-// Scoped to the outgoing weighing window on purpose. The rest of the app stays
-// English until someone asks for it.
+// Scoped to the outgoing side on purpose — the weighing window and the Outgoing
+// tab. The rest of the app stays English until someone asks for it.
 
 const ES = {
   // ── The window, and starting a session ────────────────────────────────────
@@ -172,6 +172,238 @@ const ES = {
     "Otra sesión en este dispositivo tiene pesos sin enviar",
   "{n} weight(s) here have not reached the server yet. Carry on with that session and let it send, then come back to this one.":
     "{n} peso(s) de aquí todavía no llegan al servidor. Continúe con esa sesión y deje que se envíen, y luego vuelva a ésta.",
+
+  // ── The Outgoing tab ──────────────────────────────────────────────────────
+  // A load is "carga" and the tab is "Salidas", matching the weighing window,
+  // whose stop dialog already points people at "Continuar pesando" here.
+  "Outgoing": "Salidas",
+  "Weigh the boxes, then tie them to a load and ship it. Stock moves when a load ships.":
+    "Pese las cajas, luego únalas a una carga y envíela. El inventario se mueve cuando sale la carga.",
+  "Weigh the boxes going out. Reception ties them to a load.":
+    "Pese las cajas que salen. Recepción las une a una carga.",
+  "New shipment": "Nuevo envío",
+
+  // Weighed sessions
+  "Finished product weighed": "Producto terminado pesado",
+  "Boxes weighed off the bench on their way out. Tie one to a load below, or leave it until there is a load for it.":
+    "Cajas pesadas en la mesa antes de salir. Únalas a una carga abajo, o déjelas hasta que haya una carga para ellas.",
+  "Double-click to see the boxes": "Doble clic para ver las cajas",
+  "Open this lot — its figures, and whether it is finished":
+    "Abrir este lote — sus cifras, y si ya terminó",
+  // Not the bare "Batch" above: that is the batch-entry mode, this is a session.
+  "Batch {id}": "Sesión {id}",
+  "Open": "Abierta",
+  "Closed": "Cerrada",
+  "Added {when}": "Agregada {when}",
+  "On {destination} ({status})": "En {destination} ({status})",
+  "draft": "borrador",
+  "shipped": "enviado",
+  "cancelled": "cancelado",
+  "Not on a load": "Sin carga",
+  "Carry on weighing": "Continuar pesando",
+  "Delete": "Borrar",
+  "{n} weighed session not on a load": "{n} sesión pesada sin carga",
+  "{n} weighed sessions not on a load": "{n} sesiones pesadas sin carga",
+
+  // One session opened up
+  "Vendor": "Proveedor",
+  "BOL": "BOL",
+  "Brand": "Marca",
+  "EST": "EST",
+  "Grade": "Grado",
+  "Remarks": "Observaciones",
+  "Expected": "Esperadas",
+  "Added": "Agregada",
+  "Edit details": "Editar datos",
+  "Remarks: {remarks}": "Observaciones: {remarks}",
+  "Boxes": "Cajas",
+  "Print tag": "Imprimir etiqueta",
+  "({n} voided, not in that total)": "({n} anuladas, no incluidas en ese total)",
+  "No boxes were recorded in this session.": "No se registraron cajas en esta sesión.",
+  "Voided: {reason}": "Anulada: {reason}",
+  "no reason given": "sin motivo",
+  "The rest of this heading is reception's to change.":
+    "El resto de este encabezado lo cambia recepción.",
+  "Save": "Guardar",
+  "Cancel": "Cancelar",
+  "Session updated": "Sesión actualizada",
+  "Could not save": "No se pudo guardar",
+
+  // Loads
+  "Loads": "Cargas",
+  "Draft": "Borrador",
+  "Shipped": "Enviado",
+  "Cancelled": "Cancelado",
+  "Nothing has shipped yet. Start a shipment, add the lots going on the truck, then ship it — that is the point stock comes out of inventory.":
+    "Todavía no ha salido nada. Empiece un envío, agregue los lotes que van en el camión y luego envíelo — ahí es cuando el inventario se descuenta.",
+  "BOL {bol}": "BOL {bol}",
+  "{n} lot": "{n} lote",
+  "{n} lots": "{n} lotes",
+  "No lots on this load yet.": "Todavía no hay lotes en esta carga.",
+  "Raw": "Crudo",
+  "RAW": "CRUDO",
+  "{boxes} boxes · {weight} lb weighed": "{boxes} cajas · {weight} lb pesadas",
+  "Not weighed": "Sin pesar",
+  "Weigh boxes": "Pesar cajas",
+  "Remove": "Quitar",
+  "Total": "Total",
+  "Lot to ship": "Lote a enviar",
+  "Weight (lbs)": "Peso (lb)",
+  "Cases": "Cajas",
+  "Add lot": "Agregar lote",
+  "Could not load what is in stock — the list above may be incomplete. {error}":
+    "No se pudo cargar lo que hay en inventario — la lista de arriba puede estar incompleta. {error}",
+  "{lot} is not in the lot registry": "{lot} no está en el registro de lotes",
+  ", so it cannot go on a load: every line is attributed to a lot, which is what makes a yield possible. Open its registration form and set the lot, then come back — it will be selectable here.":
+    ", así que no puede ir en una carga: cada línea se asigna a un lote, y eso es lo que permite calcular el rendimiento. Abra su formulario de registro y asigne el lote, luego regrese — aquí se podrá seleccionar.",
+  "{lot} has processing still open. You can ship it anyway.":
+    "{lot} todavía tiene procesamiento abierto. Puede enviarlo de todos modos.",
+  "{lot} is raw — it has not been processed. The {weight} lb is the weight registered on arrival, not a live figure: processing takes cases off a lot, not pounds. {cases} cases are left.":
+    "{lot} está crudo — no se ha procesado. Las {weight} lb son el peso registrado a la llegada, no una cifra actual: el procesamiento descuenta cajas del lote, no libras. Quedan {cases} cajas.",
+  "Weighed on the dock": "Pesado en el andén",
+  "differs from the {weight} lb being shipped": "difiere de las {weight} lb que se envían",
+  "Imported": "Importada",
+  "Untie": "Separar",
+  "{n} weighed lot is not on this load yet.": "{n} lote pesado todavía no está en esta carga.",
+  "{n} weighed lots are not on this load yet.": "{n} lotes pesados todavía no están en esta carga.",
+  "Boxes weighed here do not ship on their own — a lot has to be on the load for stock to move and for it to reach the packing list.":
+    "Las cajas pesadas aquí no salen solas — el lote tiene que estar en la carga para que se mueva el inventario y aparezca en la lista de empaque.",
+  "Add {n} weighed lot to the load": "Agregar {n} lote pesado a la carga",
+  "Add {n} weighed lots to the load": "Agregar {n} lotes pesados a la carga",
+  "Tie a weighing session (optional)": "Unir una sesión de pesaje (opcional)",
+  "Tie sessions": "Unir sesiones",
+  "Tie {n} session": "Unir {n} sesión",
+  "Tie {n} sessions": "Unir {n} sesiones",
+  "Packing list": "Lista de empaque",
+  "Weighed boxes are tied to this load but no lot is on it yet. Add them as lines first.":
+    "Hay cajas pesadas unidas a esta carga pero todavía no tiene lotes. Agréguelas primero como líneas.",
+  "Add at least one lot to ship.": "Agregue al menos un lote para enviar.",
+  "Ship": "Enviar",
+  "Cancel shipment": "Cancelar envío",
+  "Delete draft": "Borrar borrador",
+  "Delete shipment": "Borrar envío",
+  "Shipped {when}": "Enviado {when}",
+
+  // Making or correcting a load
+  "Edit shipment": "Editar envío",
+  "Customer": "Cliente",
+  "Ship date": "Fecha de envío",
+  "Ship to": "Enviar a",
+  "BOL #": "BOL #",
+  "Carrier": "Transportista",
+  "Driver": "Chofer",
+  "Save changes": "Guardar cambios",
+  "Create draft": "Crear borrador",
+
+  // Shipping, cancelling, deleting
+  "Ship this load?": "¿Enviar esta carga?",
+  "This deducts every lot below from stock and closes the shipment to further changes. Cancelling afterwards puts the stock back.":
+    "Esto descuenta del inventario todos los lotes de abajo y cierra el envío a más cambios. Si se cancela después, el inventario se restaura.",
+  "{n} lot shipping unweighed — {lots}.": "{n} lote sale sin pesar — {lots}.",
+  "{n} lots shipping unweighed — {lots}.": "{n} lotes salen sin pesar — {lots}.",
+  "Nothing was weighed off the bench for it, so that lot will never have a yield. Weigh the boxes first if they are still here.":
+    "No se pesó nada en la mesa para él, así que ese lote nunca tendrá rendimiento. Pese las cajas primero si todavía están aquí.",
+  "Nothing was weighed off the bench for them, so those lots will never have a yield. Weigh the boxes first if they are still here.":
+    "No se pesó nada en la mesa para ellos, así que esos lotes nunca tendrán rendimiento. Pese las cajas primero si todavía están aquí.",
+  "{weight} lb total": "{weight} lb en total",
+  "Ship it": "Enviarla",
+  "Cancel this shipment?": "¿Cancelar este envío?",
+  "Every lot on it goes back into stock. The shipment stays on the record marked cancelled — it is not deleted, so what left and came back is still visible.":
+    "Todos sus lotes vuelven al inventario. El envío queda en el registro marcado como cancelado — no se borra, así que lo que salió y regresó sigue visible.",
+  "Delete this draft?": "¿Borrar este borrador?",
+  "Delete this shipment?": "¿Borrar este envío?",
+  "The draft and its lines are gone for good. Nothing has shipped from it, so no stock moves and there is nothing to restore.":
+    "El borrador y sus líneas se borran definitivamente. No ha salido nada de él, así que no se mueve inventario y no hay nada que restaurar.",
+  "The shipment and its lines are gone for good — it will not appear on any record afterwards.":
+    "El envío y sus líneas se borran definitivamente — no aparecerá en ningún registro después.",
+  "This load has already shipped.": "Esta carga ya salió.",
+  "Its weight goes back into stock first, so inventory stays right. But the load itself is destroyed — if you want what went out and came back to stay visible,":
+    "Primero su peso vuelve al inventario, así que el inventario queda bien. Pero la carga en sí se destruye — si quiere que lo que salió y regresó siga visible,",
+  "cancel it instead": "cancélela en su lugar",
+  "Already cancelled, so its stock went back at that point. Nothing moves now — this only removes the record.":
+    "Ya está cancelado, así que su inventario regresó en ese momento. Ahora no se mueve nada — esto solo quita el registro.",
+  "{n} weighing session tied to it is released — the sessions and their boxes are untouched.":
+    "Se libera {n} sesión de pesaje unida a él — las sesiones y sus cajas no se tocan.",
+  "{n} weighing sessions tied to it are released — the sessions and their boxes are untouched.":
+    "Se liberan {n} sesiones de pesaje unidas a él — las sesiones y sus cajas no se tocan.",
+
+  // Toasts
+  "Could not load shipments": "No se pudieron cargar los envíos",
+  "Could not open that shipment": "No se pudo abrir ese envío",
+  "Could not open that session": "No se pudo abrir esa sesión",
+  "That did not work": "Eso no funcionó",
+  "{lot}: asked {asked}, on hand {onHand}": "{lot}: se pidió {asked}, hay {onHand}",
+  "Weighing sessions tied": "Sesiones de pesaje unidas",
+  "Shipment updated": "Envío actualizado",
+  "Draft created": "Borrador creado",
+  "That stock row is no longer available — refresh and pick again.":
+    "Esa fila de inventario ya no está disponible — actualice y vuelva a elegir.",
+  "Lot added": "Lote agregado",
+  "Boxes tied to this load": "Cajas unidas a esta carga",
+  "Weights saved, but not tied to the load": "Pesos guardados, pero no unidos a la carga",
+  "{error} — tie the session to the load by hand below.":
+    "{error} — una la sesión a la carga a mano, abajo.",
+  "Every weighed lot is already on this load.": "Todos los lotes pesados ya están en esta carga.",
+  "Weighed lots added to this load": "Lotes pesados agregados a esta carga",
+  "{n} line moved no stock": "{n} línea no movió inventario",
+  "{n} lines moved no stock": "{n} líneas no movieron inventario",
+  "{lines} — not in NTI inventory, so nothing was deducted.":
+    "{lines} — no está en el inventario de NTI, así que no se descontó nada.",
+  "Shipped — stock deducted": "Enviado — inventario descontado",
+  "Cancelled — stock restored": "Cancelado — inventario restaurado",
+  "Shipment deleted": "Envío borrado",
+  "No weighed sessions match “{q}”.": "Ninguna sesión pesada coincide con “{q}”.",
+  "No loads match “{q}”.": "Ninguna carga coincide con “{q}”.",
+
+  // ── A lot's timeline, opened from the Outgoing tab ────────────────────────
+  // Translated only when opened from there: the Registration Forms tab opens
+  // the same window and stays English.
+  "Lot {lot}": "Lote {lot}",
+  "Closed@lot": "Cerrado",
+  "Received": "Recibido",
+  "Registered": "Registrado",
+  "Processing": "En proceso",
+  "Processed": "Procesado",
+  "Re-stocked": "Reabastecido",
+  "Report filed": "Reporte entregado",
+  "Rejected": "Rechazado",
+  "On a load": "En una carga",
+  "Load cancelled": "Carga cancelada",
+  "Weighed out": "Pesado de salida",
+  "Weighed in": "Pesado de entrada",
+  "Boxes in": "Cajas de entrada",
+  "Boxes out": "Cajas de salida",
+  "Raw on hand": "Crudo disponible",
+  "In processing": "En proceso",
+  "Cases out": "Cajas procesadas",
+  "Yield": "Rendimiento",
+  "Yield not measured": "Rendimiento sin medir",
+  "{in} lb came in. Nothing has been weighed out of this lot yet.":
+    "Entraron {in} lb. Todavía no se ha pesado nada de salida de este lote.",
+  "Nothing has been weighed on either side of this lot.":
+    "No se ha pesado nada ni de entrada ni de salida en este lote.",
+  "{out} lb weighed out, but nothing recorded coming in to divide it by.":
+    "{out} lb pesadas de salida, pero no hay nada registrado de entrada para dividirlo.",
+  "{out} out of {in} lb · {unaccounted} unaccounted":
+    "{out} de {in} lb · {unaccounted} sin justificar",
+  "against the form's original weight, not bench weights":
+    "contra el peso original del formulario, no pesos de la mesa",
+  " by {who}": " por {who}",
+  " on {date}": " el {date}",
+  " — frozen at {pct}% ({out} out of {in} lb)": " — congelado en {pct}% ({out} de {in} lb)",
+  " — no yield was measured": " — no se midió el rendimiento",
+  "Nothing has left this lot in {n} days.": "No ha salido nada de este lote en {n} días.",
+  "{in} lb in, {out} lb out, {unaccounted} unaccounted":
+    "{in} lb de entrada, {out} lb de salida, {unaccounted} sin justificar",
+  "Close lot": "Cerrar lote",
+  "Reopen lot": "Reabrir lote",
+  "History": "Historial",
+  "Nothing has happened to this lot yet beyond being issued.":
+    "A este lote todavía no le ha pasado nada aparte de emitirse.",
+  "Lot closed": "Lote cerrado",
+  "Lot reopened": "Lote reabierto",
+  "Could not close this lot": "No se pudo cerrar este lote",
+  "Could not reopen this lot": "No se pudo reabrir este lote",
 };
 
 export const LANGS = [["en", "English"], ["es", "Español"]];
@@ -203,7 +435,10 @@ export const saveLang = (lang) => {
  * the English it was given, which is why the keys are sentences.
  */
 export const translator = (lang) => (text, vars) => {
-  const out = (lang === "es" && ES[text]) || text;
+  // Spanish genders a word by what it describes and English does not, so
+  // { _as: "lot" } tries "Closed@lot" before "Closed". English is unaffected.
+  const as = vars && vars._as;
+  const out = (lang === "es" && ((as && ES[`${text}@${as}`]) || ES[text])) || text;
   if (!vars) return out;
   return out.replace(/\{(\w+)\}/g, (whole, key) =>
     (vars[key] === undefined || vars[key] === null ? whole : String(vars[key])));

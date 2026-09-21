@@ -4,6 +4,7 @@ const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { RECEPTION_ROLES } = require("../middleware/receptionRoles");
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
+const { searchTerm, searchClause } = require("../utils/search");
 
 // Outgoing.
 
@@ -110,7 +111,23 @@ const normaliseDestination = (type, name) => {
 // ── Read ─────────────────────────────────────────────────────────────────────
 
 router.get("/shipments", verifyToken, async (req, res) => {
-  const limit = Math.min(Number(req.query.limit) || 100, 500);
+  const term = searchTerm(req.query.q);
+  const limit = Math.min(Number(req.query.limit) || (term ? 500 : 100), 500);
+  const params = [req.tenantId, limit];
+  let where = "";
+  if (term) {
+    params.push(term);
+    const n = params.length;
+    // A load is looked up by where it went, or by a lot that was on it.
+    where = ` AND (${searchClause([
+      "s.destination_name", "s.ship_to", "s.bill_of_lading", "s.carrier",
+      "s.driver", "s.notes", "s.status",
+    ], n)} OR EXISTS (
+      SELECT 1 FROM noblesse_shipment_items i
+        LEFT JOIN lots l ON l.lot_id = i.lot_id
+       WHERE i.shipment_id = s.shipment_id AND i.tenant_id = $1
+         AND (l.lot_number ILIKE $${n} OR i.description ILIKE $${n})))`;
+  }
   try {
     const result = await pool.query(
       `SELECT s.*,
@@ -121,10 +138,10 @@ router.get("/shipments", verifyToken, async (req, res) => {
               COALESCE((SELECT SUM(i.qty_cases)::int FROM noblesse_shipment_items i
                 WHERE i.shipment_id = s.shipment_id), 0) AS total_cases
          FROM noblesse_shipments s
-        WHERE s.tenant_id = $1
+        WHERE s.tenant_id = $1${where}
         ORDER BY s.ship_date DESC, s.shipment_id DESC
         LIMIT $2`,
-      [req.tenantId, limit]
+      params
     );
     res.json(result.rows.map((r) => ({
       ...fmtShipment(r),

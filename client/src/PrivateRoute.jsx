@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
+import { NOBLESSE_SIDE, landingFor } from "./utils/getRole";
 import {
   Modal,
   ModalOverlay,
@@ -198,7 +199,7 @@ const decodeToken = (token) => {
 };
 
 // allowedRoles: if provided, only those roles can access this route.
-// noblesse users are always redirected to /noblesse; all others to /home.
+// Noblesse-side users are always redirected to /noblesse; all others to /home.
 const PrivateRoute = ({ children, allowedRoles }) => {
   const token = localStorage.getItem("token");
 
@@ -220,12 +221,19 @@ const PrivateRoute = ({ children, allowedRoles }) => {
   }
 
   if (allowedRoles && !allowedRoles.includes(payload.role)) {
-    return <Navigate to={payload.role === "noblesse" ? "/noblesse" : "/home"} />;
+    const target = landingFor(payload.role);
+    // A role no screen admits would be sent back to where it already is, and
+    // bounce there forever. Log it out instead of looping.
+    if (window.location.pathname === target) {
+      localStorage.removeItem("token");
+      return <Navigate to="/" />;
+    }
+    return <Navigate to={target} />;
   }
 
   return (
     <>
-      {payload.role === "noblesse" ? <NoblesseWatcher /> : <IdleWatcher />}
+      {NOBLESSE_SIDE.includes(payload.role) ? <NoblesseWatcher /> : <IdleWatcher />}
       {children}
     </>
   );

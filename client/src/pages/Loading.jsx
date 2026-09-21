@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { Center, Spinner, Text, VStack } from "@chakra-ui/react";
 import { useNavigate } from "react-router-dom";
+import { landingFor } from "../utils/getRole";
 
 const Loading = () => {
   const navigate = useNavigate();
@@ -10,7 +11,7 @@ const Loading = () => {
       try {
         const token = localStorage.getItem("token");
         const payload = token ? JSON.parse(atob(token.split(".")[1])) : null;
-        navigate(payload?.role === "noblesse" ? "/noblesse" : "/home");
+        navigate(landingFor(payload?.role));
       } catch {
         navigate("/home");
       }

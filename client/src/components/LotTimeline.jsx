@@ -5,7 +5,12 @@ import {
 import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
 import { toDisplay } from "../utils/weight";
+import { translator } from "../utils/i18n";
 import FloatingWindow from "./FloatingWindow";
+
+// A prop rather than the shared language: Outgoing passes its own, and the
+// Registration Forms tab, which opens this same window, stays English.
+const ENGLISH = translator("en");
 
 // One lot's whole life, in one place.
 //
@@ -53,16 +58,16 @@ const lb = (v) => (v === null || v === undefined || v === "" ? null : toDisplay(
 
 // The yield, stated as a claim rather than a number. A lot nothing has left
 // yet reads "not measured", never 0%.
-const YieldLine = ({ y }) => {
+const YieldLine = ({ y, t }) => {
   if (!y) return null;
   if (!y.measured) {
     return (
       <Flex gap={2} align="baseline" wrap="wrap">
-        <Badge colorScheme="gray">Yield not measured</Badge>
+        <Badge colorScheme="gray">{t("Yield not measured")}</Badge>
         <Text fontSize="sm" color="gray.600">
           {y.inLb
-            ? `${y.inLb} lb came in. Nothing has been weighed out of this lot yet.`
-            : "Nothing has been weighed on either side of this lot."}
+            ? t("{in} lb came in. Nothing has been weighed out of this lot yet.", { in: y.inLb })
+            : t("Nothing has been weighed on either side of this lot.")}
         </Text>
       </Flex>
     );
@@ -70,9 +75,9 @@ const YieldLine = ({ y }) => {
   if (y.percent == null) {
     return (
       <Flex gap={2} align="baseline" wrap="wrap">
-        <Badge colorScheme="gray">Yield not measured</Badge>
+        <Badge colorScheme="gray">{t("Yield not measured")}</Badge>
         <Text fontSize="sm" color="gray.600">
-          {y.outLb} lb weighed out, but nothing recorded coming in to divide it by.
+          {t("{out} lb weighed out, but nothing recorded coming in to divide it by.", { out: y.outLb })}
         </Text>
       </Flex>
     );
@@ -84,13 +89,14 @@ const YieldLine = ({ y }) => {
         {y.percent.toFixed(1)}%
       </Text>
       <Text fontSize="sm" color="gray.700" style={{ fontVariantNumeric: "tabular-nums" }}>
-        {y.outLb} out of {y.inLb} lb · {y.unaccountedLb} unaccounted
+        {t("{out} out of {in} lb · {unaccounted} unaccounted",
+          { out: y.outLb, in: y.inLb, unaccounted: y.unaccountedLb })}
       </Text>
       {/* A yield on a typed Original Weight is not the same claim as one on
           bench weights, so it never passes for one. */}
       {y.basis === "registered" && (
         <Badge colorScheme="yellow" fontSize="9px">
-          against the form&apos;s original weight, not bench weights
+          {t("against the form's original weight, not bench weights")}
         </Badge>
       )}
     </Flex>
@@ -114,7 +120,7 @@ const Figure = ({ label, value, unit = "lb", strong }) => (
   </Box>
 );
 
-const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
+const LotTimeline = ({ lotId, lotNumber, isOpen, onClose, t = ENGLISH }) => {
   const isAdmin = getRole() === "admin";
   const toast = useToast();
   const [data, setData] = useState(null);
@@ -148,10 +154,11 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
     try {
       await axiosInstance.post(`/lots/${lotId}/${action}`);
       await load();
-      toast({ title: action === "close" ? "Lot closed" : "Lot reopened",
+      toast({ title: action === "close" ? t("Lot closed") : t("Lot reopened"),
         status: "success", duration: 3000, position: "top" });
     } catch (err) {
-      toast({ title: `Could not ${action} this lot`,
+      toast({ title: action === "close"
+        ? t("Could not close this lot") : t("Could not reopen this lot"),
         description: err.response?.data?.error || err.message,
         status: "error", duration: 9000, position: "top", isClosable: true });
     } finally { setBusy(false); }
@@ -164,7 +171,7 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
     <FloatingWindow
       isOpen={isOpen}
       onClose={onClose}
-      title={`Lot ${lotNumber || lotId || ""}`}
+      title={t("Lot {lot}", { lot: lotNumber || lotId || "" })}
       width={720}
       placement="right"
     >
@@ -182,8 +189,10 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
         <>
           <Flex align="baseline" gap={3} wrap="wrap" mb={3}>
             <Text fontSize="xl" fontWeight="bold" color="blue.800">{data.lot.lotNumber}</Text>
-            {status && <Badge colorScheme={status.color}>{status.label}</Badge>}
-            {data.lot.status === "closed" && <Badge colorScheme="gray">Closed</Badge>}
+            {status && <Badge colorScheme={status.color}>{t(status.label)}</Badge>}
+            {data.lot.status === "closed" && (
+              <Badge colorScheme="gray">{t("Closed", { _as: "lot" })}</Badge>
+            )}
             <Text fontSize="sm" color="gray.500">{data.lot.lotDate}</Text>
             {data.lot.notes && <Text fontSize="sm" color="gray.500">· {data.lot.notes}</Text>}
           </Flex>
@@ -193,36 +202,43 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
               hide exactly the distinction someone is checking. */}
           <Flex gap={6} wrap="wrap" px={3} py={3} bg="gray.50" borderRadius="md"
             border="1px solid" borderColor="gray.200" mb={4}>
-            <Figure label="Weighed in" value={lb(f.weighedIn)} strong />
-            <Figure label="Boxes in" value={f.boxesIn || null} unit="" />
+            <Figure label={t("Weighed in")} value={lb(f.weighedIn)} strong />
+            <Figure label={t("Boxes in")} value={f.boxesIn || null} unit="" />
             <Divider orientation="vertical" height="40px" />
-            <Figure label="Weighed out" value={lb(f.weighedOut)} strong />
-            <Figure label="Boxes out" value={f.boxesOut || null} unit="" />
+            <Figure label={t("Weighed out")} value={lb(f.weighedOut)} strong />
+            <Figure label={t("Boxes out")} value={f.boxesOut || null} unit="" />
             <Divider orientation="vertical" height="40px" />
-            <Figure label="Raw on hand" value={lb(f.rawOnHand)} />
-            <Figure label="In processing" value={lb(f.inProcessing)} />
-            <Figure label="Processed" value={lb(f.processedOnHand)} />
-            {f.processedCases > 0 && <Figure label="Cases out" value={f.processedCases} unit="" />}
+            <Figure label={t("Raw on hand")} value={lb(f.rawOnHand)} />
+            <Figure label={t("In processing")} value={lb(f.inProcessing)} />
+            <Figure label={t("Processed")} value={lb(f.processedOnHand)} />
+            {f.processedCases > 0 && (
+              <Figure label={t("Cases out")} value={f.processedCases} unit="" />
+            )}
           </Flex>
 
           <Box px={3} py={3} bg="green.50" borderRadius="md" border="1px solid"
             borderColor="green.200" mb={4}>
             <Text fontSize="xs" color="gray.500" textTransform="uppercase"
               letterSpacing="wide" mb={1}>
-              Yield
+              {t("Yield")}
             </Text>
-            <YieldLine y={data.yield} />
+            <YieldLine y={data.yield} t={t} />
             {/* The figures as they stood at close, shown beside the live ones
                 rather than instead of them: a correction made afterwards moves
                 one and not the other, and that difference is worth seeing. */}
             {data.lot.status === "closed" && (
               <Text fontSize="xs" color="gray.600" mt={2}>
-                Closed{data.lot.closedBy ? ` by ${data.lot.closedBy}` : ""}
-                {data.lot.closedAt ? ` on ${String(data.lot.closedAt).slice(0, 10)}` : ""}
+                {t("Closed", { _as: "lot" })}
+                {data.lot.closedBy ? t(" by {who}", { who: data.lot.closedBy }) : ""}
+                {data.lot.closedAt
+                  ? t(" on {date}", { date: String(data.lot.closedAt).slice(0, 10) }) : ""}
                 {data.lot.closedYield != null
-                  ? ` — frozen at ${data.lot.closedYield.toFixed(1)}% `
-                    + `(${lb(data.lot.closedOutLb)} out of ${lb(data.lot.closedInLb)} lb)`
-                  : " — no yield was measured"}
+                  ? t(" — frozen at {pct}% ({out} out of {in} lb)", {
+                    pct: data.lot.closedYield.toFixed(1),
+                    out: lb(data.lot.closedOutLb),
+                    in: lb(data.lot.closedInLb),
+                  })
+                  : t(" — no yield was measured")}
               </Text>
             )}
           </Box>
@@ -234,17 +250,20 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
               <AlertIcon />
               <Box flex="1">
                 <Text fontSize="sm" fontWeight="bold">
-                  Nothing has left this lot in {data.closeSuggestion.idleDays} days.
+                  {t("Nothing has left this lot in {n} days.", { n: data.closeSuggestion.idleDays })}
                 </Text>
                 <Text fontSize="sm" mt={1} style={{ fontVariantNumeric: "tabular-nums" }}>
-                  {lb(data.closeSuggestion.inLb)} lb in, {lb(data.closeSuggestion.outLb)} lb
-                  out, {lb(data.closeSuggestion.unaccountedLb)} unaccounted
+                  {t("{in} lb in, {out} lb out, {unaccounted} unaccounted", {
+                    in: lb(data.closeSuggestion.inLb),
+                    out: lb(data.closeSuggestion.outLb),
+                    unaccounted: lb(data.closeSuggestion.unaccountedLb),
+                  })}
                   {data.closeSuggestion.percent != null
                     && ` (${(100 - data.closeSuggestion.percent).toFixed(1)}%)`}.
                 </Text>
                 <Button size="sm" colorScheme="blue" mt={3} isLoading={busy}
                   onClick={() => lifecycle("close")}>
-                  Close lot
+                  {t("Close lot")}
                 </Button>
               </Box>
             </Alert>
@@ -256,25 +275,25 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
             {data.lot.status !== "closed" && !data.closeSuggestion && (
               <Button size="sm" variant="outline" isLoading={busy}
                 onClick={() => lifecycle("close")}>
-                Close lot
+                {t("Close lot")}
               </Button>
             )}
             {data.lot.status === "closed" && isAdmin && (
               <Button size="sm" variant="ghost" isLoading={busy}
                 onClick={() => lifecycle("reopen")}>
-                Reopen lot
+                {t("Reopen lot")}
               </Button>
             )}
           </Flex>
 
           <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide" mb={2}>
-            History
+            {t("History")}
           </Text>
 
           {events && events.length === 0 && (
             <Box p={4} bg="gray.50" borderRadius="md" border="1px dashed" borderColor="gray.300">
               <Text fontSize="sm" color="gray.600">
-                Nothing has happened to this lot yet beyond being issued.
+                {t("Nothing has happened to this lot yet beyond being issued.")}
               </Text>
             </Box>
           )}
@@ -295,7 +314,7 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose }) => {
                       <Text fontSize="xs" color="gray.500" style={{ fontVariantNumeric: "tabular-nums" }}>
                         {String(e.at).slice(0, 10)}
                       </Text>
-                      <Badge colorScheme={k.color} fontSize="9px">{k.label}</Badge>
+                      <Badge colorScheme={k.color} fontSize="9px">{t(k.label)}</Badge>
                       <Text fontSize="sm" fontWeight="600" color="gray.800">{e.label}</Text>
                     </Flex>
                     <Flex align="baseline" gap={3} wrap="wrap" mt={0.5}>

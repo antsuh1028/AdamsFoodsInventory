@@ -15,6 +15,7 @@ import LotTimeline from "../../components/LotTimeline";
 import ntiLogo from "../../assets/nti.jpg";
 import FloatingWindow from "../../components/FloatingWindow";
 import AllFormsTable from "./AllFormsTable";
+import SearchBar from "../../components/SearchBar";
 
 
 // Stored verbatim as the field value, so the number, abbreviation and name all
@@ -666,6 +667,13 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   const [allHistory, setAllHistory] = useState([]);
   const [allHistoryLoading, setAllHistoryLoading] = useState(false);
   const [excelViewOpen, setExcelViewOpen] = useState(false);
+  // A search is held apart from `forms` rather than replacing it: View All
+  // reads `forms`, and it should still show every form while a search is up.
+  // Run on the server, so it finds forms past the newest 200.
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState(null);   // null = not searching
+  const [searching, setSearching] = useState(false);
+  const searchSeq = useRef(0);
 
   const fetchForms = useCallback(async () => {
     try {
@@ -677,6 +685,27 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
       setLoading(false);
     }
   }, []);
+
+  const fetchFound = useCallback(async () => {
+    const mine = ++searchSeq.current;
+    if (!q) { setFound(null); setSearching(false); return; }
+    try {
+      const res = await axiosInstance.get("/noblesse-registration-forms", { params: { q } });
+      // A reply to an older search is dropped rather than shown over a newer one.
+      if (mine === searchSeq.current) setFound(res.data || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      if (mine === searchSeq.current) setSearching(false);
+    }
+  }, [q]);
+
+  // Edits land in both lists, so a form changed mid-search is right in the
+  // results AND in View All.
+  const updateForms = (fn) => {
+    setForms(fn);
+    setFound((prev) => (prev ? fn(prev) : prev));
+  };
 
   const openAllHistoryModal = async () => {
     setAllHistoryOpen(true);
@@ -695,6 +724,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   const closeAllHistoryModal = () => setAllHistoryOpen(false);
 
   useEffect(() => { fetchForms(); }, [fetchForms]);
+  useEffect(() => { fetchFound(); }, [fetchFound]);
 
   // Re-fetch when the parent's auto-refresh ticks. Compared against a ref so
   // the initial value does not trigger a duplicate fetch alongside the mount
@@ -704,7 +734,8 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
     if (lastSignal.current === refreshSignal) return;
     lastSignal.current = refreshSignal;
     fetchForms();
-  }, [refreshSignal, fetchForms]);
+    fetchFound();
+  }, [refreshSignal, fetchForms, fetchFound]);
 
   const openNew  = () => setDraft(emptyDraft());
   const openEdit = (form) => {
@@ -734,7 +765,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
 
       if (draft.id) {
         const res = await axiosInstance.patch(`/noblesse-registration-forms/${draft.id}`, payload);
-        setForms((prev) => prev.map((f) => (f.id === res.data.id ? res.data : f)));
+        updateForms((prev) => prev.map((f) => (f.id === res.data.id ? res.data : f)));
       } else {
         const res = await axiosInstance.post("/noblesse-registration-forms", payload);
 
@@ -758,7 +789,8 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
             });
           }
         }
-        setForms((prev) => [res.data, ...prev]);
+        // Into the search results too, so what was just made is on screen.
+        updateForms((prev) => [res.data, ...prev]);
       }
       toast({ status: "success", title: "Registration form saved", duration: 2000 });
       close();
@@ -773,7 +805,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
     if (!window.confirm("Delete this registration form?")) return;
     try {
       await axiosInstance.delete(`/noblesse-registration-forms/${id}`);
-      setForms((prev) => prev.filter((f) => f.id !== id));
+      updateForms((prev) => prev.filter((f) => f.id !== id));
     } catch (err) {
       toast({ status: "error", title: "Delete failed", description: err.message, duration: 3000 });
     }
@@ -782,7 +814,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   const updateStatus = async (id, newStatus) => {
     try {
       const res = await axiosInstance.patch(`/noblesse-registration-forms/${id}/status`, { status: newStatus });
-      setForms((prev) => prev.map((f) => (f.id === id ? res.data : f)));
+      updateForms((prev) => prev.map((f) => (f.id === id ? res.data : f)));
       toast({
         status: "success",
         title: `Status changed to ${newStatus === "completed" ? "Completed" : "In Progress"}`,
@@ -805,7 +837,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   // can be parsed wrong (CLAUDE.md §3). Upper-cased and trimmed so casing or a
   // stray space cannot split one lot across two positions, and a form with no
   // lot yet sorts LAST rather than riding above today's work.
-  const matching = forms
+  const matching = (found ?? forms)
     .filter((f) => !statusFilter || f.status === statusFilter)
     .slice()
     .sort((a, b) => {
@@ -844,6 +876,11 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
           <Text fontSize="sm" fontWeight="semibold" color="gray.600" textTransform="uppercase" letterSpacing="wide">
             Registration Forms
           </Text>
+          <SearchBar
+            placeholder="Search lot, vendor, product…"
+            isSearching={searching}
+            onSearch={(text) => { setSearching(true); setQ(text); setPage(0); }}
+          />
           <Flex gap={1}>
             <Button
               size="xs"
@@ -882,7 +919,13 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
 
       {filteredForms.length === 0 ? (
         <Text fontSize="sm" color="gray.400">
-          {forms.length === 0 ? "No registration forms saved yet." : statusFilter ? `No ${statusFilter === "in_progress" ? "in progress" : "completed"} registration forms.` : "No registration forms."}
+          {/* A search that finds nothing empties the list too — read the old
+              way, that claimed no form had ever been saved. */}
+          {q
+            ? (found && found.length > 0 && statusFilter
+              ? `No ${statusFilter === "in_progress" ? "in progress" : "completed"} form matches “${q}”, but ${found.length} other${found.length === 1 ? " does" : "s do"}.`
+              : `Nothing matches “${q}”.`)
+            : forms.length === 0 ? "No registration forms saved yet." : statusFilter ? `No ${statusFilter === "in_progress" ? "in progress" : "completed"} registration forms.` : "No registration forms."}
         </Text>
       ) : (
         // A table cannot reflow into a narrow column, so on mobile it scrolls

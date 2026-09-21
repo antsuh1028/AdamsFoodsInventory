@@ -6,6 +6,7 @@ const { lotColumns, lookupLot } = require("../utils/lotRegistry");
 const { syncProcessedStock } = require("../utils/processedStock");
 const { syncRegistrationStock } = require("../utils/registrationStock");
 const { yieldLateralSql, yieldFrom } = require("../utils/lotYield");
+const { searchTerm, searchClause } = require("../utils/search");
 
 // Schema lives in ../db/migrate.js and is applied, in order, before this
 // module is ever required. Nothing here fires DDL at load any more — that
@@ -163,7 +164,10 @@ const logRegistrationFormHistory = (tenantId, formId, action, lotNumber, changed
 // say what happened instead of the divergence being silent.
 const syncStock = async (tenantId, formId) => {
   try {
-    const { action, shortfall } = await syncRegistrationStock(pool, tenantId, formId);
+    const { action, shortfall, error } = await syncRegistrationStock(pool, tenantId, formId);
+    // "blocked" is a refusal with a reason, not a failure — the form still
+    // saved, and the message says what to do about the stock.
+    if (action === "blocked") return { action, error };
     return shortfall ? { action, shortfall } : { action };
   } catch (err) {
     console.error("registration stock sync error:", err.message);
@@ -641,6 +645,11 @@ router.get("/noblesse-proc-orders", verifyToken, async (req, res) => {
 
 router.post("/noblesse-proc-orders", verifyToken, async (req, res) => {
   const { orderDate, notes, items } = req.body;
+  // `for (const it of (items || []))` treats anything non-iterable as a throw,
+  // so a number or an object here answered 500 instead of saying what was wrong.
+  if (items != null && !Array.isArray(items)) {
+    return res.status(400).json({ error: "items must be an array" });
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -1035,13 +1044,25 @@ const regFormValues = (body, lot) => {
 };
 
 router.get("/noblesse-registration-forms", verifyToken, async (req, res) => {
+  const term = searchTerm(req.query.q);
+  const params = [req.tenantId];
+  let where = "";
+  if (term) {
+    params.push(term);
+    where = ` AND ${searchClause([
+      "f.lot_number", "f.vendor_lot", "f.vendor", "f.product_description",
+      "f.processing_type", "f.spec", "f.brand", "f.est_number", "f.grade",
+      "f.remarks", "f.checked_by", "f.status",
+    ], params.length)}`;
+  }
   try {
+    // A search looks past the newest 200 a plain listing stops at.
     const result = await pool.query(
       `SELECT f.*, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out
          FROM noblesse_registration_forms f
          ${yieldLateralSql("f")}
-        WHERE f.tenant_id = $1 ORDER BY f.created_at DESC LIMIT 200`,
-      [req.tenantId]
+        WHERE f.tenant_id = $1${where} ORDER BY f.created_at DESC LIMIT ${term ? 500 : 200}`,
+      params
     );
     res.json(result.rows.map(fmtRegistrationForm));
   } catch (err) {

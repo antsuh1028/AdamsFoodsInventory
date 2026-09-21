@@ -354,9 +354,10 @@ const WeighFinishedBoxes = ({
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>
               {t("Lot")}
             </Text>
+            {/* Pick only. Finished boxes come out of a lot issued at Incoming,
+                so there is nothing here to mint or type in. */}
             <LotPicker
               size="md"
-              allowCreate
               value={lot.lotId}
               lotNumber={lot.lotNumber}
               onChange={(picked) => setLot({

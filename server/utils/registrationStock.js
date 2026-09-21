@@ -107,6 +107,33 @@ const syncRegistrationStock = async (client, tenantId, formId) => {
   // anything, so its stock must not linger.
   if (!want) {
     if (!existing) return { action: "none", row: null };
+
+    // Unless a load is already drawing on it. The FK enforces this either way;
+    // asking first turns a raw 23503 into a sentence naming the load, and the
+    // answer is the same one the box-batch delete gives: deal with the load,
+    // then the stock will go.
+    const onLoads = await client.query(
+      `SELECT DISTINCT s.shipment_id, s.destination_name, s.status
+         FROM noblesse_shipment_items si
+         JOIN noblesse_shipments s ON s.shipment_id = si.shipment_id
+        WHERE si.nti_item_id = $1 AND si.tenant_id = $2
+        ORDER BY s.shipment_id DESC`,
+      [existing.id, tenantId]
+    );
+    if (onLoads.rows.length) {
+      const names = onLoads.rows
+        .map((r) => `#${r.shipment_id} ${r.destination_name || ""} (${r.status})`.trim())
+        .join(", ");
+      return {
+        action: "blocked",
+        row: existing,
+        blockedBy: onLoads.rows,
+        error: `This lot's stock is on ${onLoads.rows.length} outgoing load`
+          + `${onLoads.rows.length === 1 ? "" : "s"}: ${names}. `
+          + `Cancel or delete the load first, then the stock will clear.`,
+      };
+    }
+
     await client.query(
       `DELETE FROM nti_inventory WHERE id = $1 AND tenant_id = $2`,
       [existing.id, tenantId]

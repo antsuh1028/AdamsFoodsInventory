@@ -7,6 +7,7 @@ const { parseGs1 } = require("../utils/gs1");
 const { parseTallySheet } = require("../utils/tallySheet");
 const { toPounds, kgToLb, sumWeights, trimTrailingZeros } = require("../utils/weight");
 const { lotColumns, lookupLot } = require("../utils/lotRegistry");
+const { searchTerm, searchClause } = require("../utils/search");
 const { upload } = require("../utils/aws");
 const readXlsxFile = require("read-excel-file/node");
 
@@ -1028,8 +1029,18 @@ router.get("/vendors", verifyToken, async (req, res) => {
   }
 });
 
+// What a session can be searched by. Shared with the merged-manifest search,
+// which must match a manifest whenever it matches one of its sessions.
+const batchSearchColumns = (a) => [
+  "lot_number", "vendor", "item_description", "ship_to", "bill_of_lading",
+  "brand", "est_number", "grade", "remarks",
+].map((c) => `${a}.${c}`).concat(`${a}.batch_id::text`);
+
 router.get("/box-batches", verifyToken, async (req, res) => {
-  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const term = searchTerm(req.query.q);
+  // A search reaches back past the page a plain listing shows, so it takes the
+  // full cap by default rather than the newest 50.
+  const limit = Math.min(Number(req.query.limit) || (term ? 200 : 50), 200);
 
   // Which end of the process to list.
   const raw = req.query.direction;
@@ -1044,6 +1055,16 @@ router.get("/box-batches", verifyToken, async (req, res) => {
   if (direction) {
     params.push(direction);
     dirFilter = ` AND b.direction = $${params.length}`;
+  }
+  if (term) {
+    params.push(term);
+    const n = params.length;
+    // What the row shows, including where its load is going.
+    dirFilter += ` AND (${searchClause(batchSearchColumns("b"), n)} OR EXISTS (
+      SELECT 1 FROM shipment_batches sb
+        JOIN noblesse_shipments s ON s.shipment_id = sb.shipment_id
+       WHERE sb.batch_id = b.batch_id AND sb.tenant_id = $1
+         AND s.destination_name ILIKE $${n}))`;
   }
 
   try {
@@ -1217,6 +1238,10 @@ const EDITABLE_HEADER = {
   remarks: "remarks",
 };
 
+// What the dock may change on a session it weighed out. Everything else on an
+// outgoing heading is admin-only — see the PATCH route.
+const DOCK_EDITABLE = new Set(["itemDescription", "shipTo"]);
+
 router.patch("/box-batches/:id", verifyToken, async (req, res) => {
   const batchId = Number(req.params.id);
   if (!Number.isInteger(batchId)) {
@@ -1241,12 +1266,30 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
 
   try {
     const batch = await pool.query(
-      `SELECT status FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
+      `SELECT status, direction FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]
     );
     if (!batch.rows.length) return res.status(404).json({ error: "Session not found" });
 
-    if (batch.rows[0].status !== "open" && req.role !== "admin") {
+    const { status, direction } = batch.rows[0];
+    const isAdmin = req.role === "admin";
+
+    // On the way out the heading is the driver's paperwork. The dock says what
+    // is in the boxes and where they are going; the rest — who weighed it, the
+    // BOL, the grade — is reception's to answer for, so it stays admin-only.
+    if (direction === "outgoing" && !isAdmin) {
+      const denied = fields.map(([k]) => k).filter((k) => !DOCK_EDITABLE.has(k));
+      if (denied.length) {
+        return res.status(403).json({
+          code: "ADMIN_ONLY_FIELD",
+          error: `Only an admin can change ${denied.join(", ")} on an outgoing `
+               + "session. You can edit the item description and where it is going.",
+        });
+      }
+      // Only those two labels are left, and closing locks weights, not labels —
+      // so they stay correctable after the session is stopped.
+    } else if (status !== "open" && !isAdmin) {
+      // Incoming is untouched: a closed tally is admin-only, as it always was.
       return res.status(403).json({
         code: "CLOSED_SESSION",
         error: "This session is closed. Only an admin can edit it.",
@@ -1473,7 +1516,25 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
 // List groups, with the same derived counts the session list carries so the two
 // read alike. Voided boxes are excluded here exactly as they are everywhere.
 router.get("/manifest-groups", verifyToken, async (req, res) => {
-  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const term = searchTerm(req.query.q);
+  const limit = Math.min(Number(req.query.limit) || (term ? 200 : 50), 200);
+  const params = [req.tenantId, limit];
+  let where = "";
+  if (term) {
+    params.push(term);
+    const n = params.length;
+    // Its own heading, OR any session in it: the list shows a manifest in place
+    // of its sessions, so a matching session must bring its manifest with it —
+    // otherwise that session would surface on its own, which a merge forbids.
+    where = ` AND (${searchClause([
+      "g.name", "g.lot_number", "g.vendor", "g.ship_to", "g.bill_of_lading",
+      "g.item_description", "g.group_id::text",
+    ], n)} OR EXISTS (
+      SELECT 1 FROM manifest_group_batches m
+        JOIN box_batches mb ON mb.batch_id = m.batch_id
+       WHERE m.group_id = g.group_id AND mb.tenant_id = $1
+         AND ${searchClause(batchSearchColumns("mb"), n)}))`;
+  }
   try {
     const result = await pool.query(
       `SELECT g.group_id, g.name, g.lot_number, g.vendor, g.item_description,
@@ -1501,10 +1562,10 @@ router.get("/manifest-groups", verifyToken, async (req, res) => {
                  WHERE m.group_id = g.group_id AND i.voided_at IS NULL
               ), '0') AS total
          FROM manifest_groups g
-        WHERE g.tenant_id = $1
+        WHERE g.tenant_id = $1${where}
         ORDER BY g.created_at DESC
         LIMIT $2`,
-      [req.tenantId, limit]
+      params
     );
     res.json(result.rows);
   } catch (err) {

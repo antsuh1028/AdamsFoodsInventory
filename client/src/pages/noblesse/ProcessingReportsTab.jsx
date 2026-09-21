@@ -8,11 +8,12 @@ import FloatingWindow from "../../components/FloatingWindow";
 import printProcessingReport from "./printProcessingReport";
 import LotPicker from "../../components/LotPicker";
 import {
-  fmtDate, today, upper, fmtWeight, PROCESSING_TYPES,
+  fmtDate, today, timeNow, upper, fmtWeight, PROCESSING_TYPES,
   SheetField, sheetInputProps, SectionBar, SHEET_GRID,
 } from "./shared";
 import getRole from "../../utils/getRole";
 import { acceptReport, rejectReport, unacceptReport } from "./reportActions";
+import SearchBar from "../../components/SearchBar";
 
 // The digital version of the paper processing report.
 //
@@ -26,6 +27,8 @@ import { acceptReport, rejectReport, unacceptReport } from "./reportActions";
 const emptyDraft = () => ({
   lotId: null, lotNumber: "",
   processingDate: today(),
+  startTime: timeNow(),
+  endTime: "",
   processingType: "", lineNo: "",
   customer: "", description: "", brand: "", grade: "", estNumber: "", packDate: "",
   pulls: [{ cases: "" }],
@@ -81,6 +84,8 @@ const withLotDefaults = (draft, lot, row) => {
 };
 
 const STATUS_COLOR = { submitted: "yellow", accepted: "green", rejected: "red" };
+// The filter buttons' own words, for saying which one is hiding a search match.
+const FILTER_LABEL = { submitted: "Waiting", accepted: "Accepted", rejected: "Sent back" };
 
 const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const toast = useToast();
@@ -90,6 +95,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState("submitted");
+  // Searched on the server; the status buttons still narrow what comes back.
+  const [q, setQ] = useState("");
+  const [searching, setSearching] = useState(false);
   const [stock, setStock] = useState([]);
   const [draft, setDraft] = useState(null);
   // Collapsed once the product is described, open while any of it is blank.
@@ -100,17 +108,23 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState("");
 
+  // A reply to an older search is dropped rather than shown over a newer one.
+  const reportSeq = useRef(0);
   const fetchReports = useCallback(async () => {
+    const mine = ++reportSeq.current;
     try {
-      const { data } = await axiosInstance.get("/processing-reports");
+      const { data } = await axiosInstance.get("/processing-reports",
+        { params: { q: q || undefined } });
+      if (mine !== reportSeq.current) return;
       setReports(data || []);
       setError(null);
     } catch (err) {
+      if (mine !== reportSeq.current) return;
       setError(err.response?.data?.error || err.message || "Could not load reports");
     } finally {
-      setLoading(false);
+      if (mine === reportSeq.current) { setLoading(false); setSearching(false); }
     }
-  }, []);
+  }, [q]);
 
   // The lot's registered total and what is left, so the manager sees the same
   // context the paper carries on its total line.
@@ -248,6 +262,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
           </Text>
         </Box>
         <Flex gap={2} align="center" wrap="wrap">
+          <SearchBar
+            placeholder="Search lot, product, customer…"
+            isSearching={searching}
+            onSearch={(text) => { setSearching(true); setQ(text); }}
+          />
           <Flex gap={1}>
             {[
               ["submitted", "Waiting", "yellow"],
@@ -280,11 +299,29 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
 
       {!loading && visible.length === 0 && (
         <Box p={5} bg="gray.50" borderRadius="md" border="1px dashed" borderColor="gray.300">
-          <Text fontSize="sm" color="gray.600">
-            {filter === "submitted"
-              ? "Nothing waiting. A submitted report shows here until reception accepts it."
-              : "No reports here yet."}
-          </Text>
+          {q ? (
+            // The status buttons still apply to a search, and they default to
+            // Waiting — so an accepted report for the lot looks like no match.
+            <Flex align="center" gap={3} wrap="wrap">
+              <Text fontSize="sm" color="gray.600">
+                {filter && reports.length > 0
+                  ? `Nothing ${FILTER_LABEL[filter].toLowerCase()} matches “${q}”, but ${reports.length} other report${reports.length === 1 ? " does" : "s do"}.`
+                  : `Nothing matches “${q}”.`}
+              </Text>
+              {filter && reports.length > 0 && (
+                <Button size="xs" colorScheme="teal" variant="outline"
+                  onClick={() => setFilter("")}>
+                  Show all
+                </Button>
+              )}
+            </Flex>
+          ) : (
+            <Text fontSize="sm" color="gray.600">
+              {filter === "submitted"
+                ? "Nothing waiting. A submitted report shows here until reception accepts it."
+                : "No reports here yet."}
+            </Text>
+          )}
         </Box>
       )}
 
@@ -438,6 +475,17 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   onChange={(e) => setDraft({ ...draft, processingType: e.target.value })}>
                   {PROCESSING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </Select>
+              </SheetField>
+
+              <SheetField label="Started">
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="time"
+                  value={draft.startTime || ""}
+                  onChange={(e) => setDraft({ ...draft, startTime: e.target.value })} />
+              </SheetField>
+              <SheetField label="Finished">
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="time"
+                  value={draft.endTime || ""}
+                  onChange={(e) => setDraft({ ...draft, endTime: e.target.value })} />
               </SheetField>
 
               <SheetField label="Line #">

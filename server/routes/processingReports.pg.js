@@ -2,6 +2,7 @@ const router = require("express").Router();
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
+const { searchTerm, searchClause } = require("../utils/search");
 
 // The shop-floor record of one processing run: which lot, which line, who ran
 // it, how many cases went through.
@@ -17,11 +18,23 @@ const DECIMAL_RE = /^\d{1,7}(\.\d{1,3})?$/;
 
 const fmtDate = (d) => (d instanceof Date ? d.toISOString().slice(0, 10) : (d || null));
 
+// What <input type="time"> produces. Stored as typed rather than as a
+// timestamp: it is a clock time on a shift, and the row already carries the
+// date the run happened.
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const asTime = (v) => {
+  const t = typeof v === "string" ? v.trim() : "";
+  if (!t) return null;
+  return TIME_RE.test(t) ? t : undefined;   // undefined = supplied but invalid
+};
+
 const fmtReport = (r, pulls = [], workers = []) => ({
   reportId: r.report_id,
   lotId: r.lot_id,
   lotNumber: r.lot_number || null,
   processingDate: fmtDate(r.processing_date),
+  startTime: r.start_time,
+  endTime: r.end_time,
   processingType: r.processing_type,
   lineNo: r.line_no,
   customer: r.customer,
@@ -81,9 +94,17 @@ const asDecimal = (v) => {
 // ── Read ─────────────────────────────────────────────────────────────────────
 
 router.get("/processing-reports", verifyToken, async (req, res) => {
-  const limit = Math.min(Number(req.query.limit) || 100, 500);
+  const term = searchTerm(req.query.q);
+  const limit = Math.min(Number(req.query.limit) || (term ? 500 : 100), 500);
   const params = [req.tenantId, limit];
   let where = "";
+  if (term) {
+    params.push(term);
+    where += ` AND ${searchClause([
+      "l.lot_number", "r.processing_type", "r.customer", "r.description",
+      "r.brand", "r.grade", "r.est_number", "r.notes", "r.status",
+    ], params.length)}`;
+  }
   if (req.query.status) {
     params.push(String(req.query.status));
     where += ` AND r.status = $${params.length}`;
@@ -165,6 +186,13 @@ const validateBody = (body) => {
   const workers = (Array.isArray(body.workers) ? body.workers : [])
     .map((w) => String(w || "").trim()).filter(Boolean);
 
+  // asTime returns undefined for a value that was supplied but is not HH:MM.
+  for (const [key, label] of [["startTime", "startTime"], ["endTime", "endTime"]]) {
+    if (body[key] && asTime(body[key]) === undefined) {
+      return { error: `${label} must be a time as HH:MM` };
+    }
+  }
+
   return {
     ok: true,
     cleanPulls,
@@ -172,6 +200,8 @@ const validateBody = (body) => {
     outputCases,
     head: {
       processingDate: body.processingDate || null,
+      startTime: asTime(body.startTime),
+      endTime: asTime(body.endTime),
       processingType: body.processingType || null,
       lineNo: body.lineNo || null,
       customer: body.customer || null,
@@ -239,12 +269,14 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
       `INSERT INTO noblesse_processing_reports
          (tenant_id, lot_id, processing_date, processing_type, line_no, customer,
           description, brand, grade, est_number, pack_date, input_cases,
-          output_cases, output_weight, inedible_weight, notes, submitted_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+          output_cases, output_weight, inedible_weight, notes, submitted_by,
+          start_time, end_time)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        RETURNING report_id`,
       [req.tenantId, lotId, h.processingDate, h.processingType, h.lineNo, h.customer,
        h.description, h.brand, h.grade, h.estNumber, h.packDate, inputCases,
-       v.outputCases, h.outputWeight, h.inedibleWeight, h.notes, req.username]
+       v.outputCases, h.outputWeight, h.inedibleWeight, h.notes, req.username,
+       h.startTime, h.endTime]
     );
     const reportId = inserted.rows[0].report_id;
     await writeChildren(client, reportId, v.cleanPulls, v.workers);
@@ -297,11 +329,13 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
               description = $5, brand = $6, grade = $7, est_number = $8, pack_date = $9,
               input_cases = $10, output_cases = $11, output_weight = $12,
               inedible_weight = $13, notes = $14,
+              start_time = $17, end_time = $18,
               status = 'submitted', reject_reason = NULL
         WHERE report_id = $15 AND tenant_id = $16`,
       [h.processingDate, h.processingType, h.lineNo, h.customer, h.description,
        h.brand, h.grade, h.estNumber, h.packDate, inputCases, v.outputCases,
-       h.outputWeight, h.inedibleWeight, h.notes, id, req.tenantId]
+       h.outputWeight, h.inedibleWeight, h.notes, id, req.tenantId,
+       h.startTime, h.endTime]
     );
     await writeChildren(client, id, v.cleanPulls, v.workers);
 

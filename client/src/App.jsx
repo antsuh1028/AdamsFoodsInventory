@@ -87,7 +87,7 @@ function App() {
         <Route
           path="/noblesse"
           element={
-            <PrivateRoute allowedRoles={["admin", "noblesse"]}>
+            <PrivateRoute allowedRoles={["admin", "noblesse", "outgoing"]}>
               <NoblesseScreen />
             </PrivateRoute>
           }

@@ -527,6 +527,15 @@ const steps = async () => {
       created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+  // When the run actually started and finished. TEXT "HH:MM", like
+  // noblesse_registration_forms.time_received — it is what <input type="time">
+  // reads and writes, and a clock time on a shift needs no date beside the
+  // processing_date already on the row.
+  await run("noblesse_processing_reports start_time",
+    `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS start_time TEXT`);
+  await run("noblesse_processing_reports end_time",
+    `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS end_time TEXT`);
+
   await run("noblesse_processing_reports lot index", `
     CREATE INDEX IF NOT EXISTS noblesse_processing_reports_lot_idx
       ON noblesse_processing_reports (tenant_id, lot_id, status)

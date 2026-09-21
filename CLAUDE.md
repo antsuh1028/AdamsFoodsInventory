@@ -412,6 +412,4 @@ after any scripted edit to a `.js` file.
 - GTIN company-prefix → vendor map. Identified: `0027182` IBP, `0199239`
   Sustainable Beef, `0627577` Blue Ribbon (CA), `0883363` Creekstone, `6303080`
   Greater Omaha, `0076338` Swift/Imperial (**they share a prefix — needs a decision**).
-- `PATCH /box-batches/:id` so vendor/item/BOL are editable mid-session. The lot
-  number stays locked by design.
 - The two PM2 fixes in §2.
