@@ -1,0 +1,17 @@
+{
+  // Checks plain JavaScript that opts in with `// @ts-check`; nothing is emitted.
+  // At the root, not in client/: there it would join CRA's build and fail deploys.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2020",
+    "lib": ["ES2020"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "types": [],
+    "skipLibCheck": true
+  },
+  "include": ["server/utils/**/*.js", "client/src/utils/**/*.js"]
+}

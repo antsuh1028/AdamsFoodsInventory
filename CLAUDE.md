@@ -341,6 +341,14 @@ one line in the INSERT, if it ever matters.
 **`server/tests/` and `server/scripts/` are gitignored** — tests are local-only by
 request. So is `2026/` (real shipment workbooks used for parser accuracy checks).
 
+**Type checking: `npm run typecheck` at the repo root.** Plain JavaScript that
+opts in with `// @ts-check` and JSDoc; nothing is compiled or emitted. On today:
+`weight.js` and `gs1.js` (both copies) and `sqlWeight.js`. The `tsconfig.json`
+sits at the ROOT on purpose — one inside `client/` makes Create React App run
+TypeScript in its build, so a type error would fail a deploy. Types police the
+boundary (a float cannot be passed in or returned); `weight.test.js` polices the
+arithmetic, which a float wrapped in `String()` gets past the types. Both needed.
+
 **Baseline: 0 failures, 722 passing (2026-09-04).** Anything red is yours.
 
 It was 6 failures / 583 tests for a long time. Both numbers were wrong in the
