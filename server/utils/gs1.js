@@ -1,3 +1,4 @@
+// @ts-check
 // GS1 Application Identifier parser for catchweight box labels.
 //
 // This file is mirrored verbatim at client/src/utils/gs1.js so the browser can
@@ -16,6 +17,22 @@
 // No JavaScript float is ever produced in the parse path. Weight is carried as
 // a decimal string from the barcode all the way to NUMERIC in Postgres.
 
+/** @typedef {{ ai: string, value: string }} AiPair */
+/** @typedef {{ value: string, unit: "KG" | "LB", decimals: number }} Gs1Weight */
+/**
+ * @typedef {object} Gs1Parse
+ * @property {string | null} gtin
+ * @property {string | null} productionDate
+ * @property {string | null} packagingDate
+ * @property {string | null} serial
+ * @property {string | null} lot
+ * @property {Gs1Weight | null} weight
+ * @property {string} raw
+ * @property {string[]} unparsed
+ */
+// Told apart by `variable`, so a fixed AI has a length and a variable one a max.
+/** @typedef {{ ai: string, variable: false, length: number } | { ai: string, variable: true, max: number }} AiSpec */
+
 const GS = String.fromCharCode(29); // ASCII 29 — FNC1 as transmitted by most HID scanners
 
 // AIM symbology identifiers some scanners prepend to the payload.
@@ -23,6 +40,7 @@ const SYMBOLOGY_PREFIXES = ["]C1", "]e0", "]d2", "]Q3"];
 
 // AIs with a GS1-predefined length: the data runs exactly this many characters
 // and needs no separator after it.
+/** @type {{ [ai: string]: number | undefined }} */
 const FIXED = {
   "00": 18, // SSCC
   "01": 14, // GTIN-14
@@ -37,6 +55,7 @@ const FIXED = {
 };
 
 // AIs that run until FNC1/GS or end of string. Value is the GS1 maximum length.
+/** @type {{ [ai: string]: number | undefined }} */
 const VARIABLE = {
   "10": 20,  // batch / lot
   "21": 20,  // serial
@@ -56,9 +75,11 @@ const MEASUREMENT_PREFIXES = new Set(["31", "32", "33", "34", "35", "36"]);
 
 // Only these two are *net weight*. The rest of the measurement family parses
 // correctly (so it cannot shift later fields) but is never read as a weight.
+/** @type {{ [prefix: string]: "KG" | "LB" | undefined }} */
 const NET_WEIGHT_UNITS = { "310": "KG", "320": "LB" };
 
 class Gs1Error extends Error {
+  /** @param {string} code @param {string} message @param {Record<string, unknown>} [details] */
   constructor(code, message, details = {}) {
     super(message);
     this.name = "Gs1Error";
@@ -70,7 +91,9 @@ class Gs1Error extends Error {
 // Places the implied decimal point using string surgery only.
 //   ("007620", 2) -> "76.20"      ("007620", 1) -> "762.0"
 //   ("007620", 3) -> "7.620"      ("007620", 0) -> "7620"
+/** @param {string} digits @param {number} decimals @returns {string} */
 const applyDecimal = (digits, decimals) => {
+  /** @param {string} s */
   const stripLeadingZeros = (s) => s.replace(/^0+(?=\d)/, "");
   if (decimals === 0) return stripLeadingZeros(digits);
   const padded = digits.padStart(decimals + 1, "0");
@@ -79,6 +102,7 @@ const applyDecimal = (digits, decimals) => {
 };
 
 // YYMMDD -> "YYYY-MM-DD". GS1 allows DD = "00" meaning "end of month".
+/** @param {string} yymmdd @returns {string} */
 const parseGs1Date = (yymmdd) => {
   const yy = Number(yymmdd.slice(0, 2));
   const mm = Number(yymmdd.slice(2, 4));
@@ -92,12 +116,14 @@ const parseGs1Date = (yymmdd) => {
   if (dd < 1 || dd > 31) {
     throw new Gs1Error("BAD_DATE", `Invalid day in date "${yymmdd}"`, { value: yymmdd });
   }
+  /** @param {number} n */
   const pad = (n) => String(n).padStart(2, "0");
   return `${year}-${pad(mm)}-${pad(dd)}`;
 };
 
 // Reads the AI starting at `i`. Longest-match first: 4-digit measurement AIs,
 // then 3-digit, then 2-digit.
+/** @param {string} s @param {number} i @returns {AiSpec} */
 const readAi = (s, i) => {
   const two = s.slice(i, i + 2);
   if (MEASUREMENT_PREFIXES.has(two)) {
@@ -108,9 +134,13 @@ const readAi = (s, i) => {
     return { ai, length: 6, variable: false };
   }
   const three = s.slice(i, i + 3);
-  if (VARIABLE[three] !== undefined) return { ai: three, max: VARIABLE[three], variable: true };
-  if (FIXED[two] !== undefined) return { ai: two, length: FIXED[two], variable: false };
-  if (VARIABLE[two] !== undefined) return { ai: two, max: VARIABLE[two], variable: true };
+  // Each read once, so the undefined check and the value are the same lookup.
+  const variableThree = VARIABLE[three];
+  if (variableThree !== undefined) return { ai: three, max: variableThree, variable: true };
+  const fixedTwo = FIXED[two];
+  if (fixedTwo !== undefined) return { ai: two, length: fixedTwo, variable: false };
+  const variableTwo = VARIABLE[two];
+  if (variableTwo !== undefined) return { ai: two, max: variableTwo, variable: true };
   throw new Gs1Error("UNKNOWN_AI", `Unrecognized application identifier "${two}"`, { at: i, ai: two });
 };
 
@@ -119,9 +149,12 @@ const readAi = (s, i) => {
 // It is the same data. The brackets are never in the encoded symbol — the
 // scanner adds them — but they make every field boundary explicit, so this
 // form needs no FNC1 and no length table to be read unambiguously.
+/** @param {string} s */
 const looksLikeHri = (s) => /^\(\d{2,4}\)/.test(s);
 
+/** @param {string} s @returns {AiPair[]} */
 const readHriPairs = (s) => {
+  /** @type {AiPair[]} */
   const pairs = [];
   const re = /\((\d{2,4})\)([^(]*)/g;
   let expectedAt = 0;
@@ -164,7 +197,9 @@ const readHriPairs = (s) => {
 
 // Walks an unbracketed payload, using the AI table to know where each field
 // ends. This is the form that genuinely needs FNC1 for variable-length fields.
+/** @param {string} s @returns {AiPair[]} */
 const readPackedPairs = (s) => {
+  /** @type {AiPair[]} */
   const pairs = [];
   let i = 0;
   while (i < s.length) {
@@ -215,6 +250,9 @@ const readPackedPairs = (s) => {
  * NO_WEIGHT_AI ("this label carries no weight") is a different situation from
  * every other code ("this scan is bad"). Whatever was parsed before the failure
  * is attached as err.partial.
+ *
+ * @param {string} raw
+ * @returns {Gs1Parse & { weight: Gs1Weight }}
  */
 const parseGs1 = (raw) => {
   if (typeof raw !== "string" || raw.trim() === "") {
@@ -228,6 +266,7 @@ const parseGs1 = (raw) => {
   // eslint-disable-next-line no-control-regex
   s = s.replace(/^\u001D+/, ""); // a leading FNC1 is a start marker, not data
 
+  /** @type {Gs1Parse} */
   const result = {
     gtin: null, productionDate: null, packagingDate: null, serial: null, lot: null,
     weight: null, raw, unparsed: [],
@@ -269,12 +308,16 @@ const parseGs1 = (raw) => {
   }
 
   if (!result.weight) {
-    const err = new Gs1Error("NO_WEIGHT_AI", "Label carries no net weight AI (310n/320n)");
+    // Typed here rather than declared on the class, which would add the field
+    // to every error at runtime.
+    const err = /** @type {Gs1Error & { partial?: Gs1Parse }} */ (
+      new Gs1Error("NO_WEIGHT_AI", "Label carries no net weight AI (310n/320n)"));
     err.partial = result;
     throw err;
   }
 
-  return result;
+  // The throw above is what makes weight non-null on every parse that returns.
+  return /** @type {Gs1Parse & { weight: Gs1Weight }} */ (result);
 };
 
 module.exports = { parseGs1, Gs1Error, applyDecimal, parseGs1Date, GS };

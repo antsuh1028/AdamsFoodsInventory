@@ -1,3 +1,4 @@
+// @ts-check
 "use strict";
 
 // SQL fragments for reporting weights in pounds.
