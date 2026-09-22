@@ -258,6 +258,12 @@ const steps = async () => {
   await run("box_batches expected_boxes",
     `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS expected_boxes INT`);
 
+  // The day the boxes were actually weighed, when entered after the fact.
+  // NULL means "the day the session was opened" — created_at stays the truth
+  // of when it was entered.
+  await run("box_batches weighed_on",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS weighed_on DATE`);
+
   // Where a box's weight actually came from.
   await run("batch_items entry_method",
     `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS entry_method TEXT

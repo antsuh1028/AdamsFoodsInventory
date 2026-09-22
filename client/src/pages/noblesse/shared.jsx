@@ -68,6 +68,15 @@ export const today = (date = new Date()) => {
   return `${year}-${pad(month)}-${pad(day)}`;
 };
 
+// The Pacific day a session's boxes were weighed: the date someone set after
+// the fact, else the day it was opened. Not created_at sliced — that string is
+// UTC, so a session opened after 5pm Pacific would read as the next day.
+export const weighedDay = (b) => {
+  if (!b) return "";
+  if (b.weighed_on) return b.weighed_on;
+  return b.created_at ? today(new Date(b.created_at)) : "";
+};
+
 // A stored timestamp as Pacific date AND time — "Sep 15, 2:41 PM". For lists
 // ordered by when a row was added, where the date alone cannot show the order
 // within a day.

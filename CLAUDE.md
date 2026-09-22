@@ -140,12 +140,13 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 
 ## 2. Branch / deploy state
 
-- **Production CODE runs `master` = `18771e1`** — deployed and verified
-  2026-09-15 (box at that SHA, `[migrate] schema ready`, bundle
-  `main.63ec5915.js` byte-matching the local build). Don't deploy without being
-  asked. Now live: the yield aggregation, the lot lifecycle (`status`,
-  `closed_*`), shipments and processing reports on the lot timeline, the
-  weigh-into-a-load flow, and the Spanish toggle on the weighing window.
+- **Production CODE runs `master` = `6f45228`** — deployed and verified
+  2026-09-21 (box at that SHA, same pid after restart, `[migrate] schema
+  ready`, bundle `main.7bd5a287.js` byte-matching the local build). Don't
+  deploy without being asked. Now live: the `outgoing` role (one tab, scoped
+  server-side by `middleware/roleScope.js`), search on every Noblesse tab,
+  Spanish across the Outgoing tab, the two-copy pallet tag, dock edits of an
+  outgoing session's item and destination, and the typecheck setup.
 - **The dev server points at the PRODUCTION database.** Running it locally
   applies `db/migrate.js` to prod and writes real rows. "Not deployed" therefore
   means the *code* on the server is old; schema and data changes made locally

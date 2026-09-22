@@ -8,6 +8,8 @@ const { parseTallySheet } = require("../utils/tallySheet");
 const { toPounds, kgToLb, sumWeights, trimTrailingZeros } = require("../utils/weight");
 const { lotColumns, lookupLot } = require("../utils/lotRegistry");
 const { searchTerm, searchClause } = require("../utils/search");
+const { weighedAtSql } = require("../utils/weighedAt");
+const { pacificToday } = require("../utils/lot");
 const { upload } = require("../utils/aws");
 const readXlsxFile = require("read-excel-file/node");
 
@@ -1073,6 +1075,7 @@ router.get("/box-batches", verifyToken, async (req, res) => {
       `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description,
               b.ship_to, b.bill_of_lading, b.brand, b.est_number, b.grade, b.source,
               b.direction, b.status, b.created_at, b.closed_at,
+              b.weighed_on::text AS weighed_on,
               (SELECT COUNT(*)::int
                  FROM batch_items i
                 WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL) AS box_count,
@@ -1249,24 +1252,61 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
   }
 
   // Only known fields, and an unknown one is REFUSED rather than ignored:
-  // silently dropping "lotNumber" would let a caller believe it had changed it.
-  const unknown = Object.keys(req.body || {}).filter((k) => !EDITABLE_HEADER[k]);
+  // silently dropping a field would let a caller believe it had changed it.
+  // The lot comes as a registry id, never as text, so a typo cannot mint a lot.
+  const body = req.body || {};
+  const unknown = Object.keys(body)
+    .filter((k) => !EDITABLE_HEADER[k] && k !== "lotId" && k !== "weighedOn");
   if (unknown.length) {
     return res.status(400).json({
       code: "NOT_EDITABLE",
       error: `Not editable here: ${unknown.join(", ")}.` +
-             (unknown.includes("lotNumber") || unknown.includes("lotId")
-               ? " The lot a session was weighed against cannot be changed."
+             (unknown.includes("lotNumber")
+               ? " Send the lot as lotId, picked from the lot registry."
                : ""),
     });
   }
 
-  const fields = Object.entries(req.body || {}).filter(([k]) => EDITABLE_HEADER[k]);
-  if (!fields.length) return res.status(400).json({ error: "Nothing to update" });
+  const hasLot = Object.prototype.hasOwnProperty.call(body, "lotId");
+  // A number or a digit string only — Number([20]) is 20, and an array is not an id.
+  const rawLot = body.lotId;
+  const lotId = hasLot && (typeof rawLot === "number" || /^\d+$/.test(String(rawLot)))
+    && !Array.isArray(rawLot) ? Number(rawLot) : NaN;
+  if (hasLot && (!Number.isInteger(lotId) || lotId <= 0)) {
+    return res.status(400).json({ code: "BAD_LOT", error: "lotId must be a lot from the registry." });
+  }
+
+  // The day the boxes were weighed, for a session entered after the fact.
+  // Blank clears it back to "the day the session was opened".
+  const hasDate = Object.prototype.hasOwnProperty.call(body, "weighedOn");
+  const weighedOn = hasDate && body.weighedOn !== null && body.weighedOn !== ""
+    ? body.weighedOn : null;
+  if (hasDate && weighedOn !== null) {
+    const d = typeof weighedOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(weighedOn)
+      ? new Date(`${weighedOn}T00:00:00Z`) : null;
+    // Round-trips only for a real calendar day, so 2026-02-30 is refused.
+    // 2026-13-45 is no Date at all, and toISOString would throw on it.
+    const ok = d !== null && !Number.isNaN(d.getTime())
+      && d.toISOString().slice(0, 10) === weighedOn;
+    if (!ok) {
+      return res.status(400).json({ code: "BAD_DATE", error: "weighedOn must be a date, YYYY-MM-DD." });
+    }
+    if (weighedOn > pacificToday()) {
+      return res.status(400).json({ code: "BAD_DATE", error: "The boxes cannot have been weighed in the future." });
+    }
+    if (weighedOn < "2000-01-01") {
+      return res.status(400).json({ code: "BAD_DATE", error: "That date is too far back to be right." });
+    }
+  }
+
+  const fields = Object.entries(body).filter(([k]) => EDITABLE_HEADER[k]);
+  if (!fields.length && !hasLot && !hasDate) {
+    return res.status(400).json({ error: "Nothing to update" });
+  }
 
   try {
     const batch = await pool.query(
-      `SELECT status, direction FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
+      `SELECT status, direction, lot_id FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]
     );
     if (!batch.rows.length) return res.status(404).json({ error: "Session not found" });
@@ -1278,7 +1318,8 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
     // is in the boxes and where they are going; the rest — who weighed it, the
     // BOL, the grade — is reception's to answer for, so it stays admin-only.
     if (direction === "outgoing" && !isAdmin) {
-      const denied = fields.map(([k]) => k).filter((k) => !DOCK_EDITABLE.has(k));
+      const denied = fields.map(([k]) => k).filter((k) => !DOCK_EDITABLE.has(k))
+        .concat(hasLot ? ["lotId"] : [], hasDate ? ["weighedOn"] : []);
       if (denied.length) {
         return res.status(403).json({
           code: "ADMIN_ONLY_FIELD",
@@ -1306,11 +1347,61 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
       sets.push(`${EDITABLE_HEADER[key]} = $${values.length}`);
     }
 
+    if (hasDate) {
+      values.push(weighedOn);
+      sets.push(`weighed_on = $${values.length}`);
+    }
+
+    // Moving a session to another lot moves its boxes into that lot's totals
+    // and yield. So it is refused while a form, a load or a merged manifest
+    // still counts it — the same holders that block deleting it.
+    if (hasLot && lotId !== batch.rows[0].lot_id) {
+      const lot = await pool.query(
+        `SELECT lot_id, lot_number FROM lots WHERE lot_id = $1 AND tenant_id = $2`,
+        [lotId, req.tenantId]
+      );
+      if (!lot.rows.length) {
+        return res.status(400).json({ code: "BAD_LOT", error: "That lot is not in the registry." });
+      }
+      const { groups, forms, shipments } = await batchBlockers(pool, batchId, req.tenantId);
+      const holders = [
+        ...forms.map((f) => `registration form ${f.lot_number || f.id}`),
+        ...shipments.map((s) => `the load to ${s.destination_name} (${s.status})`),
+        ...groups.map((g) => `merged manifest ${g.name || g.lot_number || g.group_id}`),
+      ];
+      if (holders.length) {
+        return res.status(409).json({
+          code: "LOT_IN_USE",
+          error: `Cannot move this session to another lot while ${holders.join(", ")} `
+               + "still counts it. Untie it there first, then change the lot.",
+          holders: { forms, shipments, groups },
+        });
+      }
+      // The registry's canonical number, never the caller's text.
+      values.push(lot.rows[0].lot_id);
+      sets.push(`lot_id = $${values.length}`);
+      values.push(lot.rows[0].lot_number);
+      sets.push(`lot_number = $${values.length}`);
+    }
+
+    if (!sets.length) {
+      // Only the lot was sent, and it was already this lot.
+      const same = await pool.query(
+        `SELECT batch_id, lot_id, lot_number, vendor, ship_to, bill_of_lading,
+                item_description, brand, est_number, grade, remarks, status,
+                weighed_on::text AS weighed_on
+           FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
+        [batchId, req.tenantId]
+      );
+      return res.json(same.rows[0]);
+    }
+
     const updated = await pool.query(
       `UPDATE box_batches SET ${sets.join(", ")}
         WHERE batch_id = $1 AND tenant_id = $2
-      RETURNING batch_id, lot_number, vendor, ship_to, bill_of_lading,
-                item_description, brand, est_number, grade, remarks, status`,
+      RETURNING batch_id, lot_id, lot_number, vendor, ship_to, bill_of_lading,
+                item_description, brand, est_number, grade, remarks, status,
+                weighed_on::text AS weighed_on`,
       values
     );
     res.json(updated.rows[0]);
@@ -1356,7 +1447,10 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
               -- the number still showed, because lot_number is its own column,
               -- which is what made it invisible.
               lot_id,
-              status, created_at, closed_at
+              status, created_at, closed_at,
+              -- Text, not a Date: pg turns a DATE into midnight server-local,
+              -- which a reader in another timezone shows as the day before.
+              weighed_on::text AS weighed_on
          FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]
     );
@@ -1546,7 +1640,7 @@ router.get("/manifest-groups", verifyToken, async (req, res) => {
                 WHERE m.group_id = g.group_id), '[]'::json) AS batch_ids,
               -- Sorted by when the product was weighed, not when someone got
               -- round to merging it.
-              (SELECT MIN(b.created_at) FROM manifest_group_batches m
+              (SELECT MIN(${weighedAtSql("b")}) FROM manifest_group_batches m
                  JOIN box_batches b ON b.batch_id = m.batch_id
                 WHERE m.group_id = g.group_id) AS first_opened,
               (SELECT COUNT(*)::int FROM manifest_group_batches m
@@ -1727,7 +1821,7 @@ const boxTotalsForForm = async (formId, tenantId) => {
             -- are already sitting on filed forms, and without this they are
             -- indistinguishable from good ones — so nobody would ever find them.
             b.direction,
-            b.status, b.source, b.created_at,
+            b.status, b.source, b.created_at, b.weighed_on::text AS weighed_on,
             (SELECT COUNT(*)::int FROM batch_items i
               WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL) AS box_count,
             COALESCE((SELECT SUM(${weightInLb("i")})::text FROM batch_items i

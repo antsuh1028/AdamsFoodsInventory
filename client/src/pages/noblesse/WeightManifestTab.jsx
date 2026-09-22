@@ -13,9 +13,10 @@ import BoxScanner from "../../components/navbar/boxScanner";
 import printWeightManifest from "./printWeightManifest";
 import ImportTally from "./ImportTally";
 import FloatingWindow from "../../components/FloatingWindow";
-import { fmtDate, today, upper } from "./shared";
+import { fmtDate, fmtDateTime, today, upper, weighedDay } from "./shared";
 import getRole from "../../utils/getRole";
 import SearchBar from "../../components/SearchBar";
+import LotPicker from "../../components/LotPicker";
 
 // Past weighing sessions, one row per session. Expanding a row pulls its boxes
 // and shows them in the same sheet they were scanned into, so a manifest can be
@@ -25,7 +26,7 @@ const COLUMNS = [
   { key: "lot_number",       label: "Lot",     filter: "text",   width: "130px" },
   { key: "vendor",           label: "Vendor",  filter: "select", width: "150px" },
   { key: "item_description", label: "Item",    filter: "text",   width: "200px" },
-  { key: "created_at",       label: "Opened",  filter: "none",   width: "170px" },
+  { key: "created_at",       label: "Weighed", filter: "none",   width: "170px" },
   { key: "box_count",        label: "Boxes",   filter: "none",   width: "80px", align: "right" },
   { key: "totals",           label: "Total",   filter: "none",   width: "150px", align: "right" },
   { key: "status",           label: "Status",  filter: "none",   width: "90px" },
@@ -275,6 +276,8 @@ const fromDetail = (d) => ({
   remarks: d.remarks || "",
 });
 
+const lotOf = (d) => ({ lotId: d.lot_id ?? null, lotNumber: d.lot_number || "" });
+
 const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
@@ -289,8 +292,16 @@ const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
   const [blockers, setBlockers] = useState(null);
   const cancelReopenRef = useRef(null);
 
+  // The lot is a registry pick, not text, so it is held apart from the draft.
+  const [lot, setLot] = useState(() => lotOf(detail));
+  // "" = the day the session was opened; a date = weighed on that day instead.
+  const [weighedOn, setWeighedOn] = useState(() => detail.weighed_on || "");
+
   // Re-seed when a different session is expanded, or the detail is refetched.
-  useEffect(() => { setDraft(fromDetail(detail)); setEditing(false); }, [detail, batchId]);
+  useEffect(() => {
+    setDraft(fromDetail(detail)); setLot(lotOf(detail));
+    setWeighedOn(detail.weighed_on || ""); setEditing(false);
+  }, [detail, batchId]);
 
   // Read here rather than passed down: this component is rendered per row, and
   // threading the role through every one of them only creates a chance for the
@@ -298,7 +309,10 @@ const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
   const isAdmin = getRole() === "admin";
   const mayEdit = detail.status !== "closed" || isAdmin;
   const original = fromDetail(detail);
-  const dirty = Object.keys(draft).some((k) => draft[k].trim() !== original[k].trim());
+  const lotChanged = lot.lotId !== null && lot.lotId !== (detail.lot_id ?? null);
+  const dateChanged = weighedOn !== (detail.weighed_on || "");
+  const dirty = lotChanged || dateChanged
+    || Object.keys(draft).some((k) => draft[k].trim() !== original[k].trim());
 
   const set = (key) => (e) => setDraft((d) => ({ ...d, [key]: upper(e.target.value) }));
 
@@ -317,6 +331,8 @@ const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
           .filter((k) => draft[k].trim() !== original[k].trim())
           .map((k) => [k, draft[k].trim() || null])
       );
+      if (lotChanged) changed.lotId = lot.lotId;
+      if (dateChanged) changed.weighedOn = weighedOn || null;
       await axiosInstance.patch(`/box-batches/${batchId}`, changed);
       await onChanged();
       setEditing(false);
@@ -373,6 +389,45 @@ const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
 
       {editing ? (
         <>
+          <Box mb={3} maxW="420px">
+            <Text fontSize="10px" color="gray.500" textTransform="uppercase" mb={1}>
+              Lot
+            </Text>
+            <LotPicker
+              allowCreate
+              value={lot.lotId}
+              lotNumber={lot.lotNumber}
+              onChange={(picked) => setLot(picked
+                ? { lotId: picked.lotId, lotNumber: picked.lotNumber }
+                : lotOf(detail))}
+            />
+            {/* Said up front: the server refuses the move, and names the holder. */}
+            {lotChanged && (
+              <Text fontSize="xs" color="gray.600" mt={1}>
+                Moves every box on this session to {lot.lotNumber}. Refused while a
+                registration form, a load or a merged manifest still counts it —
+                untie it there first.
+              </Text>
+            )}
+          </Box>
+          {/* For a session entered after the fact: the day the boxes were on the
+              scale, which is what prints and what the lot counts. */}
+          <Box mb={3} maxW="220px">
+            <Text fontSize="10px" color="gray.500" textTransform="uppercase" mb={1}>
+              Weighed on
+            </Text>
+            {/* Blank shows the day it was OPENED — not weighedDay(), which
+                would still show the saved date and ignore the reset below. */}
+            <Input type="date" size="sm" bg="white" max={today()}
+              value={weighedOn || (detail.created_at ? today(new Date(detail.created_at)) : "")}
+              onChange={(e) => setWeighedOn(e.target.value)} />
+            {weighedOn && (
+              <Button size="xs" variant="link" colorScheme="blue" mt={1}
+                onClick={() => setWeighedOn("")}>
+                Use the day it was opened
+              </Button>
+            )}
+          </Box>
           <Flex gap={3} wrap="wrap" mb={2}>
             {HEADER_FIELDS.map(([key, label, placeholder]) => (
               <Box key={key} flex="1 1 150px">
@@ -394,7 +449,10 @@ const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
             autoCorrect="off" autoCapitalize="characters" spellCheck={false} />
           <Flex gap={2} mt={2} justify="flex-end">
             <Button size="xs" variant="ghost"
-              onClick={() => { setDraft(fromDetail(detail)); setEditing(false); }}>
+              onClick={() => {
+                setDraft(fromDetail(detail)); setLot(lotOf(detail));
+                setWeighedOn(detail.weighed_on || ""); setEditing(false);
+              }}>
               Cancel
             </Button>
             <Button size="xs" colorScheme="blue" isLoading={saving}
@@ -406,7 +464,10 @@ const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
       ) : (
         <Flex gap={6} wrap="wrap">
           {[...HEADER_FIELDS.map(([k, l]) => [l, original[k]]),
-            ["Remarks", original.remarks]]
+            ["Remarks", original.remarks],
+            // Only worth saying when someone set it; otherwise it is the date
+            // already on the row above.
+            ["Weighed on", detail.weighed_on ? fmtDate(detail.weighed_on) : ""]]
             .filter(([, v]) => v)
             .map(([label, value]) => (
               <Box key={label} maxW="320px">
@@ -712,7 +773,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       shipTo: full.ship_to,
       billOfLading: full.bill_of_lading,
       itemDescription: full.item_description,
-      date: fmtDate(String(full.created_at).slice(0, 10)),
+      date: fmtDate(weighedDay(full)),
       scans: full.items,
       // The form already carries a MEMO line — the session's remarks are what
       // it was always there for.
@@ -854,7 +915,9 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         shipTo: data.ship_to,
         billOfLading: data.bill_of_lading,
         itemDescription: data.item_description,
-        date: fmtDate(String(data.created_at).slice(0, 10)),
+        // When its product was weighed, not when someone merged it.
+        date: fmtDate(group.first_opened
+          ? today(new Date(group.first_opened)) : today(new Date(data.created_at))),
         scans: data.items,
         memo: data.remarks,
       });
@@ -963,7 +1026,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         group: g,
       }));
     const sessionRows = visible.map((b) => ({
-      kind: "session", key: `b${b.batch_id}`, at: b.created_at,
+      kind: "session", key: `b${b.batch_id}`, at: b.weighed_on || b.created_at,
       lot: lotKey(b.lot_number), batch: b,
     }));
     return [...groupRows, ...sessionRows].sort((a, b) => {
@@ -1031,7 +1094,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   );
 
   const todayStr = today();
-  const isToday = (b) => String(b.created_at).slice(0, 10) === todayStr;
+  const isToday = (b) => weighedDay(b) === todayStr;
 
   if (loading) {
     return <Flex justify="center" py={10}><Spinner size="lg" color="blue.500" /></Flex>;
@@ -1342,8 +1405,10 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                       <Box as="td" px={3} py={2} fontSize="sm" color="gray.700"
                         borderBottom="1px solid" borderColor="gray.100">{b.item_description || "—"}</Box>
                       <Box as="td" px={3} py={2} fontSize="sm" color="gray.700" whiteSpace="nowrap"
-                        borderBottom="1px solid" borderColor="gray.100">
-                        {new Date(b.created_at).toLocaleString()}
+                        borderBottom="1px solid" borderColor="gray.100"
+                        title={b.weighed_on ? `Entered ${fmtDateTime(b.created_at)}` : undefined}>
+                        {/* The day weighed, when set after the fact; else when opened. */}
+                        {b.weighed_on ? fmtDate(b.weighed_on) : fmtDateTime(b.created_at)}
                         {isToday(b) && (
                           <Badge ml={2} colorScheme="green" fontSize="9px" px={1.5} borderRadius="full">TODAY</Badge>
                         )}

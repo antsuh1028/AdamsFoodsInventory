@@ -114,12 +114,15 @@ const ScaleWeigh = ({
     setConnected(false);
   }, []);
 
-  const connect = async () => {
+  // `pick` forces the browser's port chooser — requestPort() only works from a
+  // click, so this is wired to a button and never to an effect.
+  const connect = async (pick = false) => {
     setError(null);
     setConnecting(true);
     try {
       machineRef.current.reset();
       handleRef.current = await connectScale({
+        pick,
         // Through a ref so the loop always uses the current handler rather than
         // the one that existed when connect was pressed.
         onLine: (line) => onLineRef.current(line),
@@ -182,13 +185,25 @@ const ScaleWeigh = ({
 
       <Flex align="center" gap={3} wrap="wrap" mb={3}>
         {!connected ? (
-          <Button colorScheme="blue" onClick={connect} isLoading={connecting} isDisabled={disabled}>
-            {t("Connect scale")}
-          </Button>
+          <>
+            <Button colorScheme="blue" onClick={() => connect(false)}
+              isLoading={connecting} isDisabled={disabled}>
+              {t("Connect scale")}
+            </Button>
+            {/* The way back from the wrong device: pick the port by hand. */}
+            <Button size="xs" variant="outline" onClick={() => connect(true)}
+              isDisabled={disabled || connecting}>
+              {t("Choose port")}
+            </Button>
+          </>
         ) : (
           <>
             <Badge colorScheme="green" borderRadius="full" px={2}>{t("connected")}</Badge>
             <Button size="xs" variant="ghost" onClick={disconnect}>{t("Disconnect")}</Button>
+            <Button size="xs" variant="outline"
+              onClick={async () => { await disconnect(); connect(true); }}>
+              {t("Choose port")}
+            </Button>
           </>
         )}
         <Box flex={1} />

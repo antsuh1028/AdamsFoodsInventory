@@ -7,6 +7,7 @@ const { parseLot, formatLot, pacificToday, dayOfYearFromDate } = require("../uti
 // Shared with routes/boxes.pg.js so a lot's totals and a manifest agree.
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
 const { weighedSql, boxesSql, formWeightSql, yieldFrom } = require("../utils/lotYield");
+const { weighedAtSql } = require("../utils/weighedAt");
 
 // The lot registry.
 //
@@ -402,7 +403,7 @@ const lotFigures = async (tenantId, lotId, client = pool) => {
        -- Last time anything actually moved. GREATEST skips NULLs, so a lot with
        -- only one kind of activity still reports it.
        GREATEST(
-         (SELECT MAX(COALESCE(b.closed_at, b.created_at)) FROM box_batches b
+         (SELECT MAX(${weighedAtSql("b", "COALESCE(b.closed_at, b.created_at)")}) FROM box_batches b
            WHERE b.lot_id = $1 AND b.tenant_id = $2),
          (SELECT MAX(sh.shipped_at) FROM noblesse_shipment_items si
             JOIN noblesse_shipments sh ON sh.shipment_id = si.shipment_id
@@ -619,8 +620,8 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
        WHERE s.lot_id = $1 AND s.tenant_id = $2
 
       UNION ALL
-      -- Weighing sessions.
-      SELECT b.created_at, 'weighed',
+      -- Weighing sessions, on the day they were weighed.
+      SELECT ${weighedAtSql("b")}, 'weighed',
              (CASE WHEN b.direction = 'outgoing' THEN 'Weighed out' ELSE 'Weighed in' END
               || CASE WHEN b.source = 'imported' THEN ' (tally sheet imported)' ELSE '' END),
              COALESCE((SELECT SUM(${weightInLb("bi")}) FROM batch_items bi

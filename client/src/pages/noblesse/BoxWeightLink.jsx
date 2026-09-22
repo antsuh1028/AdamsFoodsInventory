@@ -4,7 +4,7 @@ import {
 } from "@chakra-ui/react";
 import axiosInstance from "../../utils/axiosInstance";
 import { toDisplay, toDisplayHundredths } from "../../utils/weight";
-import { fmtDate, today } from "./shared";
+import { fmtDate, today, weighedDay } from "./shared";
 
 // Ties weighing sessions to a registration form.
 
@@ -100,7 +100,7 @@ const BoxWeightLink = ({
               && String(b.lot_number || "").toUpperCase().includes(lot)),
         // Weighed today — the arrivals someone is most likely registering right
         // now.
-        isToday: String(b.created_at).slice(0, 10) === todayStr,
+        isToday: weighedDay(b) === todayStr,
       }))
       .sort((a, b) => (b.suggested ? 1 : 0) - (a.suggested ? 1 : 0));
   }, [available, linkedIds, lotNumber, draft]);
@@ -343,7 +343,7 @@ const BoxWeightLink = ({
                   </Badge>
                 )}
                 <Text fontSize="xs" color="gray.500">
-                  {fmtDate(String(s.created_at).slice(0, 10))}
+                  {fmtDate(weighedDay(s))}
                 </Text>
                 <Text fontSize="sm" color="gray.700" ml="auto"
                   style={{ fontVariantNumeric: "tabular-nums" }}>

@@ -61,14 +61,18 @@ const connectScale = async ({
   onError = () => {},
   onDisconnect = () => {},
   portOptions = {},
+  // Always show the browser's chooser. The only way back when the wrong device
+  // was picked once: one remembered port is otherwise reused for good.
+  pick = false,
 } = {}) => {
   if (!isSupported()) {
     throw new Error("This browser cannot talk to a serial device. Use Chrome or Edge on the desktop.");
   }
 
-  // Reuse a port this browser has already been granted rather than asking again.
+  // Reuse a port this browser has already been granted rather than asking again,
+  // unless the caller asked to choose.
   const remembered = await navigator.serial.getPorts();
-  const port = remembered.length === 1
+  const port = !pick && remembered.length === 1
     ? remembered[0]
     : await navigator.serial.requestPort();
 
