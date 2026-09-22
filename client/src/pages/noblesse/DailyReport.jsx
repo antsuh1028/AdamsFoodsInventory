@@ -3,7 +3,9 @@ import {
   Box, Flex, Text, Button, Badge, Input, Spinner, Alert, AlertIcon,
   Table, Thead, Tbody, Tr, Th, Td, Tooltip, IconButton,
 } from "@chakra-ui/react";
-import { RepeatIcon, ChevronLeftIcon, ChevronRightIcon } from "@chakra-ui/icons";
+import {
+  RepeatIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon,
+} from "@chakra-ui/icons";
 import FloatingWindow from "../../components/FloatingWindow";
 import axiosInstance from "../../utils/axiosInstance";
 import { today, fmtWeight, fmtLongDate } from "./shared";
@@ -90,7 +92,12 @@ const Figure = ({ label, value, unit, sub, tone = "gray" }) => (
       {label}
     </Text>
     <Flex align="baseline" gap={1}>
-      <Text fontSize="xl" fontWeight="700" style={{ fontVariantNumeric: "tabular-nums" }}>
+      <Text
+        fontSize={{ base: "xl", md: "2xl" }}
+        fontWeight="700"
+        lineHeight="1.2"
+        style={{ fontVariantNumeric: "tabular-nums" }}
+      >
         {value}
       </Text>
       {unit && <Text fontSize="xs" color="gray.500">{unit}</Text>}
@@ -175,6 +182,66 @@ const AttentionGroup = ({ kind, items }) => {
           </Flex>
         ))}
       </Box>
+    </Box>
+  );
+};
+
+// The backlog, folded away. The day's own figures are what this page is for;
+// this is the standing list beside them, so it opens shut and the bar carries
+// enough for someone to decide whether to look.
+const AttentionSection = ({ grouped, truncated, isToday }) => {
+  const [open, setOpen] = useState(false);
+  const total = grouped.reduce((n, [, list]) => n + list.length, 0);
+  const Chevron = open ? ChevronDownIcon : ChevronRightIcon;
+  // Red kinds are the ones nobody should have to open the section to notice.
+  const urgent = grouped
+    .filter(([kind]) => KINDS[kind]?.tone === "red")
+    .reduce((n, [, list]) => n + list.length, 0);
+
+  if (total === 0) {
+    return (
+      <Flex align="center" gap={2} bg="gray.50" borderRadius="md" px={3} py={2} mt={4}>
+        <Text fontSize="sm" fontWeight="700">Needs attention</Text>
+        <Text fontSize="sm" color="gray.500">Nothing waiting.</Text>
+      </Flex>
+    );
+  }
+
+  return (
+    <Box mt={4}>
+      <Flex
+        align="center" gap={2} wrap="wrap"
+        bg="gray.100" borderRadius="md" px={3} py={2}
+        cursor="pointer"
+        onClick={() => setOpen((v) => !v)}
+        title={open ? "Hide the list" : "Show the list"}
+      >
+        <Chevron boxSize={4} color="gray.700" />
+        <Text fontSize="sm" fontWeight="700">Needs attention</Text>
+        <Badge colorScheme={urgent > 0 ? "red" : "yellow"}>{total}</Badge>
+        {truncated && <Badge colorScheme="red">list capped</Badge>}
+        {/* Shut, the bar still says what is under it. */}
+        {!open && (
+          <Text fontSize="xs" color="gray.600" noOfLines={1} minW={0}>
+            {grouped.map(([kind, list]) =>
+              `${list.length} ${(KINDS[kind]?.label || kind).toLowerCase()}`).join(" · ")}
+          </Text>
+        )}
+      </Flex>
+
+      {open && (
+        <Box pt={3}>
+          {!isToday && grouped.some(([, l]) => l[0]?.scope !== "range") && (
+            <Text fontSize="xs" color="gray.600" mb={2}>
+              Items marked <b>ongoing</b> are outstanding <b>now</b>, not as they
+              stood on this day.
+            </Text>
+          )}
+          {grouped.map(([kind, list]) => (
+            <AttentionGroup key={kind} kind={kind} items={list} />
+          ))}
+        </Box>
+      )}
     </Box>
   );
 };
@@ -332,30 +399,7 @@ const DailyReport = ({ isOpen, onClose }) => {
               </Alert>
             )}
 
-            <Text fontSize="sm" fontWeight="700" mt={4} mb={1}>
-              Needs attention
-              {data.attention?.truncated && (
-                <Badge colorScheme="red" ml={2}>list capped</Badge>
-              )}
-            </Text>
-            {/* Standing exceptions are computed as of now. On a past day they
-                sit beside that day's movement and would otherwise read as the
-                backlog as it stood then, which is not what they are. */}
-            {!isToday && grouped.some(([, l]) => l[0]?.scope !== "range") && (
-              <Text fontSize="xs" color="gray.600" mb={2}>
-                Items marked <b>ongoing</b> are outstanding <b>now</b>, not as they
-                stood on this day.
-              </Text>
-            )}
-            {grouped.length === 0 ? (
-              <Text fontSize="sm" color="gray.500" mb={3}>Nothing waiting.</Text>
-            ) : (
-              grouped.map(([kind, list]) => (
-                <AttentionGroup key={kind} kind={kind} items={list} />
-              ))
-            )}
-
-            <Text fontSize="sm" fontWeight="700" mt={4} mb={2}>
+            <Text fontSize="sm" fontWeight="700" mt={5} mb={2}>
               Lots touched
             </Text>
             {data.lots.length === 0 ? (
@@ -401,6 +445,14 @@ const DailyReport = ({ isOpen, onClose }) => {
                 </Table>
               </Box>
             )}
+
+            {/* Last, and shut: the day above is what this page is for. The
+                backlog is standing work that happens to be listed beside it. */}
+            <AttentionSection
+              grouped={grouped}
+              truncated={data.attention?.truncated}
+              isToday={isToday}
+            />
           </>
         )}
       </Box>
