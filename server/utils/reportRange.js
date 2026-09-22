@@ -205,10 +205,176 @@ const LOTS_TOUCHED = `
     ${yieldLateralSql("t")}
    ORDER BY t.lot_number`;
 
+// ── Section B: what needs attention ─────────────────────────────────────────
+
+// How long something sits before it is worth naming. One constant each.
+const STALE_DRAFT_DAYS = 3;
+const IDLE_LOT_DAYS = 7;
+const ATTENTION_LIMIT = 300;
+
+const TODAY = pacificDay("now()");
+
+/** Whole days between a date expression and today, Pacific. */
+const ageDays = (/** @type {string} */ day) => `(${TODAY} - (${day}))::int`;
+
+// "Product arrived and nobody filed the registration form for it."
+//
+// INCOMING ONLY, and never an empty session — an outgoing session has no form
+// it could ever go on, and a session with no boxes is a start pressed by
+// accident. Both nagged forever before those two clauses. Shared with the
+// notice on the tab row (routes/boxes.pg.js) so a badge and the report cannot
+// count different things. Expects $1 = tenant and the alias `b`.
+const UNREGISTERED_WHERE = `
+          b.direction = 'incoming'
+      AND b.status = 'closed'
+      AND NOT EXISTS (
+            SELECT 1 FROM registration_form_batches r
+             WHERE r.batch_id = b.batch_id AND r.tenant_id = $1)
+      AND EXISTS (
+            SELECT 1 FROM batch_items i
+             WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL)`;
+
+// Boxes on a session, as a fragment reusable inside a jsonb object.
+const boxCount = (/** @type {string} */ alias) =>
+  `(SELECT COUNT(*)::int FROM batch_items i
+     WHERE i.batch_id = ${alias}.batch_id AND i.voided_at IS NULL)`;
+const boxLb = (/** @type {string} */ alias) =>
+  `COALESCE((SELECT SUM(${weightInLb("i")})::text FROM batch_items i
+              WHERE i.batch_id = ${alias}.batch_id AND i.voided_at IS NULL), '0')`;
+
+// The last day anything happened to a lot, across all three ways it can move.
+const lastMovement = `GREATEST(
+    COALESCE((SELECT MAX(${weighedDay}) FROM box_batches b
+               WHERE b.tenant_id = l.tenant_id AND b.lot_id = l.lot_id), DATE '2000-01-01'),
+    COALESCE((SELECT MAX(s.ship_date) FROM noblesse_shipment_items si
+                JOIN noblesse_shipments s ON s.shipment_id = si.shipment_id
+               WHERE s.tenant_id = l.tenant_id AND si.lot_id = l.lot_id
+                 AND s.status = 'shipped'), DATE '2000-01-01'),
+    COALESCE((SELECT MAX(r.processing_date) FROM noblesse_processing_reports r
+               WHERE r.tenant_id = l.tenant_id AND r.lot_id = l.lot_id
+                 AND r.status = 'accepted'), DATE '2000-01-01'))`;
+
+// Everything waiting on somebody, as one uniform list.
+//
+// `scope` separates the two kinds mixed in here: 'standing' is true right now
+// regardless of the range, 'range' happened inside it. A page that showed them
+// as one undifferentiated list would imply the range caused all of it.
+const ATTENTION = `
+  SELECT * FROM (
+    SELECT 'unregistered'::text AS kind, b.batch_id AS ref_id,
+           b.lot_number AS label,
+           jsonb_build_object('boxes', ${boxCount("b")}, 'lb', ${boxLb("b")}) AS detail,
+           ${pacificDay("b.closed_at")}::text AS since,
+           ${ageDays(pacificDay("b.closed_at"))} AS age_days,
+           NULL::text AS who, 'standing'::text AS scope
+      FROM box_batches b
+     WHERE b.tenant_id = $1 AND ${UNREGISTERED_WHERE}
+
+    UNION ALL
+    -- Submitted off the floor, nobody at reception has accepted it. Nothing
+    -- has moved yet: an accepted report is what deducts cases.
+    SELECT 'report_waiting', r.report_id, l.lot_number,
+           jsonb_build_object('casesIn', r.input_cases, 'type', r.processing_type),
+           ${pacificDay("r.submitted_at")}::text,
+           ${ageDays(pacificDay("r.submitted_at"))},
+           r.submitted_by, 'standing'
+      FROM noblesse_processing_reports r
+      JOIN lots l ON l.lot_id = r.lot_id
+     WHERE r.tenant_id = $1 AND r.status = 'submitted'
+
+    UNION ALL
+    -- Still open after the day it was weighed: somebody walked away from it.
+    SELECT 'session_open', b.batch_id, b.lot_number,
+           jsonb_build_object('boxes', ${boxCount("b")}, 'direction', b.direction),
+           ${weighedDay}::text, ${ageDays(weighedDay)},
+           NULL, 'standing'
+      FROM box_batches b
+     WHERE b.tenant_id = $1 AND b.status = 'open'
+       AND ${weighedDay} < ${TODAY}
+
+    UNION ALL
+    -- A draft nobody shipped. It has deducted no stock and is holding lots.
+    SELECT 'draft_stale', s.shipment_id, s.destination_name,
+           jsonb_build_object(
+             'lines', (SELECT COUNT(*)::int FROM noblesse_shipment_items si
+                        WHERE si.shipment_id = s.shipment_id),
+             'shipDate', s.ship_date::text),
+           ${pacificDay("s.created_at")}::text,
+           ${ageDays(pacificDay("s.created_at"))},
+           NULL, 'standing'
+      FROM noblesse_shipments s
+     WHERE s.tenant_id = $1 AND s.status = 'draft'
+       AND ${ageDays(pacificDay("s.created_at"))} >= ${STALE_DRAFT_DAYS}
+
+    UNION ALL
+    -- Weighed in, something weighed out, then nothing for a week. A close-out
+    -- candidate — offered to a person, never closed on a computed signal.
+    SELECT 'lot_idle', l.lot_id, l.lot_number,
+           jsonb_build_object('inLb', y.weighed_in, 'outLb', y.weighed_out),
+           m.last_move::text, ${ageDays("m.last_move")},
+           NULL, 'standing'
+      FROM lots l
+      ${yieldLateralSql("l")}
+      CROSS JOIN LATERAL (SELECT ${lastMovement} AS last_move) m
+     WHERE l.tenant_id = $1 AND l.status = 'open'
+       AND y.weighed_in::numeric > 0 AND y.boxes_out > 0
+       AND ${ageDays("m.last_move")} >= ${IDLE_LOT_DAYS}
+
+    UNION ALL
+    -- Past its due date and not finished.
+    SELECT 'form_overdue', f.id, f.lot_number,
+           jsonb_build_object('vendor', f.vendor, 'dueDate', f.due_date::text),
+           f.due_date::text, ${ageDays("f.due_date")},
+           f.checked_by, 'standing'
+      FROM noblesse_registration_forms f
+     WHERE f.tenant_id = $1 AND f.status <> 'completed'
+       AND f.due_date IS NOT NULL AND f.due_date < ${TODAY}
+
+    UNION ALL
+    -- Shipped without anyone weighing the lot on the way out, so its yield can
+    -- never be computed. Bound to the range: every load ever would be noise.
+    SELECT 'shipped_unweighed', s.shipment_id, l.lot_number,
+           jsonb_build_object('destination', s.destination_name, 'lb', si.weight::text),
+           s.ship_date::text, ${ageDays("s.ship_date")},
+           NULL, 'range'
+      FROM noblesse_shipment_items si
+      JOIN noblesse_shipments s ON s.shipment_id = si.shipment_id
+      JOIN lots l ON l.lot_id = si.lot_id
+     WHERE s.tenant_id = $1 AND s.status = 'shipped'
+       AND s.ship_date BETWEEN $2 AND $3
+       AND NOT EXISTS (
+             SELECT 1 FROM box_batches b
+               JOIN batch_items bi ON bi.batch_id = b.batch_id
+              WHERE b.tenant_id = s.tenant_id AND b.lot_id = si.lot_id
+                AND b.direction = 'outgoing' AND bi.voided_at IS NULL)
+
+    UNION ALL
+    -- Corrections are normal; a run of them on one session is not. Grouped by
+    -- session so one bad pallet is one row.
+    SELECT 'voided', b.batch_id, b.lot_number,
+           jsonb_build_object('boxes', COUNT(*)::int),
+           MAX(${pacificDay("bi.voided_at")})::text,
+           ${ageDays(`MAX(${pacificDay("bi.voided_at")})`)},
+           MAX(u.username), 'range'
+      FROM batch_items bi
+      JOIN box_batches b ON b.batch_id = bi.batch_id
+      LEFT JOIN users u ON u.id = bi.voided_by
+     WHERE b.tenant_id = $1 AND bi.voided_at IS NOT NULL
+       AND ${pacificDay("bi.voided_at")} BETWEEN $2 AND $3
+     GROUP BY b.batch_id, b.lot_number
+  ) a
+   ORDER BY age_days DESC NULLS LAST, kind
+   LIMIT ${ATTENTION_LIMIT}`;
+
 module.exports = {
   MAX_SPAN_DAYS,
+  STALE_DRAFT_DAYS,
+  IDLE_LOT_DAYS,
+  ATTENTION_LIMIT,
+  UNREGISTERED_WHERE,
   parseRange,
   pacificDay,
+  ATTENTION,
   WEIGHING,
   SHIPPED,
   PROCESSED,

@@ -36,13 +36,26 @@ const fmtLot = (r) => ({
   yield: yieldFrom(r),
 });
 
+const fmtAttention = (r) => ({
+  kind: r.kind,
+  refId: r.ref_id,
+  label: r.label,
+  detail: r.detail,
+  since: r.since,
+  ageDays: r.age_days,
+  who: r.who,
+  // 'standing' is true right now whatever the range; 'range' happened in it.
+  scope: r.scope,
+});
+
 router.get("/noblesse-report", verifyToken, requireRole("admin", "manager"), async (req, res) => {
   const range = R.parseRange(req.query.from, req.query.to);
   if (!range.ok) return res.status(400).json({ code: "BAD_RANGE", error: range.error });
 
   const args = [req.tenantId, range.from, range.to];
   try {
-    const [weighing, shipped, processed, lotsIssued, forms, backdated, touched] =
+    const [weighing, shipped, processed, lotsIssued, forms, backdated, touched,
+           attention] =
       await Promise.all([
         pool.query(R.WEIGHING, args),
         pool.query(R.SHIPPED, args),
@@ -51,6 +64,7 @@ router.get("/noblesse-report", verifyToken, requireRole("admin", "manager"), asy
         pool.query(R.FORMS, args),
         pool.query(R.BACKDATED, args),
         pool.query(R.LOTS_TOUCHED, args),
+        pool.query(R.ATTENTION, args),
       ]);
 
     const s = shipped.rows[0];
@@ -84,6 +98,19 @@ router.get("/noblesse-report", verifyToken, requireRole("admin", "manager"), asy
       },
       // Entered in this range but counted on another day.
       backdated: { sessions: b.sessions, days: b.days },
+      attention: {
+        items: attention.rows.map(fmtAttention),
+        counts: attention.rows.reduce((acc, r) => {
+          acc[r.kind] = (acc[r.kind] || 0) + 1;
+          return acc;
+        }, {}),
+        // The counts are of what came back, so say when that was capped.
+        truncated: attention.rows.length >= R.ATTENTION_LIMIT,
+        thresholds: {
+          staleDraftDays: R.STALE_DRAFT_DAYS,
+          idleLotDays: R.IDLE_LOT_DAYS,
+        },
+      },
       lots: touched.rows.map(fmtLot),
     });
   } catch (err) {

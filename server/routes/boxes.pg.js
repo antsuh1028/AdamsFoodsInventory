@@ -26,6 +26,7 @@ const scanLimiter = rateLimit({
 
 // Shared with routes/lots.pg.js so both report the same figure.
 const { weightInLb } = require("../utils/sqlWeight");
+const { UNREGISTERED_WHERE } = require("../utils/reportRange");
 
 // Records a removal.
 const logBoxRemoval = ({
@@ -1168,23 +1169,9 @@ router.get("/box-batches/unregistered", verifyToken, async (req, res) => {
                  JOIN manifest_groups g ON g.group_id = m.group_id
                 WHERE m.batch_id = b.batch_id LIMIT 1) AS manifest_name
          FROM box_batches b
-        WHERE b.tenant_id = $1
-          -- INCOMING ONLY. This notice means "product arrived and nobody has
-          -- filed the registration form for it". An outgoing session weighed
-          -- finished product LEAVING: there is no form it can ever go on, so it
-          -- satisfied "closed, has boxes, not on a form" permanently and nagged
-          -- forever with nothing anyone could do about it.
-          AND b.direction = 'incoming'
-          AND b.status = 'closed'
-          AND NOT EXISTS (
-                SELECT 1 FROM registration_form_batches r
-                 WHERE r.batch_id = b.batch_id AND r.tenant_id = $1)
-          -- An empty session is a start pressed by accident, not work waiting
-          -- on anyone. Prod has one of these (#26, no lot, no boxes) and it
-          -- would have nagged from this notice permanently.
-          AND EXISTS (
-                SELECT 1 FROM batch_items i
-                 WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL)
+        -- Shared with the daily report, which counts the same thing: two
+        -- spellings of it is how a badge and a report come to disagree.
+        WHERE b.tenant_id = $1 AND ${UNREGISTERED_WHERE}
         ORDER BY b.closed_at DESC NULLS LAST, b.batch_id DESC
         LIMIT 50`,
       [req.tenantId]
