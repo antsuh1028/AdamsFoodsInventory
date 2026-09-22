@@ -276,12 +276,23 @@ because they passed those checksums.
 
 `scannerDiagnostic.jsx` exists to configure a new scanner — it shows raw keystrokes.
 
-### Known gap
+### The weighing day (closed the old "date is discarded" gap)
 
-The tally parser reads the **date printed on the sheet**, shows it in the preview,
-then discards it: `box_batches` has no date column and the import INSERT omits it.
-Reprinting an imported manifest therefore prints the *upload* date. One column plus
-one line in the INSERT, if it ever matters.
+`box_batches.weighed_on` (DATE, nullable) is **when the boxes were weighed**;
+`created_at` stays when the row was ENTERED, which the new-row markers and the
+seen-set depend on — so neither is overwritten by the other.
+
+- Set from the **date printed on the tally sheet** at import (correctable in the
+  preview), or by hand in the heading editor on both tabs. A sheet whose date
+  cannot be read still imports and says so.
+- `utils/weighedAt.js` is the single definition: `parseWeighedOn` (validates; no
+  future, nothing before 2000, real calendar day) and `weighedAtSql(alias)`,
+  which every "when weighed" query reads — the manifest, the pallet tag, the
+  date column, TODAY, the lot timeline, the lot's idle clock, merged-manifest
+  ordering.
+- A date is carried as **noon Pacific** in SQL and as `weighed_on::text` over
+  the wire. Both guard the same scar: a DATE becomes midnight server-local in
+  pg, which a Pacific reader shows as the day before (§8, 8/17 → 8/16).
 
 ---
 

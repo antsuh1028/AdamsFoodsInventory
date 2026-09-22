@@ -8,8 +8,7 @@ const { parseTallySheet } = require("../utils/tallySheet");
 const { toPounds, kgToLb, sumWeights, trimTrailingZeros } = require("../utils/weight");
 const { lotColumns, lookupLot } = require("../utils/lotRegistry");
 const { searchTerm, searchClause } = require("../utils/search");
-const { weighedAtSql } = require("../utils/weighedAt");
-const { pacificToday } = require("../utils/lot");
+const { weighedAtSql, parseWeighedOn, parseSheetDay } = require("../utils/weighedAt");
 const { upload } = require("../utils/aws");
 const readXlsxFile = require("read-excel-file/node");
 
@@ -263,8 +262,9 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
     const inserted = await pool.query(
       `INSERT INTO box_batches
          (tenant_id, client_uuid, lot_number, vendor, ship_to, bill_of_lading,
-          item_description, brand, est_number, grade, lot_id, direction, expected_boxes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          item_description, brand, est_number, grade, lot_id, direction, expected_boxes,
+          created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        ON CONFLICT (client_uuid) DO NOTHING
        RETURNING batch_id, status, created_at, lot_number,
                  vendor, ship_to, bill_of_lading, item_description,
@@ -276,7 +276,7 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
        pick(brand, "brand"),
        pick(estNumber, "est_number"),
        pick(grade, "grade"),
-       lot.lotId, dir, expected]
+       lot.lotId, dir, expected, req.userId || null]
     );
 
     if (inserted.rows.length) {
@@ -508,10 +508,10 @@ router.post("/box-batches/:id/close", verifyToken, scanLimiter, async (req, res)
         : null;
       await pool.query(
         `UPDATE box_batches
-            SET status = 'closed', closed_at = now(),
+            SET status = 'closed', closed_at = now(), closed_by = $4,
                 remarks = COALESCE($3, remarks)
           WHERE batch_id = $1 AND tenant_id = $2`,
-        [batchId, req.tenantId, remarks]
+        [batchId, req.tenantId, remarks, req.userId || null]
       );
     }
 
@@ -914,12 +914,30 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
       ? trimTrailingZeros(sumWeights(converted))
       : parsed.computed.subtotal;
 
+    // The day printed on the sheet is when the boxes were weighed — which is
+    // rarely the day the file is uploaded. Correctable in the preview like the
+    // rest of the heading; a sheet whose date cannot be read still imports, and
+    // says so, rather than refusing over a heading field.
+    const sheetDay = parseSheetDay(parsed.date);
+    const typedDay = typeof req.body.weighedOn === "string" ? req.body.weighedOn.trim() : "";
+    const checkedDay = parseWeighedOn(typedDay || sheetDay);
+    if (typedDay && !checkedDay.ok) {
+      return res.status(400).json({ code: "BAD_DATE", error: checkedDay.error });
+    }
+    const weighedOn = checkedDay.ok ? checkedDay.value : null;
+
     const summary = {
       lotNumber: pick(req.body.lotNumber, parsed.lotNumber),
       vendor: pick(req.body.vendor, parsed.vendor),
       shipTo: pick(req.body.shipTo, parsed.shipTo),
       itemDescription: pick(req.body.itemDescription, parsed.itemDescription),
       date: parsed.date,
+      // What will actually be filed as the weighing day, and why it is not the
+      // sheet's own date when that could not be read.
+      weighedOn,
+      dateNote: weighedOn ? null
+        : (parsed.date ? `The date on this sheet ("${parsed.date}") could not be read.`
+          : "This sheet carries no date."),
       weightUnit: storedUnit,
       convertedFrom: weightUnit === "KG" ? "KG" : null,
       boxes: parsed.computed.boxes,
@@ -952,12 +970,12 @@ router.post("/box-batches/import", verifyToken, scanLimiter, upload.single("file
       const batch = await client.query(
         `INSERT INTO box_batches
            (tenant_id, client_uuid, lot_number, vendor, ship_to, item_description,
-            source, status, closed_at, lot_id)
-         VALUES ($1, $2, $3, $4, $5, $6, 'imported', 'closed', now(), $7)
+            source, status, closed_at, lot_id, weighed_on)
+         VALUES ($1, $2, $3, $4, $5, $6, 'imported', 'closed', now(), $7, $8)
          ON CONFLICT (client_uuid) DO NOTHING
          RETURNING batch_id`,
         [req.tenantId, clientUuid, lot.lotNumber, summary.vendor,
-         summary.shipTo, summary.itemDescription, lot.lotId]
+         summary.shipTo, summary.itemDescription, lot.lotId, summary.weighedOn]
       );
 
       // A retried upload finds its own batch rather than importing twice.
@@ -1202,7 +1220,7 @@ router.post("/box-batches/:id/reopen", verifyToken, requireRole("admin"), async 
     // closed_at is cleared because it is no longer true. The fact that it was
     // closed, and by whom it was reopened, survives in the audit row below.
     const updated = await pool.query(
-      `UPDATE box_batches SET status = 'open', closed_at = NULL
+      `UPDATE box_batches SET status = 'open', closed_at = NULL, closed_by = NULL
         WHERE batch_id = $1 AND tenant_id = $2
       RETURNING batch_id, lot_number, status, created_at, closed_at`,
       [batchId, req.tenantId]
@@ -1279,25 +1297,11 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
   // The day the boxes were weighed, for a session entered after the fact.
   // Blank clears it back to "the day the session was opened".
   const hasDate = Object.prototype.hasOwnProperty.call(body, "weighedOn");
-  const weighedOn = hasDate && body.weighedOn !== null && body.weighedOn !== ""
-    ? body.weighedOn : null;
-  if (hasDate && weighedOn !== null) {
-    const d = typeof weighedOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(weighedOn)
-      ? new Date(`${weighedOn}T00:00:00Z`) : null;
-    // Round-trips only for a real calendar day, so 2026-02-30 is refused.
-    // 2026-13-45 is no Date at all, and toISOString would throw on it.
-    const ok = d !== null && !Number.isNaN(d.getTime())
-      && d.toISOString().slice(0, 10) === weighedOn;
-    if (!ok) {
-      return res.status(400).json({ code: "BAD_DATE", error: "weighedOn must be a date, YYYY-MM-DD." });
-    }
-    if (weighedOn > pacificToday()) {
-      return res.status(400).json({ code: "BAD_DATE", error: "The boxes cannot have been weighed in the future." });
-    }
-    if (weighedOn < "2000-01-01") {
-      return res.status(400).json({ code: "BAD_DATE", error: "That date is too far back to be right." });
-    }
+  const checkedDate = hasDate ? parseWeighedOn(body.weighedOn) : { ok: true, value: null };
+  if (!checkedDate.ok) {
+    return res.status(400).json({ code: "BAD_DATE", error: checkedDate.error });
   }
+  const weighedOn = checkedDate.value;
 
   const fields = Object.entries(body).filter(([k]) => EDITABLE_HEADER[k]);
   if (!fields.length && !hasLot && !hasDate) {

@@ -34,3 +34,6 @@ server/scripts
 server/tests
 # Sample tally workbooks used for parser accuracy checks — real shipment data
 2026/
+
+# Working notes and plans — local only
+notes/

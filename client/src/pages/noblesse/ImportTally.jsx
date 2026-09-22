@@ -8,6 +8,7 @@ import {
 import FloatingWindow from "../../components/FloatingWindow";
 import axiosInstance from "../../utils/axiosInstance";
 import { toDisplay } from "../../utils/weight";
+import { today } from "./shared";
 
 // Imports a hand-entered tally sheet for lots whose labels carry no barcode.
 //
@@ -40,6 +41,24 @@ const EditableField = ({ label, value, onChange, placeholder }) => (
   </Flex>
 );
 
+// The day the boxes were weighed. Editable like the rest of the heading: it is
+// read off the sheet, and no checksum depends on it.
+const DateField = ({ label, value, onChange, max, note }) => (
+  <Flex px={3} py={2} gap={{ base: 1, sm: 3 }} align={{ base: "stretch", sm: "center" }}
+    direction={{ base: "column", sm: "row" }}
+    borderBottom="1px solid" borderColor="gray.100">
+    <Text fontSize="xs" color="gray.500" minW={{ base: "auto", sm: "120px" }}
+      textTransform="uppercase" letterSpacing="wide">
+      {label}
+    </Text>
+    <Box flex={1}>
+      <Input size="sm" type="date" value={value} max={max}
+        onChange={(e) => onChange(e.target.value)} />
+      {note && <Text fontSize="xs" color="yellow.700" mt={1}>{note}</Text>}
+    </Box>
+  </Flex>
+);
+
 const ReadOnlyField = ({ label, value }) => (
   <Flex px={3} py={2} gap={{ base: 1, sm: 3 }} align={{ base: "flex-start", sm: "baseline" }}
     direction={{ base: "column", sm: "row" }}
@@ -68,7 +87,8 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [unit, setUnit] = useState("LB");
-  const [heading, setHeading] = useState({ lotNumber: "", vendor: "", itemDescription: "", shipTo: "" });
+  const [heading, setHeading] = useState(
+    { lotNumber: "", vendor: "", itemDescription: "", shipTo: "", weighedOn: "" });
   // Corrected weights, keyed by position: { 3: "41.20" }. The sheet's own
   // figures stay in `preview.weights` so both can be shown.
   const [edits, setEdits] = useState({});
@@ -81,7 +101,7 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
 
   const reset = () => {
     setFile(null); setPreview(null); setError(null); setEdits({}); setEditing(null);
-    setHeading({ lotNumber: "", vendor: "", itemDescription: "", shipTo: "" });
+    setHeading({ lotNumber: "", vendor: "", itemDescription: "", shipTo: "", weighedOn: "" });
   };
 
   const close = () => { reset(); onClose(); };
@@ -147,6 +167,8 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
         vendor: data.vendor || "",
         itemDescription: data.itemDescription || "",
         shipTo: data.shipTo || "",
+        // What the server read off the sheet, and will file unless corrected.
+        weighedOn: data.weighedOn || "",
       });
     } catch (err) {
       const body = err.response?.data;
@@ -258,9 +280,10 @@ const ImportTally = ({ isOpen, onClose, onImported }) => {
             <EditableField label="Vendor" value={heading.vendor} onChange={setField("vendor")} />
             <EditableField label="Item" value={heading.itemDescription} onChange={setField("itemDescription")} />
             <EditableField label="Vendor Lot #/IC#" value={heading.shipTo} onChange={setField("shipTo")} />
-            {/* Read from the sheet and checked against its own totals, so not
-                open to editing — that is the guarantee the import rests on. */}
-            <ReadOnlyField label="Date" value={preview.date || "—"} />
+            {/* The weights are what the sheet's checksums guarantee; the date
+                is not, so a sheet entered late can say when it was weighed. */}
+            <DateField label="Weighed on" value={heading.weighedOn} max={today()}
+              onChange={setField("weighedOn")} note={preview.dateNote} />
             <ReadOnlyField label="Boxes" value={String(preview.boxes)} />
             <ReadOnlyField label="Total" value={`${show(preview.subtotal)} ${preview.weightUnit}`} />
           </Box>

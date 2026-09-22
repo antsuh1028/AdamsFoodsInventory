@@ -264,6 +264,13 @@ const steps = async () => {
   await run("box_batches weighed_on",
     `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS weighed_on DATE`);
 
+  // Who opened a session and who closed it. Nothing can be backfilled, so a
+  // session weighed before this reads "not recorded" for good.
+  await run("box_batches created_by",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS created_by UUID`);
+  await run("box_batches closed_by",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS closed_by UUID`);
+
   // Where a box's weight actually came from.
   await run("batch_items entry_method",
     `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS entry_method TEXT
