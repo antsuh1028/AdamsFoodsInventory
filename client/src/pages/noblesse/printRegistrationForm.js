@@ -1,15 +1,9 @@
 import ntiLogo from "../../assets/nti.jpg";
-
-const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
-  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-));
+import { esc, printDocument } from "./printWindow";
 
 // Opens a printable "Registration Form" (Noblesse Trading Inc.) in a new tab.
 // Pass a saved form object to print filled-in values, or omit for a blank template.
 const printRegistrationForm = (form = {}) => {
-  const win = window.open("", "_blank");
-  if (!win) return;
-
   const val = (v) => (v === null || v === undefined || v === "" ? "" : esc(v));
   const wt = (v) => {
     if (!v && v !== 0) return "";
@@ -165,8 +159,7 @@ const printRegistrationForm = (form = {}) => {
       </body>
     </html>`;
 
-  win.document.write(html);
-  win.document.close();
+  printDocument(html);
 };
 
 export default printRegistrationForm;

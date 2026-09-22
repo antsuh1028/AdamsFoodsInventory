@@ -1,8 +1,5 @@
 import { toDisplay } from "../../utils/weight";
-
-const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
-  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-));
+import { esc, printDocument } from "./printWindow";
 
 // The packing list for an outgoing load: one line per lot, with a total.
 //
@@ -28,9 +25,6 @@ const fromThousandths = (n) => {
 };
 
 const printPackingList = (shipment = {}) => {
-  const win = window.open("", "_blank");
-  if (!win) return;
-
   const items = Array.isArray(shipment.items) ? shipment.items : [];
   const totalThousandths = items.reduce((acc, i) => acc + toThousandths(i.weight), 0);
   const totalCases = items.reduce((acc, i) => acc + (Number(i.qtyCases) || 0), 0);
@@ -145,8 +139,7 @@ const printPackingList = (shipment = {}) => {
       </body>
     </html>`;
 
-  win.document.write(html);
-  win.document.close();
+  printDocument(html);
 };
 
 export default printPackingList;

@@ -1,10 +1,7 @@
 import {
   kgToLb, toDisplayHundredths, fromHundredths,
 } from "../../utils/weight";
-
-const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
-  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-));
+import { esc, printDocument } from "./printWindow";
 
 // The tag that goes out with weighed boxes — the incoming tally sheet at half
 // the size, printed TWICE on one letter sheet: one copy stays here, the other
@@ -25,9 +22,6 @@ const printOutgoingTag = ({
   lotNumber, date, shipTo, itemDescription, billOfLading,
   boxes: scans = [], weighedBy = "", memo = "",
 } = {}) => {
-  const win = window.open("", "_blank");
-  if (!win) return;
-
   // A voided box was taken off the tally on purpose; a duplicate is one box
   // counted twice. Neither travels on the tag.
   const OFF_THE_TALLY = new Set(["rejected", "duplicate", "voided"]);
@@ -244,8 +238,7 @@ const printOutgoingTag = ({
       </body>
     </html>`;
 
-  win.document.write(html);
-  win.document.close();
+  printDocument(html);
 };
 
 export default printOutgoingTag;

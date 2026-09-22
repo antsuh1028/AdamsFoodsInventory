@@ -1,17 +1,11 @@
 import ntiLogo from "../../assets/nti.jpg";
 import { fmtDateTime } from "./shared";
-
-const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
-  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-));
+import { esc, printDocument } from "./printWindow";
 
 // Opens a printable "Processing Report" in a new tab, laid out like the
 // registration form so the two read as one document family — same masthead,
 // same label/field grid, same section bars.
 const printProcessingReport = (report = {}) => {
-  const win = window.open("", "_blank");
-  if (!win) return;
-
   const pulls = Array.isArray(report.pulls) ? report.pulls : [];
   const totalCases = pulls.reduce((sum, p) => sum + (Number(p && p.cases) || 0), 0);
   const inedible = report.inedibleWeight
@@ -162,8 +156,7 @@ const printProcessingReport = (report = {}) => {
       </body>
     </html>`;
 
-  win.document.write(html);
-  win.document.close();
+  printDocument(html);
 };
 
 export default printProcessingReport;

@@ -1,10 +1,7 @@
 import {
   kgToLb, toDisplayHundredths, fromHundredths,
 } from "../../utils/weight";
-
-const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
-  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-));
+import { esc, printDocument } from "./printWindow";
 
 // The Noblesse Trading tally sheet, reproduced from the paper form.
 
@@ -20,9 +17,6 @@ const printWeightManifest = ({
   lotNumber, date, vendor, shipTo, billOfLading, itemDescription,
   scans = [], assembledBy = "", checkedBy = "", memo = "",
 } = {}) => {
-  const win = window.open("", "_blank");
-  if (!win) return;
-
   // A rejected scan was never recorded, a duplicate is one box scanned twice, and a
   // voided one was taken off the tally on purpose.
   const OFF_THE_TALLY = new Set(["rejected", "duplicate", "voided"]);
@@ -194,8 +188,7 @@ const printWeightManifest = ({
       </body>
     </html>`;
 
-  win.document.write(html);
-  win.document.close();
+  printDocument(html);
 };
 
 export default printWeightManifest;
