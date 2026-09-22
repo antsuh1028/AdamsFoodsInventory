@@ -3,10 +3,14 @@ import {
   Box, Flex, Text, Badge, Button, Spinner, Alert, AlertIcon,
   Table, Thead, Tbody, Tr, Th, Td, Grid, useToast,
 } from "@chakra-ui/react";
-import { CheckIcon, CloseIcon } from "@chakra-ui/icons";
+import {
+  CheckIcon, CloseIcon, ChevronDownIcon, ChevronRightIcon,
+} from "@chakra-ui/icons";
 import FloatingWindow from "../../components/FloatingWindow";
+import ScanSheet from "../../components/navbar/ScanSheet";
 import axiosInstance from "../../utils/axiosInstance";
 import printWeightManifest from "./printWeightManifest";
+import printRegistrationForm from "./printRegistrationForm";
 import {
   fmtDate, fmtWeight, weighedDay, SheetField, SectionBar,
 } from "./shared";
@@ -59,13 +63,16 @@ const SHEET = {
 };
 
 // Shared shell: both windows load one lot, and both can come back empty.
-const LotWindow = ({ isOpen, onClose, title, lotNumber, zIndex, loading, error, empty, children }) => (
+const LotWindow = ({
+  isOpen, onClose, title, lotNumber, zIndex, loading, error, empty, footer, children,
+}) => (
   <FloatingWindow
     isOpen={isOpen}
     onClose={onClose}
     title={`${title} — ${lotNumber || ""}`}
     width="62%"
     zIndex={zIndex}
+    footer={footer}
   >
     <Box px={1} pb={2}>
       {loading && <Flex justify="center" py={8}><Spinner /></Flex>}
@@ -104,6 +111,16 @@ export const LotFormWindow = ({ lotNumber, isOpen, onClose, zIndex = 1400 }) => 
     if (isOpen && lotNumber) load(lotNumber);
   }, [isOpen, lotNumber, load]);
 
+  // The printer the Registration Forms tab uses, given the same object — so a
+  // form printed from here is the same paper as one printed from there.
+  const printFooter = form ? (
+    <Flex justify="flex-end" width="100%">
+      <Button size="sm" variant="outline" onClick={() => printRegistrationForm(form)}>
+        Print
+      </Button>
+    </Flex>
+  ) : null;
+
   return (
     <LotWindow
       isOpen={isOpen} onClose={onClose} title="Registration form"
@@ -115,6 +132,7 @@ export const LotFormWindow = ({ lotNumber, isOpen, onClose, zIndex = 1400 }) => 
           {" "}<b>Weighed, not registered</b> notice is about.
         </Text>
       )}
+      footer={printFooter}
     >
       {form && (
         <>
@@ -211,6 +229,10 @@ export const LotManifestWindow = ({ lotNumber, isOpen, onClose, zIndex = 1410 })
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
+  // The boxes, per session, fetched on first expand and kept — the list row
+  // carries totals but not the boxes themselves.
+  const [details, setDetails] = useState({});
+  const [expanded, setExpanded] = useState(null);
   const toast = useToast();
 
   const load = useCallback(async (lot) => {
@@ -231,30 +253,51 @@ export const LotManifestWindow = ({ lotNumber, isOpen, onClose, zIndex = 1410 })
     if (isOpen && lotNumber) load(lotNumber);
   }, [isOpen, lotNumber, load]);
 
-  // The list row carries totals but not the boxes, and the manifest prints the
-  // boxes — so it is fetched at print time rather than for every row on open.
-  const print = async (batch) => {
-    setBusyId(batch.batch_id);
+  // One fetch serves both looking and printing, so opening a session and then
+  // printing it does not go back to the server twice.
+  const boxesFor = async (batchId) => {
+    if (details[batchId]) return details[batchId];
     try {
-      const { data } = await axiosInstance.get(`/box-batches/${batch.batch_id}`);
-      printWeightManifest({
-        lotNumber: data.lot_number,
-        vendor: data.vendor,
-        shipTo: data.ship_to,
-        billOfLading: data.bill_of_lading,
-        itemDescription: data.item_description,
-        date: fmtDate(weighedDay(data)),
-        scans: data.items,
-        memo: data.remarks,
-      });
+      const { data } = await axiosInstance.get(`/box-batches/${batchId}`);
+      setDetails((prev) => ({ ...prev, [batchId]: data }));
+      return data;
     } catch {
       toast({
         title: "Could not load that session",
         status: "error", duration: 3000, position: "top",
       });
-    } finally {
+      return null;
+    }
+  };
+
+  const toggle = async (batchId) => {
+    if (expanded === batchId) {
+      setExpanded(null);
+      return;
+    }
+    setExpanded(batchId);
+    if (!details[batchId]) {
+      setBusyId(batchId);
+      await boxesFor(batchId);
       setBusyId(null);
     }
+  };
+
+  const print = async (batch) => {
+    setBusyId(batch.batch_id);
+    const data = await boxesFor(batch.batch_id);
+    setBusyId(null);
+    if (!data) return;
+    printWeightManifest({
+      lotNumber: data.lot_number,
+      vendor: data.vendor,
+      shipTo: data.ship_to,
+      billOfLading: data.bill_of_lading,
+      itemDescription: data.item_description,
+      date: fmtDate(weighedDay(data)),
+      scans: data.items,
+      memo: data.remarks,
+    });
   };
 
   const totalOf = (b) => (b.totals || []).find((t) => t.unit === "LB")?.total || "0";
@@ -274,6 +317,7 @@ export const LotManifestWindow = ({ lotNumber, isOpen, onClose, zIndex = 1410 })
         <Table size="sm" minWidth="640px">
           <Thead>
             <Tr>
+              <Th width="1%" />
               <Th>Weighed</Th>
               <Th>Direction</Th>
               <Th isNumeric>Boxes</Th>
@@ -283,37 +327,69 @@ export const LotManifestWindow = ({ lotNumber, isOpen, onClose, zIndex = 1410 })
             </Tr>
           </Thead>
           <Tbody>
-            {sessions.map((b) => (
-              <Tr key={b.batch_id}>
-                <Td whiteSpace="nowrap">{fmtDate(weighedDay(b))}</Td>
-                <Td>
-                  <Badge colorScheme={b.direction === "outgoing" ? "teal" : "blue"}>
-                    {b.direction}
-                  </Badge>
-                  {b.source === "imported" && (
-                    <Badge ml={1} colorScheme="gray" fontSize="9px">tally</Badge>
-                  )}
-                </Td>
-                <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>{b.box_count}</Td>
-                <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>
-                  {fmtWeight(totalOf(b))} lb
-                </Td>
-                <Td>
-                  <Badge colorScheme={b.status === "closed" ? "gray" : "yellow"}>
-                    {b.status}
-                  </Badge>
-                </Td>
-                <Td>
-                  <Button
-                    size="xs"
-                    isLoading={busyId === b.batch_id}
-                    onClick={() => print(b)}
+            {sessions.map((b) => {
+              const open = expanded === b.batch_id;
+              const detail = details[b.batch_id];
+              return (
+                <React.Fragment key={b.batch_id}>
+                  {/* Double-click anywhere on the row, or the chevron — the
+                      chevron is what makes it findable. */}
+                  <Tr
+                    onDoubleClick={() => toggle(b.batch_id)}
+                    cursor="pointer"
+                    _hover={{ bg: "gray.50" }}
+                    title="Double-click to see the boxes"
                   >
-                    Print
-                  </Button>
-                </Td>
-              </Tr>
-            ))}
+                    <Td>
+                      <Button
+                        size="xs" variant="ghost" px={1}
+                        aria-label={open ? "Hide the boxes" : "Show the boxes"}
+                        onClick={() => toggle(b.batch_id)}
+                      >
+                        {open ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                      </Button>
+                    </Td>
+                    <Td whiteSpace="nowrap">{fmtDate(weighedDay(b))}</Td>
+                    <Td>
+                      <Badge colorScheme={b.direction === "outgoing" ? "teal" : "blue"}>
+                        {b.direction}
+                      </Badge>
+                      {b.source === "imported" && (
+                        <Badge ml={1} colorScheme="gray" fontSize="9px">tally</Badge>
+                      )}
+                    </Td>
+                    <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>{b.box_count}</Td>
+                    <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {fmtWeight(totalOf(b))} lb
+                    </Td>
+                    <Td>
+                      <Badge colorScheme={b.status === "closed" ? "gray" : "yellow"}>
+                        {b.status}
+                      </Badge>
+                    </Td>
+                    <Td>
+                      <Button
+                        size="xs"
+                        isLoading={busyId === b.batch_id}
+                        onClick={() => print(b)}
+                      >
+                        Print
+                      </Button>
+                    </Td>
+                  </Tr>
+                  {open && (
+                    <Tr>
+                      <Td colSpan={7} bg="gray.50" px={2} py={2}>
+                        {!detail && <Flex justify="center" py={4}><Spinner size="sm" /></Flex>}
+                        {/* No edit handlers, so it renders read-only — the same
+                            grid the scanner and the manifest tab draw. */}
+                        {detail && <ScanSheet scans={detail.items || []} />}
+                      </Td>
+                    </Tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </Tbody>
         </Table>
       </Box>
