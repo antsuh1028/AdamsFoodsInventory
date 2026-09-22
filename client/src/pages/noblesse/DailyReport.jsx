@@ -128,11 +128,23 @@ const AttentionGroup = ({ kind, items }) => {
   const [open, setOpen] = useState(items.length <= 5);
   const meta = KINDS[kind] || { label: kind, tone: "gray" };
   const shown = open ? items : items.slice(0, 3);
+  // A backlog that returns tomorrow, or something that happened on this day
+  // and will not. They look identical on the page otherwise.
+  const ongoing = items[0]?.scope !== "range";
   return (
     <Box mb={3}>
       <Flex align="center" gap={2} mb={1}>
         <Badge colorScheme={meta.tone}>{items.length}</Badge>
         <Text fontSize="sm" fontWeight="700">{meta.label}</Text>
+        <Tooltip
+          label={ongoing
+            ? "Outstanding right now. It stays on the report until someone deals with it."
+            : "Happened on this day. It will not be on tomorrow's report."}
+        >
+          <Badge variant="outline" colorScheme="gray" fontSize="9px" textTransform="none">
+            {ongoing ? "ongoing" : "on this day"}
+          </Badge>
+        </Tooltip>
         {items.length > 3 && (
           <Button size="xs" variant="ghost" onClick={() => setOpen((v) => !v)}>
             {open ? "show less" : `show all ${items.length}`}
@@ -320,12 +332,21 @@ const DailyReport = ({ isOpen, onClose }) => {
               </Alert>
             )}
 
-            <Text fontSize="sm" fontWeight="700" mt={4} mb={2}>
+            <Text fontSize="sm" fontWeight="700" mt={4} mb={1}>
               Needs attention
               {data.attention?.truncated && (
                 <Badge colorScheme="red" ml={2}>list capped</Badge>
               )}
             </Text>
+            {/* Standing exceptions are computed as of now. On a past day they
+                sit beside that day's movement and would otherwise read as the
+                backlog as it stood then, which is not what they are. */}
+            {!isToday && grouped.some(([, l]) => l[0]?.scope !== "range") && (
+              <Text fontSize="xs" color="gray.600" mb={2}>
+                Items marked <b>ongoing</b> are outstanding <b>now</b>, not as they
+                stood on this day.
+              </Text>
+            )}
             {grouped.length === 0 ? (
               <Text fontSize="sm" color="gray.500" mb={3}>Nothing waiting.</Text>
             ) : (
