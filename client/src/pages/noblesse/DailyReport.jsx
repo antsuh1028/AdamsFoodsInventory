@@ -39,26 +39,37 @@ const KINDS = {
 // Loudest first, and within a kind the report already sorted by age.
 const KIND_ORDER = Object.keys(KINDS);
 
+// A weight, or nothing at all — never "0.00 lb" for a figure that was simply
+// never recorded. The two read identically on a page and mean opposite things.
+const lb = (v) => (v == null || v === "" ? null : `${fmtWeight(v)} lb`);
+
 // One line of detail per kind. The shapes differ because the things do.
 const detailOf = (item) => {
   const d = item.detail || {};
+  const parts = (...xs) => xs.filter(Boolean).join(" · ");
   switch (item.kind) {
     case "unregistered":
-      return `${num(d.boxes)} boxes · ${fmtWeight(d.lb)} lb`;
+      return parts(`${num(d.boxes)} boxes`, lb(d.lb));
     case "report_waiting":
-      return [d.type, `${num(d.casesIn)} cases in`].filter(Boolean).join(" · ");
+      return parts(d.type, `${num(d.casesIn)} cases in`,
+                   lb(d.outputLb) && `${lb(d.outputLb)} out`,
+                   lb(d.inedibleLb) && `${lb(d.inedibleLb)} inedible`);
     case "session_open":
-      return `${num(d.boxes)} boxes · ${d.direction === "outgoing" ? "outgoing" : "incoming"}`;
+      return parts(`${num(d.boxes)} boxes`, lb(d.lb),
+                   d.direction === "outgoing" ? "outgoing" : "incoming");
     case "draft_stale":
-      return `${num(d.lines)} line${d.lines === 1 ? "" : "s"} · to ship ${d.shipDate || "—"}`;
+      return parts(`${num(d.lines)} line${d.lines === 1 ? "" : "s"}`,
+                   Number(d.lb) > 0 ? lb(d.lb) : null,
+                   `to ship ${d.shipDate || "—"}`);
     case "lot_idle":
-      return `${fmtWeight(d.inLb)} lb in · ${fmtWeight(d.outLb)} lb out`;
+      return parts(`${lb(d.inLb)} in`, `${lb(d.outLb)} out`,
+                   `${num(d.boxesIn)} → ${num(d.boxesOut)} boxes`);
     case "form_overdue":
-      return [d.vendor, `due ${d.dueDate || "—"}`].filter(Boolean).join(" · ");
+      return parts(d.vendor, lb(d.originalWeight), `due ${d.dueDate || "—"}`);
     case "shipped_unweighed":
-      return `${d.destination || "—"} · ${fmtWeight(d.lb)} lb`;
+      return parts(d.destination, lb(d.lb));
     case "voided":
-      return `${num(d.boxes)} box${d.boxes === 1 ? "" : "es"}`;
+      return parts(`${num(d.boxes)} box${d.boxes === 1 ? "" : "es"}`, lb(d.lb));
     default:
       return "";
   }
@@ -279,10 +290,16 @@ const DailyReport = ({ isOpen, onClose }) => {
                 value={fmtWeight(m.shipped.lb)} unit="lb"
                 sub={`${num(m.shipped.loads)} load${m.shipped.loads === 1 ? "" : "s"} · ${num(m.shipped.destinations)} destination${m.shipped.destinations === 1 ? "" : "s"}`}
               />
+              {/* Cases lead because cases are what an accepted report moves;
+                  the pounds are recorded off the floor and create no stock. */}
               <Figure
                 label="Processed" tone="gray"
                 value={num(m.processed.casesOut)} unit="cases out"
-                sub={`${num(m.processed.casesIn)} in · ${num(m.processed.reports)} report${m.processed.reports === 1 ? "" : "s"}`}
+                sub={[
+                  `${num(m.processed.casesIn)} in`,
+                  Number(m.processed.outputLb) > 0 && `${fmtWeight(m.processed.outputLb)} lb out`,
+                  Number(m.processed.inedibleLb) > 0 && `${fmtWeight(m.processed.inedibleLb)} lb inedible`,
+                ].filter(Boolean).join(" · ")}
               />
               <Figure
                 label="Lots issued" tone="gray"

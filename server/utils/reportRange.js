@@ -273,8 +273,12 @@ const ATTENTION = `
     UNION ALL
     -- Submitted off the floor, nobody at reception has accepted it. Nothing
     -- has moved yet: an accepted report is what deducts cases.
+    -- outputLb is what the floor wrote down, and is null until they do. It is
+    -- NOT stock: an accepted report moves cases, never pounds.
     SELECT 'report_waiting', r.report_id, l.lot_number,
-           jsonb_build_object('casesIn', r.input_cases, 'type', r.processing_type),
+           jsonb_build_object('casesIn', r.input_cases, 'type', r.processing_type,
+                              'outputLb', r.output_weight::text,
+                              'inedibleLb', r.inedible_weight::text),
            ${pacificDay("r.submitted_at")}::text,
            ${ageDays(pacificDay("r.submitted_at"))},
            r.submitted_by, 'standing'
@@ -285,7 +289,8 @@ const ATTENTION = `
     UNION ALL
     -- Still open after the day it was weighed: somebody walked away from it.
     SELECT 'session_open', b.batch_id, b.lot_number,
-           jsonb_build_object('boxes', ${boxCount("b")}, 'direction', b.direction),
+           jsonb_build_object('boxes', ${boxCount("b")}, 'lb', ${boxLb("b")},
+                              'direction', b.direction),
            ${weighedDay}::text, ${ageDays(weighedDay)},
            NULL, 'standing'
       FROM box_batches b
@@ -298,6 +303,10 @@ const ATTENTION = `
            jsonb_build_object(
              'lines', (SELECT COUNT(*)::int FROM noblesse_shipment_items si
                         WHERE si.shipment_id = s.shipment_id),
+             -- What it is holding. No stock has moved yet; shipping is what
+             -- deducts, so this is the weight at stake if it never ships.
+             'lb', COALESCE((SELECT SUM(si.weight)::text FROM noblesse_shipment_items si
+                              WHERE si.shipment_id = s.shipment_id), '0'),
              'shipDate', s.ship_date::text),
            ${pacificDay("s.created_at")}::text,
            ${ageDays(pacificDay("s.created_at"))},
@@ -310,7 +319,8 @@ const ATTENTION = `
     -- Weighed in, something weighed out, then nothing for a week. A close-out
     -- candidate — offered to a person, never closed on a computed signal.
     SELECT 'lot_idle', l.lot_id, l.lot_number,
-           jsonb_build_object('inLb', y.weighed_in, 'outLb', y.weighed_out),
+           jsonb_build_object('inLb', y.weighed_in, 'outLb', y.weighed_out,
+                              'boxesIn', y.boxes_in, 'boxesOut', y.boxes_out),
            m.last_move::text, ${ageDays("m.last_move")},
            NULL, 'standing'
       FROM lots l
@@ -322,8 +332,11 @@ const ATTENTION = `
 
     UNION ALL
     -- Past its due date and not finished.
+    -- originalWeight is the form's own typed figure, which is what the lot was
+    -- registered as arriving. Null on a form nobody has filled that far.
     SELECT 'form_overdue', f.id, f.lot_number,
-           jsonb_build_object('vendor', f.vendor, 'dueDate', f.due_date::text),
+           jsonb_build_object('vendor', f.vendor, 'dueDate', f.due_date::text,
+                              'originalWeight', f.original_weight::text),
            f.due_date::text, ${ageDays("f.due_date")},
            f.checked_by, 'standing'
       FROM noblesse_registration_forms f
@@ -351,8 +364,11 @@ const ATTENTION = `
     UNION ALL
     -- Corrections are normal; a run of them on one session is not. Grouped by
     -- session so one bad pallet is one row.
+    -- The pounds that left the total when these were voided. Rounded per box
+    -- and then summed, like every other weight here.
     SELECT 'voided', b.batch_id, b.lot_number,
-           jsonb_build_object('boxes', COUNT(*)::int),
+           jsonb_build_object('boxes', COUNT(*)::int,
+                              'lb', COALESCE(SUM(${weightInLb("bi")}), 0)::text),
            MAX(${pacificDay("bi.voided_at")})::text,
            ${ageDays(`MAX(${pacificDay("bi.voided_at")})`)},
            MAX(u.username), 'range'
