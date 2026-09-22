@@ -2,11 +2,14 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, Input, Spinner, Alert, AlertIcon,
   Table, Thead, Tbody, Tr, Th, Td, Tooltip, IconButton,
+  Menu, MenuButton, MenuList, MenuItem,
 } from "@chakra-ui/react";
 import {
   RepeatIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon,
 } from "@chakra-ui/icons";
 import FloatingWindow from "../../components/FloatingWindow";
+import LotTimeline from "../../components/LotTimeline";
+import { LotFormWindow, LotManifestWindow } from "./LotEntries";
 import axiosInstance from "../../utils/axiosInstance";
 import { today, fmtWeight, fmtLongDate } from "./shared";
 
@@ -251,6 +254,10 @@ const DailyReport = ({ isOpen, onClose }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Three independent windows, so any combination can be open at once.
+  const [formLot, setFormLot] = useState(null);
+  const [manifestLot, setManifestLot] = useState(null);
+  const [timelineLot, setTimelineLot] = useState(null);
   // Survives a re-render mid-flight so a slow day cannot overwrite a newer one.
   const wanted = useRef(day);
 
@@ -288,6 +295,7 @@ const DailyReport = ({ isOpen, onClose }) => {
   const isToday = day === today();
 
   return (
+    <>
     <FloatingWindow
       isOpen={isOpen}
       onClose={onClose}
@@ -420,8 +428,32 @@ const DailyReport = ({ isOpen, onClose }) => {
                   <Tbody>
                     {data.lots.map((lot) => (
                       <Tr key={lot.lotId}>
+                        {/* The lot number is the way into the paper behind the
+                            figure. Each entry is its own window, so a form and
+                            its manifest can sit open side by side. */}
                         <Td fontWeight="600">
-                          {lot.lotNumber}
+                          <Menu isLazy placement="bottom-start">
+                            <MenuButton
+                              as={Button}
+                              variant="link"
+                              size="sm"
+                              fontWeight="600"
+                              color="blue.600"
+                            >
+                              {lot.lotNumber}
+                            </MenuButton>
+                            <MenuList fontSize="sm" minW="200px">
+                              <MenuItem onClick={() => setFormLot(lot.lotNumber)}>
+                                Registration form
+                              </MenuItem>
+                              <MenuItem onClick={() => setManifestLot(lot.lotNumber)}>
+                                Weight manifests
+                              </MenuItem>
+                              <MenuItem onClick={() => setTimelineLot(lot)}>
+                                Lot timeline
+                              </MenuItem>
+                            </MenuList>
+                          </Menu>
                           {lot.status === "closed" && (
                             <Badge ml={2} colorScheme="gray" fontSize="9px">closed</Badge>
                           )}
@@ -457,6 +489,27 @@ const DailyReport = ({ isOpen, onClose }) => {
         )}
       </Box>
     </FloatingWindow>
+
+    {/* Companions, not children: each isOpen is ANDed with the report's own so
+        none can be left floating over an unrelated screen once it closes —
+        the same rule the scanning keypad follows. */}
+    <LotFormWindow
+      lotNumber={formLot}
+      isOpen={isOpen && Boolean(formLot)}
+      onClose={() => setFormLot(null)}
+    />
+    <LotManifestWindow
+      lotNumber={manifestLot}
+      isOpen={isOpen && Boolean(manifestLot)}
+      onClose={() => setManifestLot(null)}
+    />
+    <LotTimeline
+      lotId={timelineLot?.lotId ?? null}
+      lotNumber={timelineLot?.lotNumber ?? ""}
+      isOpen={isOpen && Boolean(timelineLot)}
+      onClose={() => setTimelineLot(null)}
+    />
+    </>
   );
 };
 
