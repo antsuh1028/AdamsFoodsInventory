@@ -41,6 +41,7 @@ import { WeightManifestTab } from "./noblesse/WeightManifestTab";
 import { lotNumberForDate, fmtLongDate } from "./noblesse/shared";
 import ScannerDiagnostic from "../components/navbar/scannerDiagnostic";
 import ScaleDiagnostic from "../components/navbar/scaleDiagnostic";
+import DailyReport from "./noblesse/DailyReport";
 import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -48,6 +49,8 @@ const REFRESH_INTERVAL_MS = 60 * 1000;
 const NoblesseScreen = () => {
   const navigate = useNavigate();
   const isAdmin = getRole() === "admin";
+  // The report is admin + manager, matching the gate on the route itself.
+  const canSeeReport = ["admin", "manager"].includes(getRole());
   const canEdit = true; // all roles permitted on this screen are trusted to edit
   // Outgoing is the only tab this role has, so the rest are not rendered and
   // the screen-level fetches behind them are not made.
@@ -58,6 +61,7 @@ const NoblesseScreen = () => {
   // to configure the same scanner.
   const [scanDiagOpen, setScanDiagOpen] = useState(false);
   const [scaleDiagOpen, setScaleDiagOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const {
     isOpen: drawerOpen,
     onOpen: openDrawer,
@@ -571,6 +575,13 @@ const NoblesseScreen = () => {
           <Stack direction="column" spacing={3} p={4}>
             {drawerBtn("Refresh Data", () => fetchData(true))}
 
+            {canSeeReport && (
+              <>
+                <Divider />
+                {drawerBtn("Daily Report", () => setReportOpen(true))}
+              </>
+            )}
+
             {isAdmin && (
               <>
                 <Divider />
@@ -601,6 +612,13 @@ const NoblesseScreen = () => {
           resource at all: they read hardware attached to the operator's own
           machine. There is nothing to leak and nothing to mutate, so keeping
           them out of the way is the whole requirement. */}
+      {/* Unlike the diagnostics below, this reads the whole tenant's figures,
+          so the gate that matters is requireRole on the route. This one only
+          keeps it out of the way of people it is not for. */}
+      {canSeeReport && (
+        <DailyReport isOpen={reportOpen} onClose={() => setReportOpen(false)} />
+      )}
+
       {isAdmin && (
         <>
           <ScannerDiagnostic
