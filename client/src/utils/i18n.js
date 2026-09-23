@@ -232,6 +232,34 @@ const ES = {
   "Session updated": "Sesión actualizada",
   "Could not save": "No se pudo guardar",
 
+  // ── Flagging a session as a mistake ───────────────────────────────────────
+  // Raised at the bench, cleared by whoever sorts it out. It removes nothing,
+  // and the Spanish has to be as clear about that as the English.
+  "Flag": "Marcar",
+  "Flagged": "Marcada",
+  "Flag it": "Marcarla",
+  "Flag this session?": "¿Marcar esta sesión?",
+  "This session is flagged": "Esta sesión está marcada",
+  "Flag this session as a mistake": "Marcar esta sesión como un error",
+  "Flagged by {who}": "Marcada por {who}",
+  "Raised by {who}.": "Marcada por {who}.",
+  "Already flagged.": "Ya está marcada.",
+  "Reason: {reason}": "Motivo: {reason}",
+  "Session {id}": "Sesión {id}",
+  "This removes nothing. The session keeps counting until an admin looks at it — it just shows up in red, and on the daily report, so somebody does.":
+    "Esto no borra nada. La sesión sigue contando hasta que un administrador la revise — solo aparece en rojo, y en el reporte diario, para que alguien la vea.",
+  "What is wrong with it?": "¿Qué tiene de malo?",
+  "Weighed the wrong pallet, double-counted, wrong lot…":
+    "Se pesó la tarima equivocada, se contó dos veces, lote equivocado…",
+  "Clear the flag": "Quitar la marca",
+  "Update the reason": "Actualizar el motivo",
+  "Flag cleared": "Marca quitada",
+  "The session is back to normal.": "La sesión vuelve a la normalidad.",
+  "Nothing was removed — an admin decides what happens to it.":
+    "No se borró nada — un administrador decide qué pasa con ella.",
+  "Could not flag it": "No se pudo marcar",
+  "Could not clear the flag": "No se pudo quitar la marca",
+
   // Loads
   "Loads": "Cargas",
   "Draft": "Borrador",

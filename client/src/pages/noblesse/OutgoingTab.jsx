@@ -781,7 +781,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
       )}
       {/* The dock weighs it and the dock notices when it is wrong, so this is
           open to everyone — unlike Delete below. */}
-      <FlagSession batch={b} onChanged={fetchBatches} />
+      <FlagSession batch={b} onChanged={fetchBatches} t={t} />
       {/* The client check is a courtesy; requireRole("admin") on the
           route is the control. */}
       {isAdmin && (
