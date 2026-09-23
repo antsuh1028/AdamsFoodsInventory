@@ -1187,7 +1187,17 @@ router.get("/box-batches/unregistered", verifyToken, async (req, res) => {
 });
 
 // Reopen a closed session so more boxes can be SCANNED into it.
-router.post("/box-batches/:id/reopen", verifyToken, requireRole("admin"), async (req, res) => {
+//
+// Open to everyone, because the case it exists for is an operator closing a
+// pallet too early and needing to carry on — and they cannot fix that alone if
+// reopening is admin-only.
+//
+// It stays admin-only ONCE THE SESSION HAS BEEN FILED: on a merged manifest, on
+// a registration form, or on a load. Reopening then changes a figure somebody
+// has already reported, which is a different act from finishing a pallet, and
+// the closed-session edit rule (CLAUDE.md §2) is only worth anything where the
+// numbers have left the bench.
+router.post("/box-batches/:id/reopen", verifyToken, async (req, res) => {
   const batchId = Number(req.params.id);
   if (!Number.isInteger(batchId)) {
     return res.status(400).json({ error: "Invalid batch id" });
@@ -1207,6 +1217,32 @@ router.post("/box-batches/:id/reopen", verifyToken, requireRole("admin"), async 
       return res.json({ reopened: false, alreadyOpen: true, batchId });
     }
 
+    // Read BEFORE the update, because it decides whether the update happens.
+    // Same shared definition the delete guard uses, so the two can never
+    // disagree about what counts as filed.
+    const blockers = await batchBlockers(pool, batchId, req.tenantId);
+    const isAdmin = req.role === "admin";
+
+    if (!isAdmin) {
+      const filed = [
+        ...blockers.groups.map((g) =>
+          `merged manifest ${g.name || g.lot_number || g.group_id}`),
+        ...blockers.forms.map((f) =>
+          `registration form ${f.lot_number || f.id}`),
+        ...blockers.shipments.map((s) =>
+          `load to ${s.destination_name} (${s.status})`),
+      ];
+      if (filed.length) {
+        return res.status(409).json({
+          code: "ALREADY_FILED",
+          error: `This session is already on ${filed.join(", ")}. `
+               + `Reopening it would change a figure that has been filed, so an `
+               + `admin has to do it.`,
+          blockers,
+        });
+      }
+    }
+
     // closed_at is cleared because it is no longer true. The fact that it was
     // closed, and by whom it was reopened, survives in the audit row below.
     const updated = await pool.query(
@@ -1215,8 +1251,6 @@ router.post("/box-batches/:id/reopen", verifyToken, requireRole("admin"), async 
       RETURNING batch_id, lot_number, status, created_at, closed_at`,
       [batchId, req.tenantId]
     );
-
-    const blockers = await batchBlockers(pool, batchId, req.tenantId);
 
     logBoxRemoval({
       tenantId: req.tenantId,

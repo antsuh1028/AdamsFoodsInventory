@@ -486,8 +486,11 @@ const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
           barcode server-side, deduplicated on serial, and recorded as scanned.
           So a late box arrives on the same footing as every other box on the
           manifest rather than as somebody's typing. */}
-      {isAdmin && (
-        <Flex gap={3} align="center" mt={3} pt={3} wrap="wrap"
+      {/* Open to everyone: closing a pallet too early is the operator's own
+          mistake, and they cannot fix it alone if this is admin-only. The
+          server refuses once the session is on a merged manifest, a
+          registration form or a load — that refusal is the control, not this. */}
+      <Flex gap={3} align="center" mt={3} pt={3} wrap="wrap"
           borderTop="1px solid" borderColor="gray.200">
           {detail.status === "closed" ? (
             <>
@@ -505,8 +508,7 @@ const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
               <b>Continue</b> on {detail.lot_number || "this lot"} to scan more boxes onto it.
             </Text>
           )}
-        </Flex>
-      )}
+      </Flex>
 
       <AlertDialog isOpen={confirmReopen} leastDestructiveRef={cancelReopenRef}
         onClose={() => setConfirmReopen(false)} isCentered>
