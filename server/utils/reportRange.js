@@ -271,6 +271,18 @@ const ATTENTION = `
      WHERE b.tenant_id = $1 AND ${UNREGISTERED_WHERE}
 
     UNION ALL
+    -- Somebody at the bench said this session is wrong. It still counts in
+    -- every total until an admin acts, which is why it needs saying here.
+    SELECT 'flagged', b.batch_id, b.lot_number,
+           jsonb_build_object('boxes', ${boxCount("b")}, 'lb', ${boxLb("b")},
+                              'reason', b.flag_reason, 'direction', b.direction),
+           ${pacificDay("b.flagged_at")}::text,
+           ${ageDays(pacificDay("b.flagged_at"))},
+           (SELECT u.username FROM users u WHERE u.id = b.flagged_by), 'standing'
+      FROM box_batches b
+     WHERE b.tenant_id = $1 AND b.flagged_at IS NOT NULL
+
+    UNION ALL
     -- Submitted off the floor, nobody at reception has accepted it. Nothing
     -- has moved yet: an accepted report is what deducts cases.
     -- outputLb is what the floor wrote down, and is null until they do. It is

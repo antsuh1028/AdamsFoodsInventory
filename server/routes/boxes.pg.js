@@ -1095,6 +1095,9 @@ router.get("/box-batches", verifyToken, async (req, res) => {
               b.ship_to, b.bill_of_lading, b.brand, b.est_number, b.grade, b.source,
               b.direction, b.status, b.created_at, b.closed_at,
               b.weighed_on::text AS weighed_on,
+              b.flagged_at, b.flag_reason,
+              -- The UUID resolved here so the row can name who raised it.
+              (SELECT u.username FROM users u WHERE u.id = b.flagged_by) AS flagged_by,
               (SELECT COUNT(*)::int
                  FROM batch_items i
                 WHERE i.batch_id = b.batch_id AND i.voided_at IS NULL) AS box_count,
@@ -1230,6 +1233,67 @@ router.post("/box-batches/:id/reopen", verifyToken, requireRole("admin"), async 
     res.json({ reopened: true, batch: updated.rows[0], blockers });
   } catch (err) {
     console.error("reopen box batch:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Flag a session as a mistake, or clear the flag.
+//
+// This is a REQUEST, not a removal: the flag changes no weight, no count and no
+// printed manifest. Deleting a session is admin-only and stays that way, so an
+// operator who could take product out of a total by flagging it would be that
+// gate under another name. What it buys is that the person who noticed can say
+// so at the bench, instead of telling someone later and hoping.
+//
+// Not admin-gated on purpose — the whole point is that whoever weighed it can
+// raise it. Clearing is open too: a flag raised by mistake is not a control.
+router.post("/box-batches/:id/flag", verifyToken, async (req, res) => {
+  const batchId = Number(req.params.id);
+  if (!Number.isInteger(batchId)) {
+    return res.status(400).json({ error: "Invalid batch id" });
+  }
+  const raw = req.body?.reason;
+  const reason = typeof raw === "string" ? raw.trim().slice(0, 500) || null : null;
+  const clear = req.body?.clear === true;
+
+  try {
+    const found = await pool.query(
+      `SELECT batch_id, lot_number FROM box_batches
+        WHERE batch_id = $1 AND tenant_id = $2`,
+      [batchId, req.tenantId]
+    );
+    if (!found.rows.length) return res.status(404).json({ error: "Batch not found" });
+
+    const updated = await pool.query(
+      clear
+        ? `UPDATE box_batches
+              SET flagged_at = NULL, flagged_by = NULL, flag_reason = NULL
+            WHERE batch_id = $1 AND tenant_id = $2
+        RETURNING batch_id, flagged_at, flagged_by, flag_reason`
+        // COALESCE keeps the FIRST report's time and author: a second person
+        // adding a reason is not a new flag.
+        : `UPDATE box_batches
+              SET flagged_at = COALESCE(flagged_at, now()),
+                  flagged_by = COALESCE(flagged_by, $3),
+                  flag_reason = COALESCE($4, flag_reason)
+            WHERE batch_id = $1 AND tenant_id = $2
+        RETURNING batch_id, flagged_at, flagged_by, flag_reason`,
+      clear ? [batchId, req.tenantId] : [batchId, req.tenantId, req.userId || null, reason]
+    );
+
+    // Survives the session it describes, like every other row in this table.
+    logBoxRemoval({
+      tenantId: req.tenantId,
+      action: clear ? "flag_cleared" : "flagged",
+      batchId,
+      lotNumber: found.rows[0].lot_number,
+      reason,
+      performedBy: req.username || null,
+    });
+
+    res.json({ flagged: !clear, batch: updated.rows[0] });
+  } catch (err) {
+    console.error("flag box batch:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -1441,7 +1505,10 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
               status, created_at, closed_at,
               -- Text, not a Date: pg turns a DATE into midnight server-local,
               -- which a reader in another timezone shows as the day before.
-              weighed_on::text AS weighed_on
+              weighed_on::text AS weighed_on,
+              flagged_at, flag_reason,
+              (SELECT u.username FROM users u WHERE u.id = box_batches.flagged_by)
+                AS flagged_by
          FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]
     );

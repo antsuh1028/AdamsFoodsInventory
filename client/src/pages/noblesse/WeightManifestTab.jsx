@@ -8,6 +8,7 @@ import {
 import { ChevronDownIcon, ChevronUpIcon, SearchIcon, CloseIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import DeleteBatchDialog from "./DeleteBatchDialog";
+import FlagSession from "./FlagSession";
 import ScanSheet from "../../components/navbar/ScanSheet";
 import BoxScanner from "../../components/navbar/boxScanner";
 import printWeightManifest from "./printWeightManifest";
@@ -1356,9 +1357,12 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                 const isNew = isUnseen(row.key);
                 return (
                   <React.Fragment key={row.key}>
+                    {/* Flagged wins over today's green: the whole point is that
+                        it is the row that stands out. It still counts in every
+                        total — a flag is a request, not a removal. */}
                     <Box as="tr"
-                      bg={isToday(b) ? "green.50" : i % 2 ? "gray.50" : "white"}
-                      _hover={{ bg: isToday(b) ? "green.100" : "blue.50" }}
+                      bg={b.flagged_at ? "red.50" : isToday(b) ? "green.50" : i % 2 ? "gray.50" : "white"}
+                      _hover={{ bg: b.flagged_at ? "red.100" : isToday(b) ? "green.100" : "blue.50" }}
                       cursor="pointer" onDoubleClick={() => toggleExpand(b)}>
                       {/* Centred on the td, not the Checkbox: Chakra renders the
                           control as an inline-flex label, so textAlign is what
@@ -1437,6 +1441,10 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                             onClick={(e) => { e.stopPropagation(); print(b); }}>
                             Print
                           </Button>
+                          {/* Anyone may raise it — the person who noticed is
+                              usually the one who weighed it, and they cannot
+                              delete. Clearing is open for the same reason. */}
+                          <FlagSession batch={b} onChanged={fetchBatches} />
                           {/* Deletes the whole session, boxes and all. Admin
                               only, and gated server-side too. */}
                           {isAdmin && (

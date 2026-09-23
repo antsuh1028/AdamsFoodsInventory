@@ -7,6 +7,7 @@ import {
 import axiosInstance from "../../utils/axiosInstance";
 import WeighFinishedBoxes from "../../components/navbar/WeighFinishedBoxes";
 import DeleteBatchDialog from "./DeleteBatchDialog";
+import FlagSession from "./FlagSession";
 import { toDisplay } from "../../utils/weight";
 import { fmtDate, fmtDateOnly, fmtDateTime, today, upper } from "./shared";
 import getRole, { canReceive } from "../../utils/getRole";
@@ -713,9 +714,13 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // One weighed session's row.
   const renderSession = (b) => (
     <Box key={b.batch_id}>
+    {/* Flagged reads red at a glance. It still counts everywhere — the flag
+        asks an admin to look, it does not remove anything. */}
     <Flex align="baseline" gap={3} wrap="wrap"
-      px={3} py={2} bg="white" borderRadius="md"
-      border="1px solid" borderColor={openBatch === b.batch_id ? "blue.300" : "gray.200"}
+      px={3} py={2} bg={b.flagged_at ? "red.50" : "white"} borderRadius="md"
+      border="1px solid"
+      borderColor={b.flagged_at ? "red.300"
+        : openBatch === b.batch_id ? "blue.300" : "gray.200"}
       cursor="pointer" title={t("Double-click to see the boxes")}
       onDoubleClick={() => toggleBatch(b.batch_id)}>
       {reception && b.lot_id ? (
@@ -774,6 +779,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           {t("Carry on weighing")}
         </Button>
       )}
+      {/* The dock weighs it and the dock notices when it is wrong, so this is
+          open to everyone — unlike Delete below. */}
+      <FlagSession batch={b} onChanged={fetchBatches} />
       {/* The client check is a courtesy; requireRole("admin") on the
           route is the control. */}
       {isAdmin && (

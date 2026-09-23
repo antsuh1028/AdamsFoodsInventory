@@ -271,6 +271,18 @@ const steps = async () => {
   await run("box_batches closed_by",
     `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS closed_by UUID`);
 
+  // "This one is wrong" — raised by whoever weighed it, acted on by an admin.
+  // A flag changes NO figure: the session keeps counting until somebody with
+  // the authority to remove it does. Deleting is still admin-only, and an
+  // operator being able to take weight out of a total by flagging it would be
+  // that gate with a different name on it.
+  await run("box_batches flagged_at",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS flagged_at TIMESTAMPTZ`);
+  await run("box_batches flagged_by",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS flagged_by UUID`);
+  await run("box_batches flag_reason",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS flag_reason TEXT`);
+
   // Where a box's weight actually came from.
   await run("batch_items entry_method",
     `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS entry_method TEXT
