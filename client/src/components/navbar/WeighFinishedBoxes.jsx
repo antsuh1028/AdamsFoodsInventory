@@ -202,6 +202,57 @@ const WeighFinishedBoxes = ({
     } finally { setBusy(false); }
   };
 
+  // Close this pallet and open the next one on the same lot, heading intact.
+  //
+  // A lot going out on several pallets is several sessions — one tag each — and
+  // the heading is identical every time. Read off the SESSION rather than the
+  // form, so it survives a session that was adopted or resumed rather than
+  // typed here.
+  const onNextPallet = async () => {
+    setBusy(true);
+    const closedId = session?.batchId ?? null;
+    const heading = {
+      lotId: lot.lotId ?? null,
+      lotNumber: (session?.lotNumber || lot.lotNumber || "").trim() || null,
+      expectedBoxes: String(session?.expectedBoxes ?? expectedBoxes ?? "").trim() || null,
+      itemDescription: (session?.itemDescription || itemDescription || "").trim().toUpperCase() || null,
+      shipTo: (session?.shipTo || shipTo || "").trim().toUpperCase() || null,
+      direction: "outgoing",
+    };
+    try {
+      const result = await stop(remarks.trim() || null);
+
+      // Same refusal as a plain stop: unsent weights keep the bench where it is.
+      if (!result?.closed) {
+        toast({
+          status: "warning", position: "top", duration: 9000, isClosable: true,
+          title: t("Not stopped — weights still unsent"),
+          description: t("{n} weight(s) have not reached the server. Stay on this screen until they do.",
+            { n: result?.stillPending ?? 0 }),
+        });
+        return;
+      }
+      // The pallet just closed still has to reach the load it belongs to.
+      if (!result.gone && closedId != null && onSessionClosed) {
+        await onSessionClosed(closedId);
+      }
+
+      setConfirmStop(false);
+      setRemarks("");
+      // The heading is deliberately NOT cleared — that is the whole point.
+      await start(heading);
+      toast({
+        status: "success", position: "top", duration: 4000,
+        title: t("Next pallet started"),
+        description: t("{lot} — the previous pallet is closed and has its own tag.",
+          { lot: heading.lotNumber || t("Lot") }),
+      });
+    } catch (err) {
+      toast({ title: t("Could not start the next pallet"), description: err.message,
+        status: "error", position: "top", duration: 6000, isClosable: true });
+    } finally { setBusy(false); }
+  };
+
   // Neither finishing nor carrying on: the batch stays open on the server and
   // on this device, so the next run picks it up where this one stopped.
   const onLeaveOpen = () => {
@@ -563,6 +614,12 @@ const WeighFinishedBoxes = ({
                 missing, and the one a part-processed lot needs. */}
             <Button variant="outline" onClick={onLeaveOpen} isDisabled={busy}>
               {t("Leave it open")}
+            </Button>
+            {/* More of the same lot on another pallet. Closes this one and
+                reopens with the same heading, so nothing is retyped. */}
+            <Button variant="outline" colorScheme="teal" onClick={onNextPallet}
+              isDisabled={busy || count === 0}>
+              {t("Next pallet")}
             </Button>
             {/* Finishing a session is not destructive, so it does not wear the
                 colour of something that is. */}
