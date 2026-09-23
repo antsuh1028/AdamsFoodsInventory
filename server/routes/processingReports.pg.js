@@ -270,13 +270,16 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
          (tenant_id, lot_id, processing_date, processing_type, line_no, customer,
           description, brand, grade, est_number, pack_date, input_cases,
           output_cases, output_weight, inedible_weight, notes, submitted_by,
-          start_time, end_time)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+          start_time, end_time, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        RETURNING report_id`,
       [req.tenantId, lotId, h.processingDate, h.processingType, h.lineNo, h.customer,
        h.description, h.brand, h.grade, h.estNumber, h.packDate, inputCases,
        v.outputCases, h.outputWeight, h.inedibleWeight, h.notes, req.username,
-       h.startTime, h.endTime]
+       h.startTime, h.endTime,
+       // A run opened at the start is not a claim about what came off it.
+       // Reception only ever sees it once it has been confirmed.
+       body.inProgress === true ? "in_progress" : "submitted"]
     );
     const reportId = inserted.rows[0].report_id;
     await writeChildren(client, reportId, v.cleanPulls, v.workers);
@@ -330,12 +333,16 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
               input_cases = $10, output_cases = $11, output_weight = $12,
               inedible_weight = $13, notes = $14,
               start_time = $17, end_time = $18,
-              status = 'submitted', reject_reason = NULL
+              status = $19, reject_reason = NULL
         WHERE report_id = $15 AND tenant_id = $16`,
       [h.processingDate, h.processingType, h.lineNo, h.customer, h.description,
        h.brand, h.grade, h.estNumber, h.packDate, inputCases, v.outputCases,
        h.outputWeight, h.inedibleWeight, h.notes, id, req.tenantId,
-       h.startTime, h.endTime]
+       h.startTime, h.endTime,
+       // Saving a run that is still on the line keeps it out of reception's
+       // queue. Anything else is a confirmation, which is what hands it over —
+       // and that stays the default, so every existing caller is unchanged.
+       req.body?.inProgress === true ? "in_progress" : "submitted"]
     );
     await writeChildren(client, id, v.cleanPulls, v.workers);
 
@@ -376,11 +383,15 @@ router.post("/processing-reports/:id/accept", verifyToken, async (req, res) => {
     const report = head.rows[0];
     if (report.status !== "submitted") {
       await client.query("ROLLBACK");
+      const why = {
+        accepted: `Already accepted by ${report.accepted_by || "someone"} — its cases are already off the lot.`,
+        // A run still on the line has no finished figures to move stock with.
+        in_progress: "That run has not been confirmed yet. It is still in progress on the floor.",
+        rejected: "A rejected report has to be resubmitted before it can be accepted.",
+      };
       return res.status(409).json({
         code: report.status === "accepted" ? "ALREADY_ACCEPTED" : "NOT_SUBMITTED",
-        error: report.status === "accepted"
-          ? `Already accepted by ${report.accepted_by || "someone"} — its cases are already off the lot.`
-          : "A rejected report has to be resubmitted before it can be accepted.",
+        error: why[report.status] || "That report is not ready to be accepted.",
       });
     }
 
@@ -458,12 +469,21 @@ router.post("/processing-reports/:id/accept", verifyToken, async (req, res) => {
       }]), formId, req.tenantId]
     );
 
+    // Reception names the processing type, because the floor does not know the
+    // codes and leaves it blank. COALESCE, so accepting without saying anything
+    // keeps whatever is already there rather than wiping it.
+    const typeRaw = req.body?.processingType;
+    const processingType = typeof typeRaw === "string" && typeRaw.trim()
+      ? typeRaw.trim() : null;
+
     const updated = await client.query(
       `UPDATE noblesse_processing_reports
-          SET status = 'accepted', accepted_by = $1, accepted_at = now(), applied_form_id = $2
+          SET status = 'accepted', accepted_by = $1, accepted_at = now(),
+              applied_form_id = $2,
+              processing_type = COALESCE($5, processing_type)
         WHERE report_id = $3 AND tenant_id = $4
       RETURNING *`,
-      [req.username, formId, id, req.tenantId]
+      [req.username, formId, id, req.tenantId, processingType]
     );
 
     await client.query("COMMIT");

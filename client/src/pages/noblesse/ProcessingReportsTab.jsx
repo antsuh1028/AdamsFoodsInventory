@@ -8,7 +8,7 @@ import FloatingWindow from "../../components/FloatingWindow";
 import printProcessingReport from "./printProcessingReport";
 import LotPicker from "../../components/LotPicker";
 import {
-  fmtDate, today, timeNow, upper, fmtWeight, PROCESSING_TYPES,
+  fmtDate, today, timeNow, upper, fmtWeight, PROCESSING_TYPES, PROCESSING_LINES,
   SheetField, sheetInputProps, SectionBar, SHEET_GRID,
 } from "./shared";
 import getRole from "../../utils/getRole";
@@ -83,9 +83,20 @@ const withLotDefaults = (draft, lot, row) => {
   return next;
 };
 
-const STATUS_COLOR = { submitted: "yellow", accepted: "green", rejected: "red" };
+// in_progress is grey rather than loud: a run on the line is normal, not
+// something waiting on anybody.
+const STATUS_COLOR = {
+  in_progress: "gray", submitted: "yellow", accepted: "green", rejected: "red",
+};
+const STATUS_LABEL = {
+  in_progress: "On the line", submitted: "Waiting", accepted: "Accepted",
+  rejected: "Sent back",
+};
 // The filter buttons' own words, for saying which one is hiding a search match.
-const FILTER_LABEL = { submitted: "Waiting", accepted: "Accepted", rejected: "Sent back" };
+const FILTER_LABEL = {
+  submitted: "Waiting", in_progress: "On the line", accepted: "Accepted",
+  rejected: "Sent back",
+};
 
 const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const toast = useToast();
@@ -179,11 +190,15 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     setWorkerInput("");
   };
 
-  const submit = async () => {
+  // `inProgress` keeps the run out of reception's queue: it is still on the
+  // line, so nothing on it is a finished figure yet. Confirming is what hands
+  // it over, and that stays the default.
+  const submit = async (inProgress = false) => {
     setSaving(true);
     try {
       const payload = {
         ...draft,
+        inProgress,
         pulls: draft.pulls
           .map((p) => ({ cases: parseInt(p.cases, 10) }))
           .filter((p) => Number.isInteger(p.cases) && p.cases > 0),
@@ -270,6 +285,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
           <Flex gap={1}>
             {[
               ["submitted", "Waiting", "yellow"],
+              ["in_progress", "On the line", "gray"],
               ["accepted", "Accepted", "green"],
               ["rejected", "Sent back", "red"],
               ["", "All", "teal"],
@@ -336,7 +352,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             <Flex align="baseline" gap={3} wrap="wrap">
               <Text fontSize="sm" fontWeight="700" color="blue.700">{r.lotNumber}</Text>
               <Badge colorScheme={STATUS_COLOR[r.status]} fontSize="9px">
-                {r.status === "submitted" ? "Waiting" : r.status === "accepted" ? "Accepted" : "Sent back"}
+                {STATUS_LABEL[r.status] || r.status}
               </Badge>
               {r.lineNo && <Badge colorScheme="gray" fontSize="9px">Line {r.lineNo}</Badge>}
               {r.description && <Text fontSize="xs" color="gray.600">{r.description}</Text>}
@@ -429,10 +445,20 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               <Button size="md" variant="ghost" onClick={() => setDraft(null)}>
                 {draft?.readOnly ? "Close" : "Cancel"}
               </Button>
+              {/* A run is opened when it starts and confirmed when it ends.
+                  Saving while it is still running keeps it off reception's
+                  queue — nothing on it is final until the line stops. */}
               {!draft?.readOnly && (
-                <Button size="md" colorScheme="blue" onClick={submit}
+                <Button size="md" variant="outline" colorScheme="yellow"
+                  onClick={() => submit(true)}
                   isLoading={saving} isDisabled={!canSubmit}>
-                  Submit report
+                  Save, still running
+                </Button>
+              )}
+              {!draft?.readOnly && (
+                <Button size="md" colorScheme="blue" onClick={() => submit(false)}
+                  isLoading={saving} isDisabled={!canSubmit}>
+                  {draft?.status === "in_progress" ? "Confirm run" : "Submit report"}
                 </Button>
               )}
             </Flex>
@@ -488,9 +514,19 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   onChange={(e) => setDraft({ ...draft, endTime: e.target.value })} />
               </SheetField>
 
-              <SheetField label="Line #">
-                <Input {...sheetInputProps} isReadOnly={draft.readOnly} placeholder="1" value={draft.lineNo}
-                  onChange={(e) => setDraft({ ...draft, lineNo: upper(e.target.value) })} />
+              {/* Named stations rather than a typed number. A value already on
+                  an old report that is not in the list is kept as its own
+                  option, so opening it cannot silently blank the field. */}
+              <SheetField label="Line">
+                <Select {...sheetInputProps} isDisabled={draft.readOnly}
+                  value={draft.lineNo || ""}
+                  onChange={(e) => setDraft({ ...draft, lineNo: e.target.value })}>
+                  <option value="">—</option>
+                  {PROCESSING_LINES.map((l) => <option key={l} value={l}>{l}</option>)}
+                  {draft.lineNo && !PROCESSING_LINES.includes(draft.lineNo) && (
+                    <option value={draft.lineNo}>{draft.lineNo}</option>
+                  )}
+                </Select>
               </SheetField>
               <SheetField label="Customer">
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.customer || ""}

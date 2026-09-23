@@ -561,6 +561,23 @@ const steps = async () => {
   await run("noblesse_processing_reports end_time",
     `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS end_time TEXT`);
 
+  // A run is OPENED when it starts and CONFIRMED when it ends, so there is a
+  // state before 'submitted'. Partial runs are the normal case, not the
+  // exception — a lot is processed over several of them — and an in-progress
+  // report is how one that is still on the line is visible to everybody.
+  //
+  // Dropped and re-added as a pair so re-running is safe: ADD CONSTRAINT on its
+  // own is not idempotent.
+  await run("noblesse_processing_reports drop status check", `
+    ALTER TABLE noblesse_processing_reports
+      DROP CONSTRAINT IF EXISTS noblesse_processing_reports_status_check
+  `);
+  await run("noblesse_processing_reports status check", `
+    ALTER TABLE noblesse_processing_reports
+      ADD CONSTRAINT noblesse_processing_reports_status_check
+      CHECK (status IN ('in_progress', 'submitted', 'accepted', 'rejected'))
+  `);
+
   await run("noblesse_processing_reports lot index", `
     CREATE INDEX IF NOT EXISTS noblesse_processing_reports_lot_idx
       ON noblesse_processing_reports (tenant_id, lot_id, status)
