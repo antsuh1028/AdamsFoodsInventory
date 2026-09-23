@@ -48,7 +48,9 @@ const fmtAttention = (r) => ({
   scope: r.scope,
 });
 
-router.get("/noblesse-report", verifyToken, requireRole("admin", "manager"), async (req, res) => {
+// admin and the Noblesse-side manager. NOT "manager" — that is an Adams Foods
+// role, and /noblesse does not admit it.
+router.get("/noblesse-report", verifyToken, requireRole("admin", "ntimanager"), async (req, res) => {
   const range = R.parseRange(req.query.from, req.query.to);
   if (!range.ok) return res.status(400).json({ code: "BAD_RANGE", error: range.error });
 

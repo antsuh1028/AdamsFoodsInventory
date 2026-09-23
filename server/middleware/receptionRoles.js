@@ -10,6 +10,13 @@
 // and is exactly the point: weighing stays open to everyone, the load does not.
 // "outgoing" is scoped to this tab and nothing else (see roleScope.js), so it
 // owns the load it weighs rather than handing it on.
-const RECEPTION_ROLES = ["admin", "manager", "noblesse", "reception", "outgoing"];
+//
+// "manager" is an ADAMS FOODS role and cannot reach /noblesse at all, so it is
+// listed here but unreachable; "ntimanager" is the Noblesse counterpart that
+// actually gets there. One tenant means the role name is the only thing
+// separating the two facilities.
+const RECEPTION_ROLES = [
+  "admin", "manager", "ntimanager", "noblesse", "reception", "outgoing",
+];
 
 module.exports = { RECEPTION_ROLES };

@@ -31,7 +31,7 @@ import {
 } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
-import getRole, { isOutgoingOnly } from "../utils/getRole";
+import getRole, { isOutgoingOnly, canSeeReport } from "../utils/getRole";
 // eslint-disable-next-line no-unused-vars -- Incoming Records is commented out below, not removed
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import ProcessingReportsTab from "./noblesse/ProcessingReportsTab";
@@ -49,8 +49,9 @@ const REFRESH_INTERVAL_MS = 60 * 1000;
 const NoblesseScreen = () => {
   const navigate = useNavigate();
   const isAdmin = getRole() === "admin";
-  // The report is admin + manager, matching the gate on the route itself.
-  const canSeeReport = ["admin", "manager"].includes(getRole());
+  // Admin, and the Noblesse-side manager. NOT `manager`, which is an Adams
+  // Foods role that /noblesse does not admit at all.
+  const showReport = canSeeReport();
   const canEdit = true; // all roles permitted on this screen are trusted to edit
   // Outgoing is the only tab this role has, so the rest are not rendered and
   // the screen-level fetches behind them are not made.
@@ -575,7 +576,7 @@ const NoblesseScreen = () => {
           <Stack direction="column" spacing={3} p={4}>
             {drawerBtn("Refresh Data", () => fetchData(true))}
 
-            {canSeeReport && (
+            {showReport && (
               <>
                 <Divider />
                 {drawerBtn("Daily Report", () => setReportOpen(true))}
@@ -615,7 +616,7 @@ const NoblesseScreen = () => {
       {/* Unlike the diagnostics below, this reads the whole tenant's figures,
           so the gate that matters is requireRole on the route. This one only
           keeps it out of the way of people it is not for. */}
-      {canSeeReport && (
+      {showReport && (
         <DailyReport isOpen={reportOpen} onClose={() => setReportOpen(false)} />
       )}
 
