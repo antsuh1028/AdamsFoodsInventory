@@ -31,7 +31,7 @@ const emptyDraft = () => ({
   endTime: "",
   processingType: "", lineNo: "",
   customer: "", description: "", brand: "", grade: "", estNumber: "", packDate: "",
-  pulls: [{ cases: "" }],
+  pulls: [{ cases: "", packDate: "" }],
   inedibleWeight: "",
   workers: [],
   notes: "",
@@ -78,7 +78,7 @@ const withLotDefaults = (draft, lot, row) => {
   // Never a zero, which is not a quantity anyone would submit.
   const left = Number(row.qtyCases) || 0;
   if (left > 0 && next.pulls.length === 1 && !next.pulls[0].cases) {
-    next.pulls = [{ cases: String(left) }];
+    next.pulls = [{ cases: String(left), packDate: next.pulls[0].packDate || "" }];
   }
   return next;
 };
@@ -200,7 +200,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         ...draft,
         inProgress,
         pulls: draft.pulls
-          .map((p) => ({ cases: parseInt(p.cases, 10) }))
+          .map((p) => ({ cases: parseInt(p.cases, 10), packDate: p.packDate || null }))
           .filter((p) => Number.isInteger(p.cases) && p.cases > 0),
       };
       const editing = Boolean(draft.reportId);
@@ -263,7 +263,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const openReport = (r) => openDraft({
     readOnly: r.status === "accepted",
     ...emptyDraft(), ...r,
-    pulls: r.pulls.length ? r.pulls.map((p) => ({ cases: String(p.cases) })) : [{ cases: "" }],
+    pulls: r.pulls.length
+      ? r.pulls.map((p) => ({ cases: String(p.cases), packDate: p.packDate || "" }))
+      : [{ cases: "", packDate: "" }],
     inedibleWeight: r.inedibleWeight != null ? String(r.inedibleWeight) : "",
   });
 
@@ -584,7 +586,23 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                       value={p.cases}
                       onChange={(e) => {
                         const pulls = [...draft.pulls];
-                        pulls[idx] = { cases: e.target.value };
+                        pulls[idx] = { ...pulls[idx], cases: e.target.value };
+                        setDraft({ ...draft, pulls });
+                      }}
+                    />
+                    {/* One grab off the rack carries one pack date, and a lot
+                        routinely spans several — the report's own Packed field
+                        can only ever name one of them. */}
+                    <Text fontSize="2xs" color="gray.500" textTransform="uppercase">
+                      Packed
+                    </Text>
+                    <Input
+                      {...sheetInputProps} isReadOnly={draft.readOnly}
+                      bg="white" flex="0 0 165px" type="date"
+                      value={p.packDate || ""}
+                      onChange={(e) => {
+                        const pulls = [...draft.pulls];
+                        pulls[idx] = { ...pulls[idx], packDate: e.target.value };
                         setDraft({ ...draft, pulls });
                       }}
                     />
@@ -600,7 +618,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                       <Button size="xs" variant="outline" colorScheme="blue" px={2} minW="auto"
                         isDisabled={draft.readOnly}
                         title="Add another batch"
-                        onClick={() => setDraft({ ...draft, pulls: [...draft.pulls, { cases: "" }] })}>
+                        onClick={() => setDraft({ ...draft, pulls: [...draft.pulls, { cases: "", packDate: "" }] })}>
                         +
                       </Button>
                     )}

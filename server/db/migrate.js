@@ -600,6 +600,14 @@ const steps = async () => {
   `);
 
   // Who ran the line. Free text until there is a reason for a roster table.
+  // A lot routinely spans several pack dates — production has one with seven
+  // across seven weeks — and the report's single pack_date can only name one of
+  // them. A pull is one grab off the rack, so it is the row that actually knows
+  // which date its cases carry.
+  await run("noblesse_processing_report_pulls pack_date",
+    `ALTER TABLE noblesse_processing_report_pulls
+       ADD COLUMN IF NOT EXISTS pack_date DATE`);
+
   await run("noblesse_processing_report_workers", `
     CREATE TABLE IF NOT EXISTS noblesse_processing_report_workers (
       worker_id SERIAL PRIMARY KEY,

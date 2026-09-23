@@ -55,7 +55,13 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   acceptedAt: r.accepted_at,
   rejectReason: r.reject_reason,
   appliedFormId: r.applied_form_id,
-  pulls: pulls.map((p) => ({ pullId: p.pull_id, position: p.position, cases: p.cases, notes: p.notes })),
+  pulls: pulls.map((p) => ({
+    pullId: p.pull_id, position: p.position, cases: p.cases, notes: p.notes,
+    // Text, not a Date: pg turns a DATE into midnight server-local, which a
+    // Pacific reader shows as the day before (CLAUDE.md §8).
+    packDate: p.pack_date instanceof Date
+      ? p.pack_date.toISOString().slice(0, 10) : p.pack_date,
+  })),
   workers: workers.map((w) => w.name),
 });
 
@@ -124,7 +130,8 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
       `SELECT r.*, l.lot_number,
               (SELECT COALESCE(json_agg(json_build_object(
                         'pullId', p.pull_id, 'position', p.position,
-                        'cases', p.cases, 'notes', p.notes) ORDER BY p.position, p.pull_id), '[]'::json)
+                        'cases', p.cases, 'notes', p.notes,
+                        'packDate', p.pack_date::text) ORDER BY p.position, p.pull_id), '[]'::json)
                  FROM noblesse_processing_report_pulls p WHERE p.report_id = r.report_id) AS pulls,
               (SELECT COALESCE(json_agg(w.name ORDER BY w.position, w.worker_id), '[]'::json)
                  FROM noblesse_processing_report_workers w WHERE w.report_id = r.report_id) AS workers
@@ -164,8 +171,16 @@ router.get("/processing-reports/:id", verifyToken, async (req, res) => {
 // Pulls, workers and the head fields shared by create and edit.
 const validateBody = (body) => {
   const pulls = Array.isArray(body.pulls) ? body.pulls : [];
+  // packDate is per PULL, not per report: one grab off the rack carries one
+  // date, and a lot routinely spans several. A blank stays null rather than
+  // being guessed from the report's own date.
   const cleanPulls = pulls
-    .map((p) => ({ cases: asCases(p && p.cases), notes: (p && p.notes) || null }))
+    .map((p) => ({
+      cases: asCases(p && p.cases),
+      notes: (p && p.notes) || null,
+      packDate: p && typeof p.packDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.packDate.trim())
+        ? p.packDate.trim() : null,
+    }))
     .filter((p) => p.cases !== null);
   if (!cleanPulls.length) {
     return { error: "At least one pull with a whole number of cases is required" };
@@ -222,10 +237,11 @@ const writeChildren = async (client, reportId, cleanPulls, workers) => {
   await client.query(`DELETE FROM noblesse_processing_report_workers WHERE report_id = $1`, [reportId]);
   if (cleanPulls.length) {
     await client.query(
-      `INSERT INTO noblesse_processing_report_pulls (report_id, position, cases, notes)
-       SELECT $1, p, c, n FROM UNNEST($2::int[], $3::int[], $4::text[]) AS t(p, c, n)`,
+      `INSERT INTO noblesse_processing_report_pulls (report_id, position, cases, notes, pack_date)
+       SELECT $1, p, c, n, d
+         FROM UNNEST($2::int[], $3::int[], $4::text[], $5::date[]) AS t(p, c, n, d)`,
       [reportId, cleanPulls.map((_, i) => i), cleanPulls.map((p) => p.cases),
-       cleanPulls.map((p) => p.notes)]
+       cleanPulls.map((p) => p.notes), cleanPulls.map((p) => p.packDate)]
     );
   }
   if (workers.length) {
