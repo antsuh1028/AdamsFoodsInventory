@@ -140,13 +140,26 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 
 ## 2. Branch / deploy state
 
-- **Production CODE runs `master` = `6f45228`** — deployed and verified
-  2026-09-21 (box at that SHA, same pid after restart, `[migrate] schema
-  ready`, bundle `main.7bd5a287.js` byte-matching the local build). Don't
-  deploy without being asked. Now live: the `outgoing` role (one tab, scoped
-  server-side by `middleware/roleScope.js`), search on every Noblesse tab,
-  Spanish across the Outgoing tab, the two-copy pallet tag, dock edits of an
-  outgoing session's item and destination, and the typecheck setup.
+- **Production CODE runs `master` = `f946e16`** — deployed and verified
+  2026-09-23 (box at that SHA, new pid 1245835 owning :3001, `[migrate] schema
+  ready`, `index.html` referencing `main.54b56ef8.js` byte-matching the local
+  build). Don't deploy without being asked. Now live: the **daily report**
+  (drawer, `GET /noblesse-report`), the **`ntimanager`** role, the weighing day
+  on a tally import, and choosing the scale port.
+  - The box was found at `1b49d5d` before this deploy, not at the `6f45228`
+    this entry claimed — a pull had landed without a restart at some point.
+    **Check `git rev-parse HEAD` on the box rather than believing this line.**
+  - Earlier and still live: the `outgoing` role (one tab, scoped server-side by
+    `middleware/roleScope.js`), search on every Noblesse tab, Spanish across the
+    Outgoing tab, the two-copy pallet tag, dock edits of an outgoing session's
+    item and destination, and the typecheck setup.
+- **Roles are the only thing separating the two facilities** — there is ONE
+  tenant (`Adams Foods`), so `tenant_id` cannot do it. `/home` admits
+  `admin, manager, user`; `/noblesse` admits `admin, ntimanager, noblesse,
+  outgoing`. So **`manager` is an Adams Foods role** and `ntimanager` is its
+  Noblesse counterpart — adding `manager` to `/noblesse` would let an Adams
+  facility manager into Noblesse Trading. `RECEPTION_ROLES` still lists
+  `reception`, which no account has and no screen admits.
 - **The dev server points at the PRODUCTION database.** Running it locally
   applies `db/migrate.js` to prod and writes real rows. "Not deployed" therefore
   means the *code* on the server is old; schema and data changes made locally
@@ -361,7 +374,8 @@ TypeScript in its build, so a type error would fail a deploy. Types police the
 boundary (a float cannot be passed in or returned); `weight.test.js` polices the
 arithmetic, which a float wrapped in `String()` gets past the types. Both needed.
 
-**Baseline: 0 failures, 722 passing (2026-09-04).** Anything red is yours.
+**Baseline: 0 failures, 57 suites / 2192 passing (2026-09-23, at deploy).**
+Anything red is yours.
 
 It was 6 failures / 583 tests for a long time. Both numbers were wrong in the
 same way: **two suites never loaded at all**, so ~140 tests were dead and their
