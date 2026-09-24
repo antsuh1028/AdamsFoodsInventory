@@ -124,13 +124,13 @@ const printProcessingReport = (report = {}) => {
             ${row("Processing Date", esc(report.processingDate), "Line #", esc(report.lineNo))}
             ${row("Started", esc(report.startTime), "Finished", esc(report.endTime))}
             ${fullRow("Processing Type", esc(report.processingType))}
-            ${row("Customer", esc(report.customer), "Pack Dates",
-                  esc((report.packDates || []).join(", ") || report.packDate))}
 
             ${sectionHeader("Product")}
             ${fullRow("Description", esc(report.description))}
             ${row("Brand", esc(report.brand), "Grade", esc(report.grade))}
-            ${row("EST#", esc(report.estNumber))}
+            ${row("EST#", esc(report.estNumber), "Customer", esc(report.customer))}
+            ${fullRow("Pack Dates",
+                      esc((report.packDates || []).join(", ") || report.packDate))}
             <tr><td colspan="4" class="separator"></td></tr>
 
             ${sectionHeader("Cases Processed")}

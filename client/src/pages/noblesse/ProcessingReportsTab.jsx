@@ -44,6 +44,7 @@ const PRODUCT_FIELDS = [
   ["brand", "Brand"],
   ["grade", "Grade"],
   ["estNumber", "EST"],
+  ["customer", "Customer"],
   ["packDates", "Packed"],
 ];
 
@@ -539,10 +540,6 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   )}
                 </Select>
               </SheetField>
-              <SheetField label="Customer">
-                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.customer || ""}
-                  onChange={(e) => setDraft({ ...draft, customer: upper(e.target.value) })} />
-              </SheetField>
 
               {/* Five fields describing what the product IS, which is the same
                   on every run of a lot and is read far more often than changed.
@@ -575,6 +572,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               <SheetField label="EST #">
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.estNumber || ""}
                   onChange={(e) => setDraft({ ...draft, estNumber: upper(e.target.value) })} />
+              </SheetField>
+              <SheetField label="Customer">
+                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.customer || ""}
+                  onChange={(e) => setDraft({ ...draft, customer: upper(e.target.value) })} />
               </SheetField>
               {/* A lot routinely spans several pack dates, so this takes the
                   whole set. Picking a date adds it; each can be removed. */}
