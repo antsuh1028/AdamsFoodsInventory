@@ -37,13 +37,14 @@ export const PROCESSING_TYPES = [
   "111 MARIN Marinading",
 ];
 
-// The stations a run happens on. Named equipment, not line numbers — "2" meant
-// nothing to anyone reading the report afterwards, and Slicer #2 running on
-// Line #2 is its own station rather than either of the two beside it.
+// The stations a run happens on. Named equipment, not bare numbers — "2" meant
+// nothing to anyone reading the report afterwards. The slicers, the lines and
+// the bandsaws are each their own station.
 export const PROCESSING_LINES = [
   "Slicer #1",
   "Slicer #2",
-  "Slicer #2 Line #2",
+  "Line #1",
+  "Line #2",
   "Bandsaw #1",
   "Bandsaw #2",
 ];
