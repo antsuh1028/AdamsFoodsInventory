@@ -140,12 +140,16 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 
 ## 2. Branch / deploy state
 
-- **Production CODE runs `master` = `f946e16`** — deployed and verified
-  2026-09-23 (box at that SHA, new pid 1245835 owning :3001, `[migrate] schema
-  ready`, `index.html` referencing `main.54b56ef8.js` byte-matching the local
-  build). Don't deploy without being asked. Now live: the **daily report**
-  (drawer, `GET /noblesse-report`), the **`ntimanager`** role, the weighing day
-  on a tally import, and choosing the scale port.
+- **Production CODE runs `master` = `f3bf339`** — deployed and verified
+  2026-09-24 (box at that SHA, new pid 1247140 owning :3001, `[migrate] schema
+  ready`, `index.html` referencing `main.fc2bd207.js` byte-matching the local
+  build). Don't deploy without being asked. Now live: **flagging a weighing
+  session** as a mistake (red row, on the daily report, Spanish), **Next
+  pallet**, **operators reopening an unfiled session**, and the processing
+  report's **named lines**, **in-progress runs** and **pack date per pull**.
+  - Earlier that day, `f946e16`: the **daily report** (drawer,
+    `GET /noblesse-report`), the **`ntimanager`** role, the weighing day on a
+    tally import, and choosing the scale port.
   - The box was found at `1b49d5d` before this deploy, not at the `6f45228`
     this entry claimed — a pull had landed without a restart at some point.
     **Check `git rev-parse HEAD` on the box rather than believing this line.**
@@ -374,7 +378,7 @@ TypeScript in its build, so a type error would fail a deploy. Types police the
 boundary (a float cannot be passed in or returned); `weight.test.js` polices the
 arithmetic, which a float wrapped in `String()` gets past the types. Both needed.
 
-**Baseline: 0 failures, 57 suites / 2192 passing (2026-09-23, at deploy).**
+**Baseline: 0 failures, 58 suites / 2239 passing (2026-09-24, at deploy).**
 Anything red is yours.
 
 It was 6 failures / 583 tests for a long time. Both numbers were wrong in the
