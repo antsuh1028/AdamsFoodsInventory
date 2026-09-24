@@ -30,8 +30,8 @@ const emptyDraft = () => ({
   startTime: timeNow(),
   endTime: "",
   processingType: "", lineNo: "",
-  customer: "", description: "", brand: "", grade: "", estNumber: "", packDate: "",
-  pulls: [{ cases: "", packDate: "" }],
+  customer: "", description: "", brand: "", grade: "", estNumber: "", packDates: [],
+  pulls: [{ cases: "" }],
   inedibleWeight: "",
   workers: [],
   notes: "",
@@ -44,11 +44,15 @@ const PRODUCT_FIELDS = [
   ["brand", "Brand"],
   ["grade", "Grade"],
   ["estNumber", "EST"],
-  ["packDate", "Packed"],
+  ["packDates", "Packed"],
 ];
 
-const productIncomplete = (d) =>
-  PRODUCT_FIELDS.some(([k]) => !String(d[k] || "").trim());
+// Packed is a LIST now, so "filled in" cannot be a string test — String([])
+// is "" only by accident, and String(["a","b"]) is "a,b".
+const isBlank = (v) => (Array.isArray(v) ? v.length === 0 : !String(v || "").trim());
+const fieldText = (v) => (Array.isArray(v) ? v.join(", ") : String(v || ""));
+
+const productIncomplete = (d) => PRODUCT_FIELDS.some(([k]) => isBlank(d[k]));
 
 // What a lot already knows about itself, copied into a new run.
 //
@@ -70,15 +74,17 @@ const withLotDefaults = (draft, lot, row) => {
   fill("brand", row.brand);
   fill("grade", row.grade);
   fill("estNumber", row.est);
-  // Already ISO from the server's own fmtDate, which is what type=date wants.
-  // Not uppercased: it is a date, not a typed label.
-  fill("packDate", row.packDate, (v) => v);
+  // The lot's own pack date seeds the SET, and only while it is empty — what
+  // the manager picked outranks it, same as every other field here.
+  if (!(next.packDates || []).length && String(row.packDate ?? "").trim()) {
+    next.packDates = [row.packDate];
+  }
 
   // The cases still on the lot: processing what is left is the common case.
   // Never a zero, which is not a quantity anyone would submit.
   const left = Number(row.qtyCases) || 0;
   if (left > 0 && next.pulls.length === 1 && !next.pulls[0].cases) {
-    next.pulls = [{ cases: String(left), packDate: next.pulls[0].packDate || "" }];
+    next.pulls = [{ cases: String(left) }];
   }
   return next;
 };
@@ -200,7 +206,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         ...draft,
         inProgress,
         pulls: draft.pulls
-          .map((p) => ({ cases: parseInt(p.cases, 10), packDate: p.packDate || null }))
+          .map((p) => ({ cases: parseInt(p.cases, 10) }))
           .filter((p) => Number.isInteger(p.cases) && p.cases > 0),
       };
       const editing = Boolean(draft.reportId);
@@ -264,8 +270,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     readOnly: r.status === "accepted",
     ...emptyDraft(), ...r,
     pulls: r.pulls.length
-      ? r.pulls.map((p) => ({ cases: String(p.cases), packDate: p.packDate || "" }))
-      : [{ cases: "", packDate: "" }],
+      ? r.pulls.map((p) => ({ cases: String(p.cases) }))
+      : [{ cases: "" }],
+    // Always a list here, so the chips and the blank test never see undefined
+    // on a report filed before this field existed.
+    packDates: r.packDates || [],
     inedibleWeight: r.inedibleWeight != null ? String(r.inedibleWeight) : "",
   });
 
@@ -543,8 +552,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 isOpen={productOpen}
                 onToggle={() => setProductOpen((v) => !v)}
                 summary={PRODUCT_FIELDS
-                  .filter(([k]) => String(draft[k] || "").trim())
-                  .map(([k, label]) => `${label} ${draft[k]}`)
+                  .filter(([k]) => !isBlank(draft[k]))
+                  .map(([k, label]) => `${label} ${fieldText(draft[k])}`)
                   .join(" · ") || "nothing filled in"}
               >
                 Product
@@ -567,9 +576,47 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.estNumber || ""}
                   onChange={(e) => setDraft({ ...draft, estNumber: upper(e.target.value) })} />
               </SheetField>
-              <SheetField label="Pack Date">
-                <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="date" value={draft.packDate || ""}
-                  onChange={(e) => setDraft({ ...draft, packDate: e.target.value })} />
+              {/* A lot routinely spans several pack dates, so this takes the
+                  whole set. Picking a date adds it; each can be removed. */}
+              <SheetField label="Pack Dates" full>
+                <Flex align="center" gap={2} px={2} py={1.5} wrap="wrap">
+                  {(draft.packDates || []).map((d) => (
+                    <Flex key={d} align="center" gap={1}
+                      bg="white" border="1px solid" borderColor="gray.300"
+                      borderRadius="md" pl={2} pr={1} py={0.5}>
+                      <Text fontSize="sm">{fmtDate(d)}</Text>
+                      {!draft.readOnly && (
+                        <Button size="xs" variant="ghost" colorScheme="red"
+                          px={1} minW="auto" title="Remove this date"
+                          onClick={() => setDraft({
+                            ...draft,
+                            packDates: draft.packDates.filter((x) => x !== d),
+                          })}>
+                          ×
+                        </Button>
+                      )}
+                    </Flex>
+                  ))}
+                  {!draft.readOnly && (
+                    <Input
+                      size="sm" type="date" bg="white" width="170px"
+                      // Cleared after each pick, so the control is always ready
+                      // for the next one rather than holding the last.
+                      value=""
+                      onChange={(e) => {
+                        const d = e.target.value;
+                        if (!d || (draft.packDates || []).includes(d)) return;
+                        setDraft({
+                          ...draft,
+                          packDates: [...(draft.packDates || []), d].sort(),
+                        });
+                      }}
+                    />
+                  )}
+                  {!(draft.packDates || []).length && draft.readOnly && (
+                    <Text fontSize="sm" color="gray.400">—</Text>
+                  )}
+                </Flex>
               </SheetField>
               </>)}
 
@@ -590,22 +637,6 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                         setDraft({ ...draft, pulls });
                       }}
                     />
-                    {/* One grab off the rack carries one pack date, and a lot
-                        routinely spans several — the report's own Packed field
-                        can only ever name one of them. */}
-                    <Text fontSize="2xs" color="gray.500" textTransform="uppercase">
-                      Packed
-                    </Text>
-                    <Input
-                      {...sheetInputProps} isReadOnly={draft.readOnly}
-                      bg="white" flex="0 0 165px" type="date"
-                      value={p.packDate || ""}
-                      onChange={(e) => {
-                        const pulls = [...draft.pulls];
-                        pulls[idx] = { ...pulls[idx], packDate: e.target.value };
-                        setDraft({ ...draft, pulls });
-                      }}
-                    />
                     <Button size="xs" variant="ghost" colorScheme="red" px={1} minW="auto"
                       isDisabled={draft.readOnly || draft.pulls.length <= 1}
                       title={draft.pulls.length <= 1 ? "Cannot delete last row" : "Delete this row"}
@@ -618,7 +649,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                       <Button size="xs" variant="outline" colorScheme="blue" px={2} minW="auto"
                         isDisabled={draft.readOnly}
                         title="Add another batch"
-                        onClick={() => setDraft({ ...draft, pulls: [...draft.pulls, { cases: "", packDate: "" }] })}>
+                        onClick={() => setDraft({ ...draft, pulls: [...draft.pulls, { cases: "" }] })}>
                         +
                       </Button>
                     )}

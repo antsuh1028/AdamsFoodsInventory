@@ -3,6 +3,7 @@ const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { searchTerm, searchClause } = require("../utils/search");
+const { isCalendarDay } = require("../utils/weighedAt");
 
 // The shop-floor record of one processing run: which lot, which line, who ran
 // it, how many cases went through.
@@ -43,6 +44,11 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   grade: r.grade,
   estNumber: r.est_number,
   packDate: fmtDate(r.pack_date),
+  // A lot routinely spans several. Falls back to the single column so the
+  // reports filed before this still show the one date they carry.
+  packDates: Array.isArray(r.pack_dates) && r.pack_dates.length
+    ? r.pack_dates.map((d) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d)))
+    : (r.pack_date ? [fmtDate(r.pack_date)] : []),
   inputCases: r.input_cases,
   outputCases: r.output_cases,
   outputWeight: r.output_weight,
@@ -57,10 +63,6 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   appliedFormId: r.applied_form_id,
   pulls: pulls.map((p) => ({
     pullId: p.pull_id, position: p.position, cases: p.cases, notes: p.notes,
-    // Text, not a Date: pg turns a DATE into midnight server-local, which a
-    // Pacific reader shows as the day before (CLAUDE.md §8).
-    packDate: p.pack_date instanceof Date
-      ? p.pack_date.toISOString().slice(0, 10) : p.pack_date,
   })),
   workers: workers.map((w) => w.name),
 });
@@ -130,8 +132,7 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
       `SELECT r.*, l.lot_number,
               (SELECT COALESCE(json_agg(json_build_object(
                         'pullId', p.pull_id, 'position', p.position,
-                        'cases', p.cases, 'notes', p.notes,
-                        'packDate', p.pack_date::text) ORDER BY p.position, p.pull_id), '[]'::json)
+                        'cases', p.cases, 'notes', p.notes) ORDER BY p.position, p.pull_id), '[]'::json)
                  FROM noblesse_processing_report_pulls p WHERE p.report_id = r.report_id) AS pulls,
               (SELECT COALESCE(json_agg(w.name ORDER BY w.position, w.worker_id), '[]'::json)
                  FROM noblesse_processing_report_workers w WHERE w.report_id = r.report_id) AS workers
@@ -171,16 +172,8 @@ router.get("/processing-reports/:id", verifyToken, async (req, res) => {
 // Pulls, workers and the head fields shared by create and edit.
 const validateBody = (body) => {
   const pulls = Array.isArray(body.pulls) ? body.pulls : [];
-  // packDate is per PULL, not per report: one grab off the rack carries one
-  // date, and a lot routinely spans several. A blank stays null rather than
-  // being guessed from the report's own date.
   const cleanPulls = pulls
-    .map((p) => ({
-      cases: asCases(p && p.cases),
-      notes: (p && p.notes) || null,
-      packDate: p && typeof p.packDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.packDate.trim())
-        ? p.packDate.trim() : null,
-    }))
+    .map((p) => ({ cases: asCases(p && p.cases), notes: (p && p.notes) || null }))
     .filter((p) => p.cases !== null);
   if (!cleanPulls.length) {
     return { error: "At least one pull with a whole number of cases is required" };
@@ -225,6 +218,15 @@ const validateBody = (body) => {
       grade: body.grade || null,
       estNumber: body.estNumber || null,
       packDate: body.packDate || null,
+      // Deduped and sorted here rather than trusted: the same date added twice
+      // is one pack date, and the order they were typed in is not information.
+      packDates: [...new Set(
+        (Array.isArray(body.packDates) ? body.packDates : [])
+          .map((d) => String(d ?? "").trim())
+          // A real calendar day, not just the shape: 2026-13-45 matches the
+          // pattern and would reach Postgres as a 500 instead of a refusal.
+          .filter(isCalendarDay)
+      )].sort(),
       outputWeight: asDecimal(body.outputWeight),
       inedibleWeight: asDecimal(body.inedibleWeight),
       notes: body.notes || null,
@@ -237,11 +239,10 @@ const writeChildren = async (client, reportId, cleanPulls, workers) => {
   await client.query(`DELETE FROM noblesse_processing_report_workers WHERE report_id = $1`, [reportId]);
   if (cleanPulls.length) {
     await client.query(
-      `INSERT INTO noblesse_processing_report_pulls (report_id, position, cases, notes, pack_date)
-       SELECT $1, p, c, n, d
-         FROM UNNEST($2::int[], $3::int[], $4::text[], $5::date[]) AS t(p, c, n, d)`,
+      `INSERT INTO noblesse_processing_report_pulls (report_id, position, cases, notes)
+       SELECT $1, p, c, n FROM UNNEST($2::int[], $3::int[], $4::text[]) AS t(p, c, n)`,
       [reportId, cleanPulls.map((_, i) => i), cleanPulls.map((p) => p.cases),
-       cleanPulls.map((p) => p.notes), cleanPulls.map((p) => p.packDate)]
+       cleanPulls.map((p) => p.notes)]
     );
   }
   if (workers.length) {
@@ -286,8 +287,8 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
          (tenant_id, lot_id, processing_date, processing_type, line_no, customer,
           description, brand, grade, est_number, pack_date, input_cases,
           output_cases, output_weight, inedible_weight, notes, submitted_by,
-          start_time, end_time, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+          start_time, end_time, status, pack_dates)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::date[])
        RETURNING report_id`,
       [req.tenantId, lotId, h.processingDate, h.processingType, h.lineNo, h.customer,
        h.description, h.brand, h.grade, h.estNumber, h.packDate, inputCases,
@@ -295,7 +296,8 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
        h.startTime, h.endTime,
        // A run opened at the start is not a claim about what came off it.
        // Reception only ever sees it once it has been confirmed.
-       body.inProgress === true ? "in_progress" : "submitted"]
+       body.inProgress === true ? "in_progress" : "submitted",
+       h.packDates]
     );
     const reportId = inserted.rows[0].report_id;
     await writeChildren(client, reportId, v.cleanPulls, v.workers);
@@ -349,7 +351,7 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
               input_cases = $10, output_cases = $11, output_weight = $12,
               inedible_weight = $13, notes = $14,
               start_time = $17, end_time = $18,
-              status = $19, reject_reason = NULL
+              status = $19, pack_dates = $20::date[], reject_reason = NULL
         WHERE report_id = $15 AND tenant_id = $16`,
       [h.processingDate, h.processingType, h.lineNo, h.customer, h.description,
        h.brand, h.grade, h.estNumber, h.packDate, inputCases, v.outputCases,
@@ -358,7 +360,8 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
        // Saving a run that is still on the line keeps it out of reception's
        // queue. Anything else is a confirmation, which is what hands it over —
        // and that stays the default, so every existing caller is unchanged.
-       req.body?.inProgress === true ? "in_progress" : "submitted"]
+       req.body?.inProgress === true ? "in_progress" : "submitted",
+       h.packDates]
     );
     await writeChildren(client, id, v.cleanPulls, v.workers);
 
