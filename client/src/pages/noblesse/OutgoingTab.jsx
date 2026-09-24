@@ -702,6 +702,17 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // the server refuses any other, so offering one already on a load (shipped or
   // cancelled included) is offering a 409. From the FULL list, never the search.
   const untiedBatches = batches.filter((b) => !b.shipment && !tiedIds.has(b.batch_id));
+
+  // One entry per LOT, in the order the sessions are listed — a lot weighed
+  // across several pallets is one stop, not three.
+  const timelineLots = [];
+  for (const b of batches) {
+    if (b.lot_id && !timelineLots.some((l) => l.lotId === b.lot_id)) {
+      timelineLots.push({ lotId: b.lot_id, lotNumber: b.lot_number });
+    }
+  }
+  const timelineIndex = timelineLot
+    ? timelineLots.findIndex((l) => l.lotId === timelineLot.lotId) : -1;
   const shownBatches = foundBatches ?? batches;
   const isDraft = detail && detail.status === "draft";
 
@@ -1526,6 +1537,12 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
         isOpen={Boolean(timelineLot)}
         onClose={() => setTimelineLot(null)}
         t={t}
+        onStep={(d) => {
+          const next = timelineLots[timelineIndex + d];
+          if (next) setTimelineLot(next);
+        }}
+        stepPosition={timelineIndex >= 0
+          ? { index: timelineIndex, total: timelineLots.length } : null}
       />
 
       <WeighFinishedBoxes

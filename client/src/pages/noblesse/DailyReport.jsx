@@ -294,6 +294,12 @@ const DailyReport = ({ isOpen, onClose }) => {
 
   const isToday = day === today();
 
+  // Stepping moves through the table as it is displayed, so "next" means the
+  // next row the person can see rather than the next lot by id.
+  const lotList = data?.lots || [];
+  const lotIndex = timelineLot
+    ? lotList.findIndex((l) => l.lotId === timelineLot.lotId) : -1;
+
   return (
     <>
     <FloatingWindow
@@ -508,6 +514,12 @@ const DailyReport = ({ isOpen, onClose }) => {
       lotNumber={timelineLot?.lotNumber ?? ""}
       isOpen={isOpen && Boolean(timelineLot)}
       onClose={() => setTimelineLot(null)}
+      onStep={(d) => {
+        const next = lotList[lotIndex + d];
+        if (next) setTimelineLot(next);
+      }}
+      stepPosition={lotIndex >= 0
+        ? { index: lotIndex, total: lotList.length } : null}
     />
     </>
   );

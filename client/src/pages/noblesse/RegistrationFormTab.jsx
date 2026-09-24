@@ -850,6 +850,17 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
 
   // Every distinct day, newest first. A form with no date sorts last and rides
   // on the oldest page rather than vanishing.
+  // One entry per LOT, in the order the list is sorted and filtered — two forms
+  // against one lot is a known case, and it is still one stop when stepping.
+  const timelineLots = [];
+  for (const f of matching) {
+    if (f.lotId && !timelineLots.some((l) => l.lotId === f.lotId)) {
+      timelineLots.push({ lotId: f.lotId, lotNumber: f.lotNumber });
+    }
+  }
+  const timelineIndex = timelineLot
+    ? timelineLots.findIndex((l) => l.lotId === timelineLot.lotId) : -1;
+
   const days = [...new Set(matching.map((f) => f.dateReceived || ""))]
     .sort((a, b) => (a && b ? b.localeCompare(a) : a ? -1 : 1));
   const pageCount = Math.max(1, Math.ceil(days.length / DAYS_PER_PAGE));
@@ -1196,6 +1207,12 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
         lotNumber={timelineLot?.lotNumber}
         isOpen={Boolean(timelineLot)}
         onClose={() => setTimelineLot(null)}
+        onStep={(d) => {
+          const next = timelineLots[timelineIndex + d];
+          if (next) setTimelineLot(next);
+        }}
+        stepPosition={timelineIndex >= 0
+          ? { index: timelineIndex, total: timelineLots.length } : null}
       />
 
       <RegistrationFormModal

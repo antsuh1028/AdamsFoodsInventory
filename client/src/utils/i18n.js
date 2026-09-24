@@ -229,6 +229,8 @@ const ES = {
     "El resto de este encabezado lo cambia recepción.",
   "Save": "Guardar",
   "Cancel": "Cancelar",
+  "Previous lot": "Lote anterior",
+  "Next lot": "Lote siguiente",
   "Session updated": "Sesión actualizada",
   "Could not save": "No se pudo guardar",
 

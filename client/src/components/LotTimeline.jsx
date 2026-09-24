@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  Box, Flex, Text, Badge, Spinner, Alert, AlertIcon, Divider, Button, useToast,
+  Box, Flex, Text, Badge, Spinner, Alert, AlertIcon, Divider, Button,
+  IconButton, useToast,
 } from "@chakra-ui/react";
+import { ChevronLeftIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import axiosInstance from "../utils/axiosInstance";
 import getRole from "../utils/getRole";
 import { toDisplay } from "../utils/weight";
@@ -120,7 +122,14 @@ const Figure = ({ label, value, unit = "lb", strong }) => (
   </Box>
 );
 
-const LotTimeline = ({ lotId, lotNumber, isOpen, onClose, t = ENGLISH }) => {
+// `onStep` lets the caller move to the lot either side without closing this
+// window. It takes -1 or +1 and is given the list's own ordering, so "next"
+// means next in what the person is looking at rather than next by id.
+// Omitted, no arrows render — a caller with no list is unaffected.
+const LotTimeline = ({
+  lotId, lotNumber, isOpen, onClose, t = ENGLISH,
+  onStep = null, stepPosition = null,
+}) => {
   const isAdmin = getRole() === "admin";
   const toast = useToast();
   const [data, setData] = useState(null);
@@ -174,6 +183,27 @@ const LotTimeline = ({ lotId, lotNumber, isOpen, onClose, t = ENGLISH }) => {
       title={t("Lot {lot}", { lot: lotNumber || lotId || "" })}
       width={720}
       placement="right"
+      headerActions={onStep ? (
+        <Flex align="center" gap={1}>
+          <IconButton
+            aria-label={t("Previous lot")} title={t("Previous lot")}
+            icon={<ChevronLeftIcon />} size="xs"
+            isDisabled={!stepPosition || stepPosition.index <= 0}
+            onClick={() => onStep(-1)}
+          />
+          {stepPosition && (
+            <Text fontSize="xs" color="gray.600" whiteSpace="nowrap" px={1}>
+              {stepPosition.index + 1} / {stepPosition.total}
+            </Text>
+          )}
+          <IconButton
+            aria-label={t("Next lot")} title={t("Next lot")}
+            icon={<ChevronRightIcon />} size="xs"
+            isDisabled={!stepPosition || stepPosition.index >= stepPosition.total - 1}
+            onClick={() => onStep(1)}
+          />
+        </Flex>
+      ) : null}
     >
       {error && (
         <Alert status="error" borderRadius="md" fontSize="sm" mb={3}>
