@@ -30,6 +30,7 @@ export const PROCESSING_TYPES = [
   "105 BONE CUT Bone Cut",
   "105A OX-CUT Oxtail Cut",
   "106 CUT-RL Cutting & Rolling",
+  "107 TRM - RL Trimming & Rolling",
   "108 SHR-CT Short Rib Cut",
   "109 CHK-RL Chicken & Rolling",
   "110 REPK Repacking",
