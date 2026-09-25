@@ -170,12 +170,15 @@ router.get("/processing-reports/:id", verifyToken, async (req, res) => {
 // ── Submit and edit ──────────────────────────────────────────────────────────
 
 // Pulls, workers and the head fields shared by create and edit.
-const validateBody = (body) => {
+// `staging` is a run OPENED at the start: the lot, the line and the start time
+// are known, the cases are not. Confirming it still requires them — a report
+// handed to reception with no cases on it is not a record of anything.
+const validateBody = (body, { staging = false } = {}) => {
   const pulls = Array.isArray(body.pulls) ? body.pulls : [];
   const cleanPulls = pulls
     .map((p) => ({ cases: asCases(p && p.cases), notes: (p && p.notes) || null }))
     .filter((p) => p.cases !== null);
-  if (!cleanPulls.length) {
+  if (!cleanPulls.length && !staging) {
     return { error: "At least one pull with a whole number of cases is required" };
   }
 
@@ -261,7 +264,7 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
     return res.status(400).json({ error: "lotId is required" });
   }
 
-  const v = validateBody(body);
+  const v = validateBody(body, { staging: body.inProgress === true });
   if (v.error) return res.status(400).json({ error: v.error });
 
   const inputCases = v.cleanPulls.reduce((sum, p) => sum + p.cases, 0);
@@ -319,7 +322,7 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid report id" });
 
-  const v = validateBody(req.body || {});
+  const v = validateBody(req.body || {}, { staging: req.body?.inProgress === true });
   if (v.error) return res.status(400).json({ error: v.error });
   const inputCases = v.cleanPulls.reduce((sum, p) => sum + p.cases, 0);
 

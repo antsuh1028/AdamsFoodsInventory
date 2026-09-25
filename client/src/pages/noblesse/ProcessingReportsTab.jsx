@@ -188,7 +188,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const casesLeft = lotStock ? Number(lotStock.qtyCases) || 0 : null;
   const overdrawn = casesLeft != null && inputCases > casesLeft;
 
-  const canSubmit = Boolean(draft && draft.lotId && inputCases > 0);
+  // Staging needs only the lot: at the start of a run the cases are not known
+  // yet. Confirming still needs them.
+  const canStage = Boolean(draft && draft.lotId);
+  const canSubmit = canStage && inputCases > 0;
 
   const addWorker = () => {
     const name = upper(workerInput.trim());
@@ -463,7 +466,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {!draft?.readOnly && (
                 <Button size="md" variant="outline" colorScheme="yellow"
                   onClick={() => submit(true)}
-                  isLoading={saving} isDisabled={!canSubmit}>
+                  isLoading={saving} isDisabled={!canStage}>
                   Save, still running
                 </Button>
               )}
