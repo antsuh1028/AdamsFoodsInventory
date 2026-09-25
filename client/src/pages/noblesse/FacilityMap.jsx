@@ -1,5 +1,5 @@
-import React from "react";
-import { Box, Flex, Text, Badge } from "@chakra-ui/react";
+import React, { useRef, useState } from "react";
+import { Box, Flex, Text, Badge, Divider } from "@chakra-ui/react";
 
 // Processing Room 2, as a floor plan that shows what is on each station now.
 //
@@ -51,22 +51,22 @@ const stateOf = (runs) => {
 const FILL = { running: C.runFill, waiting: C.waitFill, idle: C.idleFill };
 const LINE = { running: C.runLine, waiting: C.waitLine, idle: C.idleLine };
 
-const Station = ({ station, runs, onPick }) => {
+const Station = ({ station, runs, onPick, onHover }) => {
   const state = stateOf(runs);
   const first = runs[0] || null;
   const cx = station.x + station.w / 2;
-
-  const title = runs.length
-    ? runs.map((r) => `${r.lotNumber} — ${r.status === "in_progress"
-        ? `running since ${r.startTime || "?"}` : "waiting on reception"}`).join("\n")
-    : `${station.label} — nothing on it`;
 
   return (
     <g
       style={{ cursor: first ? "pointer" : "default" }}
       onClick={() => first && onPick && onPick(first)}
+      onMouseEnter={(e) => onHover && onHover(station, runs, e)}
+      onMouseMove={(e) => onHover && onHover(station, runs, e)}
+      onMouseLeave={() => onHover && onHover(null)}
     >
-      <title>{title}</title>
+      {/* The accessible name only. The detail lives in the hover card, so the
+          browser's own tooltip does not sit on top of it saying the same. */}
+      <title>{station.label}</title>
       <rect
         x={station.x} y={station.y} width={station.w} height={station.h}
         fill={FILL[state]} stroke={LINE[state]} strokeWidth={state === "idle" ? 2 : 3}
@@ -106,7 +106,78 @@ const Station = ({ station, runs, onPick }) => {
   );
 };
 
+// What a station is doing, without having to click it. Anchored to the cursor
+// and clamped inside the map, so it never opens off the edge.
+const HoverCard = ({ hover, width }) => {
+  if (!hover) return null;
+  const { station, runs, x, y } = hover;
+  const CARD = 260;
+  const left = Math.max(8, Math.min(x + 14, (width || CARD * 2) - CARD - 8));
+  return (
+    <Box
+      position="absolute" left={`${left}px`} top={`${y + 14}px`} width={`${CARD}px`}
+      bg="white" border="1px solid" borderColor="gray.300" borderRadius="md"
+      boxShadow="lg" px={3} py={2} zIndex={2} pointerEvents="none"
+    >
+      <Text fontSize="sm" fontWeight="700" mb={runs.length ? 1 : 0}>
+        {station.label}
+      </Text>
+      {!runs.length && (
+        <Text fontSize="xs" color="gray.500">Nothing on it.</Text>
+      )}
+      {runs.map((r, i) => (
+        <Box key={r.reportId}>
+          {i > 0 && <Divider my={2} />}
+          <Flex align="baseline" gap={2} wrap="wrap">
+            <Text fontSize="sm" fontWeight="700" color="blue.700">{r.lotNumber}</Text>
+            <Badge colorScheme={r.status === "in_progress" ? "green" : "yellow"}
+              fontSize="9px">
+              {r.status === "in_progress" ? "on the line" : "waiting on reception"}
+            </Badge>
+          </Flex>
+          {r.description && (
+            <Text fontSize="xs" color="gray.700" noOfLines={2}>{r.description}</Text>
+          )}
+          <Text fontSize="xs" color="gray.600" style={{ fontVariantNumeric: "tabular-nums" }}>
+            {r.inputCases != null ? `${r.inputCases} cases in` : "cases not entered yet"}
+            {r.outputCases != null ? ` · ${r.outputCases} out` : ""}
+          </Text>
+          <Text fontSize="xs" color="gray.600" style={{ fontVariantNumeric: "tabular-nums" }}>
+            {r.startTime ? `started ${r.startTime}` : "no start time"}
+            {r.endTime ? ` · finished ${r.endTime}` : ""}
+          </Text>
+          {/* Blank until reception names it, which is the normal case. */}
+          <Text fontSize="xs" color={r.processingType ? "gray.600" : "gray.400"}>
+            {r.processingType || "processing type not set"}
+          </Text>
+          {Array.isArray(r.workers) && r.workers.length > 0 && (
+            <Text fontSize="xs" color="gray.500" noOfLines={1}>
+              {r.workers.join(", ")}
+            </Text>
+          )}
+          {r.submittedBy && (
+            <Text fontSize="xs" color="gray.500" noOfLines={1}>by {r.submittedBy}</Text>
+          )}
+        </Box>
+      ))}
+    </Box>
+  );
+};
+
 const FacilityMap = ({ runs = [], onPick }) => {
+  const wrapRef = useRef(null);
+  const [hover, setHover] = useState(null);
+
+  const onHover = (station, stationRuns, e) => {
+    if (!station || !wrapRef.current) { setHover(null); return; }
+    const box = wrapRef.current.getBoundingClientRect();
+    setHover({
+      station, runs: stationRuns,
+      x: e.clientX - box.left, y: e.clientY - box.top,
+      width: box.width,
+    });
+  };
+
   // Only what is actually on the floor. Anything accepted or sent back is done.
   const live = runs.filter((r) => r.status === "in_progress" || r.status === "submitted");
 
@@ -144,7 +215,9 @@ const FacilityMap = ({ runs = [], onPick }) => {
         </Flex>
       </Flex>
 
-      <Box overflowX="auto">
+      <Box position="relative" overflowX="auto" ref={wrapRef}
+        onMouseLeave={() => setHover(null)}>
+        <HoverCard hover={hover} width={hover && hover.width} />
         <Box as="svg" viewBox="0 0 1040 950" width="100%" minWidth="520px"
           maxHeight="560px" style={{ display: "block" }}>
           {/* The room. Traced from the sketch: the right wall steps in above
@@ -181,7 +254,8 @@ const FacilityMap = ({ runs = [], onPick }) => {
           </g>
 
           {STATIONS.map((s) => (
-            <Station key={s.id} station={s} runs={forStation(s)} onPick={onPick} />
+            <Station key={s.id} station={s} runs={forStation(s)}
+              onPick={onPick} onHover={onHover} />
           ))}
         </Box>
       </Box>
