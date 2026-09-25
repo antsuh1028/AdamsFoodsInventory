@@ -289,14 +289,18 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
 
   return (
     <Box>
-      <Flex justify="space-between" align="center" mb={4} gap={3} wrap="wrap">
-        <Box>
+      {/* Heading left, search and filters in the middle, actions right — the
+          same three-part row the other tabs use. */}
+      <Flex justify="space-between" align={{ base: "stretch", md: "center" }} mb={4}
+        direction={{ base: "column", md: "row" }} gap={3}>
+        <Box flexShrink={0}>
           <Text fontSize="lg" fontWeight="bold" color="gray.800">Processing</Text>
           <Text fontSize="sm" color="gray.500">
             One report per run. Cases come off the lot when reception accepts it.
           </Text>
         </Box>
-        <Flex gap={2} align="center" wrap="wrap">
+        <Flex gap={2} align="center" wrap="wrap" flex={1}
+          justify={{ base: "flex-start", md: "center" }}>
           <SearchBar
             placeholder="Search lot, product, customer…"
             isSearching={searching}
@@ -319,6 +323,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </Button>
             ))}
           </Flex>
+        </Flex>
+        <Flex gap={2} align="center" flexShrink={0}>
           <Button size="sm" colorScheme="blue" onClick={() => openDraft(emptyDraft())}>
             New report
           </Button>

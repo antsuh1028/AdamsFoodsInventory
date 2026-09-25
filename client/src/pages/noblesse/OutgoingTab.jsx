@@ -1190,8 +1190,11 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
 
   return (
     <Box>
-      <Flex justify="space-between" align="center" mb={4} gap={3} wrap="wrap">
-        <Box>
+      {/* Heading left, search in the middle, actions right — the same
+          three-part row the other tabs use. */}
+      <Flex justify="space-between" align={{ base: "stretch", md: "center" }} mb={4}
+        direction={{ base: "column", md: "row" }} gap={3}>
+        <Box flexShrink={0}>
           <Text fontSize="lg" fontWeight="bold" color="gray.800">{t("Outgoing")}</Text>
           <Text fontSize="sm" color="gray.500">
             {reception
@@ -1199,12 +1202,15 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
               : t("Weigh the boxes going out. Reception ties them to a load.")}
           </Text>
         </Box>
-        <Flex gap={2} wrap="wrap" align="center">
+        <Flex gap={2} wrap="wrap" align="center" flex={1}
+          justify={{ base: "flex-start", md: "center" }}>
           <SearchBar
             placeholder="Search lot, product, destination, BOL…"
             isSearching={searching}
             onSearch={(text) => { setSearching(true); setQ(text); }}
           />
+        </Flex>
+        <Flex gap={2} wrap="wrap" align="center" flexShrink={0}>
           {/* Shared with the weighing window, so the two never disagree. */}
           <LangToggle lang={lang} onToggle={toggleLang} />
           {/* Weighing finished product is a separate act from building a load:
