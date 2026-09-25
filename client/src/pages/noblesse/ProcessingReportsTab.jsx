@@ -326,26 +326,6 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
       </Flex>
 
       <Flex gap={4} align="flex-start" direction={{ base: "column", lg: "row" }}>
-        {/* The floor, and what is on it. Reads the same reports the list beside
-            it does, so the two cannot disagree. */}
-        <Box
-          flex={{ base: "1 1 auto", lg: "0 0 46%" }}
-          width={{ base: "100%", lg: "46%" }}
-          border="1px solid" borderColor="gray.200" borderRadius="md"
-          position={{ base: "static", lg: "sticky" }} top={0}
-        >
-          <Flex align="center" gap={2} px={3} py={2} bg="gray.50"
-            borderTopRadius="md">
-            <Text fontSize="sm" fontWeight="700">Floor</Text>
-            <Badge colorScheme={onTheLine ? "green" : "gray"}>
-              {onTheLine} running
-            </Badge>
-          </Flex>
-          <Box p={3}>
-            <FacilityMap runs={reports} onPick={openReport} />
-          </Box>
-        </Box>
-
         {/* minWidth 0 or a long lot number stops the column ever shrinking. */}
         <Box flex="1 1 auto" minWidth={0} width={{ base: "100%", lg: "auto" }}>
       {error && (
@@ -467,6 +447,28 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
           </Box>
         ))}
         </Flex>
+        </Box>
+
+        {/* The floor, and what is on it. Reads the same reports the list beside
+            it does, so the two cannot disagree. Ordered first when the columns
+            stack, so a phone still leads with the floor. */}
+        <Box
+          flex={{ base: "1 1 auto", lg: "0 0 46%" }}
+          width={{ base: "100%", lg: "46%" }}
+          order={{ base: -1, lg: 0 }}
+          border="1px solid" borderColor="gray.200" borderRadius="md"
+          position={{ base: "static", lg: "sticky" }} top={0}
+        >
+          <Flex align="center" gap={2} px={3} py={2} bg="gray.50"
+            borderTopRadius="md">
+            <Text fontSize="sm" fontWeight="700">Floor</Text>
+            <Badge colorScheme={onTheLine ? "green" : "gray"}>
+              {onTheLine} running
+            </Badge>
+          </Flex>
+          <Box p={3}>
+            <FacilityMap runs={reports} onPick={openReport} />
+          </Box>
         </Box>
       </Flex>
 
