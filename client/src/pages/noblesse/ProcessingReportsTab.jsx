@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Input, Select, Textarea, Spinner,
+  Box, Flex, Text, Button, Badge, IconButton, Input, Select, Textarea, Spinner,
   Grid, Alert, AlertIcon, useToast,
 } from "@chakra-ui/react";
+import { ExternalLinkIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import FloatingWindow from "../../components/FloatingWindow";
 import printProcessingReport from "./printProcessingReport";
@@ -474,10 +475,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {onTheLine} running
             </Badge>
             <Box flex={1} />
-            <Button size="xs" variant="ghost" onClick={() => setMapFull(true)}
-              title="Open the floor full screen">
-              Expand
-            </Button>
+            <IconButton size="xs" variant="ghost"
+              icon={<ExternalLinkIcon />}
+              aria-label="Open the floor full screen"
+              title="Open the floor full screen"
+              onClick={() => setMapFull(true)} />
           </Flex>
           <Box p={3}>
             <FacilityMap runs={reports} onPick={openReport} />
