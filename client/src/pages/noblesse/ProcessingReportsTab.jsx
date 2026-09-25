@@ -126,6 +126,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [busyId, setBusyId] = useState(null);
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState("");
+  // The floor on its own, for a screen on the wall or a close look.
+  const [mapFull, setMapFull] = useState(false);
 
   // A reply to an older search is dropped rather than shown over a newer one.
   const reportSeq = useRef(0);
@@ -471,12 +473,29 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             <Badge colorScheme={onTheLine ? "green" : "gray"}>
               {onTheLine} running
             </Badge>
+            <Box flex={1} />
+            <Button size="xs" variant="ghost" onClick={() => setMapFull(true)}
+              title="Open the floor full screen">
+              Expand
+            </Button>
           </Flex>
           <Box p={3}>
             <FacilityMap runs={reports} onPick={openReport} />
           </Box>
         </Box>
       </Flex>
+
+      {/* The same map, given the whole screen. One component, so the two can
+          never drift apart. */}
+      <FloatingWindow
+        isOpen={mapFull}
+        onClose={() => setMapFull(false)}
+        title="Processing Room 2"
+        width="92%"
+      >
+        <FacilityMap runs={reports} maxHeight="78vh"
+          onPick={(r) => { setMapFull(false); openReport(r); }} />
+      </FloatingWindow>
 
       <FloatingWindow
         isOpen={Boolean(draft)}

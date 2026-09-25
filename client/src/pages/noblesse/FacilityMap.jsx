@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Box, Flex, Text, Badge, Divider } from "@chakra-ui/react";
 
 // Processing Room 2, as a floor plan that shows what is on each station now.
@@ -106,16 +106,45 @@ const Station = ({ station, runs, onPick, onHover }) => {
   );
 };
 
-// What a station is doing, without having to click it. Anchored to the cursor
-// and clamped inside the map, so it never opens off the edge.
-const HoverCard = ({ hover, width }) => {
+// What a station is doing, without having to click it.
+//
+// Positioned by MEASURING itself rather than assuming a height: the card grows
+// with the run it describes, and a station with two runs is twice the size of
+// one with none. It flips to the other side of the cursor rather than being
+// squashed, so the whole card is always inside the map.
+const GAP = 14;
+const EDGE = 8;
+
+const HoverCard = ({ hover }) => {
+  const ref = useRef(null);
+  const [pos, setPos] = useState(null);
+
+  useLayoutEffect(() => {
+    if (!hover || !ref.current) { setPos(null); return; }
+    const { offsetWidth: w, offsetHeight: h } = ref.current;
+    let left = hover.x + GAP;
+    let top = hover.y + GAP;
+    // Flip to the left of the cursor if it would run off the right edge.
+    if (left + w > hover.width - EDGE) left = hover.x - GAP - w;
+    // Flip above the cursor if it would run off the bottom.
+    if (top + h > hover.height - EDGE) top = hover.y - GAP - h;
+    // Still short of room: pin inside rather than let it hang out.
+    left = Math.max(EDGE, Math.min(left, hover.width - w - EDGE));
+    top = Math.max(EDGE, Math.min(top, hover.height - h - EDGE));
+    setPos({ left, top });
+  }, [hover]);
+
   if (!hover) return null;
-  const { station, runs, x, y } = hover;
-  const CARD = 260;
-  const left = Math.max(8, Math.min(x + 14, (width || CARD * 2) - CARD - 8));
+  const { station, runs } = hover;
   return (
     <Box
-      position="absolute" left={`${left}px`} top={`${y + 14}px`} width={`${CARD}px`}
+      ref={ref}
+      position="absolute"
+      left={`${pos ? pos.left : hover.x + GAP}px`}
+      top={`${pos ? pos.top : hover.y + GAP}px`}
+      width="260px" maxWidth={`${Math.max(180, hover.width - EDGE * 2)}px`}
+      // Measured before it is seen, so it never flashes in the wrong place.
+      visibility={pos ? "visible" : "hidden"}
       bg="white" border="1px solid" borderColor="gray.300" borderRadius="md"
       boxShadow="lg" px={3} py={2} zIndex={2} pointerEvents="none"
     >
@@ -164,17 +193,29 @@ const HoverCard = ({ hover, width }) => {
   );
 };
 
-const FacilityMap = ({ runs = [], onPick }) => {
+const FacilityMap = ({ runs = [], onPick, maxHeight = "560px" }) => {
   const wrapRef = useRef(null);
   const [hover, setHover] = useState(null);
+  // A touch screen has no pointer to hover with: tapping fires mouseenter and
+  // the card then sticks under the finger with no way to dismiss it. Tapping
+  // opens the report instead, which is what a finger is for.
+  const [canHover, setCanHover] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const mq = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const apply = () => setCanHover(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   const onHover = (station, stationRuns, e) => {
-    if (!station || !wrapRef.current) { setHover(null); return; }
+    if (!canHover || !station || !wrapRef.current) { setHover(null); return; }
     const box = wrapRef.current.getBoundingClientRect();
     setHover({
       station, runs: stationRuns,
       x: e.clientX - box.left, y: e.clientY - box.top,
-      width: box.width,
+      width: box.width, height: box.height,
     });
   };
 
@@ -215,11 +256,14 @@ const FacilityMap = ({ runs = [], onPick }) => {
         </Flex>
       </Flex>
 
-      <Box position="relative" overflowX="auto" ref={wrapRef}
-        onMouseLeave={() => setHover(null)}>
-        <HoverCard hover={hover} width={hover && hover.width} />
-        <Box as="svg" viewBox="0 0 1040 950" width="100%" minWidth="520px"
-          maxHeight="560px" style={{ display: "block" }}>
+      {/* The card is a SIBLING of the scroller, never inside it: an absolutely
+          positioned child still counts toward a scroll container's content
+          width, which made the map grow as soon as one appeared. */}
+      <Box position="relative" ref={wrapRef} onMouseLeave={() => setHover(null)}>
+        <HoverCard hover={hover} />
+        <Box overflowX="auto">
+        <Box as="svg" viewBox="0 0 1040 950" width="100%" minWidth={{ base: "340px", md: "520px" }}
+          maxHeight={maxHeight} style={{ display: "block" }}>
           {/* The room. Traced from the sketch: the right wall steps in above
               Slicer #1, which sits in the bay at the bottom right. */}
           <path
@@ -257,6 +301,7 @@ const FacilityMap = ({ runs = [], onPick }) => {
             <Station key={s.id} station={s} runs={forStation(s)}
               onPick={onPick} onHover={onHover} />
           ))}
+        </Box>
         </Box>
       </Box>
 
