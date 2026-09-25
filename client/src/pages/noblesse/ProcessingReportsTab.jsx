@@ -3,6 +3,7 @@ import {
   Box, Flex, Text, Button, Badge, Input, Select, Textarea, Spinner,
   Grid, Alert, AlertIcon, useToast,
 } from "@chakra-ui/react";
+import { ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import FloatingWindow from "../../components/FloatingWindow";
 import printProcessingReport from "./printProcessingReport";
@@ -14,6 +15,7 @@ import {
 import getRole from "../../utils/getRole";
 import { acceptReport, rejectReport, unacceptReport } from "./reportActions";
 import SearchBar from "../../components/SearchBar";
+import FacilityMap from "./FacilityMap";
 
 // The digital version of the paper processing report.
 //
@@ -125,6 +127,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [busyId, setBusyId] = useState(null);
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState("");
+  // Shut by default: the list is the work, the map is the glance.
+  const [mapOpen, setMapOpen] = useState(false);
 
   // A reply to an older search is dropped rather than shown over a newer one.
   const reportSeq = useRef(0);
@@ -169,6 +173,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
 
   const waitingCount = useMemo(
     () => reports.filter((r) => r.status === "submitted").length, [reports]
+  );
+
+  const onTheLine = useMemo(
+    () => reports.filter((r) => r.status === "in_progress").length, [reports]
   );
 
   const visible = useMemo(
@@ -319,6 +327,33 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
           </Button>
         </Flex>
       </Flex>
+
+      {/* The floor, and what is on it. Reads the same reports the list below
+          does, so it cannot disagree with them. */}
+      <Box mb={4} border="1px solid" borderColor="gray.200" borderRadius="md">
+        <Flex align="center" gap={2} px={3} py={2} bg="gray.50" cursor="pointer"
+          borderRadius="md" onClick={() => setMapOpen((v) => !v)}
+          title={mapOpen ? "Hide the floor" : "Show the floor"}>
+          {mapOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
+          <Text fontSize="sm" fontWeight="700">Floor</Text>
+          <Badge colorScheme={onTheLine ? "green" : "gray"}>
+            {onTheLine} running
+          </Badge>
+          {!mapOpen && (
+            <Text fontSize="xs" color="gray.600" noOfLines={1}>
+              {onTheLine
+                ? reports.filter((r) => r.status === "in_progress")
+                    .map((r) => `${r.lotNumber} on ${r.lineNo || "no station"}`).join(" · ")
+                : "nothing on the line"}
+            </Text>
+          )}
+        </Flex>
+        {mapOpen && (
+          <Box p={3}>
+            <FacilityMap runs={reports} onPick={openReport} />
+          </Box>
+        )}
+      </Box>
 
       {error && (
         <Alert status="error" borderRadius="md" mb={4} fontSize="sm">
