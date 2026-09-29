@@ -421,8 +421,7 @@ const WeighFinishedBoxes = ({
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mt={4} mb={1}>
               {t("Item")} <Text as="span" textTransform="none">{t("(optional)")}</Text>
             </Text>
-            <ItemDescriptionInput direction="outgoing" value={itemDescription}
-              onChange={setItemDescription} />
+            <ItemDescriptionInput value={itemDescription} onChange={setItemDescription} />
             <Text fontSize="xs" color="gray.500" mt={1}>
               {t("What is in the boxes. Left blank it is taken from the lot's incoming session, which is the raw product rather than this one.")}
             </Text>

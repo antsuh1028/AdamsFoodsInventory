@@ -465,9 +465,6 @@ const ES = {
   "Did you mean {name}?": "¿Quiso decir {name}?",
   "Use it": "Usar",
   "Not on the item list": "No está en la lista de productos",
-  "Add to list": "Agregar a la lista",
-  "Added to the item list": "Agregado a la lista de productos",
-  "Could not add it": "No se pudo agregar",
 };
 
 export const LANGS = [["en", "English"], ["es", "Español"]];

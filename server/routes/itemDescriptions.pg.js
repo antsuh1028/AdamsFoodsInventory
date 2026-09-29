@@ -3,44 +3,56 @@ const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 
-// The standard item descriptions a weighing session is picked from.
-// Suggested, not enforced: a session may still carry any text. Nothing here is
-// ever hard-deleted, so a name that has been used keeps meaning something.
+// The standard outgoing item descriptions the dock picks from.
+// Suggested, not enforced: a session may still carry any text. Nothing is
+// hard-deleted, so a name already on a session keeps meaning something.
 
-const DIRECTIONS = new Set(["incoming", "outgoing"]);
 const MAX_NAME = 120;
 const MANAGERS = ["admin", "ntimanager"];
 
 // One spelling per product: trimmed, single-spaced, upper case.
 const normaliseName = (s) => String(s ?? "").trim().replace(/\s+/g, " ").toUpperCase();
 
-const fmt = (r) => ({
-  id: r.id, direction: r.direction, name: r.name, active: r.active, uses: r.uses ?? 0,
+// Letters and digits only, so "BONE-IN" and "BONE IN" are one name.
+const KEY = (col) => `REGEXP_REPLACE(${col}, '[^A-Z0-9]', '', 'g')`;
+
+const fmt = (r) => ({ id: r.id, name: r.name, active: r.active, uses: r.uses ?? 0 });
+
+const validName = (raw) => {
+  const name = normaliseName(raw);
+  return name && name.length <= MAX_NAME ? name : null;
+};
+
+// Another entry that is the same words spelled differently, if any.
+const sameWords = (tenantId, name, exceptId = null) => pool.query(
+  `SELECT id, name, active FROM item_descriptions
+    WHERE tenant_id = $1 AND ${KEY("name")} = ${KEY("$2")}
+      AND ($3::int IS NULL OR id <> $3)`,
+  [tenantId, name, exceptId]
+);
+
+const sameAs = (res, existing) => res.status(409).json({
+  code: "SAME_AS", existing: existing.name,
+  error: `Already on the list as ${existing.name}${existing.active ? "" : " (retired)"}.`,
 });
 
 router.get("/item-descriptions", verifyToken, async (req, res) => {
-  const { direction } = req.query;
-  if (direction != null && !DIRECTIONS.has(direction)) {
-    return res.status(400).json({ error: "direction must be 'incoming' or 'outgoing'" });
-  }
   const all = req.query.all === "1";
   try {
     // Uses are counted the way names are stored, so "Beef tongue " still counts.
     const result = await pool.query(
       `WITH used AS (
-         SELECT direction, UPPER(REGEXP_REPLACE(TRIM(item_description), '\\s+', ' ', 'g')) AS name,
+         SELECT UPPER(REGEXP_REPLACE(TRIM(item_description), '\\s+', ' ', 'g')) AS name,
                 COUNT(*)::int AS uses
            FROM box_batches
-          WHERE tenant_id = $1 AND item_description IS NOT NULL
-          GROUP BY 1, 2)
-       SELECT d.id, d.direction, d.name, d.active, COALESCE(u.uses, 0) AS uses
+          WHERE tenant_id = $1 AND direction = 'outgoing' AND item_description IS NOT NULL
+          GROUP BY 1)
+       SELECT d.id, d.name, d.active, COALESCE(u.uses, 0) AS uses
          FROM item_descriptions d
-         LEFT JOIN used u ON u.direction = d.direction AND u.name = d.name
-        WHERE d.tenant_id = $1
-          AND ($2::text IS NULL OR d.direction = $2)
-          AND ($3 OR d.active)
+         LEFT JOIN used u ON u.name = d.name
+        WHERE d.tenant_id = $1 AND ($2 OR d.active)
         ORDER BY d.active DESC, uses DESC, d.name`,
-      [req.tenantId, direction ?? null, all]
+      [req.tenantId, all]
     );
     res.json(result.rows.map(fmt));
   } catch (err) {
@@ -50,47 +62,58 @@ router.get("/item-descriptions", verifyToken, async (req, res) => {
 });
 
 router.post("/item-descriptions", verifyToken, requireRole(...MANAGERS), async (req, res) => {
-  const { direction } = req.body || {};
-  const name = normaliseName(req.body?.name);
-  if (!DIRECTIONS.has(direction)) {
-    return res.status(400).json({ error: "direction must be 'incoming' or 'outgoing'" });
-  }
-  if (!name || name.length > MAX_NAME) {
-    return res.status(400).json({ error: `name must be 1 to ${MAX_NAME} characters` });
-  }
+  const name = validName(req.body?.name);
+  if (!name) return res.status(400).json({ error: `name must be 1 to ${MAX_NAME} characters` });
   try {
-    // Adding a retired name brings it back rather than failing on the unique key.
-    const result = await pool.query(
-      `INSERT INTO item_descriptions (tenant_id, direction, name, created_by)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (tenant_id, direction, name) DO UPDATE SET active = true
-       RETURNING *, (xmax = 0) AS created`,
-      [req.tenantId, direction, name, req.userId || null]
+    const found = (await sameWords(req.tenantId, name)).rows[0];
+    if (found && found.name !== name) return sameAs(res, found);
+    if (found) {
+      // The exact name: bring it back if retired, otherwise nothing to do.
+      const r = await pool.query(
+        `UPDATE item_descriptions SET active = true WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+        [found.id, req.tenantId]
+      );
+      return res.status(200).json({ ...fmt(r.rows[0]), created: false, restored: !found.active });
+    }
+    const r = await pool.query(
+      `INSERT INTO item_descriptions (tenant_id, name, created_by) VALUES ($1, $2, $3) RETURNING *`,
+      [req.tenantId, name, req.userId || null]
     );
-    const row = result.rows[0];
-    res.status(row.created ? 201 : 200).json({ ...fmt(row), created: row.created });
+    res.status(201).json({ ...fmt(r.rows[0]), created: true });
   } catch (err) {
+    if (err.code === "23505") return res.status(409).json({ code: "SAME_AS", existing: name, error: `Already on the list as ${name}.` });
     console.error("add item description:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
-// Retire or restore. There is no rename: retire the old name and add the new one.
+// Retire, restore, or correct the spelling.
 router.patch("/item-descriptions/:id", verifyToken, requireRole(...MANAGERS), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
-  if (typeof req.body?.active !== "boolean") {
+  const { active } = req.body || {};
+  const hasName = req.body?.name !== undefined;
+  if (active !== undefined && typeof active !== "boolean") {
     return res.status(400).json({ error: "active must be true or false" });
   }
+  if (!hasName && active === undefined) return res.status(400).json({ error: "Nothing to change" });
+  const name = hasName ? validName(req.body.name) : null;
+  if (hasName && !name) return res.status(400).json({ error: `name must be 1 to ${MAX_NAME} characters` });
   try {
-    const result = await pool.query(
-      `UPDATE item_descriptions SET active = $1
-        WHERE id = $2 AND tenant_id = $3 RETURNING *`,
-      [req.body.active, id, req.tenantId]
+    if (name) {
+      const clash = (await sameWords(req.tenantId, name, id)).rows[0];
+      if (clash) return sameAs(res, clash);
+    }
+    const r = await pool.query(
+      `UPDATE item_descriptions
+          SET name = COALESCE($1, name), active = COALESCE($2, active)
+        WHERE id = $3 AND tenant_id = $4 RETURNING *`,
+      [name, active ?? null, id, req.tenantId]
     );
-    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
-    res.json(fmt(result.rows[0]));
+    if (!r.rows.length) return res.status(404).json({ error: "Not found" });
+    res.json(fmt(r.rows[0]));
   } catch (err) {
+    if (err.code === "23505") return res.status(409).json({ code: "SAME_AS", existing: name, error: `Already on the list as ${name}.` });
     console.error("update item description:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }

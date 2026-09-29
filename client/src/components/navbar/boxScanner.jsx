@@ -18,7 +18,6 @@ import NumericKeypad from "./NumericKeypad";
 import TypeWeights from "./TypeWeights";
 import LotPicker from "../LotPicker";
 import VendorInput from "../VendorInput";
-import ItemDescriptionInput from "../ItemDescriptionInput";
 import {
   toPounds, toDisplay, toDisplayHundredths, fromHundredths,
 } from "../../utils/weight";
@@ -863,9 +862,8 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
             </Box>
             <Box flex="2 1 220px">
               <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={1}>Item description</Text>
-              <ItemDescriptionInput direction="incoming" inputProps={rawInputProps}
-                value={header.itemDescription} placeholder="HUMERUS BONE"
-                onChange={(v) => setHeader((h) => ({ ...h, itemDescription: upper(v) }))} />
+              <Input {...rawInputProps} size="md" value={header.itemDescription}
+                onChange={setField("itemDescription")} placeholder="HUMERUS BONE" />
             </Box>
             <Box flex="1 1 150px">
               {/* Still stored as bill_of_lading — the column is unchanged, only

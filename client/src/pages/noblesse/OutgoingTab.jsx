@@ -107,9 +107,8 @@ const HeadingEditor = ({ batchId, detail, isAdmin, onSaved, onCancel }) => {
           <Box key={key} minW={key === "remarks" ? "220px" : "150px"}>
             <Text fontSize="9px" color="gray.500" textTransform="uppercase"
               letterSpacing="wide" mb={0.5}>{t(label)}</Text>
-            {key === "itemDescription" ? (
+            {key === "itemDescription" && detail.direction === "outgoing" ? (
               <ItemDescriptionInput compact size="xs"
-                direction={detail.direction === "incoming" ? "incoming" : "outgoing"}
                 listId={`item-descriptions-edit-${batchId}`}
                 value={draft[key]}
                 onChange={(v) => setDraft((d) => ({ ...d, [key]: upper(v) }))} />

@@ -709,30 +709,27 @@ const steps = async () => {
     )
   `);
 
-  // The standard item descriptions a weighing session is picked from, per side.
+  // The standard outgoing item descriptions the dock picks from.
   await run("item_descriptions", `
     CREATE TABLE IF NOT EXISTS item_descriptions (
       id          SERIAL PRIMARY KEY,
       tenant_id   UUID NOT NULL REFERENCES tenants(id),
-      direction   TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
       name        TEXT NOT NULL,
       active      BOOLEAN NOT NULL DEFAULT true,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
       created_by  UUID,
-      UNIQUE (tenant_id, direction, name)
+      UNIQUE (tenant_id, name)
     )
   `);
 
-  // DO NOTHING keeps a retired entry retired; nothing is hard-deleted, so a
-  // seeded name can never come back behind an admin's back.
-  const seed = Object.entries(ITEM_DESCRIPTIONS)
-    .flatMap(([direction, names]) => names.map((name) => [direction, name]));
+  // Only into an empty list, so a renamed or retired name never comes back.
   await run("item_descriptions seed", `
-    INSERT INTO item_descriptions (tenant_id, direction, name)
-    SELECT t.id, s.direction, s.name
-      FROM tenants t CROSS JOIN unnest($1::text[], $2::text[]) AS s(direction, name)
-    ON CONFLICT (tenant_id, direction, name) DO NOTHING
-  `, [seed.map(([d]) => d), seed.map(([, n]) => n)]);
+    INSERT INTO item_descriptions (tenant_id, name)
+    SELECT t.id, s.name
+      FROM tenants t CROSS JOIN unnest($1::text[]) AS s(name)
+     WHERE NOT EXISTS (SELECT 1 FROM item_descriptions d WHERE d.tenant_id = t.id)
+    ON CONFLICT (tenant_id, name) DO NOTHING
+  `, [ITEM_DESCRIPTIONS]);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection
