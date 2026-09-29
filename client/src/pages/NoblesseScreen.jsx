@@ -31,7 +31,7 @@ import {
 } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
-import getRole, { isOutgoingOnly, canSeeReport } from "../utils/getRole";
+import getRole, { isOutgoingOnly, canSeeReport, canManageItems } from "../utils/getRole";
 // eslint-disable-next-line no-unused-vars -- Incoming Records is commented out below, not removed
 import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import ProcessingReportsTab from "./noblesse/ProcessingReportsTab";
@@ -42,6 +42,7 @@ import { lotNumberForDate, fmtLongDate } from "./noblesse/shared";
 import ScannerDiagnostic from "../components/navbar/scannerDiagnostic";
 import ScaleDiagnostic from "../components/navbar/scaleDiagnostic";
 import DailyReport from "./noblesse/DailyReport";
+import ItemListManager from "./noblesse/ItemListManager";
 import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -63,6 +64,8 @@ const NoblesseScreen = () => {
   const [scanDiagOpen, setScanDiagOpen] = useState(false);
   const [scaleDiagOpen, setScaleDiagOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [itemListOpen, setItemListOpen] = useState(false);
+  const manageItems = canManageItems();
   const {
     isOpen: drawerOpen,
     onOpen: openDrawer,
@@ -582,6 +585,7 @@ const NoblesseScreen = () => {
                 {drawerBtn("Daily Report", () => setReportOpen(true))}
               </>
             )}
+            {manageItems && drawerBtn("Item List", () => setItemListOpen(true))}
 
             {isAdmin && (
               <>
@@ -618,6 +622,9 @@ const NoblesseScreen = () => {
           keeps it out of the way of people it is not for. */}
       {showReport && (
         <DailyReport isOpen={reportOpen} onClose={() => setReportOpen(false)} />
+      )}
+      {manageItems && (
+        <ItemListManager isOpen={itemListOpen} onClose={() => setItemListOpen(false)} />
       )}
 
       {isAdmin && (

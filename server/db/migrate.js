@@ -2,15 +2,16 @@
 // server starts listening.
 
 const pool = require("../utils/pg");
+const ITEM_DESCRIPTIONS = require("../data/itemDescriptions");
 
 const RETRIES = 3;
 // Overridable so the retry path can be tested without sleeping for real.
 // Production never sets it and gets the 2s default.
 const RETRY_DELAY_MS = Number(process.env.MIGRATE_RETRY_DELAY_MS ?? 2000);
 
-const run = async (label, sql) => {
+const run = async (label, sql, params) => {
   try {
-    await pool.query(sql);
+    await pool.query(sql, params);
   } catch (err) {
     err.message = `migration "${label}" failed: ${err.message}`;
     throw err;
@@ -707,6 +708,31 @@ const steps = async () => {
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  // The standard item descriptions a weighing session is picked from, per side.
+  await run("item_descriptions", `
+    CREATE TABLE IF NOT EXISTS item_descriptions (
+      id          SERIAL PRIMARY KEY,
+      tenant_id   UUID NOT NULL REFERENCES tenants(id),
+      direction   TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
+      name        TEXT NOT NULL,
+      active      BOOLEAN NOT NULL DEFAULT true,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_by  UUID,
+      UNIQUE (tenant_id, direction, name)
+    )
+  `);
+
+  // DO NOTHING keeps a retired entry retired; nothing is hard-deleted, so a
+  // seeded name can never come back behind an admin's back.
+  const seed = Object.entries(ITEM_DESCRIPTIONS)
+    .flatMap(([direction, names]) => names.map((name) => [direction, name]));
+  await run("item_descriptions seed", `
+    INSERT INTO item_descriptions (tenant_id, direction, name)
+    SELECT t.id, s.direction, s.name
+      FROM tenants t CROSS JOIN unnest($1::text[], $2::text[]) AS s(direction, name)
+    ON CONFLICT (tenant_id, direction, name) DO NOTHING
+  `, [seed.map(([d]) => d), seed.map(([, n]) => n)]);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection

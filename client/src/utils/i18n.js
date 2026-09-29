@@ -455,6 +455,19 @@ const ES = {
   "Lot reopened": "Lote reabierto",
   "Could not close this lot": "No se pudo cerrar este lote",
   "Could not reopen this lot": "No se pudo reabrir este lote",
+
+  // ── The item description picker ───────────────────────────────────────────
+  "Pick from the list…": "Elegir de la lista…",
+  "Most used": "Más usados",
+  "All items": "Todos los productos",
+  "e.g. HUMERUS BONE": "p. ej. HUMERUS BONE",
+  "The list spells it {name}": "En la lista se escribe {name}",
+  "Did you mean {name}?": "¿Quiso decir {name}?",
+  "Use it": "Usar",
+  "Not on the item list": "No está en la lista de productos",
+  "Add to list": "Agregar a la lista",
+  "Added to the item list": "Agregado a la lista de productos",
+  "Could not add it": "No se pudo agregar",
 };
 
 export const LANGS = [["en", "English"], ["es", "Español"]];

@@ -8,6 +8,7 @@ import FloatingWindow from "../FloatingWindow";
 import LangToggle from "../LangToggle";
 import useLang from "../../hooks/useLang";
 import LotPicker from "../LotPicker";
+import ItemDescriptionInput from "../ItemDescriptionInput";
 import useScanSession from "../../hooks/useScanSession";
 import ScaleWeigh from "./ScaleWeigh";
 import TypeWeights from "./TypeWeights";
@@ -420,9 +421,8 @@ const WeighFinishedBoxes = ({
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mt={4} mb={1}>
               {t("Item")} <Text as="span" textTransform="none">{t("(optional)")}</Text>
             </Text>
-            <Input size="md" value={itemDescription} autoComplete="off"
-              placeholder="e.g. HUMERUS BONE"
-              onChange={(e) => setItemDescription(e.target.value.toUpperCase())} />
+            <ItemDescriptionInput direction="outgoing" value={itemDescription}
+              onChange={setItemDescription} />
             <Text fontSize="xs" color="gray.500" mt={1}>
               {t("What is in the boxes. Left blank it is taken from the lot's incoming session, which is the raw product rather than this one.")}
             </Text>

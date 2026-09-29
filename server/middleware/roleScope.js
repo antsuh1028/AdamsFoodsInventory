@@ -22,6 +22,8 @@ const OUTGOING = [
   [/^\/lots\/[^/]+\/close$/, ["POST"]],
   [/^\/lots\/resolve$/, ["POST"]],
   [/^\/lots(\/|$)/, ["GET"]],
+  // The dock picks an item from the list; managing the list is not its job.
+  [/^\/item-descriptions$/, ["GET"]],
 ];
 
 const SCOPES = { outgoing: OUTGOING };

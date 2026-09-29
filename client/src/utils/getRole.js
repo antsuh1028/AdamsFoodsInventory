@@ -37,6 +37,10 @@ export const NOBLESSE_SIDE = ["noblesse", "ntimanager", "outgoing"];
 export const REPORT_ROLES = ["admin", "ntimanager"];
 export const canSeeReport = () => REPORT_ROLES.includes(getRole());
 
+// Who may add to or retire from the item description list. Mirrors the route.
+export const ITEM_LIST_ROLES = ["admin", "ntimanager"];
+export const canManageItems = () => ITEM_LIST_ROLES.includes(getRole());
+
 export const landingFor = (role) =>
   (NOBLESSE_SIDE.includes(role) ? "/noblesse" : "/home");
 

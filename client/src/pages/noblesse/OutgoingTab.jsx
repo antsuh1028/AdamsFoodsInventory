@@ -12,6 +12,7 @@ import { toDisplay } from "../../utils/weight";
 import { fmtDate, fmtDateOnly, fmtDateTime, today, upper } from "./shared";
 import getRole, { canReceive } from "../../utils/getRole";
 import LotTimeline from "../../components/LotTimeline";
+import ItemDescriptionInput from "../../components/ItemDescriptionInput";
 import printPackingList from "./printPackingList";
 import printOutgoingTag from "./printOutgoingTag";
 import useLang from "../../hooks/useLang";
@@ -106,8 +107,16 @@ const HeadingEditor = ({ batchId, detail, isAdmin, onSaved, onCancel }) => {
           <Box key={key} minW={key === "remarks" ? "220px" : "150px"}>
             <Text fontSize="9px" color="gray.500" textTransform="uppercase"
               letterSpacing="wide" mb={0.5}>{t(label)}</Text>
-            <Input size="xs" value={draft[key]} onChange={set(key)}
-              autoComplete="off" bg="white" />
+            {key === "itemDescription" ? (
+              <ItemDescriptionInput compact size="xs"
+                direction={detail.direction === "incoming" ? "incoming" : "outgoing"}
+                listId={`item-descriptions-edit-${batchId}`}
+                value={draft[key]}
+                onChange={(v) => setDraft((d) => ({ ...d, [key]: upper(v) }))} />
+            ) : (
+              <Input size="xs" value={draft[key]} onChange={set(key)}
+                autoComplete="off" bg="white" />
+            )}
           </Box>
         ))}
         {/* For a session entered after the fact. */}
