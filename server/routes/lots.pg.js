@@ -8,6 +8,7 @@ const { parseLot, formatLot, pacificToday, dayOfYearFromDate } = require("../uti
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
 const { weighedSql, boxesSql, formWeightSql, yieldFrom } = require("../utils/lotYield");
 const { weighedAtSql } = require("../utils/weighedAt");
+const { lotDescriptionSql } = require("../utils/lotDescription");
 
 // The lot registry.
 //
@@ -287,20 +288,7 @@ router.get("/lots", verifyToken, async (req, res) => {
          -- The registration form is what says what a lot is; the incoming
          -- weighing session is the fallback for a lot never registered.
          LEFT JOIN LATERAL (
-           SELECT COALESCE(
-             (SELECT NULLIF(TRIM(f.product_description), '')
-                FROM noblesse_registration_forms f
-               WHERE f.tenant_id = l.tenant_id
-                 AND (f.lot_id = l.lot_id OR f.lot_number = l.lot_number)
-                 AND NULLIF(TRIM(f.product_description), '') IS NOT NULL
-               ORDER BY f.created_at DESC LIMIT 1),
-             (SELECT NULLIF(TRIM(b.item_description), '')
-                FROM box_batches b
-               WHERE b.tenant_id = l.tenant_id AND b.lot_id = l.lot_id
-                 AND b.direction = 'incoming'
-                 AND NULLIF(TRIM(b.item_description), '') IS NOT NULL
-               ORDER BY b.created_at DESC LIMIT 1)
-           ) AS description,
+           SELECT ${lotDescriptionSql("l")} AS description,
            EXISTS (
              SELECT 1 FROM noblesse_registration_forms f2
               WHERE f2.tenant_id = l.tenant_id

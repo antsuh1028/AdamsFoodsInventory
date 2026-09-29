@@ -4,6 +4,7 @@
 const { weightInLb } = require("./sqlWeight");
 const { weighedAtSql, isCalendarDay } = require("./weighedAt");
 const { yieldLateralSql } = require("./lotYield");
+const { lotDescriptionSql } = require("./lotDescription");
 const { pacificToday } = require("./lot");
 
 // The daily report, as a range.
@@ -198,7 +199,8 @@ const LOTS_TOUCHED = `
              (SELECT COALESCE(MAX(f.original_weight), 0)::text
                 FROM noblesse_registration_forms f
                WHERE f.tenant_id = l.tenant_id
-                 AND (f.lot_id = l.lot_id OR f.lot_number = l.lot_number)) AS form_weight
+                 AND (f.lot_id = l.lot_id OR f.lot_number = l.lot_number)) AS form_weight,
+             ${lotDescriptionSql("l")} AS description
         FROM lots l
         JOIN touched ON touched.lot_id = l.lot_id
     ) t

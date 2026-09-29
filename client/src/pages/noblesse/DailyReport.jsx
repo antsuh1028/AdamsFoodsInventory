@@ -460,6 +460,12 @@ const DailyReport = ({ isOpen, onClose }) => {
                               </MenuItem>
                             </MenuList>
                           </Menu>
+                          {lot.description && (
+                            <Text as="span" ml={2} fontSize="xs" fontWeight="normal" color="gray.600"
+                              title={lot.description}>
+                              {lot.description}
+                            </Text>
+                          )}
                           {lot.status === "closed" && (
                             <Badge ml={2} colorScheme="gray" fontSize="9px">closed</Badge>
                           )}

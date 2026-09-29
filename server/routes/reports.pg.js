@@ -19,6 +19,7 @@ const fmtWeighing = (rows, direction) => {
 const fmtLot = (r) => ({
   lotId: r.lot_id,
   lotNumber: r.lot_number,
+  description: r.description ?? null,
   status: r.status,
   day: {
     boxesIn: r.day_boxes_in,
