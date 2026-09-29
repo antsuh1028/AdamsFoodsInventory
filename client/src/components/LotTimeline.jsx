@@ -58,6 +58,18 @@ const STATUS = {
 // against the manifest this is meant to reconcile with.
 const lb = (v) => (v === null || v === undefined || v === "" ? null : toDisplay(v));
 
+// Which side of the ratio carries nominal weights, since that is what decides
+// whether the figure is worth acting on.
+const estimatedNote = (y, t) => {
+  const { estimatedIn: i, estimatedOut: o, basis } = y;
+  // On a registered basis the denominator is typed anyway, so only the
+  // outgoing estimates are news.
+  const countsIn = basis === "weighed" && i > 0;
+  if (countsIn && o > 0) return t("{in} in and {out} out estimated, not weighed", { in: i, out: o });
+  if (countsIn) return t("{in} incoming boxes estimated, not weighed", { in: i });
+  return t("{out} outgoing boxes estimated, not weighed", { out: o });
+};
+
 // The yield, stated as a claim rather than a number. A lot nothing has left
 // yet reads "not measured", never 0%.
 const YieldLine = ({ y, t }) => {
@@ -99,6 +111,12 @@ const YieldLine = ({ y, t }) => {
       {y.basis === "registered" && (
         <Badge colorScheme="yellow" fontSize="9px">
           {t("against the form's original weight, not bench weights")}
+        </Badge>
+      )}
+      {/* Same reason: a nominal weight off the label is not a bench reading. */}
+      {y.estimated && (
+        <Badge colorScheme="yellow" fontSize="9px">
+          {estimatedNote(y, t)}
         </Badge>
       )}
     </Flex>

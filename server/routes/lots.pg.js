@@ -6,7 +6,7 @@ const { RECEPTION_ROLES } = require("../middleware/receptionRoles");
 const { parseLot, formatLot, pacificToday, dayOfYearFromDate } = require("../utils/lot");
 // Shared with routes/boxes.pg.js so a lot's totals and a manifest agree.
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
-const { weighedSql, boxesSql, formWeightSql, yieldFrom } = require("../utils/lotYield");
+const { weighedSql, boxesSql, estimatedSql, formWeightSql, yieldFrom } = require("../utils/lotYield");
 const { weighedAtSql } = require("../utils/weighedAt");
 
 // The lot registry.
@@ -387,6 +387,9 @@ const lotFigures = async (tenantId, lotId, client = pool) => {
        ${boxesSql("incoming")}   AS boxes_in,
        ${weighedSql("outgoing")} AS weighed_out,
        ${boxesSql("outgoing")}   AS boxes_out,
+       -- Nominal weights typed off a label, so the yield can say it used them.
+       ${estimatedSql("incoming")} AS estimated_in,
+       ${estimatedSql("outgoing")} AS estimated_out,
        -- Only used when nothing was weighed in, and the basis says so.
        ${formWeightSql} AS form_weight,
        COALESCE((SELECT COUNT(*) FROM noblesse_processing_orders o

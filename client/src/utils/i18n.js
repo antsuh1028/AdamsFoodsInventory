@@ -439,6 +439,12 @@ const ES = {
     "{out} de {in} lb · {unaccounted} sin justificar",
   "against the form's original weight, not bench weights":
     "contra el peso original del formulario, no pesos de la mesa",
+  "{in} in and {out} out estimated, not weighed":
+    "{in} de entrada y {out} de salida estimadas, no pesadas",
+  "{in} incoming boxes estimated, not weighed":
+    "{in} cajas de entrada estimadas, no pesadas",
+  "{out} outgoing boxes estimated, not weighed":
+    "{out} cajas de salida estimadas, no pesadas",
   " by {who}": " por {who}",
   " on {date}": " el {date}",
   " — frozen at {pct}% ({out} out of {in} lb)": " — congelado en {pct}% ({out} de {in} lb)",

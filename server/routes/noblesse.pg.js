@@ -1058,7 +1058,8 @@ router.get("/noblesse-registration-forms", verifyToken, async (req, res) => {
   try {
     // A search looks past the newest 200 a plain listing stops at.
     const result = await pool.query(
-      `SELECT f.*, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out
+      `SELECT f.*, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out,
+              y.estimated_in, y.estimated_out
          FROM noblesse_registration_forms f
          ${yieldLateralSql("f")}
         WHERE f.tenant_id = $1${where} ORDER BY f.created_at DESC LIMIT ${term ? 500 : 200}`,
@@ -1098,7 +1099,8 @@ router.get("/noblesse-registration-forms/all/history", verifyToken, async (req, 
 router.get("/noblesse-registration-forms/:id", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT f.*, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out
+      `SELECT f.*, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out,
+              y.estimated_in, y.estimated_out
          FROM noblesse_registration_forms f
          ${yieldLateralSql("f")}
         WHERE f.id = $1 AND f.tenant_id = $2`,

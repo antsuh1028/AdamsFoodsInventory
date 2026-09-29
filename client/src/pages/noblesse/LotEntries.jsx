@@ -199,7 +199,9 @@ export const LotFormWindow = ({ lotNumber, isOpen, onClose, zIndex = 1400 }) => 
             <SheetField label="Yield">
               <SheetText>
                 {form.yield?.measured && form.yield.percent != null
-                  ? `${form.yield.percent.toFixed(1)}%${form.yield.basis === "registered" ? " (registered wt.)" : ""}`
+                  ? `${form.yield.percent.toFixed(1)}%`
+                    + (form.yield.basis === "registered" ? " (registered wt.)" : "")
+                    + (form.yield.estimated ? " (incl. estimated wt.)" : "")
                   : <Text as="span" color="gray.400" textTransform="none">not weighed out</Text>}
               </SheetText>
             </SheetField>

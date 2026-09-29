@@ -109,6 +109,15 @@ const Figure = ({ label, value, unit, sub, tone = "gray" }) => (
   </Box>
 );
 
+// Which side carried nominal weights, spelled out so the badge is actionable.
+const estimatedLabel = (y) => {
+  const parts = [];
+  // On a registered basis the denominator is typed anyway; only outgoing is news.
+  if (y.basis === "weighed" && y.estimatedIn > 0) parts.push(`${y.estimatedIn} incoming`);
+  if (y.estimatedOut > 0) parts.push(`${y.estimatedOut} outgoing`);
+  return `${parts.join(" and ")} boxes carry a nominal weight typed off the label, not a bench reading`;
+};
+
 // A lot nothing has left yet is NOT 0% — it has not been measured. Rendering a
 // zero there would be a claim the figures cannot defend.
 const YieldCell = ({ y }) => {
@@ -128,6 +137,12 @@ const YieldCell = ({ y }) => {
       {y.basis === "registered" && (
         <Tooltip label="Against the form's typed Original Weight, not a bench weight">
           <Badge colorScheme="yellow" fontSize="9px">registered</Badge>
+        </Tooltip>
+      )}
+      {/* Same reason: some of these pounds were typed off a label, not weighed. */}
+      {y.estimated && (
+        <Tooltip label={estimatedLabel(y)}>
+          <Badge colorScheme="yellow" fontSize="9px">estimated</Badge>
         </Tooltip>
       )}
     </Flex>

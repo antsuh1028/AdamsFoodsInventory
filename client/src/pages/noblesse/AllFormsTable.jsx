@@ -277,8 +277,12 @@ const AllFormsTable = ({ forms = [], onEdit }) => {
                           // column. A lot nothing has left yet is blank, not 0%.
                           form.yield?.percent != null ? (
                             <Text as="span"
-                              color={form.yield.basis === "registered" ? "gray.500" : "gray.800"}>
-                              {form.yield.percent.toFixed(1)}%
+                              color={form.yield.basis === "registered" ? "gray.500" : "gray.800"}
+                              // Too narrow for a badge, so the asterisk carries it.
+                              title={form.yield.estimated
+                                ? "Includes box weights typed off the label, not weighed"
+                                : undefined}>
+                              {form.yield.percent.toFixed(1)}%{form.yield.estimated ? "*" : ""}
                             </Text>
                           ) : "—"
                         ) : (

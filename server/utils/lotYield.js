@@ -33,6 +33,18 @@ const boxesSql = (direction) => {
                        AND b.direction = '${direction}' AND bi.voided_at IS NULL), 0)::int`;
 };
 
+// Boxes on one side whose weight was TYPED as a nominal figure, not read off
+// the scale. Counted rather than excluded: the estimate is usually the only
+// figure there is, so the yield still uses it and says that it did.
+const estimatedSql = (direction) => {
+  if (!DIRECTIONS.has(direction)) throw new Error(`bad direction: ${direction}`);
+  return `COALESCE((SELECT COUNT(*) FROM batch_items bi
+                      JOIN box_batches b ON b.batch_id = bi.batch_id
+                     WHERE b.lot_id = $1 AND b.tenant_id = $2
+                       AND b.direction = '${direction}' AND bi.voided_at IS NULL
+                       AND bi.is_estimated), 0)::int`;
+};
+
 // The form's typed Original Weight, for lots that were never weighed in.
 // Matched on lot_id OR the number, because forms predate the registry and some
 // still carry only the text.
@@ -51,7 +63,9 @@ const yieldLateralSql = (alias) => `
       COALESCE(SUM(${weightInLb("bi")}) FILTER (WHERE b.direction = 'incoming'), 0)::text AS weighed_in,
       COALESCE(SUM(${weightInLb("bi")}) FILTER (WHERE b.direction = 'outgoing'), 0)::text AS weighed_out,
       COUNT(*) FILTER (WHERE b.direction = 'incoming')::int AS boxes_in,
-      COUNT(*) FILTER (WHERE b.direction = 'outgoing')::int AS boxes_out
+      COUNT(*) FILTER (WHERE b.direction = 'outgoing')::int AS boxes_out,
+      COUNT(*) FILTER (WHERE b.direction = 'incoming' AND bi.is_estimated)::int AS estimated_in,
+      COUNT(*) FILTER (WHERE b.direction = 'outgoing' AND bi.is_estimated)::int AS estimated_out
       FROM batch_items bi
       JOIN box_batches b ON b.batch_id = bi.batch_id
      WHERE b.tenant_id = ${alias}.tenant_id
@@ -74,6 +88,11 @@ const lbText = (m) => (m / 1000).toFixed(2);
  * NOT 0% — it is unmeasured. Both distinctions are reported rather than
  * flattened, because 0.0% against a lot still sitting in the freezer is a lie
  * the figures cannot defend.
+ *
+ * `estimated` is the third such distinction. A box may carry a nominal weight
+ * typed off the label instead of a bench reading, and a ratio that mixes the
+ * two is not a measurement. It is reported, not corrected: the nominal figure
+ * is usually the only one there is, so the yield still uses it.
  */
 const yieldFrom = (f) => {
   const outMils = mils(f.weighed_out);
@@ -87,11 +106,22 @@ const yieldFrom = (f) => {
   // once, and that is measured.
   const measured = Number(f.boxes_out) > 0;
 
+  const estimatedIn = Number(f.estimated_in || 0);
+  const estimatedOut = Number(f.estimated_out || 0);
+  // Only counts where it reaches the ratio. On a `registered` basis the
+  // denominator is the form's typed figure, so incoming estimates never touch
+  // it and `basis` already says the number is not a bench weight.
+  const estimated = (basis === "weighed" && estimatedIn > 0)
+    || (measured && estimatedOut > 0);
+
   return {
     inLb: inMils > 0 ? lbText(inMils) : null,
     outLb: lbText(outMils),
     basis,
     measured,
+    estimated,
+    estimatedIn,
+    estimatedOut,
     // Thousandths throughout, so no float divides a weight.
     percent: measured && inMils > 0
       ? Math.round((outMils * 100000) / inMils) / 1000
@@ -100,4 +130,4 @@ const yieldFrom = (f) => {
   };
 };
 
-module.exports = { weighedSql, boxesSql, formWeightSql, yieldLateralSql, yieldFrom };
+module.exports = { weighedSql, boxesSql, estimatedSql, formWeightSql, yieldLateralSql, yieldFrom };
