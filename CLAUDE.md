@@ -195,18 +195,15 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
    say the opposite — that root held the port and admin's copy died on
    `EADDRINUSE`. Whatever was true once, it is not true now; check `ss -lntp`
    before believing either version.
-   The root daemon holds two **dead** entries that lose the race for :3001:
-   `adamsfoodsinventory` (stopped, ~962k restarts) and `nodeapp` (errored,
-   1.6M restarts, `/var/www/nodeapp/server.js` — an unrelated leftover).
-   Harmless while stopped, but root's `dump.pm2` still lists them, so a reboot
-   resurrects both into a crash-loop. Not yet cleaned:
-   `sudo pm2 delete nodeapp adamsfoodsinventory && sudo pm2 save` **in the root
-   daemon only** (admin's is separate; its copy must survive).
-2. `deploy:server` uses `npm install`, which dirties `server/package-lock.json` on
-   the box and makes the next `git pull` refuse. Should be `npm ci`.
-   It was dirty again before the 2026-09-15 deploy and was cleared on the box
-   with `git checkout -- server/package-lock.json` before pulling. Assume it is
-   dirty and clear it first every time, until `deploy:server` uses `npm ci`.
+   The root daemon held two **dead** entries (`adamsfoodsinventory` stopped,
+   `nodeapp` errored, an unrelated leftover) that `pm2-root.service` would have
+   resurrected into a crash-loop on reboot. **Cleaned 2026-09-29**: deleted from
+   the root daemon only and the empty list saved; admin's copy was untouched.
+   Backup at `/root/.pm2/dump.pm2.bak-before-cleanup-20260929`. Left behind:
+   `/root/.pm2/pm2.log`, 576 MB of that crash-loop, which nothing writes to now.
+2. `deploy:server` used `npm install`, which dirtied `server/package-lock.json`
+   on the box and made the next `git pull` refuse. **Fixed**: it now runs
+   `git checkout -- server/package-lock.json` before pulling, then `npm ci`.
 3. **The TLS cert renews through Apache, not standalone.** Apache2 owns :80 and
    :443. The renewal conf was set to `authenticator = standalone`, which binds
    :80 itself, so every renewal failed with `Could not bind TCP port 80` — daily,
@@ -450,4 +447,3 @@ after any scripted edit to a `.js` file.
 - GTIN company-prefix → vendor map. Identified: `0027182` IBP, `0199239`
   Sustainable Beef, `0627577` Blue Ribbon (CA), `0883363` Creekstone, `6303080`
   Greater Omaha, `0076338` Swift/Imperial (**they share a prefix — needs a decision**).
-- The two PM2 fixes in §2.
