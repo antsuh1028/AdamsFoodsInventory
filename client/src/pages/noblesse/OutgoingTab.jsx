@@ -757,9 +757,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           {b.lot_number || t("Batch {id}", { id: b.batch_id })}
         </Text>
       )}
-      <Badge colorScheme={b.status === "closed" ? "green" : "yellow"} fontSize="9px">
+      {/* <Badge colorScheme={b.status === "closed" ? "green" : "yellow"} fontSize="9px">
         {b.status === "closed" ? t("Closed") : t("Open")}
-      </Badge>
+      </Badge> */}
       {b.item_description && (
         <Text fontSize="xs" color="gray.600" {...ONE_LINE} title={b.item_description}>
           {b.item_description}
@@ -779,9 +779,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
       </Text>
       <Text fontSize="sm" color="gray.700"
         style={{ fontVariantNumeric: "tabular-nums" }}>
-        {b.box_count} × {lb((b.totals || []).find((t) => t.unit === "LB")?.total)} lb
+        {b.box_count } c/s - {lb((b.totals || []).find((t) => t.unit === "LB")?.total)} lb
       </Text>
-      {b.shipment ? (
+      {/* {b.shipment ? (
         <Badge colorScheme="blue" fontSize="9px">
           {t("On {destination} ({status})", {
             destination: b.shipment.destinationName,
@@ -790,7 +790,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
         </Badge>
       ) : (
         <Badge colorScheme="gray" fontSize="9px">{t("Not on a load")}</Badge>
-      )}
+      )} */}
       {b.status === "open" && (
         <Button size="xs" variant="ghost" colorScheme="blue"
           onClick={() => { setAdoptBatchId(b.batch_id); setWeighOpen(true); }}
