@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Input, Select, Textarea, Spinner,
+  Box, Flex, Text, Button, Badge, IconButton, Input, Select, Textarea, Spinner,
   Grid, Alert, AlertIcon, useToast,
 } from "@chakra-ui/react";
-import { ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
+import { ExternalLinkIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import FloatingWindow from "../../components/FloatingWindow";
 import printProcessingReport from "./printProcessingReport";
@@ -127,8 +127,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [busyId, setBusyId] = useState(null);
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState("");
-  // Shut by default: the list is the work, the map is the glance.
-  const [mapOpen, setMapOpen] = useState(false);
+  // The floor on its own, for a screen on the wall or a close look.
+  const [mapFull, setMapFull] = useState(false);
 
   // A reply to an older search is dropped rather than shown over a newer one.
   const reportSeq = useRef(0);
@@ -292,14 +292,18 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
 
   return (
     <Box>
-      <Flex justify="space-between" align="center" mb={4} gap={3} wrap="wrap">
-        <Box>
+      {/* Heading left, search and filters in the middle, actions right — the
+          same three-part row the other tabs use. */}
+      <Flex justify="space-between" align={{ base: "stretch", md: "center" }} mb={4}
+        direction={{ base: "column", md: "row" }} gap={3}>
+        <Box flexShrink={0}>
           <Text fontSize="lg" fontWeight="bold" color="gray.800">Processing</Text>
           <Text fontSize="sm" color="gray.500">
             One report per run. Cases come off the lot when reception accepts it.
           </Text>
         </Box>
-        <Flex gap={2} align="center" wrap="wrap">
+        <Flex gap={2} align="center" wrap="wrap" flex={1}
+          justify={{ base: "flex-start", md: "center" }}>
           <SearchBar
             placeholder="Search lot, product, customer…"
             isSearching={searching}
@@ -322,39 +326,17 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </Button>
             ))}
           </Flex>
+        </Flex>
+        <Flex gap={2} align="center" flexShrink={0}>
           <Button size="sm" colorScheme="blue" onClick={() => openDraft(emptyDraft())}>
             New report
           </Button>
         </Flex>
       </Flex>
 
-      {/* The floor, and what is on it. Reads the same reports the list below
-          does, so it cannot disagree with them. */}
-      <Box mb={4} border="1px solid" borderColor="gray.200" borderRadius="md">
-        <Flex align="center" gap={2} px={3} py={2} bg="gray.50" cursor="pointer"
-          borderRadius="md" onClick={() => setMapOpen((v) => !v)}
-          title={mapOpen ? "Hide the floor" : "Show the floor"}>
-          {mapOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
-          <Text fontSize="sm" fontWeight="700">Floor</Text>
-          <Badge colorScheme={onTheLine ? "green" : "gray"}>
-            {onTheLine} running
-          </Badge>
-          {!mapOpen && (
-            <Text fontSize="xs" color="gray.600" noOfLines={1}>
-              {onTheLine
-                ? reports.filter((r) => r.status === "in_progress")
-                    .map((r) => `${r.lotNumber} on ${r.lineNo || "no station"}`).join(" · ")
-                : "nothing on the line"}
-            </Text>
-          )}
-        </Flex>
-        {mapOpen && (
-          <Box p={3}>
-            <FacilityMap runs={reports} onPick={openReport} />
-          </Box>
-        )}
-      </Box>
-
+      <Flex gap={4} align="flex-start" direction={{ base: "column", lg: "row" }}>
+        {/* minWidth 0 or a long lot number stops the column ever shrinking. */}
+        <Box flex="1 1 auto" minWidth={0} width={{ base: "100%", lg: "auto" }}>
       {error && (
         <Alert status="error" borderRadius="md" mb={4} fontSize="sm">
           <AlertIcon />{error}
@@ -473,7 +455,49 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             )}
           </Box>
         ))}
+        </Flex>
+        </Box>
+
+        {/* The floor, and what is on it. Reads the same reports the list beside
+            it does, so the two cannot disagree. Ordered first when the columns
+            stack, so a phone still leads with the floor. */}
+        <Box
+          flex={{ base: "1 1 auto", lg: "0 0 46%" }}
+          width={{ base: "100%", lg: "46%" }}
+          order={{ base: -1, lg: 0 }}
+          border="1px solid" borderColor="gray.200" borderRadius="md"
+          position={{ base: "static", lg: "sticky" }} top={0}
+        >
+          <Flex align="center" gap={2} px={3} py={2} bg="gray.50"
+            borderTopRadius="md">
+            <Text fontSize="sm" fontWeight="700">Floor</Text>
+            <Badge colorScheme={onTheLine ? "green" : "gray"}>
+              {onTheLine} running
+            </Badge>
+            <Box flex={1} />
+            <IconButton size="xs" variant="ghost"
+              icon={<ExternalLinkIcon />}
+              aria-label="Open the floor full screen"
+              title="Open the floor full screen"
+              onClick={() => setMapFull(true)} />
+          </Flex>
+          <Box p={3}>
+            <FacilityMap runs={reports} onPick={openReport} />
+          </Box>
+        </Box>
       </Flex>
+
+      {/* The same map, given the whole screen. One component, so the two can
+          never drift apart. */}
+      <FloatingWindow
+        isOpen={mapFull}
+        onClose={() => setMapFull(false)}
+        title="Processing Room 2"
+        width="92%"
+      >
+        <FacilityMap runs={reports} maxHeight="78vh"
+          onPick={(r) => { setMapFull(false); openReport(r); }} />
+      </FloatingWindow>
 
       <FloatingWindow
         isOpen={Boolean(draft)}

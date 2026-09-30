@@ -1,5 +1,5 @@
-import React from "react";
-import { Box, Flex, Text, Badge } from "@chakra-ui/react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Box, Flex, Text, Badge, Divider } from "@chakra-ui/react";
 
 // Processing Room 2, as a floor plan that shows what is on each station now.
 //
@@ -51,22 +51,22 @@ const stateOf = (runs) => {
 const FILL = { running: C.runFill, waiting: C.waitFill, idle: C.idleFill };
 const LINE = { running: C.runLine, waiting: C.waitLine, idle: C.idleLine };
 
-const Station = ({ station, runs, onPick }) => {
+const Station = ({ station, runs, onPick, onHover }) => {
   const state = stateOf(runs);
   const first = runs[0] || null;
   const cx = station.x + station.w / 2;
-
-  const title = runs.length
-    ? runs.map((r) => `${r.lotNumber} — ${r.status === "in_progress"
-        ? `running since ${r.startTime || "?"}` : "waiting on reception"}`).join("\n")
-    : `${station.label} — nothing on it`;
 
   return (
     <g
       style={{ cursor: first ? "pointer" : "default" }}
       onClick={() => first && onPick && onPick(first)}
+      onMouseEnter={(e) => onHover && onHover(station, runs, e)}
+      onMouseMove={(e) => onHover && onHover(station, runs, e)}
+      onMouseLeave={() => onHover && onHover(null)}
     >
-      <title>{title}</title>
+      {/* The accessible name only. The detail lives in the hover card, so the
+          browser's own tooltip does not sit on top of it saying the same. */}
+      <title>{station.label}</title>
       <rect
         x={station.x} y={station.y} width={station.w} height={station.h}
         fill={FILL[state]} stroke={LINE[state]} strokeWidth={state === "idle" ? 2 : 3}
@@ -106,7 +106,119 @@ const Station = ({ station, runs, onPick }) => {
   );
 };
 
-const FacilityMap = ({ runs = [], onPick }) => {
+// What a station is doing, without having to click it.
+//
+// Positioned by MEASURING itself rather than assuming a height: the card grows
+// with the run it describes, and a station with two runs is twice the size of
+// one with none. It flips to the other side of the cursor rather than being
+// squashed, so the whole card is always inside the map.
+const GAP = 14;
+const EDGE = 8;
+
+const HoverCard = ({ hover }) => {
+  const ref = useRef(null);
+  const [pos, setPos] = useState(null);
+
+  useLayoutEffect(() => {
+    if (!hover || !ref.current) { setPos(null); return; }
+    const { offsetWidth: w, offsetHeight: h } = ref.current;
+    let left = hover.x + GAP;
+    let top = hover.y + GAP;
+    // Flip to the left of the cursor if it would run off the right edge.
+    if (left + w > hover.width - EDGE) left = hover.x - GAP - w;
+    // Flip above the cursor if it would run off the bottom.
+    if (top + h > hover.height - EDGE) top = hover.y - GAP - h;
+    // Still short of room: pin inside rather than let it hang out.
+    left = Math.max(EDGE, Math.min(left, hover.width - w - EDGE));
+    top = Math.max(EDGE, Math.min(top, hover.height - h - EDGE));
+    setPos({ left, top });
+  }, [hover]);
+
+  if (!hover) return null;
+  const { station, runs } = hover;
+  return (
+    <Box
+      ref={ref}
+      position="absolute"
+      left={`${pos ? pos.left : hover.x + GAP}px`}
+      top={`${pos ? pos.top : hover.y + GAP}px`}
+      width="260px" maxWidth={`${Math.max(180, hover.width - EDGE * 2)}px`}
+      // Measured before it is seen, so it never flashes in the wrong place.
+      visibility={pos ? "visible" : "hidden"}
+      bg="white" border="1px solid" borderColor="gray.300" borderRadius="md"
+      boxShadow="lg" px={3} py={2} zIndex={2} pointerEvents="none"
+    >
+      <Text fontSize="sm" fontWeight="700" mb={runs.length ? 1 : 0}>
+        {station.label}
+      </Text>
+      {!runs.length && (
+        <Text fontSize="xs" color="gray.500">Nothing on it.</Text>
+      )}
+      {runs.map((r, i) => (
+        <Box key={r.reportId}>
+          {i > 0 && <Divider my={2} />}
+          <Flex align="baseline" gap={2} wrap="wrap">
+            <Text fontSize="sm" fontWeight="700" color="blue.700">{r.lotNumber}</Text>
+            <Badge colorScheme={r.status === "in_progress" ? "green" : "yellow"}
+              fontSize="9px">
+              {r.status === "in_progress" ? "on the line" : "waiting on reception"}
+            </Badge>
+          </Flex>
+          {r.description && (
+            <Text fontSize="xs" color="gray.700" noOfLines={2}>{r.description}</Text>
+          )}
+          <Text fontSize="xs" color="gray.600" style={{ fontVariantNumeric: "tabular-nums" }}>
+            {r.inputCases != null ? `${r.inputCases} cases in` : "cases not entered yet"}
+            {r.outputCases != null ? ` · ${r.outputCases} out` : ""}
+          </Text>
+          <Text fontSize="xs" color="gray.600" style={{ fontVariantNumeric: "tabular-nums" }}>
+            {r.startTime ? `started ${r.startTime}` : "no start time"}
+            {r.endTime ? ` · finished ${r.endTime}` : ""}
+          </Text>
+          {/* Blank until reception names it, which is the normal case. */}
+          <Text fontSize="xs" color={r.processingType ? "gray.600" : "gray.400"}>
+            {r.processingType || "processing type not set"}
+          </Text>
+          {Array.isArray(r.workers) && r.workers.length > 0 && (
+            <Text fontSize="xs" color="gray.500" noOfLines={1}>
+              {r.workers.join(", ")}
+            </Text>
+          )}
+          {r.submittedBy && (
+            <Text fontSize="xs" color="gray.500" noOfLines={1}>by {r.submittedBy}</Text>
+          )}
+        </Box>
+      ))}
+    </Box>
+  );
+};
+
+const FacilityMap = ({ runs = [], onPick, maxHeight = "560px" }) => {
+  const wrapRef = useRef(null);
+  const [hover, setHover] = useState(null);
+  // A touch screen has no pointer to hover with: tapping fires mouseenter and
+  // the card then sticks under the finger with no way to dismiss it. Tapping
+  // opens the report instead, which is what a finger is for.
+  const [canHover, setCanHover] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const mq = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const apply = () => setCanHover(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  const onHover = (station, stationRuns, e) => {
+    if (!canHover || !station || !wrapRef.current) { setHover(null); return; }
+    const box = wrapRef.current.getBoundingClientRect();
+    setHover({
+      station, runs: stationRuns,
+      x: e.clientX - box.left, y: e.clientY - box.top,
+      width: box.width, height: box.height,
+    });
+  };
+
   // Only what is actually on the floor. Anything accepted or sent back is done.
   const live = runs.filter((r) => r.status === "in_progress" || r.status === "submitted");
 
@@ -144,9 +256,14 @@ const FacilityMap = ({ runs = [], onPick }) => {
         </Flex>
       </Flex>
 
-      <Box overflowX="auto">
-        <Box as="svg" viewBox="0 0 1040 950" width="100%" minWidth="520px"
-          maxHeight="560px" style={{ display: "block" }}>
+      {/* The card is a SIBLING of the scroller, never inside it: an absolutely
+          positioned child still counts toward a scroll container's content
+          width, which made the map grow as soon as one appeared. */}
+      <Box position="relative" ref={wrapRef} onMouseLeave={() => setHover(null)}>
+        <HoverCard hover={hover} />
+        <Box overflowX="auto">
+        <Box as="svg" viewBox="0 0 1040 950" width="100%" minWidth={{ base: "340px", md: "520px" }}
+          maxHeight={maxHeight} style={{ display: "block" }}>
           {/* The room. Traced from the sketch: the right wall steps in above
               Slicer #1, which sits in the bay at the bottom right. */}
           <path
@@ -181,8 +298,10 @@ const FacilityMap = ({ runs = [], onPick }) => {
           </g>
 
           {STATIONS.map((s) => (
-            <Station key={s.id} station={s} runs={forStation(s)} onPick={onPick} />
+            <Station key={s.id} station={s} runs={forStation(s)}
+              onPick={onPick} onHover={onHover} />
           ))}
+        </Box>
         </Box>
       </Box>
 
