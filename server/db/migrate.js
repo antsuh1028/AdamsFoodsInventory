@@ -2,15 +2,16 @@
 // server starts listening.
 
 const pool = require("../utils/pg");
+const ITEM_DESCRIPTIONS = require("../data/itemDescriptions");
 
 const RETRIES = 3;
 // Overridable so the retry path can be tested without sleeping for real.
 // Production never sets it and gets the 2s default.
 const RETRY_DELAY_MS = Number(process.env.MIGRATE_RETRY_DELAY_MS ?? 2000);
 
-const run = async (label, sql) => {
+const run = async (label, sql, params) => {
   try {
-    await pool.query(sql);
+    await pool.query(sql, params);
   } catch (err) {
     err.message = `migration "${label}" failed: ${err.message}`;
     throw err;
@@ -707,6 +708,28 @@ const steps = async () => {
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  // The standard outgoing item descriptions the dock picks from.
+  await run("item_descriptions", `
+    CREATE TABLE IF NOT EXISTS item_descriptions (
+      id          SERIAL PRIMARY KEY,
+      tenant_id   UUID NOT NULL REFERENCES tenants(id),
+      name        TEXT NOT NULL,
+      active      BOOLEAN NOT NULL DEFAULT true,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_by  UUID,
+      UNIQUE (tenant_id, name)
+    )
+  `);
+
+  // Only into an empty list, so a renamed or retired name never comes back.
+  await run("item_descriptions seed", `
+    INSERT INTO item_descriptions (tenant_id, name)
+    SELECT t.id, s.name
+      FROM tenants t CROSS JOIN unnest($1::text[]) AS s(name)
+     WHERE NOT EXISTS (SELECT 1 FROM item_descriptions d WHERE d.tenant_id = t.id)
+    ON CONFLICT (tenant_id, name) DO NOTHING
+  `, [ITEM_DESCRIPTIONS]);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection

@@ -58,6 +58,7 @@ const boot = async () => {
   app.use("/", require("./routes/boxes.pg"));
   app.use("/", require("./routes/processingReports.pg"));
   app.use("/", require("./routes/reports.pg"));
+  app.use("/", require("./routes/itemDescriptions.pg"));
 
   app.listen(3001, () => console.log("Server running on port 3001 [postgres]"));
 };

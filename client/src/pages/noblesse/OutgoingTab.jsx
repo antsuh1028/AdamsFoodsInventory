@@ -12,6 +12,7 @@ import { toDisplay } from "../../utils/weight";
 import { fmtDate, fmtDateOnly, fmtDateTime, today, upper } from "./shared";
 import getRole, { canReceive } from "../../utils/getRole";
 import LotTimeline from "../../components/LotTimeline";
+import ItemDescriptionInput from "../../components/ItemDescriptionInput";
 import printPackingList from "./printPackingList";
 import printOutgoingTag from "./printOutgoingTag";
 import useLang from "../../hooks/useLang";
@@ -106,8 +107,15 @@ const HeadingEditor = ({ batchId, detail, isAdmin, onSaved, onCancel }) => {
           <Box key={key} minW={key === "remarks" ? "220px" : "150px"}>
             <Text fontSize="9px" color="gray.500" textTransform="uppercase"
               letterSpacing="wide" mb={0.5}>{t(label)}</Text>
-            <Input size="xs" value={draft[key]} onChange={set(key)}
-              autoComplete="off" bg="white" />
+            {key === "itemDescription" && detail.direction === "outgoing" ? (
+              <ItemDescriptionInput compact size="xs"
+                listId={`item-descriptions-edit-${batchId}`}
+                value={draft[key]}
+                onChange={(v) => setDraft((d) => ({ ...d, [key]: upper(v) }))} />
+            ) : (
+              <Input size="xs" value={draft[key]} onChange={set(key)}
+                autoComplete="off" bg="white" />
+            )}
           </Box>
         ))}
         {/* For a session entered after the fact. */}
@@ -749,9 +757,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           {b.lot_number || t("Batch {id}", { id: b.batch_id })}
         </Text>
       )}
-      <Badge colorScheme={b.status === "closed" ? "green" : "yellow"} fontSize="9px">
+      {/* <Badge colorScheme={b.status === "closed" ? "green" : "yellow"} fontSize="9px">
         {b.status === "closed" ? t("Closed") : t("Open")}
-      </Badge>
+      </Badge> */}
       {b.item_description && (
         <Text fontSize="xs" color="gray.600" {...ONE_LINE} title={b.item_description}>
           {b.item_description}
@@ -771,9 +779,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
       </Text>
       <Text fontSize="sm" color="gray.700"
         style={{ fontVariantNumeric: "tabular-nums" }}>
-        {b.box_count} × {lb((b.totals || []).find((t) => t.unit === "LB")?.total)} lb
+        {b.box_count } c/s - {lb((b.totals || []).find((t) => t.unit === "LB")?.total)} lb
       </Text>
-      {b.shipment ? (
+      {/* {b.shipment ? (
         <Badge colorScheme="blue" fontSize="9px">
           {t("On {destination} ({status})", {
             destination: b.shipment.destinationName,
@@ -782,7 +790,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
         </Badge>
       ) : (
         <Badge colorScheme="gray" fontSize="9px">{t("Not on a load")}</Badge>
-      )}
+      )} */}
       {b.status === "open" && (
         <Button size="xs" variant="ghost" colorScheme="blue"
           onClick={() => { setAdoptBatchId(b.batch_id); setWeighOpen(true); }}
