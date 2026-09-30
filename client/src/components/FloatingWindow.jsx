@@ -67,6 +67,8 @@ const FloatingWindow = ({
   placement = "center",
   // Lets a companion window sit above the one it belongs to.
   zIndex = 1400,
+  // Caps a content-height window; responsive values are allowed.
+  maxHeight = null,
 }) => {
   const [position, setPosition] = useState(null);
   const [size, setSize] = useState(null); // null height = auto (content-driven) until user resizes
@@ -202,7 +204,7 @@ const FloatingWindow = ({
         width={isFullScreen ? "100vw" : `${currentWidth}px`}
         maxW={isFullScreen ? "100vw" : `calc(100vw - ${EDGE_MARGIN * 2}px)`}
         height={isFullScreen ? "100vh" : `${size?.height ?? height ?? "auto"}${size?.height || height ? "px" : ""}`}
-        maxH={isFullScreen ? "100vh" : (size?.height || height) ? "95vh" : "88vh"}
+        maxH={isFullScreen ? "100vh" : (size?.height || height) ? "95vh" : (maxHeight || "88vh")}
         // Deliberately darker than the gray.50 page behind it. When both were
         // gray.50 the window had nothing but a 1px border separating it from
         // the screen and read as part of the page.

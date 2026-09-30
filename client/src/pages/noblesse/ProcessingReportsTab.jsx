@@ -15,6 +15,7 @@ import {
 import getRole, { canAcceptReports } from "../../utils/getRole";
 import { acceptReport, rejectReport, unacceptReport } from "./reportActions";
 import AcceptReportDialog from "./AcceptReportDialog";
+import LotMenu from "./LotMenu";
 import SearchBar from "../../components/SearchBar";
 import FacilityMap from "./FacilityMap";
 
@@ -386,7 +387,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             title="Double-click to open"
             onDoubleClick={() => openReport(r)}>
             <Flex align="baseline" gap={3} wrap="wrap">
-              <Text fontSize="sm" fontWeight="700" color="blue.700">{r.lotNumber}</Text>
+              <LotMenu lotNumber={r.lotNumber} lotId={r.lotId} />
               <Badge colorScheme={STATUS_COLOR[r.status]} fontSize="9px">
                 {STATUS_LABEL[r.status] || r.status}
               </Badge>
@@ -521,6 +522,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         onClose={() => setDraft(null)}
         title={draft?.reportId ? `Report ${draft.reportId}` : "New processing report"}
         width={720}
+        // dvh follows Safari's toolbar, so the Save buttons stay on a phone's screen.
+        maxHeight={{ base: "80dvh", md: "88vh" }}
         footer={
           <Flex gap={2} width="100%" justify="space-between" align="center" wrap="wrap">
             <Text fontSize="sm" color="gray.600" style={{ fontVariantNumeric: "tabular-nums" }}>

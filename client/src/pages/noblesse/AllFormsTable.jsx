@@ -7,6 +7,7 @@ import {
   ChevronUpIcon, ChevronDownIcon, CloseIcon, SearchIcon,
 } from "@chakra-ui/icons";
 import { fmtDate, today, fmtWeight } from "./shared";
+import LotMenu from "./LotMenu";
 
 // Sortable, filterable view of every registration form.
 //
@@ -257,7 +258,9 @@ const AllFormsTable = ({ forms = [], onEdit }) => {
                         fontWeight={col.key === "lotNumber" ? "600" : "normal"}
                         color={col.key === "lotNumber" ? "blue.700" : "gray.700"}
                         whiteSpace={col.key === "remarks" ? "normal" : "nowrap"}>
-                        {col.key === "status" ? (
+                        {col.key === "lotNumber" ? (
+                          <LotMenu lotNumber={form.lotNumber} lotId={form.lotId} />
+                        ) : col.key === "status" ? (
                           <Badge colorScheme={form.status === "completed" ? "green" : "yellow"} fontSize="11px">
                             {STATUS_LABEL[form.status] || form.status}
                           </Badge>
