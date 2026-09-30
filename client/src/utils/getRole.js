@@ -30,7 +30,7 @@ export const isOutgoingOnly = () => getRole() === "outgoing";
 
 // Roles that live on the Noblesse side. Everything that routes by role reads
 // this, so adding a role here is the whole job.
-export const NOBLESSE_SIDE = ["noblesse", "ntimanager", "outgoing"];
+export const NOBLESSE_SIDE = ["noblesse", "ntimanager", "reception", "outgoing"];
 
 // Who may read the daily report. Mirrors requireRole on the route, which is
 // the control — admin for everything, ntimanager for the figures.
@@ -38,7 +38,7 @@ export const REPORT_ROLES = ["admin", "ntimanager"];
 export const canSeeReport = () => REPORT_ROLES.includes(getRole());
 
 // Who checks a processing report and accepts it. Mirrors REPORT_ACCEPT_ROLES on the server.
-export const REPORT_ACCEPT_ROLES = ["admin", "noblesse"];
+export const REPORT_ACCEPT_ROLES = ["admin", "reception"];
 export const canAcceptReports = () => REPORT_ACCEPT_ROLES.includes(getRole());
 
 // Who may add to or retire from the item description list. Mirrors the route.
