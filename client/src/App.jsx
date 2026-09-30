@@ -6,6 +6,7 @@ import Login from "./pages/Login";
 import NoblesseLogin from "./pages/NoblesseLogin";
 import Loading from "./pages/Loading";
 import PrivateRoute from "./PrivateRoute";
+import { NOBLESSE_SIDE } from "./utils/getRole";
 
 // This app has no orange and no purple in it.
 //
@@ -87,7 +88,7 @@ function App() {
         <Route
           path="/noblesse"
           element={
-            <PrivateRoute allowedRoles={["admin", "ntimanager", "noblesse", "outgoing"]}>
+            <PrivateRoute allowedRoles={["admin", ...NOBLESSE_SIDE]}>
               <NoblesseScreen />
             </PrivateRoute>
           }
