@@ -1693,6 +1693,38 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
 
 // List groups, with the same derived counts the session list carries so the two
 // read alike. Voided boxes are excluded here exactly as they are everywhere.
+// A box on a merged manifest, stored or by registration form: one shape for both.
+const MANIFEST_ITEM_COLS = `i.item_id, i.weight::text AS weight, i.weight_unit, i.gtin,
+              i.production_date, i.serial, i.is_manual, i.converted_from, i.scanned_at,
+              i.entry_method, i.is_estimated,
+              i.original_weight::text AS original_weight, i.edited_at,
+              i.voided_at, i.void_reason,
+              b.batch_id, b.lot_number AS batch_lot`;
+
+const fmtManifestItem = (r) => ({
+  localId: r.item_id,
+  weight: r.weight,
+  weightUnit: r.weight_unit,
+  gtin: r.gtin,
+  productionDate: r.production_date
+    ? new Date(r.production_date).toISOString().slice(0, 10) : null,
+  serial: r.serial,
+  isManual: r.is_manual,
+  // Provenance and confidence, so an adopted session and the manifest can
+  // tell a scale reading from a nominal batch figure.
+  entryMethod: r.entry_method || null,
+  isEstimated: r.is_estimated === true,
+  convertedFrom: r.converted_from,
+  scannedAt: r.scanned_at,
+  originalWeight: r.original_weight,
+  editedAt: r.edited_at,
+  voidedAt: r.voided_at,
+  voidReason: r.void_reason,
+  batchId: r.batch_id,
+  batchLot: r.batch_lot,
+  status: r.voided_at ? "voided" : "synced",
+});
+
 router.get("/manifest-groups", verifyToken, async (req, res) => {
   const term = searchTerm(req.query.q);
   const limit = Math.min(Number(req.query.limit) || (term ? 200 : 50), 200);
@@ -1768,12 +1800,7 @@ router.get("/manifest-groups/:id", verifyToken, async (req, res) => {
     if (!group.rows.length) return res.status(404).json({ error: "Manifest not found" });
 
     const items = await pool.query(
-      `SELECT i.item_id, i.weight::text AS weight, i.weight_unit, i.gtin,
-              i.production_date, i.serial, i.is_manual, i.converted_from, i.scanned_at,
-              i.entry_method, i.is_estimated,
-              i.original_weight::text AS original_weight, i.edited_at,
-              i.voided_at, i.void_reason,
-              b.batch_id, b.lot_number AS batch_lot
+      `SELECT ${MANIFEST_ITEM_COLS}
          FROM batch_items i
          JOIN manifest_group_batches m ON m.batch_id = i.batch_id
          JOIN box_batches b ON b.batch_id = i.batch_id
@@ -1794,32 +1821,121 @@ router.get("/manifest-groups/:id", verifyToken, async (req, res) => {
     res.json({
       ...group.rows[0],
       sessions: sessions.rows,
-      items: items.rows.map((r) => ({
-        localId: r.item_id,
-        weight: r.weight,
-        weightUnit: r.weight_unit,
-        gtin: r.gtin,
-        productionDate: r.production_date
-          ? new Date(r.production_date).toISOString().slice(0, 10) : null,
-        serial: r.serial,
-        isManual: r.is_manual,
-        // Provenance and confidence, so an adopted session and the manifest can
-        // tell a scale reading from a nominal batch figure.
-        entryMethod: r.entry_method || null,
-        isEstimated: r.is_estimated === true,
-        convertedFrom: r.converted_from,
-        scannedAt: r.scanned_at,
-        originalWeight: r.original_weight,
-        editedAt: r.edited_at,
-        voidedAt: r.voided_at,
-        voidReason: r.void_reason,
-        batchId: r.batch_id,
-        batchLot: r.batch_lot,
-        status: r.voided_at ? "voided" : "synced",
-      })),
+      items: items.rows.map(fmtManifestItem),
     });
   } catch (err) {
     console.error("read manifest group:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ── One lot across several sessions, merged by its registration form ────────
+// Not stored: a form with 2+ tied sessions IS the merge, so untying one on the
+// form splits it back out. A session already on a stored manifest stays there.
+
+const FORM_TIED = `
+  SELECT rb.form_id, rb.batch_id, rb.position
+    FROM registration_form_batches rb
+    JOIN box_batches b ON b.batch_id = rb.batch_id AND b.tenant_id = $1
+   WHERE rb.tenant_id = $1
+     AND NOT EXISTS (SELECT 1 FROM manifest_group_batches m WHERE m.batch_id = rb.batch_id)`;
+
+router.get("/form-manifests", verifyToken, async (req, res) => {
+  const term = searchTerm(req.query.q);
+  const limit = Math.min(Number(req.query.limit) || (term ? 200 : 50), 200);
+  const params = [req.tenantId, limit];
+  let where = "";
+  if (term) {
+    params.push(term);
+    const n = params.length;
+    // The form's heading, or any of its sessions, like a stored manifest.
+    where = ` AND (${searchClause([
+      "f.lot_number", "f.vendor", "f.product_description", "f.vendor_lot", "f.id::text",
+    ], n)} OR EXISTS (
+      SELECT 1 FROM tied t JOIN box_batches mb ON mb.batch_id = t.batch_id
+       WHERE t.form_id = f.id AND ${searchClause(batchSearchColumns("mb"), n)}))`;
+  }
+  try {
+    // Independent scalar subqueries, never a second join of batch_items (CLAUDE.md §5).
+    const result = await pool.query(
+      `WITH tied AS (${FORM_TIED}),
+            merged AS (SELECT form_id FROM tied GROUP BY form_id HAVING COUNT(*) > 1)
+       SELECT f.id AS form_id, 'form' AS kind, f.lot_number, f.vendor, f.created_at,
+              COALESCE(NULLIF(TRIM(f.product_description), ''),
+                (SELECT b.item_description FROM tied t JOIN box_batches b ON b.batch_id = t.batch_id
+                  WHERE t.form_id = f.id ORDER BY t.position, t.batch_id LIMIT 1)) AS item_description,
+              (SELECT json_agg(t.batch_id ORDER BY t.position, t.batch_id)
+                 FROM tied t WHERE t.form_id = f.id) AS batch_ids,
+              (SELECT MIN(${weighedAtSql("b")}) FROM tied t
+                 JOIN box_batches b ON b.batch_id = t.batch_id WHERE t.form_id = f.id) AS first_opened,
+              (SELECT COUNT(*)::int FROM tied t WHERE t.form_id = f.id) AS session_count,
+              (SELECT COUNT(*)::int FROM batch_items i JOIN tied t ON t.batch_id = i.batch_id
+                WHERE t.form_id = f.id AND i.voided_at IS NULL) AS box_count,
+              COALESCE((SELECT SUM(${weightInLb("i")})::text FROM batch_items i
+                 JOIN tied t ON t.batch_id = i.batch_id
+                WHERE t.form_id = f.id AND i.voided_at IS NULL), '0') AS total
+         FROM noblesse_registration_forms f
+         JOIN merged ON merged.form_id = f.id
+        WHERE f.tenant_id = $1${where}
+        ORDER BY f.created_at DESC
+        LIMIT $2`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("list form manifests:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Every box across the form's sessions, in the form's order, shaped like a stored manifest.
+router.get("/form-manifests/:formId", verifyToken, async (req, res) => {
+  const formId = Number(req.params.formId);
+  if (!Number.isInteger(formId)) return res.status(400).json({ error: "Invalid form id" });
+  try {
+    const form = await pool.query(
+      `SELECT id AS form_id, lot_number, vendor, vendor_lot, product_description, created_at
+         FROM noblesse_registration_forms WHERE id = $1 AND tenant_id = $2`,
+      [formId, req.tenantId]
+    );
+    if (!form.rows.length) return res.status(404).json({ error: "Registration form not found" });
+
+    const sessions = await pool.query(
+      `WITH tied AS (${FORM_TIED})
+       SELECT b.batch_id, b.lot_number, b.vendor, b.status, b.source, b.item_description,
+              b.bill_of_lading, t.position
+         FROM tied t JOIN box_batches b ON b.batch_id = t.batch_id
+        WHERE t.form_id = $2
+        ORDER BY t.position, t.batch_id`,
+      [req.tenantId, formId]
+    );
+
+    const items = await pool.query(
+      `WITH tied AS (${FORM_TIED})
+       SELECT ${MANIFEST_ITEM_COLS}
+         FROM batch_items i
+         JOIN tied t ON t.batch_id = i.batch_id
+         JOIN box_batches b ON b.batch_id = i.batch_id
+        WHERE t.form_id = $2 AND i.tenant_id = $1
+        ORDER BY t.position, t.batch_id, i.item_id`,
+      [req.tenantId, formId]
+    );
+
+    const f = form.rows[0];
+    const first = sessions.rows[0] || {};
+    res.json({
+      form_id: f.form_id,
+      lot_number: f.lot_number || first.lot_number || null,
+      vendor: f.vendor || first.vendor || null,
+      item_description: (f.product_description || "").trim() || first.item_description || null,
+      bill_of_lading: f.vendor_lot || first.bill_of_lading || null,
+      ship_to: null,
+      created_at: f.created_at,
+      sessions: sessions.rows,
+      items: items.rows.map(fmtManifestItem),
+    });
+  } catch (err) {
+    console.error("read form manifest:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });

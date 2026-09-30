@@ -615,6 +615,9 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   // A lot weighed across several sessions ships on one manifest.
   const [selected, setSelected] = useState(() => new Set());
   const [groups, setGroups] = useState([]);
+  // Sessions tied to one registration form: one lot, shown as one row.
+  const [formGroups, setFormGroups] = useState([]);
+  const [openFormId, setOpenFormId] = useState(null);
   const [confirmMerge, setConfirmMerge] = useState(false);
   // The heading the merged manifest will carry. Pre-filled from the sessions
   // and editable, because merging used to take the first session's values
@@ -691,15 +694,16 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   // shows a manifest in place of its sessions, so the two must be found together.
   const fetchGroups = useCallback(async () => {
     const mine = ++groupSeq.current;
-    try {
-      const { data } = await axiosInstance.get("/manifest-groups",
-        { params: { q: q || undefined } });
-      if (mine !== groupSeq.current) return;
-      setGroups(data || []);
-    } catch {
-      // A merged-manifest listing failing must not blank the sessions table,
-      // which is the part people actually need to keep working.
-    }
+    const params = { params: { q: q || undefined } };
+    // Each on its own: a merged listing failing must not blank the sessions,
+    // and a failed form listing just leaves those sessions as their own rows.
+    const [stored, byForm] = await Promise.all([
+      axiosInstance.get("/manifest-groups", params).catch(() => null),
+      axiosInstance.get("/form-manifests", params).catch(() => null),
+    ]);
+    if (mine !== groupSeq.current) return;
+    if (stored) setGroups(stored.data || []);
+    setFormGroups(byForm ? byForm.data || [] : []);
   }, [q]);
 
   useEffect(() => { fetchBatches(); fetchGroups(); }, [fetchBatches, fetchGroups]);
@@ -739,6 +743,13 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         duration: 3000, position: "top" });
       setExpandedGroupId(null);
     }
+  };
+
+  // Opens to its sessions as ordinary rows, so every correction still works.
+  const toggleFormGroup = (g) => {
+    if (openFormId === g.form_id) { setOpenFormId(null); return; }
+    (g.batch_ids || []).forEach((id) => markSeen(`b${id}`));
+    setOpenFormId(g.form_id);
   };
 
   const toggleExpand = async (batch) => {
@@ -911,7 +922,9 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   // sessions, so a weight corrected since the last print has to appear.
   const printGroup = async (group) => {
     try {
-      const { data } = await axiosInstance.get(`/manifest-groups/${group.group_id}`);
+      const { data } = await axiosInstance.get(group.kind === "form"
+        ? `/form-manifests/${group.form_id}`
+        : `/manifest-groups/${group.group_id}`);
       printWeightManifest({
         lotNumber: data.lot_number,
         vendor: data.vendor,
@@ -1010,11 +1023,17 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
     [groups]
   );
 
+  // Sessions a registration form ties into one lot sit under that lot's row.
+  const tiedBatchIds = useMemo(
+    () => new Set(formGroups.flatMap((g) => g.batch_ids || [])),
+    [formGroups]
+  );
+
   const visible = useMemo(() => batches.filter((b) => {
-    if (mergedBatchIds.has(b.batch_id)) return false;
+    if (mergedBatchIds.has(b.batch_id) || tiedBatchIds.has(b.batch_id)) return false;
     if (statusFilter && b.status !== statusFilter) return false;
     return matchesFilters(b);
-  }), [batches, statusFilter, matchesFilters, mergedBatchIds]);
+  }), [batches, statusFilter, matchesFilters, mergedBatchIds, tiedBatchIds]);
 
   // Merged manifests and loose sessions in one list, ordered by when the
   // product was WEIGHED rather than when someone got round to merging it.
@@ -1028,11 +1047,25 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
         lot: lotKey(g.lot_number),
         group: g,
       }));
+    const byId = new Map(batches.map((b) => [b.batch_id, b]));
+    const formRows = formGroups
+      // A status filter keeps a lot whose sessions include that status.
+      .filter((g) => matchesFilters(g) && (!statusFilter
+        || (g.batch_ids || []).some((id) => byId.get(id)?.status === statusFilter)))
+      .map((g) => ({
+        kind: "formGroup",
+        key: `f${g.form_id}`,
+        at: g.first_opened || g.created_at,
+        lot: lotKey(g.lot_number),
+        group: g,
+        // New while any of its sessions is.
+        seenKeys: (g.batch_ids || []).map((id) => `b${id}`),
+      }));
     const sessionRows = visible.map((b) => ({
       kind: "session", key: `b${b.batch_id}`, at: b.weighed_on || b.created_at,
       lot: lotKey(b.lot_number), batch: b,
     }));
-    return [...groupRows, ...sessionRows].sort((a, b) => {
+    const sorted = [...groupRows, ...formRows, ...sessionRows].sort((a, b) => {
       // Newest lot first. N{YY}{JJJ}-{NN} is fixed width, so comparing the text
       // sorts by year, then day, then sequence in one step — which is why the
       // format was chosen (CLAUDE.md §3). No parsing, nothing to get wrong.
@@ -1044,7 +1077,16 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       // Same lot: newest sitting first, so the most recent work is on top.
       return String(b.at || "").localeCompare(String(a.at || ""));
     });
-  }, [groups, visible, matchesFilters]);
+    // An open lot's sessions go straight under it, after sorting, so they stay attached.
+    return sorted.flatMap((r) => {
+      if (r.kind !== "formGroup" || r.group.form_id !== openFormId) return [r];
+      const children = (r.group.batch_ids || [])
+        .map((id) => byId.get(id)).filter(Boolean)
+        .map((b) => ({ kind: "session", key: `b${b.batch_id}`, child: true,
+          at: b.weighed_on || b.created_at, lot: r.lot, batch: b }));
+      return [r, ...children];
+    });
+  }, [groups, formGroups, batches, visible, matchesFilters, statusFilter, openFormId]);
 
   // Counted over `rows` (what is actually on screen) rather than everything
   // loaded, so the number always matches the dots someone can point at.
@@ -1056,15 +1098,21 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
     [q, seen]
   );
 
+  // A lot row is new through its sessions; its opened children are not counted again.
+  const rowUnseen = useCallback(
+    (r) => (r.seenKeys ? r.seenKeys.some(isUnseen) : isUnseen(r.key)),
+    [isUnseen]
+  );
+
   const newCount = useMemo(
-    () => rows.reduce((n, r) => (isUnseen(r.key) ? n + 1 : n), 0),
-    [rows, isUnseen]
+    () => rows.reduce((n, r) => (!r.child && rowUnseen(r) ? n + 1 : n), 0),
+    [rows, rowUnseen]
   );
 
   const markAllSeen = useCallback(() => {
     setSeen((prev) => {
       const next = new Set(prev);
-      rows.forEach((r) => next.add(r.key));
+      rows.forEach((r) => (r.seenKeys || [r.key]).forEach((k) => next.add(k)));
       writeSeen(next);
       return next;
     });
@@ -1092,8 +1140,9 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   // represented by its manifest, so counting it again would read "2 of 7" on a
   // tab that is showing everything it has.
   const totalRows = useMemo(
-    () => batches.filter((b) => !mergedBatchIds.has(b.batch_id)).length + groups.length,
-    [batches, groups, mergedBatchIds]
+    () => batches.filter((b) => !mergedBatchIds.has(b.batch_id) && !tiedBatchIds.has(b.batch_id)).length
+      + groups.length + formGroups.length,
+    [batches, groups, formGroups, mergedBatchIds, tiedBatchIds]
   );
 
   const todayStr = today();
@@ -1252,6 +1301,61 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
 
             <Box as="tbody">
               {rows.map((row, i) => {
+                if (row.kind === "formGroup") {
+                  const g = row.group;
+                  const fOpen = openFormId === g.form_id;
+                  const fNew = rowUnseen(row);
+                  const cell = { px: 3, py: 2, fontSize: "sm", color: "gray.700",
+                    borderBottom: "1px solid", borderColor: "gray.100" };
+                  return (
+                    <Box as="tr" key={row.key} bg={i % 2 ? "teal.50" : "white"}
+                      _hover={{ bg: "teal.100" }} cursor="pointer"
+                      onDoubleClick={() => toggleFormGroup(g)}>
+                      <Box as="td" px={2} py={2} borderBottom="1px solid" borderColor="gray.100" />
+                      <Box as="td" {...cell} fontWeight="600" color="teal.800"
+                        borderLeft="4px solid" borderLeftColor="teal.500">
+                        <Flex align="center" gap={2}>
+                          <IconButton
+                            aria-label={fOpen ? "Collapse" : "Expand"}
+                            icon={fOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                            size="xs" variant="ghost" colorScheme={fOpen ? "teal" : "gray"}
+                            onClick={(e) => { e.stopPropagation(); toggleFormGroup(g); }}
+                            onDoubleClick={(e) => e.stopPropagation()}
+                          />
+                          {fNew && (
+                            <Box as="span" width="7px" height="7px" borderRadius="full"
+                              bg="blue.500" flexShrink={0} title="Not opened on this device yet" />
+                          )}
+                          <Text as="span">{g.lot_number || `Form ${g.form_id}`}</Text>
+                          {fNew && (
+                            <Badge colorScheme="blue" fontSize="9px" px={1.5} borderRadius="full">NEW</Badge>
+                          )}
+                        </Flex>
+                      </Box>
+                      <Box as="td" {...cell}>{g.vendor || "—"}</Box>
+                      <Box as="td" {...cell}>{g.item_description || "—"}</Box>
+                      <Box as="td" {...cell} whiteSpace="nowrap">
+                        {row.at ? new Date(row.at).toLocaleString() : "—"}
+                      </Box>
+                      <Box as="td" {...cell} textAlign="right">{g.box_count}</Box>
+                      <Box as="td" {...cell} textAlign="right" whiteSpace="nowrap"
+                        style={{ fontVariantNumeric: "tabular-nums" }}>{g.total} LB</Box>
+                      <Box as="td" {...cell}>
+                        <Badge colorScheme="teal" fontSize="10px"
+                          title={`Tied together on registration form #${g.form_id}. Untie a session there to split it back out.`}>
+                          One lot · {g.session_count} sessions
+                        </Badge>
+                      </Box>
+                      <Box as="td" {...cell} textAlign="right">
+                        <Button size="xs" variant="outline" colorScheme="blue"
+                          onClick={(e) => { e.stopPropagation(); printGroup(g); }}>
+                          Print
+                        </Button>
+                      </Box>
+                    </Box>
+                  );
+                }
+
                 if (row.kind === "group") {
                   const g = row.group;
                   const gOpen = expandedGroupId === g.group_id;
@@ -1378,7 +1482,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                           onChange={() => toggleSelected(b.batch_id)}
                           aria-label={`Select ${b.lot_number || b.batch_id}`} />
                       </Box>
-                      <Box as="td" px={3} py={2} fontSize="sm" fontWeight="600" color="blue.700"
+                      <Box as="td" px={3} pl={row.child ? 10 : 3} py={2} fontSize="sm" fontWeight="600" color="blue.700"
                         borderBottom="1px solid" borderColor="gray.100"
                         borderLeft={isToday(b) || isNew ? "4px solid" : undefined}
                         borderLeftColor={isToday(b) ? "green.500" : isNew ? "blue.400" : undefined}>
