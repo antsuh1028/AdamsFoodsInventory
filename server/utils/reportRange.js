@@ -178,7 +178,8 @@ const LOTS_TOUCHED = `
     UNION SELECT lot_id FROM ship
     UNION SELECT lot_id FROM proc
   )
-  SELECT t.*, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out
+  SELECT t.*, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out,
+         y.estimated_in, y.estimated_out
     FROM (
       SELECT l.lot_id, l.lot_number, l.tenant_id, l.status,
              COALESCE((SELECT boxes FROM box WHERE box.lot_id = l.lot_id
