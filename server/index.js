@@ -3,8 +3,11 @@ const express = require("express");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
 const { migrate } = require("./db/migrate");
+const { TRUST_PROXY } = require("./utils/proxy");
 
 const app = express();
+// Rate limits key on req.ip; without this every user is Apache's address.
+app.set("trust proxy", TRUST_PROXY);
 
 const allowedOrigins = [process.env.ALLOWED_ORIGIN, "http://localhost:3000"].filter(Boolean);
 const corsOptions = { origin: allowedOrigins };
