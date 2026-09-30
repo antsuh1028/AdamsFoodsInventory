@@ -1,10 +1,13 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const rateLimit = require("express-rate-limit");
+const { generalLimiter } = require("./middleware/rateLimits");
 const { migrate } = require("./db/migrate");
+const { TRUST_PROXY } = require("./utils/proxy");
 
 const app = express();
+// Rate limits key on req.ip; without this every user is Apache's address.
+app.set("trust proxy", TRUST_PROXY);
 
 const allowedOrigins = [process.env.ALLOWED_ORIGIN, "http://localhost:3000"].filter(Boolean);
 const corsOptions = { origin: allowedOrigins };
@@ -13,21 +16,7 @@ app.use(express.json());
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
-// General rate limiter for all endpoints except login/refresh (60 requests per minute).
-// Box-scanning routes are exempt and carry their own, much higher limiter: this
-// one keys on IP, so every iPad behind the warehouse NAT would share a single
-// 60/min budget and a scanning session flushing every few seconds would trip it.
-const generalLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  skip: (req) =>
-    req.path === "/login" ||
-    req.path === "/refresh" ||
-    req.path.startsWith("/box-batches") ||
-    req.path.startsWith("/manifest-groups"),
-  message: { error: "Too many requests, please try again later" },
-});
-
+// Per signed-in user; the limits themselves live in middleware/rateLimits.js.
 app.use(generalLimiter);
 
 // Schema first, routes second, listen last.

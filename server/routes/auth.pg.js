@@ -1,20 +1,8 @@
 const router = require("express").Router();
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
-const rateLimit = require("express-rate-limit");
 const pool = require("../utils/pg");
-
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: "Too many login attempts, try again later" },
-});
-
-const refreshLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  message: { error: "Too many refresh attempts, try again later" },
-});
+const { loginLimiter, loginIpLimiter, refreshLimiter } = require("../middleware/rateLimits");
 
 const generateAccessToken = (user) => {
   return jwt.sign(
@@ -36,7 +24,7 @@ const generateRefreshToken = (user) => {
   );
 };
 
-router.post("/login", loginLimiter, async (req, res) => {
+router.post("/login", loginIpLimiter, loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   const username = email?.toLowerCase().trim();
   try {

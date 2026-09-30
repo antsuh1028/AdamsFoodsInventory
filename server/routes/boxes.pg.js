@@ -1,5 +1,4 @@
 const router = require("express").Router();
-const rateLimit = require("express-rate-limit");
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
@@ -15,14 +14,7 @@ const readXlsxFile = require("read-excel-file/node");
 // Schema lives in ../db/migrate.js and is applied, in order, before this module is
 // ever required.
 
-// ── Rate limiting ────────────────────────────────────────────────────────────
-// The global 60/min limiter in index.js keys on IP, so every iPad behind the
-// warehouse NAT shares one budget.
-const scanLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 600,
-  message: { error: "Too many scan requests, slow down" },
-});
+const { scanLimiter } = require("../middleware/rateLimits");
 
 // Shared with routes/lots.pg.js so both report the same figure.
 const { weightInLb } = require("../utils/sqlWeight");
