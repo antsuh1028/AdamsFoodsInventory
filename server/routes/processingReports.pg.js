@@ -2,6 +2,7 @@ const router = require("express").Router();
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
+const { REPORT_ACCEPT_ROLES } = require("../middleware/receptionRoles");
 const { searchTerm, searchClause } = require("../utils/search");
 const { isCalendarDay } = require("../utils/weighedAt");
 
@@ -381,7 +382,7 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
 
 // ── Accept: the only step that moves stock ───────────────────────────────────
 
-router.post("/processing-reports/:id/accept", verifyToken, async (req, res) => {
+router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT_ACCEPT_ROLES), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid report id" });
 
@@ -537,7 +538,7 @@ router.post("/processing-reports/:id/accept", verifyToken, async (req, res) => {
 });
 
 // Sent back to the floor. Moves nothing.
-router.post("/processing-reports/:id/reject", verifyToken, async (req, res) => {
+router.post("/processing-reports/:id/reject", verifyToken, requireRole(...REPORT_ACCEPT_ROLES), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid report id" });
   const reason = (req.body && req.body.reason) || null;

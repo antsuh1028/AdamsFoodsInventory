@@ -37,6 +37,10 @@ export const NOBLESSE_SIDE = ["noblesse", "ntimanager", "outgoing"];
 export const REPORT_ROLES = ["admin", "ntimanager"];
 export const canSeeReport = () => REPORT_ROLES.includes(getRole());
 
+// Who checks a processing report and accepts it. Mirrors REPORT_ACCEPT_ROLES on the server.
+export const REPORT_ACCEPT_ROLES = ["admin", "noblesse"];
+export const canAcceptReports = () => REPORT_ACCEPT_ROLES.includes(getRole());
+
 // Who may add to or retire from the item description list. Mirrors the route.
 export const ITEM_LIST_ROLES = ["admin", "ntimanager"];
 export const canManageItems = () => ITEM_LIST_ROLES.includes(getRole());

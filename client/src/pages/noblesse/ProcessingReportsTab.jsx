@@ -12,8 +12,9 @@ import {
   fmtDate, today, timeNow, upper, fmtWeight, PROCESSING_TYPES, PROCESSING_LINES,
   SheetField, sheetInputProps, SectionBar, SHEET_GRID,
 } from "./shared";
-import getRole from "../../utils/getRole";
+import getRole, { canAcceptReports } from "../../utils/getRole";
 import { acceptReport, rejectReport, unacceptReport } from "./reportActions";
+import AcceptReportDialog from "./AcceptReportDialog";
 import SearchBar from "../../components/SearchBar";
 import FacilityMap from "./FacilityMap";
 
@@ -110,6 +111,9 @@ const FILTER_LABEL = {
 const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const toast = useToast();
   const isAdmin = getRole() === "admin";
+  // Reception checks and accepts; the floor manager submits and waits.
+  const canAccept = canAcceptReports();
+  const [checking, setChecking] = useState(null);
 
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -411,17 +415,20 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 </Text>
               )}
               <Box flex={1} />
-              {r.status === "submitted" && (
+              {r.status === "submitted" && canAccept && (
                 <>
                   <Button size="xs" variant="ghost" isLoading={busyId === r.reportId}
                     onClick={(e) => { e.stopPropagation(); setRejecting(r.reportId); setReason(""); }}>
                     Send back
                   </Button>
                   <Button size="xs" colorScheme="blue" isLoading={busyId === r.reportId}
-                    onClick={(e) => { e.stopPropagation(); act(r, acceptReport); }}>
+                    onClick={(e) => { e.stopPropagation(); setChecking(r); }}>
                     Accept
                   </Button>
                 </>
+              )}
+              {r.status === "submitted" && !canAccept && (
+                <Text fontSize="xs" color="gray.500">Waiting for reception</Text>
               )}
               {isAdmin && r.status === "accepted" && (
                 <Button size="xs" variant="ghost" colorScheme="red"
@@ -486,6 +493,16 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
           </Box>
         </Box>
       </Flex>
+
+      <AcceptReportDialog
+        report={checking}
+        isOpen={Boolean(checking)}
+        busy={Boolean(checking) && busyId === checking.reportId}
+        onCancel={() => setChecking(null)}
+        onAccept={async (type) => {
+          if (await act(checking, acceptReport, type)) setChecking(null);
+        }}
+      />
 
       {/* The same map, given the whole screen. One component, so the two can
           never drift apart. */}

@@ -65,7 +65,9 @@ const runAction = async (reportId, path, body, toast) => {
   }
 };
 
-export const acceptReport = (id, toast) => runAction(id, "accept", null, toast);
+// The type is optional: blank leaves whatever the floor chose.
+export const acceptReport = (id, processingType, toast) =>
+  runAction(id, "accept", processingType ? { processingType } : null, toast);
 export const rejectReport = (id, reason, toast) =>
   runAction(id, "reject", { reason: reason || null }, toast);
 export const unacceptReport = (id, toast) => runAction(id, "unaccept", null, toast);
