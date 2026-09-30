@@ -4,7 +4,8 @@ import {
 } from "@chakra-ui/react";
 import { fmtDate } from "./shared";
 import { acceptReport, rejectReport, unacceptReport } from "./reportActions";
-import getRole from "../../utils/getRole";
+import getRole, { canAcceptReports } from "../../utils/getRole";
+import AcceptReportDialog from "./AcceptReportDialog";
 
 // Reception's side of the processing report.
 //
@@ -14,6 +15,8 @@ import getRole from "../../utils/getRole";
 const ProcessingReportLink = ({ lotId, lotNumber, reports = [], onApplied }) => {
   const toast = useToast();
   const isAdmin = getRole() === "admin";
+  const canAccept = canAcceptReports();
+  const [checking, setChecking] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState("");
@@ -62,14 +65,20 @@ const ProcessingReportLink = ({ lotId, lotNumber, reports = [], onApplied }) => 
                 <Text fontSize="xs" color="gray.500">{r.workers.join(", ")}</Text>
               )}
               <Box flex={1} />
-              <Button size="xs" variant="ghost" isLoading={busyId === r.reportId}
-                onClick={() => { setRejecting(r.reportId); setReason(""); }}>
-                Send back
-              </Button>
-              <Button size="xs" colorScheme="blue" isLoading={busyId === r.reportId}
-                onClick={() => run(r, acceptReport)}>
-                Accept
-              </Button>
+              {canAccept ? (
+                <>
+                  <Button size="xs" variant="ghost" isLoading={busyId === r.reportId}
+                    onClick={() => { setRejecting(r.reportId); setReason(""); }}>
+                    Send back
+                  </Button>
+                  <Button size="xs" colorScheme="blue" isLoading={busyId === r.reportId}
+                    onClick={() => setChecking(r)}>
+                    Accept
+                  </Button>
+                </>
+              ) : (
+                <Text fontSize="xs" color="gray.500">Waiting for reception</Text>
+              )}
             </Flex>
             {r.inedibleWeight && (
               <Text fontSize="xs" color="gray.500" mt={1}>
@@ -124,6 +133,16 @@ const ProcessingReportLink = ({ lotId, lotNumber, reports = [], onApplied }) => 
       {reports.length === 0 && (
         <Text fontSize="xs" color="gray.500">No processing reports for this lot yet.</Text>
       )}
+
+      <AcceptReportDialog
+        report={checking && { ...checking, lotNumber: checking.lotNumber || lotNumber }}
+        isOpen={Boolean(checking)}
+        busy={Boolean(checking) && busyId === checking.reportId}
+        onCancel={() => setChecking(null)}
+        onAccept={async (type) => {
+          if (await run(checking, acceptReport, type)) setChecking(null);
+        }}
+      />
     </Box>
   );
 };

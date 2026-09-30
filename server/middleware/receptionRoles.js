@@ -19,4 +19,8 @@ const RECEPTION_ROLES = [
   "admin", "manager", "ntimanager", "noblesse", "reception", "outgoing",
 ];
 
-module.exports = { RECEPTION_ROLES };
+// Who checks a processing report and lets it move stock: reception, not the
+// floor manager who wrote it.
+const REPORT_ACCEPT_ROLES = ["admin", "noblesse"];
+
+module.exports = { RECEPTION_ROLES, REPORT_ACCEPT_ROLES };
