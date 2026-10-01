@@ -1,3 +1,4 @@
+import upperInput from "../utils/upperInput";
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Flex, Text, Input, Select, Button } from "@chakra-ui/react";
 import axiosInstance from "../utils/axiosInstance";
@@ -60,7 +61,7 @@ const ItemDescriptionInput = ({
 
       <Input size={size} bg="white" autoComplete="off" list={listId}
         placeholder={compact ? "" : t(placeholder)}
-        value={value} onChange={(e) => onChange(e.target.value.toUpperCase())} />
+        value={value} onChange={(e) => onChange(upperInput(e))} />
       <datalist id={listId}>
         {names.map((n) => <option key={n} value={n} />)}
       </datalist>

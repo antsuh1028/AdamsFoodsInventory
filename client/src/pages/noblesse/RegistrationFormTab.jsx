@@ -1,3 +1,4 @@
+import upperInput from "../../utils/upperInput";
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   Box, Flex, Text, Button, IconButton, Badge, Spinner, useToast, Image,
@@ -89,7 +90,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
 
   const [isFullScreen, setIsFullScreen] = useState(false);
   if (!draft) return null;
-  const set = (key) => (e) => setDraft({ ...draft, [key]: upper(e.target.value) });
+  const set = (key) => (e) => setDraft({ ...draft, [key]: upperInput(e) });
   const setCheck = (key) => (e) => setDraft({ ...draft, [key]: e.target.checked });
   const tally = caseTally(draft);
   const remainingCases = tally ? tally.remaining : null;
@@ -385,7 +386,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       value={pd.weight || ""}
                       onChange={(e) => {
                         const newDates = [...draft.processingDates];
-                        newDates[idx] = { ...newDates[idx], weight: upper(e.target.value) };
+                        newDates[idx] = { ...newDates[idx], weight: upperInput(e) };
                         setDraft({ ...draft, processingDates: newDates });
                       }}
                     />
@@ -400,7 +401,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       value={pd.cases || ""}
                       onChange={(e) => {
                         const newDates = [...draft.processingDates];
-                        newDates[idx] = { ...newDates[idx], cases: upper(e.target.value) };
+                        newDates[idx] = { ...newDates[idx], cases: upperInput(e) };
                         setDraft({ ...draft, processingDates: newDates });
                       }}
                     />
@@ -414,7 +415,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                       value={pd.date || ""}
                       onChange={(e) => {
                         const newDates = [...draft.processingDates];
-                        newDates[idx] = { ...newDates[idx], date: upper(e.target.value) };
+                        newDates[idx] = { ...newDates[idx], date: upperInput(e) };
                         setDraft({ ...draft, processingDates: newDates });
                       }}
                     />

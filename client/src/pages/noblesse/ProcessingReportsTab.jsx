@@ -1,3 +1,4 @@
+import upperInput from "../../utils/upperInput";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, IconButton, Input, Select, Textarea, Spinner,
@@ -638,23 +639,23 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {productOpen && (<>
               <SheetField label="Description" full>
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.description || ""}
-                  onChange={(e) => setDraft({ ...draft, description: upper(e.target.value) })} />
+                  onChange={(e) => setDraft({ ...draft, description: upperInput(e) })} />
               </SheetField>
               <SheetField label="Brand">
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.brand || ""}
-                  onChange={(e) => setDraft({ ...draft, brand: upper(e.target.value) })} />
+                  onChange={(e) => setDraft({ ...draft, brand: upperInput(e) })} />
               </SheetField>
               <SheetField label="Grade">
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.grade || ""}
-                  onChange={(e) => setDraft({ ...draft, grade: upper(e.target.value) })} />
+                  onChange={(e) => setDraft({ ...draft, grade: upperInput(e) })} />
               </SheetField>
               <SheetField label="EST #">
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.estNumber || ""}
-                  onChange={(e) => setDraft({ ...draft, estNumber: upper(e.target.value) })} />
+                  onChange={(e) => setDraft({ ...draft, estNumber: upperInput(e) })} />
               </SheetField>
               <SheetField label="Customer">
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.customer || ""}
-                  onChange={(e) => setDraft({ ...draft, customer: upper(e.target.value) })} />
+                  onChange={(e) => setDraft({ ...draft, customer: upperInput(e) })} />
               </SheetField>
               {/* A lot routinely spans several pack dates, so this takes the
                   whole set. Picking a date adds it; each can be removed. */}

@@ -1,3 +1,4 @@
+import upperInput from "../../utils/upperInput";
 import { useState, useRef, useContext, useEffect } from "react";
 import {
   Button, Flex, Box, Text, Input, Select, FormControl, FormLabel, SimpleGrid, Spinner, Image, Badge,
@@ -304,7 +305,7 @@ const FormScanner = ({ isOpen, onClose }) => {
                           size="sm"
                           borderRadius="lg"
                           value={fields.location || ""}
-                          onChange={(e) => setFields((prev) => ({ ...prev, location: e.target.value.toUpperCase() }))}
+                          onChange={(e) => setFields((prev) => ({ ...prev, location: upperInput(e) }))}
                           bg={fields.location ? "white" : "yellow.50"}
                           borderColor={fields.location ? "gray.200" : "yellow.300"}
                           autoComplete="off"
@@ -331,7 +332,7 @@ const FormScanner = ({ isOpen, onClose }) => {
                         borderRadius="lg"
                         type={type || "text"}
                         value={fields[key] || ""}
-                        onChange={(e) => setFields((prev) => ({ ...prev, [key]: key === "species" ? e.target.value.toUpperCase() : e.target.value }))}
+                        onChange={(e) => setFields((prev) => ({ ...prev, [key]: key === "species" ? upperInput(e) : e.target.value }))}
                         bg={fields[key] ? "white" : "yellow.50"}
                         borderColor={fields[key] ? "gray.200" : "yellow.300"}
                       />

@@ -1,3 +1,4 @@
+import upperInput from "../../utils/upperInput";
 /* global BigInt */
 // The directive is not decoration: CRA's linter fails the build on BigInt without
 // it, the same way utils/weight.js has always needed it.
@@ -21,7 +22,7 @@ import VendorInput from "../VendorInput";
 import {
   toPounds, toDisplay, toDisplayHundredths, fromHundredths,
 } from "../../utils/weight";
-import { today, fmtDate, upper } from "../../pages/noblesse/shared";
+import { today, fmtDate } from "../../pages/noblesse/shared";
 import printWeightManifest from "../../pages/noblesse/printWeightManifest";
 
 // Operator-facing scanning screen.
@@ -355,7 +356,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
   });
   // Uppercased HERE, not just displayed that way.
   const setField = (key) => (e) => {
-    const value = upper(e.target.value);
+    const value = upperInput(e);
     setHeader((h) => ({ ...h, [key]: value }));
   };
 
@@ -749,7 +750,7 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
                 Remarks (optional)
               </Text>
               <Textarea size="sm" rows={3} value={remarks}
-                onChange={(e) => setRemarks(upper(e.target.value))}
+                onChange={(e) => setRemarks(upperInput(e))}
                 placeholder="ANYTHING WORTH SAYING ABOUT THIS TALLY"
                 autoCorrect="off" autoCapitalize="characters" spellCheck={false}
                 textTransform="uppercase" />

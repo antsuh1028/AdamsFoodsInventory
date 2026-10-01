@@ -1,3 +1,4 @@
+import upperInput from "../../utils/upperInput";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Input, Badge, Textarea, Alert, AlertIcon, useToast,
@@ -431,7 +432,7 @@ const WeighFinishedBoxes = ({
             </Text>
             <Input size="md" value={shipTo} autoComplete="off"
               placeholder="e.g. ADAMSFOODS"
-              onChange={(e) => setShipTo(e.target.value.toUpperCase())} />
+              onChange={(e) => setShipTo(upperInput(e))} />
 
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mt={4} mb={1}>
               {t("Boxes expected")} <Text as="span" textTransform="none">{t("(optional)")}</Text>

@@ -1,3 +1,4 @@
+import upperInput from "../../utils/upperInput";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, Spinner, Input, Select, Checkbox, Alert, AlertIcon, Tooltip,
@@ -76,7 +77,7 @@ const HeadingEditor = ({ batchId, detail, isAdmin, onSaved, onCancel }) => {
   const dirty = dateChanged
     || offered.some(([k]) => draft[k].trim() !== original[k].trim());
   const set = (key) => (e) =>
-    setDraft((d) => ({ ...d, [key]: upper(e.target.value) }));
+    setDraft((d) => ({ ...d, [key]: upperInput(e) }));
 
   const save = async () => {
     setSaving(true);
@@ -1346,7 +1347,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                   {draft.destinationType === "customer" && (
                     <Field label={t("Customer")} w="220px">
                       <Input size="sm" placeholder="e.g. Sysco" value={draft.destinationName}
-                        onChange={(e) => setDraft({ ...draft, destinationName: upper(e.target.value) })} />
+                        onChange={(e) => setDraft({ ...draft, destinationName: upperInput(e) })} />
                     </Field>
                   )}
                   <Field label={t("Ship date")} w="150px">
@@ -1355,19 +1356,19 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                   </Field>
                   <Field label={t("Ship to")} w="220px">
                     <Input size="sm" value={draft.shipTo}
-                      onChange={(e) => setDraft({ ...draft, shipTo: upper(e.target.value) })} />
+                      onChange={(e) => setDraft({ ...draft, shipTo: upperInput(e) })} />
                   </Field>
                   <Field label={t("BOL #")} w="120px">
                     <Input size="sm" value={draft.billOfLading}
-                      onChange={(e) => setDraft({ ...draft, billOfLading: upper(e.target.value) })} />
+                      onChange={(e) => setDraft({ ...draft, billOfLading: upperInput(e) })} />
                   </Field>
                   <Field label={t("Carrier")} w="150px">
                     <Input size="sm" value={draft.carrier}
-                      onChange={(e) => setDraft({ ...draft, carrier: upper(e.target.value) })} />
+                      onChange={(e) => setDraft({ ...draft, carrier: upperInput(e) })} />
                   </Field>
                   <Field label={t("Driver")} w="150px">
                     <Input size="sm" value={draft.driver}
-                      onChange={(e) => setDraft({ ...draft, driver: upper(e.target.value) })} />
+                      onChange={(e) => setDraft({ ...draft, driver: upperInput(e) })} />
                   </Field>
                 </Flex>
               )}
