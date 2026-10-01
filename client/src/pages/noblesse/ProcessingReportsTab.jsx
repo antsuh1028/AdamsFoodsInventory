@@ -523,7 +523,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         title={draft?.reportId ? `Report ${draft.reportId}` : "New processing report"}
         width={720}
         // dvh follows Safari's toolbar, so the Save buttons stay on a phone's screen.
-        maxHeight={{ base: "80dvh", md: "88vh" }}
+        maxHeight={{ base: "70dvh", md: "80vh" }}
         footer={
           <Flex gap={2} width="100%" justify="space-between" align="center" wrap="wrap">
             <Text fontSize="sm" color="gray.600" style={{ fontVariantNumeric: "tabular-nums" }}>

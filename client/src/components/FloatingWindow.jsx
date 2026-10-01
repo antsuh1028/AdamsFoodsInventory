@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useReducer, useRef, useState } from "react";
 import { Box, Flex, Text, IconButton, Portal, Tooltip } from "@chakra-ui/react";
 import { CloseIcon } from "@chakra-ui/icons";
+import { raise, drop, subscribe, zFor } from "../utils/windowStack";
 
 const MIN_WIDTH = 300;
 const MIN_HEIGHT = 220;
@@ -77,6 +78,17 @@ const FloatingWindow = ({
     h: typeof window === "undefined" ? 768 : window.innerHeight,
   }));
   const boxRef = useRef(null);
+  // This window's place in the stack; any change re-renders every open window.
+  const idRef = useRef(null);
+  if (!idRef.current) idRef.current = {};
+  const [, restack] = useReducer((n) => n + 1, 0);
+  useEffect(() => subscribe(restack), []);
+  useEffect(() => {
+    const id = idRef.current;
+    if (!isOpen) { drop(id); return undefined; }
+    raise(id);
+    return () => drop(id);
+  }, [isOpen]);
   const dragState = useRef(null);   // { startX, startY, originX, originY }
   const resizeState = useRef(null); // { edge, startX, startY, startWidth, startHeight, startLeft, startTop }
 
@@ -213,7 +225,9 @@ const FloatingWindow = ({
         boxShadow="2xl"
         border="1px solid"
         borderColor={dark ? "gray.700" : "gray.400"}
-        zIndex={zIndex}
+        zIndex={zFor(idRef.current, zIndex)}
+        // Capture, so a press anywhere raises it before the content handles it.
+        onPointerDownCapture={() => raise(idRef.current)}
         display="flex"
         flexDirection="column"
         overflow="hidden"
