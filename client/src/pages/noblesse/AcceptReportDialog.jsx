@@ -38,10 +38,18 @@ const AcceptReportDialog = ({ report, isOpen, busy, onCancel, onAccept }) => {
             Check before accepting
           </AlertDialogHeader>
           <AlertDialogBody>
-            <Text fontSize="sm" mb={3}>
-              Accepting takes <b>{r.inputCases ?? 0} case{r.inputCases === 1 ? "" : "s"}</b> off
-              {" "}<b>{r.lotNumber || "the lot"}</b> and adds a run to its registration form.
-            </Text>
+            {r.sourceFpItem ? (
+              <Text fontSize="sm" mb={3}>
+                Accepting takes <b>{r.inputCases ?? 0} case{r.inputCases === 1 ? "" : "s"}</b> of
+                {" "}<b>{r.sourceFpItem}</b> from the F.P Tracker for <b>{r.lotNumber || "the lot"}</b>,
+                and adds a run to its registration form. The lot&apos;s raw stock is not touched.
+              </Text>
+            ) : (
+              <Text fontSize="sm" mb={3}>
+                Accepting takes <b>{r.inputCases ?? 0} case{r.inputCases === 1 ? "" : "s"}</b> off
+                {" "}<b>{r.lotNumber || "the lot"}</b> and adds a run to its registration form.
+              </Text>
+            )}
             <Box mb={4}>
               <Row label="Date">{fmtDate(r.processingDate)}{time ? ` · ${time}` : ""}</Row>
               <Row label="Line">{r.lineNo}</Row>

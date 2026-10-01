@@ -29,6 +29,8 @@ import FacilityMap from "./FacilityMap";
 
 const emptyDraft = () => ({
   lotId: null, lotNumber: "",
+  // An F.P Tracker item to take from; blank is the lot's raw stock.
+  sourceFpItem: "",
   processingDate: today(),
   startTime: timeNow(),
   endTime: "",
@@ -197,7 +199,25 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     () => (draft && draft.lotId ? stock.find((r) => r.lotId === draft.lotId) : null),
     [stock, draft]
   );
-  const casesLeft = lotStock ? Number(lotStock.qtyCases) || 0 : null;
+
+  // What this lot has in the F.P Tracker, for "Takes from".
+  const draftLotId = draft ? draft.lotId : null;
+  const [fpItems, setFpItems] = useState([]);
+  useEffect(() => {
+    if (!draftLotId) { setFpItems([]); return undefined; }
+    let gone = false;
+    axiosInstance.get(`/fp-tracker/lot/${draftLotId}`)
+      .then(({ data }) => { if (!gone) setFpItems(data || []); })
+      .catch(() => { if (!gone) setFpItems([]); });
+    return () => { gone = true; };
+  }, [draftLotId]);
+  const fpSource = draft && draft.sourceFpItem
+    ? fpItems.find((i) => i.item === draft.sourceFpItem) || null : null;
+
+  // Counted against whichever source the run takes from.
+  const casesLeft = draft && draft.sourceFpItem
+    ? (fpSource ? fpSource.waiting : null)
+    : (lotStock ? Number(lotStock.qtyCases) || 0 : null);
   const overdrawn = casesLeft != null && inputCases > casesLeft;
 
   // Staging needs only the lot: at the start of a run the cases are not known
@@ -391,6 +411,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 {STATUS_LABEL[r.status] || r.status}
               </Badge>
               {r.lineNo && <Badge colorScheme="gray" fontSize="9px">Line {r.lineNo}</Badge>}
+              {r.sourceFpItem && (
+                <Badge colorScheme="teal" fontSize="9px" title={r.sourceFpItem}>from F.P Tracker</Badge>
+              )}
               {r.description && <Text fontSize="xs" color="gray.600">{r.description}</Text>}
               <Text fontSize="sm" color="gray.700" ml="auto"
                 style={{ fontVariantNumeric: "tabular-nums" }}>
@@ -578,10 +601,27 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                     value={draft.lotId}
                     lotNumber={draft.lotNumber}
                     onChange={(lot) => setDraft((d) => withLotDefaults(
-                      d, lot, lot && stock.find((r) => r.lotId === lot.lotId)))}
+                      { ...d, sourceFpItem: "" }, lot, lot && stock.find((r) => r.lotId === lot.lotId)))}
                   />
                 </Box>
               </SheetField>
+              {/* Only when the lot has something in the F.P Tracker; raw stays the default. */}
+              {(fpItems.length > 0 || draft.sourceFpItem) && (
+                <SheetField label="Takes From" full>
+                  <Select {...sheetInputProps} isReadOnly={draft.readOnly}
+                    value={draft.sourceFpItem || ""}
+                    onChange={(e) => setDraft({ ...draft, sourceFpItem: e.target.value })}>
+                    <option value="">
+                      {`Raw stock${lotStock ? ` · ${Number(lotStock.qtyCases) || 0} cs` : ""}`}
+                    </option>
+                    {fpItems.filter((i) => i.waiting > 0 || i.item === draft.sourceFpItem).map((i) => (
+                      <option key={i.item} value={i.item}>
+                        {`${i.item} · ${i.waiting} cs ${i.inFreezer ? "(still in the freezer)" : "(back from the freezer)"}`}
+                      </option>
+                    ))}
+                  </Select>
+                </SheetField>
+              )}
               <SheetField label="Processing Date">
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="date" value={draft.processingDate}
                   onChange={(e) => setDraft({ ...draft, processingDate: e.target.value })} />
@@ -800,8 +840,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             {overdrawn && (
               <Alert status="warning" borderRadius="md" fontSize="xs" py={2} mb={3}>
                 <AlertIcon boxSize={3} />
-                That is more than the {casesLeft} cases left on this lot. Reception will
-                not be able to accept it.
+                {draft.sourceFpItem
+                  ? `That is more than the ${casesLeft} cases of ${draft.sourceFpItem} waiting in the F.P Tracker.`
+                  : `That is more than the ${casesLeft} cases left on this lot.`}
+                {" "}Reception will not be able to accept it.
               </Alert>
             )}
           </Box>

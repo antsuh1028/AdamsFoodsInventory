@@ -61,6 +61,9 @@ const ProcessingReportLink = ({ lotId, lotNumber, reports = [], onApplied }) => 
               </Text>
               <Text fontSize="xs" color="gray.500">{fmtDate(r.processingDate)}</Text>
               {r.lineNo && <Badge colorScheme="gray" fontSize="9px">Line {r.lineNo}</Badge>}
+              {r.sourceFpItem && (
+                <Badge colorScheme="teal" fontSize="9px" title={r.sourceFpItem}>from F.P Tracker</Badge>
+              )}
               {r.workers.length > 0 && (
                 <Text fontSize="xs" color="gray.500">{r.workers.join(", ")}</Text>
               )}
