@@ -41,7 +41,8 @@ const BoxWeightLink = ({
           ? axiosInstance.get(`/noblesse-registration-forms/${formId}/box-batches`)
           : Promise.resolve({ data: { sessions: [], boxCount: 0, totalWeight: "0", weightUnit: "LB" } }),
         // ARRIVALS ONLY, and this one parameter is the whole guard on this screen.
-        axiosInstance.get("/box-batches", { params: { direction: "incoming" } }),
+        // The newest 100: at 50, a session two weeks old fell off the picker untied.
+        axiosInstance.get("/box-batches", { params: { direction: "incoming", limit: 100 } }),
       ]);
       setLinked(links);
       setAvailable(batches || []);
