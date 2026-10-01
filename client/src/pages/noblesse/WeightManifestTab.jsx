@@ -1,3 +1,4 @@
+import upperInput from "../../utils/upperInput";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, Spinner, IconButton, Input, Textarea, Select, Checkbox,
@@ -14,7 +15,7 @@ import BoxScanner from "../../components/navbar/boxScanner";
 import printWeightManifest from "./printWeightManifest";
 import ImportTally from "./ImportTally";
 import FloatingWindow from "../../components/FloatingWindow";
-import { fmtDate, fmtDateTime, today, upper, weighedDay } from "./shared";
+import { fmtDate, fmtDateTime, today, weighedDay } from "./shared";
 import getRole from "../../utils/getRole";
 import SearchBar from "../../components/SearchBar";
 import LotPicker from "../../components/LotPicker";
@@ -315,7 +316,7 @@ const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
   const dirty = lotChanged || dateChanged
     || Object.keys(draft).some((k) => draft[k].trim() !== original[k].trim());
 
-  const set = (key) => (e) => setDraft((d) => ({ ...d, [key]: upper(e.target.value) }));
+  const set = (key) => (e) => setDraft((d) => ({ ...d, [key]: upperInput(e) }));
 
   const fail = (title) => (err) => toast({
     status: "error", position: "top", duration: 7000, isClosable: true, title,
@@ -1667,7 +1668,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                           bg={c.conflict ? "yellow.50" : "white"}
                           borderColor={c.conflict ? "yellow.300" : "gray.200"}
                           value={mergeHeader[key]}
-                          onChange={(e) => setMergeHeader((h) => ({ ...h, [key]: upper(e.target.value) }))}
+                          onChange={(e) => setMergeHeader((h) => ({ ...h, [key]: upperInput(e) }))}
                         />
                         {c.conflict && (
                           <Flex gap={1} mt={1} wrap="wrap">
@@ -1689,7 +1690,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
                       letterSpacing="wide" mb={1}>Name (optional)</Text>
                     <Input size="sm" bg="white" placeholder="e.g. PALLETS 1-3"
                       value={mergeHeader.name}
-                      onChange={(e) => setMergeHeader((h) => ({ ...h, name: upper(e.target.value) }))} />
+                      onChange={(e) => setMergeHeader((h) => ({ ...h, name: upperInput(e) }))} />
                   </Box>
                 </Box>
               )}

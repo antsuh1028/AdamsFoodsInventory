@@ -1,3 +1,4 @@
+import upperInput from "../../utils/upperInput";
 import { useState, useRef } from "react";
 import {
   Button, Flex, Box, Text, Input, FormControl, FormLabel, SimpleGrid, Spinner, Image, Badge,
@@ -231,7 +232,7 @@ const FormScannerReturn = ({ isOpen, onClose, orderId, onSubmit, submitting }) =
                       onChange={(e) => setFields((prev) => ({
                         ...prev,
                         [key]: key === "location" || key === "species"
-                          ? e.target.value.toUpperCase()
+                          ? upperInput(e)
                           : e.target.value,
                       }))}
                       bg={fields[key] ? "white" : "gray.50"}

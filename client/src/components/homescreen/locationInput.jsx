@@ -1,3 +1,4 @@
+import upperInput from "../../utils/upperInput";
 import React from "react";
 import {
   InputGroup,
@@ -37,7 +38,7 @@ const LocationInput = ({ value, onChange, badgeState, isInvalid = false }) => {
           bg="white"
           width="100%"
           placeholder="Enter Location"
-          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          onChange={(e) => onChange(upperInput(e))}
           isInvalid={isInvalid}
           autoComplete="off"
         />
