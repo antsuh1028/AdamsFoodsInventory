@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useReducer, useRef, useState } from "react";
 import { Box, Flex, Text, IconButton, Portal, Tooltip } from "@chakra-ui/react";
 import { CloseIcon } from "@chakra-ui/icons";
+import { raise, drop, subscribe, zFor } from "../utils/windowStack";
 
 const MIN_WIDTH = 300;
 const MIN_HEIGHT = 220;
@@ -67,6 +68,8 @@ const FloatingWindow = ({
   placement = "center",
   // Lets a companion window sit above the one it belongs to.
   zIndex = 1400,
+  // Caps a content-height window; responsive values are allowed.
+  maxHeight = null,
 }) => {
   const [position, setPosition] = useState(null);
   const [size, setSize] = useState(null); // null height = auto (content-driven) until user resizes
@@ -75,6 +78,17 @@ const FloatingWindow = ({
     h: typeof window === "undefined" ? 768 : window.innerHeight,
   }));
   const boxRef = useRef(null);
+  // This window's place in the stack; any change re-renders every open window.
+  const idRef = useRef(null);
+  if (!idRef.current) idRef.current = {};
+  const [, restack] = useReducer((n) => n + 1, 0);
+  useEffect(() => subscribe(restack), []);
+  useEffect(() => {
+    const id = idRef.current;
+    if (!isOpen) { drop(id); return undefined; }
+    raise(id);
+    return () => drop(id);
+  }, [isOpen]);
   const dragState = useRef(null);   // { startX, startY, originX, originY }
   const resizeState = useRef(null); // { edge, startX, startY, startWidth, startHeight, startLeft, startTop }
 
@@ -202,7 +216,7 @@ const FloatingWindow = ({
         width={isFullScreen ? "100vw" : `${currentWidth}px`}
         maxW={isFullScreen ? "100vw" : `calc(100vw - ${EDGE_MARGIN * 2}px)`}
         height={isFullScreen ? "100vh" : `${size?.height ?? height ?? "auto"}${size?.height || height ? "px" : ""}`}
-        maxH={isFullScreen ? "100vh" : (size?.height || height) ? "95vh" : "88vh"}
+        maxH={isFullScreen ? "100vh" : (size?.height || height) ? "95vh" : (maxHeight || "88vh")}
         // Deliberately darker than the gray.50 page behind it. When both were
         // gray.50 the window had nothing but a 1px border separating it from
         // the screen and read as part of the page.
@@ -211,7 +225,9 @@ const FloatingWindow = ({
         boxShadow="2xl"
         border="1px solid"
         borderColor={dark ? "gray.700" : "gray.400"}
-        zIndex={zIndex}
+        zIndex={zFor(idRef.current, zIndex)}
+        // Capture, so a press anywhere raises it before the content handles it.
+        onPointerDownCapture={() => raise(idRef.current)}
         display="flex"
         flexDirection="column"
         overflow="hidden"

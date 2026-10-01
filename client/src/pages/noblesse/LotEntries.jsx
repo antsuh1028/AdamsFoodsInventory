@@ -226,7 +226,8 @@ export const LotFormWindow = ({ lotNumber, isOpen, onClose, zIndex = 1400 }) => 
   );
 };
 
-export const LotManifestWindow = ({ lotNumber, isOpen, onClose, zIndex = 1410 }) => {
+// With `batchId`, one chosen session, already opened to its boxes.
+export const LotManifestWindow = ({ lotNumber, batchId = null, isOpen, onClose, zIndex = 1410 }) => {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -237,12 +238,18 @@ export const LotManifestWindow = ({ lotNumber, isOpen, onClose, zIndex = 1410 })
   const [expanded, setExpanded] = useState(null);
   const toast = useToast();
 
-  const load = useCallback(async (lot) => {
+  const load = useCallback(async (lot, only) => {
     setLoading(true);
     setError("");
     try {
       const { data } = await axiosInstance.get("/box-batches", { params: { q: lot } });
-      setSessions(exactLot(data, lot, "lot_number"));
+      const rows = exactLot(data, lot, "lot_number");
+      setSessions(only ? rows.filter((b) => b.batch_id === only) : rows);
+      if (only) {
+        setExpanded(only);
+        const { data: full } = await axiosInstance.get(`/box-batches/${only}`);
+        setDetails((prev) => ({ ...prev, [only]: full }));
+      }
     } catch (e) {
       setError(e?.response?.data?.error || "Could not load the weighing sessions.");
       setSessions([]);
@@ -252,8 +259,8 @@ export const LotManifestWindow = ({ lotNumber, isOpen, onClose, zIndex = 1410 })
   }, []);
 
   useEffect(() => {
-    if (isOpen && lotNumber) load(lotNumber);
-  }, [isOpen, lotNumber, load]);
+    if (isOpen && lotNumber) load(lotNumber, batchId);
+  }, [isOpen, lotNumber, batchId, load]);
 
   // One fetch serves both looking and printing, so opening a session and then
   // printing it does not go back to the server twice.
@@ -306,7 +313,7 @@ export const LotManifestWindow = ({ lotNumber, isOpen, onClose, zIndex = 1410 })
 
   return (
     <LotWindow
-      isOpen={isOpen} onClose={onClose} title="Weight manifests"
+      isOpen={isOpen} onClose={onClose} title={batchId ? "Weight manifest" : "Weight manifests"}
       lotNumber={lotNumber} zIndex={zIndex}
       loading={loading} error={error}
       empty={sessions.length === 0 && (
