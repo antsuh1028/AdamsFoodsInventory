@@ -690,6 +690,22 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
        GROUP BY sh.shipment_id, sh.shipped_at, sh.cancelled_at, sh.created_at,
                 sh.status, sh.destination_name, sh.bill_of_lading, sh.carrier
 
+      UNION ALL
+      -- F.P Tracker: sent to the AF freezer, and back. A plain date, carried as
+      -- noon Pacific so it cannot read as the day before.
+      SELECT (t.sent_on::timestamp + interval '12 hours') AT TIME ZONE 'America/Los_Angeles',
+             'fp_sent', 'Sent to the AF freezer',
+             t.raw_weight::text, t.cases, t.item, t.fp_id, NULL::text
+        FROM fp_tracker t
+       WHERE t.lot_id = $1 AND t.tenant_id = $2 AND t.voided_at IS NULL
+
+      UNION ALL
+      SELECT (t.returned_on::timestamp + interval '12 hours') AT TIME ZONE 'America/Los_Angeles',
+             'fp_returned', 'Back from the AF freezer',
+             NULL::text, t.cases, t.item, t.fp_id, NULL::text
+        FROM fp_tracker t
+       WHERE t.lot_id = $1 AND t.tenant_id = $2 AND t.voided_at IS NULL AND t.returned_on IS NOT NULL
+
       ORDER BY at
       `,
       [lotId, req.tenantId]

@@ -83,6 +83,18 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
 
   useEffect(() => { loadReports(); }, [loadReports]);
 
+  // What the lot has waiting in the F.P Tracker, shown under Remaining.
+  const [fpItems, setFpItems] = useState([]);
+  useEffect(() => {
+    if (!lotId) { setFpItems([]); return undefined; }
+    let gone = false;
+    axiosInstance.get(`/fp-tracker/lot/${lotId}`)
+      .then(({ data }) => { if (!gone) setFpItems(data || []); })
+      .catch(() => { if (!gone) setFpItems([]); });
+    return () => { gone = true; };
+  }, [lotId, reports]);
+  const fpWaiting = fpItems.filter((i) => i.waiting > 0);
+
   const reportById = useMemo(
     () => new Map(reports.map((r) => [r.reportId, r])), [reports]
   );
@@ -108,9 +120,10 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
   // Suggested rather than applied because completing is what drops a form out
   // of the default In Progress list, and this recomputes on every keystroke —
   // correcting 12 to 2 to 22 passes through zero on the way.
+  // ...and nothing is still waiting in the F.P Tracker to be run again.
   const suggestComplete =
     tally !== null && tally.remaining === 0 && tally.processed > 0
-    && draft.status !== "completed";
+    && draft.status !== "completed" && fpWaiting.length === 0;
 
   return (
     <FloatingWindow
@@ -502,6 +515,22 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
                 </Flex>
               </Box>
             </SheetField>
+            {fpWaiting.length > 0 && (
+              <SheetField label="Waiting after freezing" full>
+                <Box {...sheetInputProps} bg="white" border="1px solid" borderColor="gray.200" py={1}>
+                  <Flex gap={3} wrap="wrap">
+                    {fpWaiting.map((i) => (
+                      <Text key={i.item} fontSize="sm" color="gray.700" style={{ fontVariantNumeric: "tabular-nums" }}>
+                        {i.item} · <b>{i.waiting} cs</b>
+                        <Text as="span" fontSize="xs" color="gray.500">
+                          {i.inFreezer ? " (still in the freezer)" : " (back)"}
+                        </Text>
+                      </Text>
+                    ))}
+                  </Flex>
+                </Box>
+              </SheetField>
+            )}
 
             <SheetField label="Temp"><Input {...sheetInputProps} value={draft.temp} onChange={set("temp")} /></SheetField>
             <Box gridColumn="3 / -1" />
@@ -608,6 +637,10 @@ const statusColor = (status) => (status === "completed" ? "green" : "yellow");
 //
 // The same reading is already baked into caseTally, where remaining = arrived
 // less processed. The two agree now.
+// A run that took from the F.P Tracker never came off the arrival, so it is left
+// out of both Processed (%) and Remaining.
+const fromArrival = (pd) => !pd.from;
+
 const processedPercent = (draft) => {
   if (!draft || !draft.originalWeight || !Array.isArray(draft.processingDates)) {
     return null;
@@ -615,7 +648,7 @@ const processedPercent = (draft) => {
   const originalWeight = parseFloat(draft.originalWeight);
   if (!originalWeight || originalWeight <= 0) return null;
 
-  const consumed = draft.processingDates.reduce((sum, pd) => {
+  const consumed = draft.processingDates.filter(fromArrival).reduce((sum, pd) => {
     const weight = parseFloat(pd.weight || 0);
     return sum + (isNaN(weight) ? 0 : weight);
   }, 0);
@@ -642,6 +675,7 @@ const caseTally = (draft) => {
   if (isNaN(total)) return null;
 
   const processed = (Array.isArray(draft.processingDates) ? draft.processingDates : [])
+    .filter(fromArrival)
     .reduce((sum, pd) => {
       const n = parseFloat(pd.cases);
       return sum + (isNaN(n) ? 0 : n);
