@@ -730,6 +730,30 @@ const steps = async () => {
      WHERE NOT EXISTS (SELECT 1 FROM item_descriptions d WHERE d.tenant_id = t.id)
     ON CONFLICT (tenant_id, name) DO NOTHING
   `, [ITEM_DESCRIPTIONS]);
+
+  // The F.P Tracker: product sent to the AF freezer that comes back for another run.
+  await run("fp_tracker", `
+    CREATE TABLE IF NOT EXISTS fp_tracker (
+      fp_id        SERIAL PRIMARY KEY,
+      tenant_id    UUID NOT NULL REFERENCES tenants(id),
+      lot_id       INT  NOT NULL REFERENCES lots(lot_id),
+      item         TEXT NOT NULL,
+      cases        INT  NOT NULL CHECK (cases > 0),
+      raw_weight   NUMERIC(10,3),
+      sent_on      DATE NOT NULL,
+      returned_on  DATE,
+      created_by   UUID,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      voided_at    TIMESTAMPTZ,
+      voided_by    UUID
+    )
+  `);
+  await run("fp_tracker lot index",
+    `CREATE INDEX IF NOT EXISTS fp_tracker_lot_idx ON fp_tracker (tenant_id, lot_id, item)`);
+
+  // What a run took from: null is the lot's raw stock, which is every run before this.
+  await run("noblesse_processing_reports source_fp_item",
+    `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS source_fp_item TEXT`);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection
