@@ -24,6 +24,7 @@ export const upper = (v) =>
 export const PROCESSING_TYPES = [
   "101 SLC-BG Slicing & Bagging",
   "101A SLC-PK Slicing & Packing",
+  "101B SLC-PK Slicing & Packing",
   "102 DBN-PK Deboning & Bagging",
   "103 PRTN-PK Portioning & Packing",
   "104 CUT-PK 1/2 Cutting & Packing",
