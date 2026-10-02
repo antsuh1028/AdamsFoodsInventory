@@ -109,6 +109,17 @@ const Figure = ({ label, value, unit, sub, tone = "gray" }) => (
   </Box>
 );
 
+// The range's weight when it moved then, else the lot's running total in gray.
+const WeightCell = ({ dayBoxes, dayLb, totalLb }) => {
+  if (dayBoxes) return fmtWeight(dayLb);
+  if (totalLb == null) return "—";
+  return (
+    <Text as="span" color="gray.400" title="Lot total to date; none in this range">
+      {fmtWeight(totalLb)} <Text as="span" fontSize="2xs">total</Text>
+    </Text>
+  );
+};
+
 // Which side carried nominal weights, spelled out so the badge is actionable.
 const estimatedLabel = (y) => {
   const parts = [];
@@ -486,10 +497,12 @@ const DailyReport = ({ isOpen, onClose }) => {
                           )}
                         </Td>
                         <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>
-                          {lot.day.boxesIn ? `${fmtWeight(lot.day.lbIn)}` : "—"}
+                          <WeightCell dayBoxes={lot.day.boxesIn} dayLb={lot.day.lbIn}
+                            totalLb={lot.yield?.inLb} />
                         </Td>
                         <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>
-                          {lot.day.boxesOut ? `${fmtWeight(lot.day.lbOut)}` : "—"}
+                          <WeightCell dayBoxes={lot.day.boxesOut} dayLb={lot.day.lbOut}
+                            totalLb={lot.yield?.measured ? lot.yield.outLb : null} />
                         </Td>
                         <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>
                           {lot.day.loads ? `${fmtWeight(lot.day.shippedLb)}` : "—"}
