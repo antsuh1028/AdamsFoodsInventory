@@ -1,19 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Box, Flex, Text, Badge, Button, Spinner, Alert, AlertIcon,
-  Table, Thead, Tbody, Tr, Th, Td, Grid, useToast,
+  Table, Thead, Tbody, Tr, Th, Td, useToast,
 } from "@chakra-ui/react";
-import {
-  CheckIcon, CloseIcon, ChevronDownIcon, ChevronRightIcon,
-} from "@chakra-ui/icons";
+import { ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import FloatingWindow from "../../components/FloatingWindow";
 import ScanSheet from "../../components/navbar/ScanSheet";
 import axiosInstance from "../../utils/axiosInstance";
 import printWeightManifest from "./printWeightManifest";
-import printRegistrationForm from "./printRegistrationForm";
-import {
-  fmtDate, fmtWeight, weighedDay, SheetField, SectionBar,
-} from "./shared";
+import { RegistrationFormModal, formToDraft } from "./RegistrationFormTab";
+import { fmtDate, fmtWeight, weighedDay } from "./shared";
 
 // The two entries behind a lot, each in its own window.
 //
@@ -27,40 +23,6 @@ import {
 
 const exactLot = (rows, lotNumber, key) =>
   (rows || []).filter((r) => String(r[key] || "").trim() === String(lotNumber).trim());
-
-// A value where the sheet has an input. Matches sheetInputProps rather than
-// inventing a second look: 16px on touch, and the same 44px minimum, so the
-// read-only sheet lines up row for row with the editable one.
-const SheetText = ({ children }) => (
-  <Flex
-    align="center" px={2}
-    minH={{ base: "44px", md: "32px" }}
-    fontSize={{ base: "16px", md: "sm" }}
-    textTransform="uppercase"
-  >
-    {children === null || children === undefined || children === ""
-      ? <Text as="span" color="gray.400">—</Text>
-      : children}
-  </Flex>
-);
-
-// The sheet's own checkbox rows, ticked or not.
-const SheetCheck = ({ on }) => (
-  <Flex align="center" px={2} minH={{ base: "44px", md: "32px" }}>
-    {on
-      ? <CheckIcon color="green.600" boxSize={3} />
-      : <CloseIcon color="gray.400" boxSize={2} />}
-  </Flex>
-);
-
-// The registration form's own grid, from the tab that owns it.
-const SHEET = {
-  templateColumns: { base: "1fr", md: "1fr 2fr 1fr 2fr" },
-  gap: "1px",
-  bg: "gray.200",
-  border: "1px solid",
-  borderColor: "gray.200",
-};
 
 // Shared shell: both windows load one lot, and both can come back empty.
 const LotWindow = ({
@@ -111,118 +73,26 @@ export const LotFormWindow = ({ lotNumber, isOpen, onClose, zIndex = 1400 }) => 
     if (isOpen && lotNumber) load(lotNumber);
   }, [isOpen, lotNumber, load]);
 
-  // The printer the Registration Forms tab uses, given the same object — so a
-  // form printed from here is the same paper as one printed from there.
-  const printFooter = form ? (
-    <Flex justify="flex-end" width="100%">
-      <Button size="sm" variant="outline" onClick={() => printRegistrationForm(form)}>
-        Print
-      </Button>
-    </Flex>
-  ) : null;
+  // The Registration Forms tab's own sheet, read-only, so the two cannot differ.
+  if (form && !loading) {
+    return (
+      <RegistrationFormModal readOnly isOpen={isOpen} onClose={onClose}
+        draft={formToDraft(form)} setDraft={() => {}} zIndex={zIndex} />
+    );
+  }
 
   return (
     <LotWindow
       isOpen={isOpen} onClose={onClose} title="Registration form"
       lotNumber={lotNumber} zIndex={zIndex}
       loading={loading} error={error}
-      empty={!form && (
+      empty={(
         <Text fontSize="sm" color="gray.600">
           No registration form for this lot. That is what the
           {" "}<b>Weighed, not registered</b> notice is about.
         </Text>
       )}
-      footer={printFooter}
-    >
-      {form && (
-        <>
-          <Flex align="center" justify="space-between" gap={2} mb={2} wrap="wrap">
-            <Flex align="center" gap={2} wrap="wrap">
-              <Text fontSize="lg" fontWeight="700" color="blue.700">
-                {form.lotNumber}
-              </Text>
-              <Badge colorScheme={form.status === "completed" ? "green" : "yellow"}>
-                {form.status === "completed" ? "completed" : "in progress"}
-              </Badge>
-            </Flex>
-            <Text fontSize="sm" fontWeight="bold" color="blue.700">
-              Date: {form.formDate || "—"}
-            </Text>
-          </Flex>
-
-          {/* The same sheet the Registration Forms tab draws, with the values
-              in place of its inputs — same grid, same sections, same order. */}
-          <Grid {...SHEET} mb={3}>
-            <SectionBar>Logistics &amp; Vendor</SectionBar>
-            <SheetField label="Date Received"><SheetText>{form.dateReceived}</SheetText></SheetField>
-            <SheetField label="Time Received"><SheetText>{form.timeReceived}</SheetText></SheetField>
-            <SheetField label="Vendor Lot/(IC)#"><SheetText>{form.vendorLot}</SheetText></SheetField>
-            <SheetField label="Vendor"><SheetText>{form.vendor}</SheetText></SheetField>
-
-            <SectionBar>Product Identification</SectionBar>
-            <SheetField label="Product Description" full>
-              <SheetText>{form.productDescription}</SheetText>
-            </SheetField>
-            <SheetField label="Processing Type" full>
-              <SheetText>{form.processingType}</SheetText>
-            </SheetField>
-            <SheetField label="Original Wt. (lbs)">
-              <SheetText>
-                {form.originalWeight != null ? fmtWeight(form.originalWeight) : null}
-              </SheetText>
-            </SheetField>
-            <SheetField label="Total Quantity (c/s)">
-              <SheetText>{form.totalQuantity}</SheetText>
-            </SheetField>
-            <SheetField label="Spec."><SheetText>{form.spec}</SheetText></SheetField>
-            <SheetField label="Brand"><SheetText>{form.brand}</SheetText></SheetField>
-            <SheetField label="EST#"><SheetText>{form.estNumber}</SheetText></SheetField>
-            <SheetField label="Grade"><SheetText>{form.grade}</SheetText></SheetField>
-
-            <SectionBar>Estimation/Checks</SectionBar>
-            <SheetField label="Due Date?"><SheetText>{form.dueDate}</SheetText></SheetField>
-            <SheetField label="Predicted Yield (%)">
-              <SheetText>
-                {form.predictedYield != null ? `${form.predictedYield}%` : null}
-              </SheetText>
-            </SheetField>
-            <SheetField label="Manifest/BL Attached?" plain>
-              <SheetCheck on={form.manifestBlAttached} />
-            </SheetField>
-            <SheetField label="Process Report Attached?" plain>
-              <SheetCheck on={form.processReportAttached} />
-            </SheetField>
-
-            <SectionBar>Processing &amp; Yield</SectionBar>
-            {/* The computed figure, not the retired hand-typed actual_yield.
-                Unmeasured and 0% are different claims and stay different. */}
-            <SheetField label="Yield">
-              <SheetText>
-                {form.yield?.measured && form.yield.percent != null
-                  ? `${form.yield.percent.toFixed(1)}%`
-                    + (form.yield.basis === "registered" ? " (registered wt.)" : "")
-                    + (form.yield.estimated ? " (incl. estimated wt.)" : "")
-                  : <Text as="span" color="gray.400" textTransform="none">not weighed out</Text>}
-              </SheetText>
-            </SheetField>
-            <SheetField label="Weighed In / Out">
-              <SheetText>
-                {form.yield?.inLb
-                  ? `${fmtWeight(form.yield.inLb)} / ${fmtWeight(form.yield.outLb)} lb`
-                  : null}
-              </SheetText>
-            </SheetField>
-            <SheetField label="Temp."><SheetText>{form.temp}</SheetText></SheetField>
-            <SheetField label="Checked By"><SheetText>{form.checkedBy}</SheetText></SheetField>
-            <SheetField label="Remarks" full><SheetText>{form.remarks}</SheetText></SheetField>
-          </Grid>
-
-          <Text fontSize="xs" color="gray.500">
-            Read-only here. Edit it on the Registration Forms tab.
-          </Text>
-        </>
-      )}
-    </LotWindow>
+    />
   );
 };
 

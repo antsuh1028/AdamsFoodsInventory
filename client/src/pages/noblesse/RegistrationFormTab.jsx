@@ -61,7 +61,27 @@ const sampleDraft = () => ({
   checkedBy: "J. Rivera",
 });
 
-const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, saving }) => {
+// A saved form as the editor's draft: processing rows always an array, never empty.
+export const formToDraft = (form) => {
+  const draft = { ...emptyDraft(), ...form };
+  // An empty array is truthy, so it is checked for explicitly.
+  if (!Array.isArray(draft.processingDates) || draft.processingDates.length === 0) {
+    const dates = [];
+    for (let i = 1; i <= 10; i++) {
+      if (draft[`processingDate${i}`] || draft[`processedWeight${i}`]) {
+        dates.push({ date: draft[`processingDate${i}`] || "", weight: draft[`processedWeight${i}`] || "" });
+      }
+    }
+    if (dates.length === 0) dates.push({ date: "", weight: "" });
+    draft.processingDates = dates;
+  }
+  return draft;
+};
+
+// readOnly shows the same sheet with every control disabled, for viewing from other tabs.
+export const RegistrationFormModal = ({
+  isOpen, onClose, draft, setDraft, onSave, saving, readOnly = false, zIndex,
+}) => {
   // Accepted reports are what the locked run rows below say; the panel needs
   // the waiting ones too, so this loads both and hands them down.
   const [reports, setReports] = useState([]);
@@ -117,11 +137,19 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
     <FloatingWindow
       isOpen={isOpen}
       onClose={onClose}
-      title={draft.id ? `Edit Registration Form${draft.lotNumber ? " — " + draft.lotNumber : ""}` : "New Registration Form"}
+      title={readOnly
+        ? `Registration Form — ${draft.lotNumber || ""}`
+        : draft.id ? `Edit Registration Form${draft.lotNumber ? " — " + draft.lotNumber : ""}` : "New Registration Form"}
       isFullScreen={isFullScreen}
       onToggleFullScreen={() => setIsFullScreen((v) => !v)}
       width={900}
-      footer={<Flex justify="space-between" width="100%" gap={2} wrap="wrap">
+      zIndex={zIndex}
+      footer={readOnly ? (
+        <Flex justify="space-between" align="center" width="100%" gap={2}>
+          <Text fontSize="xs" color="gray.500">View only. Edit it on the Registration Forms tab.</Text>
+          <Button size="sm" variant="outline" onClick={() => printRegistrationForm(draft)}>Print</Button>
+        </Flex>
+      ) : <Flex justify="space-between" width="100%" gap={2} wrap="wrap">
         <Button size="sm" variant="outline" colorScheme="teal" onClick={() => setDraft({ ...draft, ...sampleDraft() })}>
           Fill Sample Data
         </Button>
@@ -132,6 +160,9 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
         </Flex>
       </Flex>}
     >
+        {/* A disabled fieldset disables every control inside it, nested panels included. */}
+        <Box as="fieldset" disabled={readOnly} border={0} p={0} m={0} minW={0}
+          sx={readOnly ? { "& :disabled": { opacity: 1, cursor: "default" } } : undefined}>
         <Box maxW="820px" mx="auto">
           <Flex
             direction={{ base: "column", md: "row" }}
@@ -193,7 +224,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             </Flex>
           </Flex>
           <Text textAlign="center" fontSize="lg" fontWeight="extrabold" color="blue.700" mb={4}>
-            {draft.id ? "Edit Registration Form" : "New Registration Form"}
+            {readOnly ? "Registration Form" : draft.id ? "Edit Registration Form" : "New Registration Form"}
           </Text>
 
           <Grid
@@ -520,6 +551,7 @@ const RegistrationFormModal = ({ isOpen, onClose, draft, setDraft, onSave, savin
             </SheetField>
           </Grid>
         </Box>
+        </Box>
     </FloatingWindow>
   );
 };
@@ -739,23 +771,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   }, [refreshSignal, fetchForms, fetchFound]);
 
   const openNew  = () => setDraft(emptyDraft());
-  const openEdit = (form) => {
-    const draft = { ...emptyDraft(), ...form };
-    // Convert backend format to array format. An empty array is truthy, so it
-    // has to be checked for explicitly — otherwise the form renders with no
-    // processing row at all and the yield can never be calculated.
-    if (!Array.isArray(draft.processingDates) || draft.processingDates.length === 0) {
-      const dates = [];
-      for (let i = 1; i <= 10; i++) {
-        if (draft[`processingDate${i}`] || draft[`processedWeight${i}`]) {
-          dates.push({ date: draft[`processingDate${i}`] || "", weight: draft[`processedWeight${i}`] || "" });
-        }
-      }
-      if (dates.length === 0) dates.push({ date: "", weight: "" });
-      draft.processingDates = dates;
-    }
-    setDraft(draft);
-  };
+  const openEdit = (form) => setDraft(formToDraft(form));
   const close    = () => setDraft(null);
 
   const save = async () => {
