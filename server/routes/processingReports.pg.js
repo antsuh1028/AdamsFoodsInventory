@@ -5,6 +5,7 @@ const requireRole = require("../middleware/requireRole");
 const { REPORT_ACCEPT_ROLES } = require("../middleware/receptionRoles");
 const { searchTerm, searchClause } = require("../utils/search");
 const { isCalendarDay } = require("../utils/weighedAt");
+const { fpCounts, lockLot } = require("../utils/fpLot");
 
 // The shop-floor record of one processing run: which lot, which line, who ran
 // it, how many cases went through.
@@ -34,6 +35,9 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   reportId: r.report_id,
   lotId: r.lot_id,
   lotNumber: r.lot_number || null,
+  // 'further' for an FP lot, whose cases sit on its N lot's form.
+  lotKind: r.lot_kind || "internal",
+  parentLotNumber: r.parent_lot_number || null,
   processingDate: fmtDate(r.processing_date),
   startTime: r.start_time,
   endTime: r.end_time,
@@ -70,7 +74,8 @@ const fmtReport = (r, pulls = [], workers = []) => ({
 
 const loadReport = async (reportId, tenantId, client = pool) => {
   const head = await client.query(
-    `SELECT r.*, l.lot_number
+    `SELECT r.*, l.lot_number, l.kind AS lot_kind,
+            (SELECT p.lot_number FROM lots p WHERE p.lot_id = l.parent_lot_id) AS parent_lot_number
        FROM noblesse_processing_reports r
        JOIN lots l ON l.lot_id = r.lot_id
       WHERE r.report_id = $1 AND r.tenant_id = $2`,
@@ -130,7 +135,8 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
   }
   try {
     const result = await pool.query(
-      `SELECT r.*, l.lot_number,
+      `SELECT r.*, l.lot_number, l.kind AS lot_kind,
+              (SELECT p.lot_number FROM lots p WHERE p.lot_id = l.parent_lot_id) AS parent_lot_number,
               (SELECT COALESCE(json_agg(json_build_object(
                         'pullId', p.pull_id, 'position', p.position,
                         'cases', p.cases, 'notes', p.notes) ORDER BY p.position, p.pull_id), '[]'::json)
@@ -347,6 +353,18 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
       });
     }
 
+    // The lot can be re-picked until accepted; omitted keeps the one it has.
+    let lotId = null;
+    if (req.body?.lotId != null && req.body.lotId !== "") {
+      lotId = Number(req.body.lotId);
+      const lot = Number.isInteger(lotId) && await client.query(
+        "SELECT lot_id FROM lots WHERE lot_id = $1 AND tenant_id = $2", [lotId, req.tenantId]);
+      if (!lot || !lot.rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ code: "NO_SUCH_LOT", error: "That lot is not in the registry" });
+      }
+    }
+
     const h = v.head;
     await client.query(
       `UPDATE noblesse_processing_reports
@@ -355,7 +373,8 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
               input_cases = $10, output_cases = $11, output_weight = $12,
               inedible_weight = $13, notes = $14,
               start_time = $17, end_time = $18,
-              status = $19, pack_dates = $20::date[], reject_reason = NULL
+              status = $19, pack_dates = $20::date[], reject_reason = NULL,
+              lot_id = COALESCE($21, lot_id)
         WHERE report_id = $15 AND tenant_id = $16`,
       [h.processingDate, h.processingType, h.lineNo, h.customer, h.description,
        h.brand, h.grade, h.estNumber, h.packDate, inputCases, v.outputCases,
@@ -365,7 +384,7 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
        // queue. Anything else is a confirmation, which is what hands it over —
        // and that stays the default, so every existing caller is unchanged.
        req.body?.inProgress === true ? "in_progress" : "submitted",
-       h.packDates]
+       h.packDates, lotId]
     );
     await writeChildren(client, id, v.cleanPulls, v.workers);
 
@@ -392,9 +411,11 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
 
     // Locked first: the lock is what makes a double-click safe.
     const head = await client.query(
-      `SELECT r.*, l.lot_number
+      `SELECT r.*, l.lot_number, l.kind AS lot_kind, l.parent_lot_id,
+              p.lot_number AS parent_lot_number
          FROM noblesse_processing_reports r
          JOIN lots l ON l.lot_id = r.lot_id
+         LEFT JOIN lots p ON p.lot_id = l.parent_lot_id
         WHERE r.report_id = $1 AND r.tenant_id = $2
           FOR UPDATE OF r`,
       [id, req.tenantId]
@@ -418,12 +439,17 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
       });
     }
 
+    // A run on an FP lot goes on its N lot's form and takes from the FP count, not raw stock.
+    const isFp = report.lot_kind === "further";
+    const formLotId = isFp ? report.parent_lot_id : report.lot_id;
+    const formLotNumber = isFp ? report.parent_lot_number : report.lot_number;
+
     const forms = await client.query(
       `SELECT id, lot_number FROM noblesse_registration_forms
         WHERE tenant_id = $2
           AND (lot_id = $1 OR (lot_id IS NULL AND lot_number = $3))
         ORDER BY id`,
-      [report.lot_id, req.tenantId, report.lot_number]
+      [formLotId, req.tenantId, formLotNumber]
     );
     if (!forms.rows.length) {
       await client.query("ROLLBACK");
@@ -442,41 +468,59 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
     }
     const formId = forms.rows[0].id;
 
-    const stock = await client.query(
-      `SELECT id, qty_cases FROM nti_inventory
-        WHERE tenant_id = $2 AND stage = 'raw'
-          AND (lot_id = $1 OR (lot_id IS NULL AND lot = $3))
-        FOR UPDATE`,
-      [report.lot_id, req.tenantId, report.lot_number]
-    );
-    if (!stock.rows.length) {
-      await client.query("ROLLBACK");
-      return res.status(409).json({
-        code: "NO_RAW_STOCK",
-        error: "There is no raw stock on this lot to take cases from.",
-      });
-    }
-    const raw = stock.rows[0];
-    const onHand = Number(raw.qty_cases) || 0;
+    let raw = null;
+    let onHand;
+    if (isFp) {
+      // Serialised with tracker edits, which lock the same parent row.
+      await lockLot(client, req.tenantId, report.parent_lot_id);
+      onHand = (await fpCounts(client, req.tenantId, report.lot_id)).waiting;
+      if (report.input_cases > onHand) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          code: "INSUFFICIENT_STOCK",
+          error: `The report uses ${report.input_cases} cases but only ${onHand} are waiting on `
+            + `${report.lot_number}. Check the F.P Tracker for ${report.parent_lot_number}.`,
+          requested: report.input_cases,
+          onHand,
+        });
+      }
+    } else {
+      const stock = await client.query(
+        `SELECT id, qty_cases FROM nti_inventory
+          WHERE tenant_id = $2 AND stage = 'raw'
+            AND (lot_id = $1 OR (lot_id IS NULL AND lot = $3))
+          FOR UPDATE`,
+        [report.lot_id, req.tenantId, report.lot_number]
+      );
+      if (!stock.rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          code: "NO_RAW_STOCK",
+          error: "There is no raw stock on this lot to take cases from.",
+        });
+      }
+      raw = stock.rows[0];
+      onHand = Number(raw.qty_cases) || 0;
 
-    // Refused, never floored. The old processing-order path silently clamped to
-    // zero, which is the behaviour this replaces.
-    if (report.input_cases > onHand) {
-      await client.query("ROLLBACK");
-      return res.status(409).json({
-        code: "INSUFFICIENT_STOCK",
-        error: `The report uses ${report.input_cases} cases but only ${onHand} are on the lot.`,
-        requested: report.input_cases,
-        onHand,
-      });
-    }
+      // Refused, never floored. The old processing-order path silently clamped to
+      // zero, which is the behaviour this replaces.
+      if (report.input_cases > onHand) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          code: "INSUFFICIENT_STOCK",
+          error: `The report uses ${report.input_cases} cases but only ${onHand} are on the lot.`,
+          requested: report.input_cases,
+          onHand,
+        });
+      }
 
-    // Cases only. `weight` is left alone: nobody weighed what went through.
-    await client.query(
-      `UPDATE nti_inventory SET qty_cases = qty_cases - $1
-        WHERE id = $2 AND tenant_id = $3`,
-      [report.input_cases, raw.id, req.tenantId]
-    );
+      // Cases only. `weight` is left alone: nobody weighed what went through.
+      await client.query(
+        `UPDATE nti_inventory SET qty_cases = qty_cases - $1
+          WHERE id = $2 AND tenant_id = $3`,
+        [report.input_cases, raw.id, req.tenantId]
+      );
+    }
 
     // Appended in SQL so a concurrent form save cannot clobber it in a
     // read-modify-write. reportId is what lets the form PATCH protect the row.
@@ -489,6 +533,8 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
         cases: String(report.input_cases),
         weight: "",
         reportId: id,
+        // The FP lot it came from; the form keeps these out of its Remaining.
+        ...(isFp ? { fp: report.lot_number } : {}),
       }]), formId, req.tenantId]
     );
 
@@ -516,8 +562,9 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
     pool.query(
       `INSERT INTO nti_inventory_history (tenant_id, action, item_id, lot, snapshot, performed_by)
        VALUES ($1, 'processed', $2, $3, $4, $5)`,
-      [req.tenantId, raw.id, forms.rows[0].lot_number,
-       JSON.stringify({ reportId: id, casesConsumed: report.input_cases, formId }),
+      [req.tenantId, raw ? raw.id : null, isFp ? report.lot_number : forms.rows[0].lot_number,
+       JSON.stringify({ reportId: id, casesConsumed: report.input_cases, formId,
+         ...(isFp ? { fpLot: report.lot_number, parentLot: report.parent_lot_number } : {}) }),
        req.username]
     ).catch((err) => console.error("nti history log error:", err.message));
 
@@ -576,7 +623,7 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
   try {
     await client.query("BEGIN");
     const head = await client.query(
-      `SELECT r.*, l.lot_number
+      `SELECT r.*, l.lot_number, l.kind AS lot_kind
          FROM noblesse_processing_reports r
          JOIN lots l ON l.lot_id = r.lot_id
         WHERE r.report_id = $1 AND r.tenant_id = $2
@@ -593,7 +640,9 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
       return res.status(409).json({ code: "NOT_ACCEPTED", error: "This report has not been accepted." });
     }
 
-    const restored = await client.query(
+    // An FP run took nothing from raw stock; its FP count recomputes once the status changes.
+    const isFp = report.lot_kind === "further";
+    const restored = isFp ? { rows: [] } : await client.query(
       `UPDATE nti_inventory SET qty_cases = COALESCE(qty_cases, 0) + $1
         WHERE tenant_id = $3 AND stage = 'raw'
           AND (lot_id = $2 OR (lot_id IS NULL AND lot = $4))
@@ -622,11 +671,14 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
     );
 
     await client.query("COMMIT");
+    const casesLeft = isFp
+      ? (await fpCounts(pool, req.tenantId, report.lot_id)).waiting
+      : (restored.rows.length ? Number(restored.rows[0].qty_cases) : null);
     res.json({
       ...(await loadReport(id, req.tenantId)),
       lotNumber: report.lot_number,
       casesReturned: report.input_cases,
-      casesLeft: restored.rows.length ? Number(restored.rows[0].qty_cases) : null,
+      casesLeft,
     });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

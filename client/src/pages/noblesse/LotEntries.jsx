@@ -52,7 +52,9 @@ export const LotFormWindow = ({ lotNumber, isOpen, onClose, zIndex = 1400 }) => 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const load = useCallback(async (lot) => {
+  const load = useCallback(async (raw) => {
+    // An FP lot's runs are on its N lot's form, which carries the same digits.
+    const lot = /^FP\d/.test(raw) ? `N${raw.slice(2)}` : raw;
     setLoading(true);
     setError("");
     setForm(null);

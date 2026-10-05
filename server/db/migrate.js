@@ -443,6 +443,36 @@ const steps = async () => {
   await run("lots status index",
     `CREATE INDEX IF NOT EXISTS lots_status_idx ON lots (tenant_id, status)`);
 
+  // Further-processing lots: FP{digits}, the child of one N lot, holding cases
+  // that went to the freezer for another run.
+  await run("lots parent_lot_id",
+    `ALTER TABLE lots ADD COLUMN IF NOT EXISTS parent_lot_id INT REFERENCES lots(lot_id)`);
+  // Widened only when it does not already allow 'further', so a reboot does not rebuild it.
+  await run("lots kind allows further", `
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'lots'::regclass AND conname = 'lots_kind_check'
+           AND pg_get_constraintdef(oid) LIKE '%further%'
+      ) THEN
+        ALTER TABLE lots DROP CONSTRAINT IF EXISTS lots_kind_check;
+        ALTER TABLE lots ADD CONSTRAINT lots_kind_check
+          CHECK (kind IN ('internal', 'external', 'further'));
+      END IF;
+    END $$`);
+  // One FP lot per N lot, and never one without a parent.
+  await run("lots one further per parent",
+    `CREATE UNIQUE INDEX IF NOT EXISTS lots_one_further_per_parent
+       ON lots (parent_lot_id) WHERE kind = 'further'`);
+  await run("lots further has parent", `
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                      WHERE conrelid = 'lots'::regclass AND conname = 'lots_further_has_parent') THEN
+        ALTER TABLE lots ADD CONSTRAINT lots_further_has_parent
+          CHECK (kind <> 'further' OR parent_lot_id IS NOT NULL);
+      END IF;
+    END $$`);
+
   // Back-references. ADD COLUMN IF NOT EXISTS skips the whole clause, FK
   // included, when the column is already there — so re-running is safe.
   for (const table of [
@@ -730,6 +760,27 @@ const steps = async () => {
      WHERE NOT EXISTS (SELECT 1 FROM item_descriptions d WHERE d.tenant_id = t.id)
     ON CONFLICT (tenant_id, name) DO NOTHING
   `, [ITEM_DESCRIPTIONS]);
+
+  // The F.P Tracker: reception's end-of-day count of cases sent to the AF
+  // freezer for another run. Keyed to the N lot; its cases stock the FP lot.
+  await run("fp_tracker", `
+    CREATE TABLE IF NOT EXISTS fp_tracker (
+      fp_id        SERIAL PRIMARY KEY,
+      tenant_id    UUID NOT NULL REFERENCES tenants(id),
+      lot_id       INT  NOT NULL REFERENCES lots(lot_id),
+      item         TEXT NOT NULL,
+      cases        INT  NOT NULL CHECK (cases > 0),
+      raw_weight   NUMERIC(10,3),
+      sent_on      DATE NOT NULL,
+      returned_on  DATE,
+      created_by   UUID,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      voided_at    TIMESTAMPTZ,
+      voided_by    UUID
+    )
+  `);
+  await run("fp_tracker lot index",
+    `CREATE INDEX IF NOT EXISTS fp_tracker_lot_idx ON fp_tracker (tenant_id, lot_id)`);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection

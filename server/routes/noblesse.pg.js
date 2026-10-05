@@ -58,6 +58,8 @@ const fmtRegistrationForm = (row) => {
       // tested for the KEY, which a null still has. So a manual row carries no
       // reportId key at all.
       ...(pd.reportId != null ? { reportId: Number(pd.reportId) } : {}),
+      // The FP lot a run came from; such rows never count against the form's cases.
+      ...(pd.fp ? { fp: String(pd.fp) } : {}),
     }));
   } else {
     // Fallback to legacy columns for existing data

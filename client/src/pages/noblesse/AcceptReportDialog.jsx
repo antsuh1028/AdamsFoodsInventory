@@ -40,7 +40,11 @@ const AcceptReportDialog = ({ report, isOpen, busy, onCancel, onAccept }) => {
           <AlertDialogBody>
             <Text fontSize="sm" mb={3}>
               Accepting takes <b>{r.inputCases ?? 0} case{r.inputCases === 1 ? "" : "s"}</b> off
-              {" "}<b>{r.lotNumber || "the lot"}</b> and adds a run to its registration form.
+              {" "}<b>{r.lotNumber || "the lot"}</b>
+              {r.lotKind === "further"
+                ? <> (back from the freezer) and adds a run to <b>{r.parentLotNumber}</b>&apos;s registration form.
+                    It does not change {r.parentLotNumber}&apos;s remaining cases.</>
+                : " and adds a run to its registration form."}
             </Text>
             <Box mb={4}>
               <Row label="Date">{fmtDate(r.processingDate)}{time ? ` · ${time}` : ""}</Row>

@@ -14,19 +14,22 @@ const printRegistrationForm = (form = {}) => {
 
   // The paper form keeps two processing lines even when only one is used, so
   // blank rows are padded rather than dropped.
-  const processingRow = (pd, i) => `
+  const processingRow = (pd, label) => `
     <tr>
-      <td class="label">(${i + 1}) Processed</td>
+      <td class="label">${esc(label)}</td>
       <td class="field">${wt(pd.weight)}${pd.weight ? " lbs" : ""}</td>
       <td class="field">${val(pd.cases)}${pd.cases ? " c/s" : ""}</td>
       <td class="field">${val(pd.date)}</td>
     </tr>`;
 
-  const entries = Array.isArray(form.processingDates) ? form.processingDates : [];
+  const all = Array.isArray(form.processingDates) ? form.processingDates : [];
+  // Runs back from the freezer print after the lot's own, under the FP lot's number.
+  const entries = all.filter((pd) => !pd.fp);
+  const fpEntries = all.filter((pd) => pd.fp);
   const processingRows = Array.from(
     { length: Math.max(2, entries.length) },
-    (_, i) => processingRow(entries[i] || {}, i)
-  ).join("");
+    (_, i) => processingRow(entries[i] || {}, `(${i + 1}) Processed`)
+  ).join("") + fpEntries.map((pd, i) => processingRow(pd, `(${pd.fp} ${i + 1}) Processed`)).join("");
 
   const row = (leftLabel, leftVal, rightLabel, rightVal, opts = {}) => `
     <tr>

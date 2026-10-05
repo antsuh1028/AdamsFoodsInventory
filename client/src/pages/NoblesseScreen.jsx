@@ -43,6 +43,7 @@ import ScannerDiagnostic from "../components/navbar/scannerDiagnostic";
 import ScaleDiagnostic from "../components/navbar/scaleDiagnostic";
 import DailyReport from "./noblesse/DailyReport";
 import ItemListManager from "./noblesse/ItemListManager";
+import FpTracker from "./noblesse/FpTracker";
 import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -66,6 +67,7 @@ const NoblesseScreen = () => {
   const [reportOpen, setReportOpen] = useState(false);
   const [itemListOpen, setItemListOpen] = useState(false);
   const manageItems = canManageItems();
+  const [fpOpen, setFpOpen] = useState(false);
   const {
     isOpen: drawerOpen,
     onOpen: openDrawer,
@@ -586,6 +588,8 @@ const NoblesseScreen = () => {
               </>
             )}
             {manageItems && drawerBtn("Item List", () => setItemListOpen(true))}
+            {/* The dock's account is fenced to Outgoing and would be refused. */}
+            {!outgoingOnly && drawerBtn("F.P Tracker", () => setFpOpen(true))}
 
             {isAdmin && (
               <>
@@ -626,6 +630,7 @@ const NoblesseScreen = () => {
       {manageItems && (
         <ItemListManager isOpen={itemListOpen} onClose={() => setItemListOpen(false)} />
       )}
+      {!outgoingOnly && <FpTracker isOpen={fpOpen} onClose={() => setFpOpen(false)} />}
 
       {isAdmin && (
         <>

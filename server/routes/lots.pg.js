@@ -3,7 +3,8 @@ const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { RECEPTION_ROLES } = require("../middleware/receptionRoles");
-const { parseLot, formatLot, pacificToday, dayOfYearFromDate } = require("../utils/lot");
+const { parseLot, parseFpLot, formatLot, pacificToday, dayOfYearFromDate } = require("../utils/lot");
+const { fpCounts, findFpChild } = require("../utils/fpLot");
 // Shared with routes/boxes.pg.js so a lot's totals and a manifest agree.
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
 const { weighedSql, boxesSql, estimatedSql, formWeightSql, yieldFrom } = require("../utils/lotYield");
@@ -37,6 +38,9 @@ const fmtLot = (row) => ({
   // because it genuinely has neither — callers group on this rather than
   // inferring it from a null date.
   kind: row.kind || "internal",
+  // An FP lot's N lot. The number is present only where the query joined it in.
+  parentLotId: row.parent_lot_id ?? null,
+  parentLotNumber: row.parent_lot_number ?? null,
   // What the lot IS, for screens that only ever showed a number. Present only
   // where the query joined it in; a lot number alone tells nobody what it is.
   description: row.description ?? null,
@@ -125,6 +129,15 @@ const issueNextForDate = async (tenantId, lotDate, userId, notes) => {
 // rule. It reports which happened so the caller can say so.
 router.post("/lots", verifyToken, async (req, res) => {
   const { date, lotNumber, notes, external } = req.body || {};
+
+  // An FP lot only ever comes from the F.P Tracker, as the child of its N lot.
+  if (parseFpLot(lotNumber).ok) {
+    return res.status(400).json({
+      code: "FP_LOT",
+      error: `${parseFpLot(lotNumber).lotNumber} is a further-processing lot. `
+        + "It is created by the F.P Tracker, not here.",
+    });
+  }
 
   try {
     // A number that is not ours — a supplier's or a customer's — recorded as a
@@ -232,6 +245,24 @@ router.post("/lots", verifyToken, async (req, res) => {
 // typed or imported downstream of Incoming.
 router.post("/lots/resolve", verifyToken, async (req, res) => {
   const { text } = req.body || {};
+
+  // An FP number resolves to the FP lot when it exists, and never creates one.
+  const fp = parseFpLot(text);
+  if (fp.ok) {
+    try {
+      const found = await findLot(req.tenantId, fp.lotNumber);
+      if (!found.rows.length) {
+        return res.status(404).json({
+          error: `Lot ${fp.lotNumber} does not exist`, code: "NO_SUCH_LOT", lotNumber: fp.lotNumber,
+        });
+      }
+      return res.json({ lot: fmtLot(found.rows[0]), normalised: fp.lotNumber !== String(text), raw: text });
+    } catch (err) {
+      console.error("resolve fp lot:", err);
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
+  }
+
   const parsed = parseLot(text);
 
   if (!parsed.ok) {
@@ -272,6 +303,8 @@ router.post("/lots/resolve", verifyToken, async (req, res) => {
 router.get("/lots", verifyToken, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 100, 500);
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  // FP lots are offered only where a run can take from them; everywhere else they are not a choice.
+  const further = req.query.further === "1";
 
   try {
     const result = await pool.query(
@@ -283,7 +316,8 @@ router.get("/lots", verifyToken, async (req, res) => {
       // under DESC in Postgres, so left in the same ordering they would sit
       // above today's work and push the lot someone actually wants off the top
       // of the list. The client renders the two blocks as separate groups.
-      `SELECT l.*, d.description, d.registered
+      `SELECT l.*, d.description, d.registered,
+              (SELECT p.lot_number FROM lots p WHERE p.lot_id = l.parent_lot_id) AS parent_lot_number
          FROM lots l
          -- The registration form is what says what a lot is; the incoming
          -- weighing session is the fallback for a lot never registered.
@@ -297,12 +331,13 @@ router.get("/lots", verifyToken, async (req, res) => {
          ) d ON TRUE
         WHERE l.tenant_id = $1
           AND ($2 = '' OR l.lot_number ILIKE '%' || $2 || '%')
+          AND ($4 OR l.kind <> 'further')
         ORDER BY (l.kind = 'external'),
                  l.lot_date DESC NULLS LAST,
                  l.seq DESC NULLS LAST,
                  l.created_at DESC
         LIMIT $3`,
-      [req.tenantId, q, limit]
+      [req.tenantId, q, limit, further]
     );
     res.json(result.rows.map(fmtLot));
   } catch (err) {
@@ -446,8 +481,26 @@ router.get("/lots/:id", verifyToken, async (req, res) => {
     if (!lot.rows.length) return res.status(404).json({ error: "Lot not found" });
 
     const f = await lotFigures(req.tenantId, lotId);
+    // Parent and child, each with the FP lot's count.
+    const row = lot.rows[0];
+    let further = null;
+    if (row.kind === "further") {
+      const parent = await pool.query(
+        "SELECT lot_number FROM lots WHERE lot_id = $1 AND tenant_id = $2", [row.parent_lot_id, req.tenantId]);
+      further = { fpLotId: row.lot_id, fpLotNumber: row.lot_number,
+        parentLotId: row.parent_lot_id, parentLotNumber: parent.rows[0]?.lot_number ?? null,
+        ...(await fpCounts(pool, req.tenantId, row.lot_id)) };
+    } else {
+      const child = await findFpChild(pool, req.tenantId, lotId);
+      if (child) {
+        further = { fpLotId: child.lot_id, fpLotNumber: child.lot_number,
+          parentLotId: lotId, parentLotNumber: row.lot_number,
+          ...(await fpCounts(pool, req.tenantId, child.lot_id)) };
+      }
+    }
     res.json({
-      lot: fmtLot(lot.rows[0]),
+      lot: fmtLot(row),
+      further,
       status: lotStatus(f),
       closeSuggestion: closeSuggestion(lot.rows[0], f, yieldFrom(f)),
       figures: {
@@ -656,7 +709,11 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
                            ELSE 'report_filed' END,
              CASE r.status WHEN 'accepted' THEN 'Processing report accepted'
                            WHEN 'rejected' THEN 'Processing report rejected'
-                           ELSE 'Processing report filed' END,
+                           ELSE 'Processing report filed' END
+               -- A run on this lot's FP child says so.
+               || CASE WHEN r.lot_id <> $1
+                       THEN ' (' || (SELECT c.lot_number FROM lots c WHERE c.lot_id = r.lot_id) || ')'
+                       ELSE '' END,
              -- Written on the report but never weighed, so it creates no stock.
              r.output_weight::text,
              COALESCE(r.output_cases, r.input_cases)::int,
@@ -664,7 +721,29 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
                     NULLIF('Line ' || r.line_no, 'Line '), r.reject_reason), ''),
              r.report_id, NULL::text
         FROM noblesse_processing_reports r
-       WHERE r.lot_id = $1 AND r.tenant_id = $2
+       WHERE r.tenant_id = $2
+         AND (r.lot_id = $1 OR r.lot_id IN (
+               SELECT c.lot_id FROM lots c WHERE c.parent_lot_id = $1 AND c.kind = 'further'))
+
+      UNION ALL
+      -- F.P Tracker: sent to the AF freezer, and back. Shown on the N lot and its
+      -- FP lot alike. A plain date, carried as noon Pacific so it cannot read as the day before.
+      SELECT (t.sent_on::timestamp + interval '12 hours') AT TIME ZONE 'America/Los_Angeles',
+             'fp_sent', 'Sent to the AF freezer',
+             t.raw_weight::text, t.cases, t.item, t.fp_id, NULL::text
+        FROM fp_tracker t
+       WHERE t.tenant_id = $2 AND t.voided_at IS NULL
+         AND t.lot_id = COALESCE((SELECT c.parent_lot_id FROM lots c
+                                   WHERE c.lot_id = $1 AND c.kind = 'further'), $1)
+
+      UNION ALL
+      SELECT (t.returned_on::timestamp + interval '12 hours') AT TIME ZONE 'America/Los_Angeles',
+             'fp_returned', 'Back from the AF freezer',
+             NULL::text, t.cases, t.item, t.fp_id, NULL::text
+        FROM fp_tracker t
+       WHERE t.tenant_id = $2 AND t.voided_at IS NULL AND t.returned_on IS NOT NULL
+         AND t.lot_id = COALESCE((SELECT c.parent_lot_id FROM lots c
+                                   WHERE c.lot_id = $1 AND c.kind = 'further'), $1)
 
       UNION ALL
       -- Loads leaving. Nothing here read the shipment tables at all, so a lot

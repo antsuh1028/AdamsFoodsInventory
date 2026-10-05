@@ -159,8 +159,23 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   // context the paper carries on its total line.
   const fetchStock = useCallback(async () => {
     try {
-      const { data } = await axiosInstance.get("/nti-inventory");
-      setStock((data || []).filter((r) => r.stage === "raw"));
+      const [{ data }, fp] = await Promise.all([
+        axiosInstance.get("/nti-inventory"),
+        axiosInstance.get("/fp-lots").catch(() => ({ data: [] })),
+      ]);
+      const raw = (data || []).filter((r) => r.stage === "raw");
+      // An FP lot's count is what is waiting; its product details are the parent's.
+      const further = (fp.data || []).map((f) => ({
+        ...(raw.find((r) => r.lotId === f.parentLotId) || {}),
+        lotId: f.lotId,
+        lot: f.lotNumber,
+        qtyCases: f.waiting,
+        registeredCases: f.sent,
+        registeredWeight: null,
+        fp: true,
+        parentLotNumber: f.parentLotNumber,
+      }));
+      setStock([...raw, ...further]);
     } catch {
       // Context only. Losing it must not stop a report being filed.
     }
@@ -395,6 +410,12 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             onDoubleClick={() => openReport(r)}>
             <Flex align="baseline" gap={3} wrap="wrap">
               <LotMenu lotNumber={r.lotNumber} lotId={r.lotId} />
+              {r.lotKind === "further" && (
+                <Badge colorScheme="blue" variant="outline" fontSize="9px"
+                  title={`Back from the freezer. Goes on ${r.parentLotNumber}'s form.`}>
+                  FP of {r.parentLotNumber}
+                </Badge>
+              )}
               <Badge colorScheme={STATUS_COLOR[r.status]} fontSize="9px">
                 {STATUS_LABEL[r.status] || r.status}
               </Badge>
@@ -627,6 +648,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   <LotPicker
                     size="sm"
                     allowCreate={false}
+                    includeFurther
                     isDisabled={draft.readOnly}
                     value={draft.lotId}
                     lotNumber={draft.lotNumber}
@@ -799,9 +821,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   {lotStock && (
                     <Text fontSize="xs" color="gray.500"
                       style={{ fontVariantNumeric: "tabular-nums" }}>
-                      lot registered {lotStock.registeredCases ?? "?"} cases
+                      {lotStock.fp
+                        ? `${lotStock.registeredCases} cases of ${lotStock.parentLotNumber} sent to the freezer`
+                        : `lot registered ${lotStock.registeredCases ?? "?"} cases`}
                       {lotStock.registeredWeight ? ` = ${fmtWeight(lotStock.registeredWeight)} lb` : ""}
-                      {" · "}{casesLeft} left now
+                      {" · "}{casesLeft} {lotStock.fp ? "waiting" : "left now"}
                       {inputCases > 0 && !overdrawn ? ` · ${casesLeft - inputCases} after this` : ""}
                     </Text>
                   )}
@@ -853,8 +877,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             {overdrawn && (
               <Alert status="warning" borderRadius="md" fontSize="xs" py={2} mb={3}>
                 <AlertIcon boxSize={3} />
-                That is more than the {casesLeft} cases left on this lot. Reception will
-                not be able to accept it.
+                That is more than the {casesLeft} cases {lotStock?.fp
+                  ? `waiting on ${lotStock.lot}. Check the F.P Tracker for ${lotStock.parentLotNumber}, or reception`
+                  : "left on this lot. Reception"} will not be able to accept it.
               </Alert>
             )}
           </Box>

@@ -114,6 +114,10 @@ export const RegistrationFormModal = ({
   const setCheck = (key) => (e) => setDraft({ ...draft, [key]: e.target.checked });
   const tally = caseTally(draft);
   const remainingCases = tally ? tally.remaining : null;
+  // FP runs are numbered and shown apart from the lot's own runs.
+  const runs = Array.isArray(draft.processingDates) ? draft.processingDates : [];
+  const runNumber = (idx) => runs.slice(0, idx).filter((p) => !p.fp).length + 1;
+  const fpRuns = runs.filter((p) => p.fp);
 
   // Every case arrived is accounted for — offer to close the form, do not close
   // it. Three things have to hold, and each rules out a way this would be wrong:
@@ -347,10 +351,11 @@ export const RegistrationFormModal = ({
               // it is shown rather than edited — retyping it by hand would make
               // the form disagree with the report that moved the stock. An
               // admin takes it back with Un-accept, not by deleting a row.
+              if (pd.fp) return null;
               const from = pd.reportId != null ? reportById.get(pd.reportId) : null;
               if (pd.reportId != null) {
                 return (
-                  <SheetField key={idx} label={`(${idx + 1}) Processed`} full plain>
+                  <SheetField key={idx} label={`(${runNumber(idx)}) Processed`} full plain>
                     <Box px={3} py={2} bg="green.50" borderRadius="sm">
                       <Flex align="baseline" gap={3} wrap="wrap">
                         <Text fontSize="sm" fontWeight="bold" color="green.900"
@@ -399,7 +404,7 @@ export const RegistrationFormModal = ({
                 {/* One processing event per row: weight, cases and the date it
                     happened. The date carries no label of its own — a date
                     input is self-evident, and the row reads left to right. */}
-                <SheetField label={`(${idx + 1}) Processed`} full>
+                <SheetField label={`(${runNumber(idx)}) Processed`} full>
                   {/* Three fields share one cell, so they are white and spaced:
                       the cell's own grey shows through as a gutter and the row
                       reads as weight / cases / date rather than one long strip.
@@ -497,6 +502,41 @@ export const RegistrationFormModal = ({
                   </Flex>
                 </SheetField>
               </React.Fragment>
+              );
+            })}
+
+            {/* Runs on product back from the freezer. Off the FP lot, never off this form's cases. */}
+            {fpRuns.length > 0 && (
+              <Box gridColumn="1 / -1" px={3} py={2} bg="blue.50"
+                borderTop="1px solid" borderBottom="1px solid" borderColor="blue.100">
+                <Text fontSize="xs" color="blue.800" textTransform="uppercase" letterSpacing="wide">
+                  Further processing, {fpRuns[0].fp}
+                </Text>
+                <Text fontSize="xs" color="gray.600">
+                  Back from the AF freezer. Not counted in Remaining below.
+                </Text>
+              </Box>
+            )}
+            {fpRuns.map((pd, i) => {
+              const from = pd.reportId != null ? reportById.get(pd.reportId) : null;
+              return (
+                <SheetField key={`fp-${pd.reportId ?? i}`} label={`(FP ${i + 1}) Processed`} full plain>
+                  <Flex align="baseline" gap={3} wrap="wrap" px={3} py={2} bg="blue.50" borderRadius="sm">
+                    <Text fontSize="sm" fontWeight="bold" color="blue.900"
+                      style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {pd.cases != null ? `${pd.cases} cases` : "—"}
+                    </Text>
+                    <Text fontSize="xs" color="gray.600">{fmtDate(pd.date) || "—"}</Text>
+                    {from && from.lineNo && (
+                      <Badge colorScheme="gray" fontSize="9px">Line {from.lineNo}</Badge>
+                    )}
+                    {from && from.processingType && (
+                      <Text fontSize="xs" color="gray.600">{from.processingType}</Text>
+                    )}
+                    <Box flex={1} />
+                    <Badge colorScheme="blue" fontSize="9px">from report, {pd.fp}</Badge>
+                  </Flex>
+                </SheetField>
               );
             })}
 
@@ -648,7 +688,7 @@ const processedPercent = (draft) => {
   const originalWeight = parseFloat(draft.originalWeight);
   if (!originalWeight || originalWeight <= 0) return null;
 
-  const consumed = draft.processingDates.reduce((sum, pd) => {
+  const consumed = draft.processingDates.filter((pd) => !pd.fp).reduce((sum, pd) => {
     const weight = parseFloat(pd.weight || 0);
     return sum + (isNaN(weight) ? 0 : weight);
   }, 0);
@@ -674,7 +714,9 @@ const caseTally = (draft) => {
   const total = parseFloat(draft.totalQuantity);
   if (isNaN(total)) return null;
 
+  // FP runs took from the FP lot, never from what this form says arrived.
   const processed = (Array.isArray(draft.processingDates) ? draft.processingDates : [])
+    .filter((pd) => !pd.fp)
     .reduce((sum, pd) => {
       const n = parseFloat(pd.cases);
       return sum + (isNaN(n) ? 0 : n);
