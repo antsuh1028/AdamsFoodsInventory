@@ -4,7 +4,7 @@ import {
   Box, Flex, Text, Button, Badge, IconButton, Input, Select, Textarea, Spinner,
   Grid, Alert, AlertIcon, useToast,
 } from "@chakra-ui/react";
-import { ExternalLinkIcon } from "@chakra-ui/icons";
+import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import FloatingWindow from "../../components/FloatingWindow";
 import printProcessingReport from "./printProcessingReport";
@@ -135,6 +135,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [reason, setReason] = useState("");
   // The floor on its own, for a screen on the wall or a close look.
   const [mapFull, setMapFull] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
 
   // A reply to an older search is dropped rather than shown over a newer one.
   const reportSeq = useRef(0);
@@ -471,15 +472,21 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             it does, so the two cannot disagree. Ordered first when the columns
             stack, so a phone still leads with the floor. */}
         <Box
-          flex={{ base: "1 1 auto", lg: "0 0 46%" }}
-          width={{ base: "100%", lg: "46%" }}
+          flex={{ base: "1 1 auto", lg: mapOpen ? "0 0 46%" : "0 0 auto" }}
+          width={{ base: "100%", lg: mapOpen ? "46%" : "auto" }}
           order={{ base: -1, lg: 0 }}
           border="1px solid" borderColor="gray.200" borderRadius="md"
           position={{ base: "static", lg: "sticky" }} top={0}
         >
           <Flex align="center" gap={2} px={3} py={2} bg="gray.50"
-            borderTopRadius="md">
-            <Text fontSize="sm" fontWeight="700">Floor</Text>
+            borderTopRadius="md" borderBottomRadius={mapOpen ? 0 : "md"}>
+            <Flex as="button" type="button" align="center" gap={1}
+              onClick={() => setMapOpen((o) => !o)}
+              aria-expanded={mapOpen}
+              title={mapOpen ? "Fold the floor map" : "Show the floor map"}>
+              {mapOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
+              <Text fontSize="sm" fontWeight="700">Floor</Text>
+            </Flex>
             <Badge colorScheme={onTheLine ? "green" : "gray"}>
               {onTheLine} running
             </Badge>
@@ -490,9 +497,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               title="Open the floor full screen"
               onClick={() => setMapFull(true)} />
           </Flex>
-          <Box p={3}>
-            <FacilityMap runs={reports} onPick={openReport} />
-          </Box>
+          {mapOpen && (
+            <Box p={3}>
+              <FacilityMap runs={reports} onPick={openReport} />
+            </Box>
+          )}
         </Box>
       </Flex>
 
