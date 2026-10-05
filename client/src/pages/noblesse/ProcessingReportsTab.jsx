@@ -277,6 +277,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     }
   };
 
+  // A waiting report opened by reception: the footer accepts or sends back instead of submitting.
+  const reviewing = Boolean(draft && canAccept && draft.reportId && draft.status === "submitted");
+  const [sendingBack, setSendingBack] = useState(false);
+  const closeDraft = () => { setDraft(null); setSendingBack(false); };
+
   // Opening a draft decides the section with it, rather than an effect
   // correcting the panel after it has already painted.
   const openDraft = (d) => {
@@ -502,7 +507,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         busy={Boolean(checking) && busyId === checking.reportId}
         onCancel={() => setChecking(null)}
         onAccept={async (type) => {
-          if (await act(checking, acceptReport, type)) setChecking(null);
+          if (await act(checking, acceptReport, type)) {
+            if (draft?.reportId === checking.reportId) closeDraft();
+            setChecking(null);
+          }
         }}
       />
 
@@ -520,12 +528,28 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
 
       <FloatingWindow
         isOpen={Boolean(draft)}
-        onClose={() => setDraft(null)}
+        onClose={closeDraft}
         title={draft?.reportId ? `Report ${draft.reportId}` : "New processing report"}
         width={720}
         // dvh follows Safari's toolbar, so the Save buttons stay on a phone's screen.
         maxHeight={{ base: "70dvh", md: "80vh" }}
         footer={
+          <Box width="100%">
+          {reviewing && sendingBack && (
+            <Flex gap={2} mb={2}>
+              <Input size="sm" placeholder="What is wrong with it?" value={reason}
+                onChange={(e) => setReason(e.target.value)} />
+              <Button size="sm" colorScheme="red" isLoading={busyId === draft.reportId}
+                onClick={async () => {
+                  if (await act(draft, rejectReport, reason.trim())) closeDraft();
+                }}>
+                Send back
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSendingBack(false)}>
+                Cancel
+              </Button>
+            </Flex>
+          )}
           <Flex gap={2} width="100%" justify="space-between" align="center" wrap="wrap">
             <Text fontSize="sm" color="gray.600" style={{ fontVariantNumeric: "tabular-nums" }}>
               {inputCases} case{inputCases === 1 ? "" : "s"} off the lot
@@ -537,20 +561,33 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 onClick={() => printProcessingReport(draft)}>
                 Print
               </Button>
-              <Button size="md" variant="ghost" onClick={() => setDraft(null)}>
-                {draft?.readOnly ? "Close" : "Cancel"}
+              <Button size="md" variant="ghost" onClick={closeDraft}>
+                {draft?.readOnly || reviewing ? "Close" : "Cancel"}
               </Button>
               {/* A run is opened when it starts and confirmed when it ends.
                   Saving while it is still running keeps it off reception's
                   queue — nothing on it is final until the line stops. */}
-              {!draft?.readOnly && (
+              {reviewing && (
+                <Button size="md" variant="outline" colorScheme="red"
+                  isLoading={busyId === draft.reportId}
+                  onClick={() => { setSendingBack(true); setReason(""); }}>
+                  Send back
+                </Button>
+              )}
+              {reviewing && (
+                <Button size="md" colorScheme="blue" isLoading={busyId === draft.reportId}
+                  onClick={() => setChecking(reports.find((x) => x.reportId === draft.reportId) || draft)}>
+                  Accept
+                </Button>
+              )}
+              {!draft?.readOnly && !reviewing && (
                 <Button size="md" variant="outline" colorScheme="yellow"
                   onClick={() => submit(true)}
                   isLoading={saving} isDisabled={!canStage}>
                   Save, still running
                 </Button>
               )}
-              {!draft?.readOnly && (
+              {!draft?.readOnly && !reviewing && (
                 <Button size="md" colorScheme="blue" onClick={() => submit(false)}
                   isLoading={saving} isDisabled={!canSubmit}>
                   {draft?.status === "in_progress" ? "Confirm run" : "Submit report"}
@@ -558,6 +595,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               )}
             </Flex>
           </Flex>
+          </Box>
         }
       >
         {draft && (
@@ -565,7 +603,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             <Text fontSize="xs" color="gray.600" mb={3}>
               {draft.readOnly
                 ? `Accepted by ${draft.acceptedBy || "reception"} — ${draft.inputCases} cases are off the lot. An admin can un-accept it from the list.`
-                : "Submitting files the report. Cases come off the lot when reception accepts it."}
+                : reviewing
+                  ? "Waiting for your check. Accepting takes the cases off the lot; sending it back returns it to the floor."
+                  : "Submitting files the report. Cases come off the lot when reception accepts it."}
             </Text>
 
             <Grid {...SHEET_GRID} mb={5}>
