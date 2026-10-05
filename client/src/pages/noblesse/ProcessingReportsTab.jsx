@@ -855,17 +855,22 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </SheetField>
 
               {/* Part of the run packed to be frozen and processed again later. One item, one count. */}
-              {fpTarget && (
-                <SheetField label="Further processing" full plain>
+              <SheetField label="Further processing" full plain>
                   <Box px={3} py={2}>
-                    <Checkbox isChecked={Boolean(draft.fpOn)} isDisabled={draft.readOnly}
+                    <Checkbox isChecked={Boolean(draft.fpOn) && Boolean(fpTarget)}
+                      isDisabled={draft.readOnly || !fpTarget}
                       onChange={(e) => setDraft({
                         ...draft, fpOn: e.target.checked,
                         fpItem: draft.fpItem || upper(draft.description || ""),
                       })}>
                       <Text as="span" fontSize="sm">Part of this run goes to the AF freezer for another run</Text>
                     </Checkbox>
-                    {draft.fpOn && (
+                    {!fpTarget && (
+                      <Text fontSize="xs" color="gray.500" mt={1}>
+                        {draft.lotId ? "Only one of our N lots can send product to the freezer." : "Pick the lot first."}
+                      </Text>
+                    )}
+                    {draft.fpOn && fpTarget && (
                       <>
                         <Flex gap={3} align="center" wrap="wrap" mt={2}>
                           <Input {...sheetInputProps} isReadOnly={draft.readOnly} bg="white"
@@ -886,7 +891,6 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                     )}
                   </Box>
                 </SheetField>
-              )}
 
               <SectionBar>Crew &amp; Notes</SectionBar>
 
