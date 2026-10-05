@@ -2,7 +2,7 @@ import upperInput from "../../utils/upperInput";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, IconButton, Input, Select, Textarea, Spinner,
-  Grid, Alert, AlertIcon, useToast,
+  Grid, Alert, AlertIcon, Checkbox, useToast,
 } from "@chakra-ui/react";
 import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
@@ -38,6 +38,7 @@ const emptyDraft = () => ({
   customer: "", description: "", brand: "", grade: "", estNumber: "", packDates: [],
   pulls: [{ cases: "" }],
   inedibleWeight: "",
+  fpOn: false, fpCases: "", fpItem: "",
   workers: [],
   notes: "",
 });
@@ -221,7 +222,12 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   // Staging needs only the lot: at the start of a run the cases are not known
   // yet. Confirming still needs them.
   const canStage = Boolean(draft && draft.lotId);
-  const canSubmit = canStage && inputCases > 0;
+  // Ticked for further processing means a count is owed before it is handed over.
+  const fpMissing = Boolean(draft && draft.fpOn && !(parseInt(draft.fpCases, 10) > 0));
+  const canSubmit = canStage && inputCases > 0 && !fpMissing;
+  // The FP lot these cases would go to: an N lot's own, or the FP lot the run is already on.
+  const fpTarget = draft && /^N\d/.test(draft.lotNumber || "") ? `FP${draft.lotNumber.slice(1)}`
+    : (draft && /^FP\d/.test(draft.lotNumber || "") ? draft.lotNumber : null);
 
   const addWorker = () => {
     const name = upper(workerInput.trim());
@@ -239,6 +245,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
       const payload = {
         ...draft,
         inProgress,
+        fpCases: draft.fpOn && fpTarget ? draft.fpCases : null,
+        fpItem: draft.fpOn && fpTarget ? draft.fpItem : null,
         pulls: draft.pulls
           .map((p) => ({ cases: parseInt(p.cases, 10) }))
           .filter((p) => Number.isInteger(p.cases) && p.cases > 0),
@@ -315,6 +323,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     // on a report filed before this field existed.
     packDates: r.packDates || [],
     inedibleWeight: r.inedibleWeight != null ? String(r.inedibleWeight) : "",
+    fpOn: Boolean(r.fpCases),
+    fpCases: r.fpCases != null ? String(r.fpCases) : "",
+    fpItem: r.fpItem || "",
   });
 
   return (
@@ -414,6 +425,12 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 <Badge colorScheme="blue" variant="outline" fontSize="9px"
                   title={`Back from the freezer. Goes on ${r.parentLotNumber}'s form.`}>
                   FP of {r.parentLotNumber}
+                </Badge>
+              )}
+              {r.fpCases > 0 && (
+                <Badge colorScheme="teal" variant="subtle" fontSize="9px"
+                  title={`${r.fpCases} cases${r.fpItem ? ` of ${r.fpItem}` : ""} packed for another run`}>
+                  {r.fpCases} cs to freezer
                 </Badge>
               )}
               <Badge colorScheme={STATUS_COLOR[r.status]} fontSize="9px">
@@ -836,6 +853,40 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="number" value={draft.inedibleWeight}
                   onChange={(e) => setDraft({ ...draft, inedibleWeight: e.target.value })} />
               </SheetField>
+
+              {/* Part of the run packed to be frozen and processed again later. One item, one count. */}
+              {fpTarget && (
+                <SheetField label="Further processing" full plain>
+                  <Box px={3} py={2}>
+                    <Checkbox isChecked={Boolean(draft.fpOn)} isDisabled={draft.readOnly}
+                      onChange={(e) => setDraft({
+                        ...draft, fpOn: e.target.checked,
+                        fpItem: draft.fpItem || upper(draft.description || ""),
+                      })}>
+                      <Text as="span" fontSize="sm">Part of this run goes to the AF freezer for another run</Text>
+                    </Checkbox>
+                    {draft.fpOn && (
+                      <>
+                        <Flex gap={3} align="center" wrap="wrap" mt={2}>
+                          <Input {...sheetInputProps} isReadOnly={draft.readOnly} bg="white"
+                            flex="0 0 130px" type="number" placeholder="cases"
+                            borderColor={fpMissing ? "red.300" : undefined}
+                            value={draft.fpCases}
+                            onChange={(e) => setDraft({ ...draft, fpCases: e.target.value })} />
+                          <Input {...sheetInputProps} isReadOnly={draft.readOnly} bg="white"
+                            flex="1 1 200px" placeholder="What it is (e.g. CLOD TIP)"
+                            value={draft.fpItem}
+                            onChange={(e) => setDraft({ ...draft, fpItem: upperInput(e) })} />
+                        </Flex>
+                        <Text fontSize="xs" color="gray.500" mt={1}>
+                          Cases packed for later, not the cases put in. When reception accepts this run
+                          they wait on <b>{fpTarget}</b> for the next run.
+                        </Text>
+                      </>
+                    )}
+                  </Box>
+                </SheetField>
+              )}
 
               <SectionBar>Crew &amp; Notes</SectionBar>
 

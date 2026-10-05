@@ -52,6 +52,13 @@ const AcceptReportDialog = ({ report, isOpen, busy, onCancel, onAccept }) => {
               <Row label="Cases in / out">{`${r.inputCases ?? "—"} / ${r.outputCases ?? "—"}`}</Row>
               <Row label="Output">{r.outputWeight ? `${r.outputWeight} lb` : null}</Row>
               <Row label="Inedible">{r.inedibleWeight ? `${r.inedibleWeight} lb` : null}</Row>
+              {/* Accepting also writes the freezer row, so it is checked here with the rest. */}
+              {r.fpCases > 0 && (
+                <Row label="To the freezer">
+                  {`${r.fpCases} cs${r.fpItem ? ` ${r.fpItem}` : ""}, onto `
+                    + (r.lotKind === "further" ? r.lotNumber : `FP${String(r.lotNumber || "").slice(1)}`)}
+                </Row>
+              )}
               <Row label="Pack dates">{(r.packDates || []).map(fmtDate).join(", ")}</Row>
               <Row label="Customer">{r.customer}</Row>
               <Row label="Product">{r.description}</Row>

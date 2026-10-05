@@ -33,6 +33,8 @@ const fmt = (r) => ({
   returnedOn: r.returned_on,
   createdBy: r.created_by,
   createdAt: r.created_at,
+  // The accepted processing report that sent these cases, when one did.
+  sourceReportId: r.source_report_id ?? null,
   // For the FP lot as a whole: several rows feed one lot.
   sent: r.sent,
   taken: r.taken,
@@ -42,7 +44,7 @@ const fmt = (r) => ({
 const ROW_SQL = `
   SELECT t.fp_id, t.lot_id, l.lot_number, fp.lot_id AS fp_lot_id, fp.lot_number AS fp_lot_number,
          t.item, t.cases, t.raw_weight::text AS raw_weight,
-         t.sent_on::text AS sent_on, t.returned_on::text AS returned_on, t.created_at,
+         t.sent_on::text AS sent_on, t.returned_on::text AS returned_on, t.created_at, t.source_report_id,
          (SELECT u.username FROM users u WHERE u.id = t.created_by) AS created_by,
          ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken
     FROM fp_tracker t

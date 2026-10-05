@@ -5,7 +5,10 @@ const requireRole = require("../middleware/requireRole");
 const { REPORT_ACCEPT_ROLES } = require("../middleware/receptionRoles");
 const { searchTerm, searchClause } = require("../utils/search");
 const { isCalendarDay } = require("../utils/weighedAt");
-const { fpCounts, lockLot } = require("../utils/fpLot");
+const { fpCounts, lockLot, ensureFpLot, findFpChild, normaliseItem } = require("../utils/fpLot");
+const { pacificToday } = require("../utils/lot");
+
+const MAX_FP_ITEM = 120;
 
 // The shop-floor record of one processing run: which lot, which line, who ran
 // it, how many cases went through.
@@ -58,6 +61,9 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   outputCases: r.output_cases,
   outputWeight: r.output_weight,
   inedibleWeight: r.inedible_weight,
+  // Packed for further processing: goes to the AF freezer and onto the FP lot when accepted.
+  fpCases: r.fp_cases ?? null,
+  fpItem: r.fp_item ?? null,
   notes: r.notes,
   status: r.status,
   submittedBy: r.submitted_by,
@@ -201,6 +207,16 @@ const validateBody = (body, { staging = false } = {}) => {
     return { error: "outputCases must be a whole number greater than zero" };
   }
 
+  // Blank means nothing was packed for later.
+  const fpCases = body.fpCases == null || body.fpCases === "" ? null : asCases(body.fpCases);
+  if (body.fpCases != null && body.fpCases !== "" && fpCases === null) {
+    return { error: "Cases packed for further processing must be a whole number greater than zero" };
+  }
+  const fpItem = fpCases ? (normaliseItem(body.fpItem) || null) : null;
+  if (fpItem && fpItem.length > MAX_FP_ITEM) {
+    return { error: `The further-processing item must be at most ${MAX_FP_ITEM} characters` };
+  }
+
   const workers = (Array.isArray(body.workers) ? body.workers : [])
     .map((w) => String(w || "").trim()).filter(Boolean);
 
@@ -216,6 +232,8 @@ const validateBody = (body, { staging = false } = {}) => {
     cleanPulls,
     workers,
     outputCases,
+    fpCases,
+    fpItem,
     head: {
       processingDate: body.processingDate || null,
       startTime: asTime(body.startTime),
@@ -297,8 +315,8 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
          (tenant_id, lot_id, processing_date, processing_type, line_no, customer,
           description, brand, grade, est_number, pack_date, input_cases,
           output_cases, output_weight, inedible_weight, notes, submitted_by,
-          start_time, end_time, status, pack_dates)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::date[])
+          start_time, end_time, status, pack_dates, fp_cases, fp_item)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::date[],$22,$23)
        RETURNING report_id`,
       [req.tenantId, lotId, h.processingDate, h.processingType, h.lineNo, h.customer,
        h.description, h.brand, h.grade, h.estNumber, h.packDate, inputCases,
@@ -307,7 +325,7 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
        // A run opened at the start is not a claim about what came off it.
        // Reception only ever sees it once it has been confirmed.
        body.inProgress === true ? "in_progress" : "submitted",
-       h.packDates]
+       h.packDates, v.fpCases, v.fpItem]
     );
     const reportId = inserted.rows[0].report_id;
     await writeChildren(client, reportId, v.cleanPulls, v.workers);
@@ -374,7 +392,7 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
               inedible_weight = $13, notes = $14,
               start_time = $17, end_time = $18,
               status = $19, pack_dates = $20::date[], reject_reason = NULL,
-              lot_id = COALESCE($21, lot_id)
+              lot_id = COALESCE($21, lot_id), fp_cases = $22, fp_item = $23
         WHERE report_id = $15 AND tenant_id = $16`,
       [h.processingDate, h.processingType, h.lineNo, h.customer, h.description,
        h.brand, h.grade, h.estNumber, h.packDate, inputCases, v.outputCases,
@@ -384,7 +402,7 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
        // queue. Anything else is a confirmation, which is what hands it over —
        // and that stays the default, so every existing caller is unchanged.
        req.body?.inProgress === true ? "in_progress" : "submitted",
-       h.packDates, lotId]
+       h.packDates, lotId, v.fpCases, v.fpItem]
     );
     await writeChildren(client, id, v.cleanPulls, v.workers);
 
@@ -522,6 +540,21 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
       );
     }
 
+    // Cases packed for later go to the freezer: a tracker row on the N lot, stocking its FP lot.
+    let sentToFp = null;
+    if (report.fp_cases > 0) {
+      const parentId = isFp ? report.parent_lot_id : report.lot_id;
+      if (!isFp) await lockLot(client, req.tenantId, parentId);
+      const fp = await ensureFpLot(client, req.tenantId, parentId, req.userId);
+      await client.query(
+        `INSERT INTO fp_tracker (tenant_id, lot_id, item, cases, sent_on, created_by, source_report_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [req.tenantId, parentId,
+         normaliseItem(report.fp_item || report.description) || "FURTHER PROCESSING",
+         report.fp_cases, fmtDate(report.processing_date) || pacificToday(), req.userId || null, id]);
+      sentToFp = { lotId: fp.lot.lot_id, lotNumber: fp.lot.lot_number, cases: report.fp_cases, created: fp.created };
+    }
+
     // Appended in SQL so a concurrent form save cannot clobber it in a
     // read-modify-write. reportId is what lets the form PATCH protect the row.
     await client.query(
@@ -574,9 +607,12 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
       lotNumber: report.lot_number,
       casesTaken: report.input_cases,
       casesLeft: onHand - report.input_cases,
+      sentToFp,
     });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
+    // An outside lot cannot have an FP lot; refused, nothing moved.
+    if (err.status) return res.status(409).json({ code: err.code, error: err.message });
     console.error("accept processing report:", err);
     res.status(500).json({ error: "Internal Server Error" });
   } finally {
@@ -623,7 +659,7 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
   try {
     await client.query("BEGIN");
     const head = await client.query(
-      `SELECT r.*, l.lot_number, l.kind AS lot_kind
+      `SELECT r.*, l.lot_number, l.kind AS lot_kind, l.parent_lot_id
          FROM noblesse_processing_reports r
          JOIN lots l ON l.lot_id = r.lot_id
         WHERE r.report_id = $1 AND r.tenant_id = $2
@@ -669,6 +705,27 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
         WHERE report_id = $1 AND tenant_id = $2`,
       [id, req.tenantId]
     );
+
+    // The freezer row this report sent comes back out, unless a later run already used those cases.
+    const parentId = isFp ? report.parent_lot_id : report.lot_id;
+    await lockLot(client, req.tenantId, parentId);
+    const voided = await client.query(
+      `UPDATE fp_tracker SET voided_at = now(), voided_by = $1
+        WHERE source_report_id = $2 AND tenant_id = $3 AND voided_at IS NULL
+      RETURNING fp_id`,
+      [req.userId || null, id, req.tenantId]);
+    if (voided.rows.length) {
+      const fpLot = await findFpChild(client, req.tenantId, parentId);
+      const c = fpLot && await fpCounts(client, req.tenantId, fpLot.lot_id);
+      if (c && c.waiting < 0) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          code: "FP_ALREADY_TAKEN",
+          error: `This report sent ${report.fp_cases} cases to ${fpLot.lot_number}, and accepted runs have `
+            + "already taken from them. Un-accept those runs first.",
+        });
+      }
+    }
 
     await client.query("COMMIT");
     const casesLeft = isFp

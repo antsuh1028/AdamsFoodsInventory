@@ -761,8 +761,8 @@ const steps = async () => {
     ON CONFLICT (tenant_id, name) DO NOTHING
   `, [ITEM_DESCRIPTIONS]);
 
-  // The F.P Tracker: reception's end-of-day count of cases sent to the AF
-  // freezer for another run. Keyed to the N lot; its cases stock the FP lot.
+  // The F.P Tracker: cases sent to the AF freezer for another run. Keyed to
+  // the N lot; its cases stock the FP lot. Written by an accepted report, or by hand.
   await run("fp_tracker", `
     CREATE TABLE IF NOT EXISTS fp_tracker (
       fp_id        SERIAL PRIMARY KEY,
@@ -781,6 +781,19 @@ const steps = async () => {
   `);
   await run("fp_tracker lot index",
     `CREATE INDEX IF NOT EXISTS fp_tracker_lot_idx ON fp_tracker (tenant_id, lot_id)`);
+
+  // What a run packed for further processing: one item, one count. Accepting it writes the tracker row.
+  await run("noblesse_processing_reports fp_cases",
+    `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS fp_cases INT CHECK (fp_cases > 0)`);
+  await run("noblesse_processing_reports fp_item",
+    `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS fp_item TEXT`);
+  await run("fp_tracker source_report_id",
+    `ALTER TABLE fp_tracker ADD COLUMN IF NOT EXISTS source_report_id INT
+       REFERENCES noblesse_processing_reports(report_id) ON DELETE SET NULL`);
+  // One tracker row per report, so accepting cannot send the same cases twice.
+  await run("fp_tracker one row per report",
+    `CREATE UNIQUE INDEX IF NOT EXISTS fp_tracker_source_report_idx
+       ON fp_tracker (source_report_id) WHERE source_report_id IS NOT NULL AND voided_at IS NULL`);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection

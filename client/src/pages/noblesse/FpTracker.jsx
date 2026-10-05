@@ -182,7 +182,14 @@ const FpTracker = ({ isOpen, onClose }) => {
                 </Td>
                 <Td fontWeight="600" color="blue.700">{r.lotNumber}</Td>
                 <Td whiteSpace="nowrap">{r.fpLotNumber}</Td>
-                <Td>{r.item}</Td>
+                <Td>
+                  {r.item}
+                  {r.sourceReportId && (
+                    <Badge ml={2} colorScheme="gray" fontSize="9px" title="Written when that processing report was accepted">
+                      report {r.sourceReportId}
+                    </Badge>
+                  )}
+                </Td>
                 <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>{r.cases}</Td>
                 <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>
                   {r.rawWeight ? `${fmtWeight(r.rawWeight)} lb` : "—"}
