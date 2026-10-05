@@ -50,7 +50,6 @@ const AcceptReportDialog = ({ report, isOpen, busy, onCancel, onAccept }) => {
               <Row label="Date">{fmtDate(r.processingDate)}{time ? ` · ${time}` : ""}</Row>
               <Row label="Line">{r.lineNo}</Row>
               <Row label="Cases in / out">{`${r.inputCases ?? "—"} / ${r.outputCases ?? "—"}`}</Row>
-              <Row label="Output">{r.outputWeight ? `${r.outputWeight} lb` : null}</Row>
               <Row label="Inedible">{r.inedibleWeight ? `${r.inedibleWeight} lb` : null}</Row>
               {/* Accepting also writes the freezer row, so it is checked here with the rest. */}
               {r.fpCases > 0 && (
@@ -60,7 +59,6 @@ const AcceptReportDialog = ({ report, isOpen, busy, onCancel, onAccept }) => {
                 </Row>
               )}
               <Row label="Pack dates">{(r.packDates || []).map(fmtDate).join(", ")}</Row>
-              <Row label="Customer">{r.customer}</Row>
               <Row label="Product">{r.description}</Row>
               <Row label="Ran it">{(r.workers || []).join(", ")}</Row>
               <Row label="Submitted by">{r.submittedBy}</Row>
