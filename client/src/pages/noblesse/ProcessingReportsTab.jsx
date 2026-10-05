@@ -855,10 +855,16 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </SheetField>
 
               {/* Part of the run packed to be frozen and processed again later. One item, one count. */}
+              {/* Fills out the Inedible row, so the next field starts on its own line. */}
+              <Box gridColumn="3 / -1" display={{ base: "none", md: "block" }} />
+
               <SheetField label="Further processing" full plain>
                   <Box px={3} py={2}>
                     <Checkbox isChecked={Boolean(draft.fpOn) && Boolean(fpTarget)}
                       isDisabled={draft.readOnly || !fpTarget}
+                      size="lg" colorScheme="blue"
+                      // The default border is too pale to see on the grey sheet.
+                      sx={{ "& .chakra-checkbox__control:not([data-checked])": { borderColor: "gray.500", bg: "white" } }}
                       onChange={(e) => setDraft({
                         ...draft, fpOn: e.target.checked,
                         fpItem: draft.fpItem || upper(draft.description || ""),
