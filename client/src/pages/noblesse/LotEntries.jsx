@@ -97,7 +97,7 @@ export const LotFormWindow = ({ lotNumber, isOpen, onClose, zIndex = 1400 }) => 
 };
 
 // With `batchId`, one chosen session, already opened to its boxes.
-export const LotManifestWindow = ({ lotNumber, batchId = null, isOpen, onClose, zIndex = 1410 }) => {
+export const LotManifestWindow = ({ lotNumber, batchId = null, isOpen, onClose, zIndex = 1400 }) => {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
