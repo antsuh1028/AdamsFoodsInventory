@@ -104,8 +104,33 @@ export const RegistrationFormModal = ({
 
   useEffect(() => { loadReports(); }, [loadReports]);
 
+  // The lot's FP lot, if any: what went to the freezer, and the runs on it.
+  const [further, setFurther] = useState(null);
+  const [fpReports, setFpReports] = useState([]);
+  useEffect(() => {
+    let live = true;
+    setFurther(null);
+    setFpReports([]);
+    if (!lotId) return undefined;
+    (async () => {
+      try {
+        const { data } = await axiosInstance.get(`/lots/${lotId}`);
+        const f = data.further && data.further.parentLotId === lotId ? data.further : null;
+        if (!live) return;
+        setFurther(f);
+        if (f) {
+          const runs = await axiosInstance.get("/processing-reports", { params: { lotId: f.fpLotId } });
+          if (live) setFpReports(runs.data || []);
+        }
+      } catch {
+        // Context only; the form stays usable without it.
+      }
+    })();
+    return () => { live = false; };
+  }, [lotId]);
+
   const reportById = useMemo(
-    () => new Map(reports.map((r) => [r.reportId, r])), [reports]
+    () => new Map([...reports, ...fpReports].map((r) => [r.reportId, r])), [reports, fpReports]
   );
 
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -506,14 +531,22 @@ export const RegistrationFormModal = ({
             })}
 
             {/* Runs on product back from the freezer. Off the FP lot, never off this form's cases. */}
-            {fpRuns.length > 0 && (
+            {(further || fpRuns.length > 0) && (
               <Box gridColumn="1 / -1" px={3} py={2} bg="blue.50"
                 borderTop="1px solid" borderBottom="1px solid" borderColor="blue.100">
                 <Text fontSize="xs" color="blue.800" textTransform="uppercase" letterSpacing="wide">
-                  Further processing, {fpRuns[0].fp}
+                  Further processing, {further ? further.fpLotNumber : fpRuns[0].fp}
                 </Text>
+                {further && (
+                  <Text fontSize="sm" color="blue.900" fontWeight="600" mt={1}
+                    style={{ fontVariantNumeric: "tabular-nums" }}>
+                    Sent to the freezer: {further.sent} cs
+                    {" · "}{further.taken} cs run since
+                    {" · "}{further.waiting} cs waiting on {further.fpLotNumber}
+                  </Text>
+                )}
                 <Text fontSize="xs" color="gray.600">
-                  Back from the AF freezer. Not counted in Remaining below.
+                  Packed for another run. Not counted in Remaining below.
                 </Text>
               </Box>
             )}
