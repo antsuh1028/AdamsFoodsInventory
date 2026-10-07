@@ -39,8 +39,8 @@ const createCaptureMachine = ({
   // `at` is injected so the module stays pure and the double-print window can be
   // driven exactly in tests rather than with real timers.
   const feed = (reading, at = Date.now()) => {
-    // An EMPTY platform is the one refusal that means something.
-    if (reading && !reading.ok && reading.code === "ZERO") {
+    // An EMPTY platform: zero, or below zero with the box tare set (-1.85 between boxes).
+    if (reading && !reading.ok && (reading.code === "ZERO" || reading.code === "NEGATIVE")) {
       reset();
       return { state, weight: 0, captured: null };
     }
