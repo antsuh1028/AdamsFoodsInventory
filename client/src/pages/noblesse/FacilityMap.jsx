@@ -219,8 +219,10 @@ const FacilityMap = ({ runs = [], onPick, maxHeight = "560px" }) => {
     });
   };
 
-  // Only what is actually on the floor. Anything accepted or sent back is done.
-  const live = runs.filter((r) => r.status === "in_progress" || r.status === "submitted");
+  // Only what is actually on the floor. Anything accepted or sent back is done,
+  // and a waiting report reception has silenced is being looked into elsewhere.
+  const live = runs.filter((r) => r.status === "in_progress"
+    || (r.status === "submitted" && !r.mapSilenced));
 
   const forStation = (station) =>
     live.filter((r) => station.lines.includes(r.lineNo));

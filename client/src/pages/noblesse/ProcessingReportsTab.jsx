@@ -263,6 +263,24 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     return result.ok;
   };
 
+  const silence = async (report, silenced) => {
+    setBusyId(report.reportId);
+    try {
+      await axiosInstance.post(`/processing-reports/${report.reportId}/silence`, { silenced });
+      await fetchReports();
+      toast({
+        status: "success", position: "top", duration: 4000,
+        title: silenced ? `${report.lotNumber} taken off the floor map` : `${report.lotNumber} back on the floor map`,
+        description: silenced ? "It stays here, waiting, until it is accepted or sent back." : undefined,
+      });
+    } catch (err) {
+      toast({ status: "error", position: "top", title: "Could not change the map",
+        description: err.response?.data?.error || err.message });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const remove = async (report) => {
     try {
       await axiosInstance.delete(`/processing-reports/${report.reportId}`);
@@ -399,6 +417,12 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 {STATUS_LABEL[r.status] || r.status}
               </Badge>
               {r.lineNo && <Badge colorScheme="gray" fontSize="9px">Line {r.lineNo}</Badge>}
+              {r.status === "submitted" && r.mapSilenced && (
+                <Badge colorScheme="gray" variant="outline" fontSize="9px"
+                  title={`Taken off the floor map${r.mapSilencedBy ? ` by ${r.mapSilencedBy}` : ""} for review`}>
+                  off the map
+                </Badge>
+              )}
               {r.description && <Text fontSize="xs" color="gray.600">{r.description}</Text>}
               <Text fontSize="sm" color="gray.700" ml="auto"
                 style={{ fontVariantNumeric: "tabular-nums" }}>
@@ -425,6 +449,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               <Box flex={1} />
               {r.status === "submitted" && canAccept && (
                 <>
+                  <Button size="xs" variant="ghost" colorScheme="gray" isLoading={busyId === r.reportId}
+                    title={r.mapSilenced ? "Put it back on the floor map" : "Take it off the floor map while it is reviewed"}
+                    onClick={(e) => { e.stopPropagation(); silence(r, !r.mapSilenced); }}>
+                    {r.mapSilenced ? "Show on map" : "Silence"}
+                  </Button>
                   <Button size="xs" variant="ghost" isLoading={busyId === r.reportId}
                     onClick={(e) => { e.stopPropagation(); setRejecting(r.reportId); setReason(""); }}>
                     Send back
