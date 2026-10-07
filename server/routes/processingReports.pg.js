@@ -62,6 +62,9 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   acceptedAt: r.accepted_at,
   rejectReason: r.reject_reason,
   appliedFormId: r.applied_form_id,
+  // Taken off the floor map by reception while it is looked into.
+  mapSilenced: Boolean(r.map_silenced_at),
+  mapSilencedBy: r.map_silenced_by ?? null,
   pulls: pulls.map((p) => ({
     pullId: p.pull_id, position: p.position, cases: p.cases, notes: p.notes,
   })),
@@ -355,7 +358,9 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
               input_cases = $10, output_cases = $11, output_weight = $12,
               inedible_weight = $13, notes = $14,
               start_time = $17, end_time = $18,
-              status = $19, pack_dates = $20::date[], reject_reason = NULL
+              status = $19, pack_dates = $20::date[], reject_reason = NULL,
+              -- An edited report is new information, so it goes back on the map.
+              map_silenced_at = NULL, map_silenced_by = NULL
         WHERE report_id = $15 AND tenant_id = $16`,
       [h.processingDate, h.processingType, h.lineNo, h.customer, h.description,
        h.brand, h.grade, h.estNumber, h.packDate, inputCases, v.outputCases,
@@ -534,6 +539,28 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
     res.status(500).json({ error: "Internal Server Error" });
   } finally {
     client.release();
+  }
+});
+
+// Off the floor map, or back on it. Moves nothing; the report stays in reception's list.
+router.post("/processing-reports/:id/silence", verifyToken, requireRole(...REPORT_ACCEPT_ROLES), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid report id" });
+  const silenced = req.body?.silenced !== false;
+  try {
+    const upd = await pool.query(
+      `UPDATE noblesse_processing_reports
+          SET map_silenced_at = CASE WHEN $1 THEN now() ELSE NULL END,
+              map_silenced_by = CASE WHEN $1 THEN $2 ELSE NULL END
+        WHERE report_id = $3 AND tenant_id = $4
+      RETURNING report_id`,
+      [silenced, req.username || null, id, req.tenantId]
+    );
+    if (!upd.rows.length) return res.status(404).json({ error: "Report not found" });
+    res.json(await loadReport(id, req.tenantId));
+  } catch (err) {
+    console.error("silence processing report:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

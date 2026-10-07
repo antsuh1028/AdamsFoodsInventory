@@ -608,6 +608,12 @@ const steps = async () => {
     `ALTER TABLE noblesse_processing_reports
        ADD COLUMN IF NOT EXISTS pack_dates DATE[]`);
 
+  // Reception taking a waiting report off the floor map while it is looked into.
+  await run("noblesse_processing_reports map_silenced_at",
+    `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS map_silenced_at TIMESTAMPTZ`);
+  await run("noblesse_processing_reports map_silenced_by",
+    `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS map_silenced_by TEXT`);
+
   // Briefly lived on the pull instead. Dropped rather than left dangling: it
   // never carried a value in production, and a half-wired column reads like
   // something a query could rely on.
