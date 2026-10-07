@@ -1,7 +1,7 @@
 // Deciding when a stream of scale readings means "a box".
 
-// Below this the platform counts as empty.
-const EMPTY_BELOW = 2.0;
+// At or below this the platform counts as empty: the heaviest empty box is 2.5 lb.
+const EMPTY_BELOW = 2.5;
 
 // How many identical settled readings before it counts as the box.
 const HOLD_READINGS = 3;
@@ -53,7 +53,7 @@ const createCaptureMachine = ({
 
     // The platform cleared. This is what re-arms the machine, and it is the
     // only way out of DONE.
-    if (w < emptyBelow) {
+    if (w <= emptyBelow) {
       reset();
       return { state, weight: w, captured: null };
     }

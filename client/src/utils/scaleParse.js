@@ -49,6 +49,9 @@ const READING_WORDS = new Set([
   "G", "N", "T",                       // single-letter forms of the same
 ]);
 
+// Tare and preset tare. Allowed above so the line is recognised, then refused as a reading.
+const TARE_TOKENS = new Set(["TR", "PT", "T"]);
+
 // A signed decimal, with the digits kept as written. No exponent form: a scale
 // does not emit one, and accepting it would let "1e5" through as 100000.
 const NUMBER_RE = /[-+]?\d+(?:\.\d+)?|[-+]?\.\d+/g;
@@ -161,11 +164,18 @@ const parseScaleLine = (line, { assumeUnit = null } = {}) => {
       `Reads in ${unit}. Set the indicator to lb or kg.`, raw);
   }
 
+  // A tare is the offset being set, never a box.
+  if (tokens.some((t) => TARE_TOKENS.has(t))) {
+    return err("TARE", "Tare line, not a box", raw);
+  }
+
   const signed = numbers[0];
   // Negative is a real reading (an unzeroed platform), not a box. Rejected
   // rather than absed: the operator needs to re-zero, and silently flipping the
   // sign would hide that.
-  if (signed.startsWith("-")) {
+  // The indicator can print the sign in its own column ("-     2.15 lb").
+  const detachedMinus = /(?:^|[\s,])-\s+\.?\d/.test(text);
+  if (signed.startsWith("-") || detachedMinus) {
     return err("NEGATIVE", "Negative reading — re-zero the scale", raw);
   }
 
