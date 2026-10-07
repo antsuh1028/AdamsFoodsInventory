@@ -63,7 +63,12 @@ const WeighFinishedBoxes = ({
     // The load already says what is going on the truck.
     if (presetLot.description) setItemDescription(presetLot.description);
     if (presetLot.shipTo) setShipTo(presetLot.shipTo);
+    if (presetLot.expectedBoxes != null) setExpectedBoxes(String(presetLot.expectedBoxes));
   }, [isOpen, presetLot, session]);
+
+  // Next pallet asks how many boxes the new pallet holds before it starts.
+  const [nextAsk, setNextAsk] = useState(false);
+  const [nextExpected, setNextExpected] = useState("");
 
   // Opened on a session that is already running, so the lot is already known and
   // the start form is skipped entirely.
@@ -216,7 +221,7 @@ const WeighFinishedBoxes = ({
     const heading = {
       lotId: lot.lotId ?? null,
       lotNumber: (session?.lotNumber || lot.lotNumber || "").trim() || null,
-      expectedBoxes: String(session?.expectedBoxes ?? expectedBoxes ?? "").trim() || null,
+      expectedBoxes: String(nextExpected ?? "").trim() || null,
       itemDescription: (session?.itemDescription || itemDescription || "").trim().toUpperCase() || null,
       shipTo: (session?.shipTo || shipTo || "").trim().toUpperCase() || null,
       direction: "outgoing",
@@ -240,6 +245,7 @@ const WeighFinishedBoxes = ({
       }
 
       setConfirmStop(false);
+      setNextAsk(false);
       setRemarks("");
       // The heading is deliberately NOT cleared — that is the whole point.
       await start(heading);
@@ -396,7 +402,14 @@ const WeighFinishedBoxes = ({
             </Text>
 
             {/* Opened from a load, so say where the weights are going to land. */}
-            {presetLot && (
+            {presetLot && presetLot.nextPallet && (
+              <Alert status="info" borderRadius="md" mb={4} fontSize="sm" py={2}>
+                <AlertIcon />
+                {t("Next pallet of {lot}, same heading. Enter how many boxes are on this pallet.",
+                  { lot: presetLot.lotNumber })}
+              </Alert>
+            )}
+            {presetLot && !presetLot.nextPallet && (
               <Alert status="info" borderRadius="md" mb={4} fontSize="sm" py={2}>
                 <AlertIcon />
                 {t("These boxes go on the load for {lot}. The session is tied to it when you close.",
@@ -564,7 +577,7 @@ const WeighFinishedBoxes = ({
     </AlertDialog>
 
     <AlertDialog isOpen={confirmStop} leastDestructiveRef={cancelStopRef}
-      onClose={() => setConfirmStop(false)} isCentered>
+      onClose={() => { setConfirmStop(false); setNextAsk(false); }} isCentered>
       <AlertDialogOverlay>
         <AlertDialogContent>
           <AlertDialogHeader fontSize="lg" fontWeight="bold">
@@ -605,9 +618,19 @@ const WeighFinishedBoxes = ({
             <Textarea size="sm" value={remarks} rows={2}
               onChange={(e) => setRemarks(e.target.value)}
               placeholder="Anything worth noting about this run" />
+            {nextAsk && (
+              <Box mt={3} p={3} bg="teal.50" borderRadius="md" border="1px solid" borderColor="teal.200">
+                <Text fontSize="xs" color="gray.600" textTransform="uppercase" mb={1}>
+                  {t("Boxes on the next pallet")} <Text as="span" textTransform="none">{t("(optional)")}</Text>
+                </Text>
+                <Input size="md" width="140px" bg="white" value={nextExpected} placeholder="80"
+                  inputMode="numeric" autoComplete="off" autoFocus
+                  onChange={(e) => setNextExpected(e.target.value.replace(/\D/g, ""))} />
+              </Box>
+            )}
           </AlertDialogBody>
           <AlertDialogFooter gap={2} flexWrap="wrap">
-            <Button ref={cancelStopRef} onClick={() => setConfirmStop(false)}>
+            <Button ref={cancelStopRef} onClick={() => { setConfirmStop(false); setNextAsk(false); }}>
               {t("Keep weighing")}
             </Button>
             {/* Done for now, but the lot is not finished — the answer that was
@@ -617,9 +640,14 @@ const WeighFinishedBoxes = ({
             </Button>
             {/* More of the same lot on another pallet. Closes this one and
                 reopens with the same heading, so nothing is retyped. */}
-            <Button variant="outline" colorScheme="teal" onClick={onNextPallet}
-              isDisabled={busy || count === 0}>
-              {t("Next pallet")}
+            <Button variant={nextAsk ? "solid" : "outline"} colorScheme="teal"
+              onClick={() => {
+                if (nextAsk) { onNextPallet(); return; }
+                setNextExpected(String(session?.expectedBoxes ?? expectedBoxes ?? ""));
+                setNextAsk(true);
+              }}
+              isLoading={busy && nextAsk} isDisabled={busy || count === 0}>
+              {nextAsk ? t("Start next pallet") : t("Next pallet")}
             </Button>
             {/* Finishing a session is not destructive, so it does not wear the
                 colour of something that is. */}

@@ -1085,7 +1085,7 @@ router.get("/box-batches", verifyToken, async (req, res) => {
     const result = await pool.query(
       `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description,
               b.ship_to, b.bill_of_lading, b.brand, b.est_number, b.grade, b.source,
-              b.direction, b.status, b.created_at, b.closed_at,
+              b.direction, b.status, b.created_at, b.closed_at, b.expected_boxes,
               b.weighed_on::text AS weighed_on,
               b.flagged_at, b.flag_reason,
               -- The UUID resolved here so the row can name who raised it.
