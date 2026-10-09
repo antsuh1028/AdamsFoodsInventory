@@ -533,9 +533,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         {byDay.map(({ day, rows }) => (
         <React.Fragment key={day || "no-date"}>
         {/* One heading per processing day, newest first, so the days read apart. */}
-        {/* Pinned to the panel's very top edge: the tab panel is padded 12px / 20px, and a
-            header stuck below that padding let the rows show through above it. The same
-            amount goes into its own white padding, so the date is never cut off. */}
+        {/* Pinned over the tab panel's 12/20px padding so no row shows above it; padded to match. */}
         <Flex align="baseline" gap={2} pt={{ base: "28px", md: "36px" }} pb={1}
           borderBottom="2px solid" borderColor="gray.200"
           position="sticky" top={{ base: "-12px", md: "-20px" }} bg="white" zIndex={1}>
