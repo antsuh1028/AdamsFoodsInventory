@@ -152,12 +152,16 @@ const parseFpLot = (input) => {
 
 const PACIFIC_TZ = "America/Los_Angeles";
 
-// "2026-09-04" for whatever "today" is in Pacific. en-CA formats as
-// YYYY-MM-DD, which is the shape Postgres wants for a DATE.
-const pacificToday = (now = new Date()) =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: PACIFIC_TZ, year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(now);
+// "2026-09-04" for whatever "today" is in Pacific. Built from the parts, never a
+// locale's layout: Node 18 on the server formats en-CA as "10/09/2026".
+const PACIFIC_PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: PACIFIC_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+});
+const pacificToday = (now = new Date()) => {
+  const parts = PACIFIC_PARTS.formatToParts(now);
+  const get = (type) => parts.find((p) => p.type === type).value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+};
 
 // "2026-09-04" -> 247. Date.UTC(year, 0, 0) is 31 December of the year before,
 // so 1 January comes out as day 1 — the same arithmetic as shared.jsx.
