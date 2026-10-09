@@ -1159,7 +1159,9 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
     if (!oldRes.rows.length) return res.status(404).json({ error: "Not found" });
     const oldData = fmtRegistrationForm(oldRes.rows[0]);
 
-    const status = req.body.status && ["in_progress", "completed"].includes(req.body.status) ? req.body.status : null;
+    // Any case is the same status; anything else keeps the one the form has, never null.
+    const asked = String(req.body.status || "").trim().toLowerCase();
+    const status = ["in_progress", "completed"].includes(asked) ? asked : (oldRes.rows[0].status || "in_progress");
     const lot = await lotColumns(req.tenantId, req.userId, req.body.lotNumber, pool, req.body.lotId);
     const result = await pool.query(
       `UPDATE noblesse_registration_forms
