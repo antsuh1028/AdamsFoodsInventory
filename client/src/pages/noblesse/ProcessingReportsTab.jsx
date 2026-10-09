@@ -194,6 +194,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         lot: f.lotNumber,
         qtyCases: f.waiting,
         registeredCases: f.sent,
+        fpReturned: f.returned,
+        fpReady: f.ready,
+        fpInFreezer: f.inFreezer,
         registeredWeight: null,
         // The N lot's hand-typed runs are the N lot's; the FP count already stands alone.
         formManualCases: 0,
@@ -248,6 +251,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const lotLine = lotStock ? [
     lotStock.fp
       ? `${lotStock.registeredCases} cases of ${lotStock.parentLotNumber} sent to the freezer`
+        + ` · ${lotStock.fpReturned ?? 0} back`
       : `lot registered ${lotStock.registeredCases ?? "?"} cases`
         + (lotStock.registeredWeight ? ` = ${fmtWeight(lotStock.registeredWeight)} lb` : ""),
     handCases ? `${handCases} processed by hand on the form` : null,
@@ -256,6 +260,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
       ? `${casesLeft - inputCases} after this` : null,
   ].filter(Boolean).join(" · ") : null;
   const overdrawn = casesLeft != null && inputCases > casesLeft && draft?.status !== "accepted";
+  // An FP run asking for more than has come back from the freezer: a warning only.
+  const stillFrozen = Boolean(lotStock && lotStock.fp && draft?.status !== "accepted"
+    && inputCases > 0 && inputCases > (lotStock.fpReady ?? 0) && !overdrawn);
 
   // Staging needs only the lot: at the start of a run the cases are not known
   // yet. Confirming still needs them.
@@ -1021,6 +1028,14 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </SheetField>
             </Grid>
 
+            {/* Warned, not refused: product still in the freezer can be run on paper first. */}
+            {stillFrozen && (
+              <Alert status="warning" borderRadius="md" fontSize="xs" py={2} mb={3}>
+                <AlertIcon boxSize={3} />
+                {`Only ${Math.max(lotStock.fpReady, 0)} of these cases are back from the freezer so far `
+                  + `(${lotStock.fpInFreezer} still in it). It can still be accepted.`}
+              </Alert>
+            )}
             {overdrawn && (
               <Alert status="warning" borderRadius="md" fontSize="xs" py={2} mb={3}>
                 <AlertIcon boxSize={3} />

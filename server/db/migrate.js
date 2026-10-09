@@ -805,6 +805,25 @@ const steps = async () => {
   await run("fp_tracker one row per report",
     `CREATE UNIQUE INDEX IF NOT EXISTS fp_tracker_source_report_idx
        ON fp_tracker (source_report_id) WHERE source_report_id IS NOT NULL AND voided_at IS NULL`);
+
+  // Cases back from the AF freezer, counted at the incoming dock, not weighed.
+  // Partial returns are several rows. Keyed to the N lot, like the tracker.
+  await run("fp_returns", `
+    CREATE TABLE IF NOT EXISTS fp_returns (
+      return_id    SERIAL PRIMARY KEY,
+      tenant_id    UUID NOT NULL REFERENCES tenants(id),
+      lot_id       INT  NOT NULL REFERENCES lots(lot_id),
+      cases        INT  NOT NULL CHECK (cases > 0),
+      returned_on  DATE NOT NULL,
+      notes        TEXT,
+      created_by   UUID,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      voided_at    TIMESTAMPTZ,
+      voided_by    UUID
+    )
+  `);
+  await run("fp_returns lot index",
+    `CREATE INDEX IF NOT EXISTS fp_returns_lot_idx ON fp_returns (tenant_id, lot_id)`);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection

@@ -28,17 +28,32 @@ const labelledSql = (fp) => `
              WHERE b.tenant_id = ${fp}.tenant_id AND b.lot_id = ${fp}.parent_lot_id
                AND b.further_processing AND bi.voided_at IS NULL), 0)::int`;
 
+// Cases counted back in from the freezer. `fp` as above.
+const returnedSql = (fp) => `
+  COALESCE((SELECT SUM(x.cases) FROM fp_returns x
+             WHERE x.tenant_id = ${fp}.tenant_id AND x.lot_id = ${fp}.parent_lot_id
+               AND x.voided_at IS NULL), 0)::int`;
+
 const COUNTS_SQL = `
-  SELECT ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled
+  SELECT ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled,
+         ${returnedSql("fp")} AS returned
     FROM lots fp WHERE fp.lot_id = $1 AND fp.tenant_id = $2 AND fp.kind = 'further'`;
 
-/** { sent, taken, waiting, labelled } for an FP lot, or null when it is not one. */
+/** The FP lot's figures from its sent, taken and returned counts. */
+const shape = (sent, taken, returned, labelled) => ({
+  sent, taken, returned, labelled,
+  // What runs may still take, back or not; runs past `ready` are warned, not refused.
+  waiting: sent - taken,
+  inFreezer: Math.max(0, sent - returned),
+  ready: returned - taken,
+});
+
+/** { sent, taken, returned, waiting, inFreezer, ready, labelled } for an FP lot, or null. */
 const fpCounts = async (db, tenantId, fpLotId) => {
   const { rows } = await db.query(COUNTS_SQL, [fpLotId, tenantId]);
   if (!rows.length) return null;
-  const sent = Number(rows[0].sent);
-  const taken = Number(rows[0].taken);
-  return { sent, taken, waiting: sent - taken, labelled: Number(rows[0].labelled) };
+  const r = rows[0];
+  return shape(Number(r.sent), Number(r.taken), Number(r.returned), Number(r.labelled));
 };
 
 // Serialises everything that reads and then changes a lot's FP count.
@@ -74,5 +89,5 @@ const ensureFpLot = async (db, tenantId, parentLotId, userId) => {
 };
 
 module.exports = {
-  normaliseItem, sentSql, takenSql, labelledSql, COUNTS_SQL, fpCounts, lockLot, findFpChild, ensureFpLot,
+  normaliseItem, sentSql, takenSql, labelledSql, returnedSql, shape, COUNTS_SQL, fpCounts, lockLot, findFpChild, ensureFpLot,
 };

@@ -541,8 +541,9 @@ export const RegistrationFormModal = ({
                   <Text fontSize="sm" color="blue.900" fontWeight="600" mt={1}
                     style={{ fontVariantNumeric: "tabular-nums" }}>
                     Sent to the freezer: {further.sent} cs
-                    {" · "}{further.taken} cs run since
-                    {" · "}{further.waiting} cs waiting on {further.fpLotNumber}
+                    {" · "}{further.returned ?? 0} back
+                    {" · "}{further.inFreezer ?? further.sent} still in the freezer
+                    {" · "}{further.taken} run on {further.fpLotNumber}
                   </Text>
                 )}
                 {/* The dock's labelled boxes, a check on the count above; never added to it. */}

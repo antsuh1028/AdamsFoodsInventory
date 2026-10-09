@@ -741,12 +741,13 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
                                    WHERE c.lot_id = $1 AND c.kind = 'further'), $1)
 
       UNION ALL
-      SELECT (t.returned_on::timestamp + interval '12 hours') AT TIME ZONE 'America/Los_Angeles',
+      -- Each count back in from the freezer; partial returns are several.
+      SELECT (x.returned_on::timestamp + interval '12 hours') AT TIME ZONE 'America/Los_Angeles',
              'fp_returned', 'Back from the AF freezer',
-             NULL::text, t.cases, t.item, t.fp_id, NULL::text
-        FROM fp_tracker t
-       WHERE t.tenant_id = $2 AND t.voided_at IS NULL AND t.returned_on IS NOT NULL
-         AND t.lot_id = COALESCE((SELECT c.parent_lot_id FROM lots c
+             NULL::text, x.cases, x.notes, x.return_id, NULL::text
+        FROM fp_returns x
+       WHERE x.tenant_id = $2 AND x.voided_at IS NULL
+         AND x.lot_id = COALESCE((SELECT c.parent_lot_id FROM lots c
                                    WHERE c.lot_id = $1 AND c.kind = 'further'), $1)
 
       UNION ALL

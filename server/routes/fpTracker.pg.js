@@ -4,7 +4,7 @@ const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { REPORT_ACCEPT_ROLES } = require("../middleware/receptionRoles");
 const {
-  normaliseItem, sentSql, takenSql, labelledSql, fpCounts, lockLot, findFpChild, ensureFpLot,
+  normaliseItem, sentSql, takenSql, labelledSql, returnedSql, shape, fpCounts, lockLot, findFpChild, ensureFpLot,
 } = require("../utils/fpLot");
 const { isCalendarDay } = require("../utils/weighedAt");
 const { pacificToday } = require("../utils/lot");
@@ -35,12 +35,10 @@ const fmt = (r) => ({
   createdAt: r.created_at,
   // The accepted processing report that sent these cases, when one did.
   sourceReportId: r.source_report_id ?? null,
-  // For the FP lot as a whole: several rows feed one lot.
-  sent: r.sent,
-  taken: r.taken,
-  waiting: r.sent - r.taken,
+  // For the FP lot as a whole: several rows feed one lot, and returns are counted per lot.
+  ...shape(r.sent, r.taken, r.returned, r.labelled),
   // Boxes the dock labelled for the freezer; null until the FP lot exists.
-  labelled: r.labelled ?? null,
+  labelled: r.fp_lot_id ? r.labelled : null,
 });
 
 const ROW_SQL = `
@@ -48,7 +46,8 @@ const ROW_SQL = `
          t.item, t.cases, t.raw_weight::text AS raw_weight,
          t.sent_on::text AS sent_on, t.returned_on::text AS returned_on, t.created_at, t.source_report_id,
          (SELECT u.username FROM users u WHERE u.id = t.created_by) AS created_by,
-         ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled
+         ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled,
+         ${returnedSql("fp")} AS returned
     FROM fp_tracker t
     JOIN lots l ON l.lot_id = t.lot_id
     LEFT JOIN lots fp ON fp.parent_lot_id = t.lot_id AND fp.kind = 'further'`;
@@ -89,6 +88,13 @@ const overdrawn = async (client, tenantId, parentLotId) => {
   const fp = await findFpChild(client, tenantId, parentLotId);
   if (!fp) return null;
   const c = await fpCounts(client, tenantId, fp.lot_id);
+  if (c.sent < c.returned) {
+    return {
+      code: "ALREADY_RETURNED",
+      error: `${c.returned} cases of ${fp.lot_number} are already counted back from the freezer, `
+        + "more than that would leave sent. Void a return first.",
+    };
+  }
   if (c.waiting >= 0) return null;
   return {
     code: "ALREADY_TAKEN",
@@ -105,8 +111,9 @@ router.get("/fp-tracker", verifyToken, async (req, res) => {
   const term = searchTerm(req.query.q);
   const params = [req.tenantId];
   let where = "WHERE t.tenant_id = $1 AND t.voided_at IS NULL";
-  if (status === "out") where += " AND t.returned_on IS NULL";
-  if (status === "back") where += " AND t.returned_on IS NOT NULL";
+  // Per lot: anything sent and not yet counted back is still in the freezer.
+  if (status === "out") where += ` AND ${sentSql("fp")} > ${returnedSql("fp")}`;
+  if (status === "back") where += ` AND ${sentSql("fp")} <= ${returnedSql("fp")}`;
   if (term) {
     params.push(term);
     where += ` AND (l.lot_number ILIKE $${params.length} OR fp.lot_number ILIKE $${params.length}`
@@ -128,7 +135,8 @@ router.get("/fp-lots", verifyToken, async (req, res) => {
     const { rows } = await pool.query(
       `SELECT fp.lot_id, fp.lot_number, p.lot_id AS parent_lot_id, p.lot_number AS parent_lot_number,
               ${lotDescriptionSql("p")} AS description,
-              ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled
+              ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled,
+              ${returnedSql("fp")} AS returned
          FROM lots fp JOIN lots p ON p.lot_id = fp.parent_lot_id
         WHERE fp.tenant_id = $1 AND fp.kind = 'further'
         ORDER BY fp.lot_date DESC NULLS LAST, fp.lot_number DESC`,
@@ -139,10 +147,7 @@ router.get("/fp-lots", verifyToken, async (req, res) => {
       parentLotId: r.parent_lot_id,
       parentLotNumber: r.parent_lot_number,
       description: r.description ?? null,
-      sent: r.sent,
-      taken: r.taken,
-      waiting: r.sent - r.taken,
-      labelled: r.labelled,
+      ...shape(r.sent, r.taken, r.returned, r.labelled),
     })));
   } catch (err) {
     console.error("list fp lots:", err);
@@ -260,6 +265,102 @@ router.post("/fp-tracker/:id/void", verifyToken, requireRole(...REPORT_ACCEPT_RO
     res.status(500).json({ error: "Internal Server Error" });
   } finally {
     client.release();
+  }
+});
+
+// ── Returns from the freezer ────────────────────────────────────────────────
+// Counted at the incoming dock, not weighed. Partial returns are several rows.
+
+// The incoming dock counts them; the outgoing dock is fenced out by roleScope anyway.
+const RETURN_ROLES = ["admin", "reception", "ntimanager", "noblesse"];
+
+const fmtReturn = (r) => ({
+  returnId: r.return_id,
+  lotId: r.lot_id,
+  lotNumber: r.lot_number,
+  cases: r.cases,
+  returnedOn: r.returned_on,
+  notes: r.notes,
+  createdBy: r.created_by,
+  createdAt: r.created_at,
+});
+
+router.get("/fp-returns", verifyToken, async (req, res) => {
+  const params = [req.tenantId];
+  let where = "WHERE x.tenant_id = $1 AND x.voided_at IS NULL";
+  if (req.query.lotId) { params.push(Number(req.query.lotId)); where += ` AND x.lot_id = $${params.length}`; }
+  try {
+    const { rows } = await pool.query(
+      `SELECT x.return_id, x.lot_id, l.lot_number, x.cases, x.returned_on::text AS returned_on, x.notes,
+              x.created_at, (SELECT u.username FROM users u WHERE u.id = x.created_by) AS created_by
+         FROM fp_returns x JOIN lots l ON l.lot_id = x.lot_id
+        ${where} ORDER BY x.returned_on DESC, x.return_id DESC LIMIT 300`, params);
+    res.json(rows.map(fmtReturn));
+  } catch (err) {
+    console.error("list fp returns:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+router.post("/fp-returns", verifyToken, requireRole(...RETURN_ROLES), async (req, res) => {
+  const b = req.body || {};
+  const lotId = Number(b.lotId);
+  const cases = parseCases(b.cases);
+  const day = parseDay(b.returnedOn, "Date back", pacificToday());
+  if (!Number.isInteger(lotId)) return res.status(400).json({ error: "Pick the lot that came back." });
+  if (!cases) return res.status(400).json({ error: "Cases must be a whole number above zero." });
+  if (!day.ok) return res.status(400).json({ error: day.error });
+  const notes = String(b.notes ?? "").trim().slice(0, 500) || null;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // The same lock the tracker and accept take, so the counts below cannot move under us.
+    await lockLot(client, req.tenantId, lotId);
+    const fp = await findFpChild(client, req.tenantId, lotId);
+    if (!fp) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ code: "NOTHING_SENT",
+        error: "Nothing from this lot has been sent to the AF freezer, so nothing can come back." });
+    }
+    const c = await fpCounts(client, req.tenantId, fp.lot_id);
+    if (c.returned + cases > c.sent) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ code: "MORE_THAN_SENT",
+        error: `Only ${c.inFreezer} cases of ${fp.lot_number} are still in the freezer `
+          + `(${c.sent} sent, ${c.returned} already back).`,
+        inFreezer: c.inFreezer });
+    }
+    const ins = await client.query(
+      `INSERT INTO fp_returns (tenant_id, lot_id, cases, returned_on, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING return_id`,
+      [req.tenantId, lotId, cases, day.value, notes, req.userId || null]);
+    await client.query("COMMIT");
+    res.status(201).json({ returnId: ins.rows[0].return_id, fpLotNumber: fp.lot_number,
+      ...(await fpCounts(pool, req.tenantId, fp.lot_id)) });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("record fp return:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
+  }
+});
+
+// A return recorded by mistake. Voided, never deleted; runs past it are only warned about.
+router.post("/fp-returns/:id/void", verifyToken, requireRole(...RETURN_ROLES), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
+  try {
+    const upd = await pool.query(
+      `UPDATE fp_returns SET voided_at = now(), voided_by = $1
+        WHERE return_id = $2 AND tenant_id = $3 AND voided_at IS NULL RETURNING return_id`,
+      [req.userId || null, id, req.tenantId]);
+    if (!upd.rows.length) return res.status(404).json({ error: "Not found" });
+    res.json({ voided: true, returnId: id });
+  } catch (err) {
+    console.error("void fp return:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
