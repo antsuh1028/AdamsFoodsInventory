@@ -11,6 +11,7 @@ import printProcessingReport from "./printProcessingReport";
 import LotPicker from "../../components/LotPicker";
 import {
   fmtDate, today, timeNow, upper, fmtWeight, PROCESSING_TYPES, PROCESSING_LINES,
+  fmtClock, minutesSince, fmtDuration,
   SheetField, sheetInputProps, SectionBar, SHEET_GRID,
 } from "./shared";
 import getRole, { canAcceptReports } from "../../utils/getRole";
@@ -120,7 +121,14 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [filter, setFilter] = useState("submitted");
+  // Opens on what is running now; the floor's view first.
+  const [filter, setFilter] = useState("in_progress");
+  // Ticks so a running row's duration stays current.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
   // Searched on the server; the status buttons still narrow what comes back.
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
@@ -341,8 +349,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
           />
           <Flex gap={1}>
             {[
-              ["submitted", "Waiting", "yellow"],
               ["in_progress", "On the line", "gray"],
+              ["submitted", "Waiting", "yellow"],
               ["accepted", "Accepted", "green"],
               ["rejected", "Sent back", "red"],
               ["", "All", "teal"],
@@ -424,6 +432,14 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 </Badge>
               )}
               {r.description && <Text fontSize="xs" color="gray.600">{r.description}</Text>}
+              {r.status === "in_progress" && r.startTime && (
+                <Text fontSize="xs" color="green.700" fontWeight="600"
+                  style={{ fontVariantNumeric: "tabular-nums" }}>
+                  Started {fmtClock(r.startTime)}
+                  {minutesSince(r.processingDate, r.startTime, now) != null
+                    && ` · running ${fmtDuration(minutesSince(r.processingDate, r.startTime, now))}`}
+                </Text>
+              )}
               <Text fontSize="sm" color="gray.700" ml="auto"
                 style={{ fontVariantNumeric: "tabular-nums" }}>
                 {r.inputCases} cases
