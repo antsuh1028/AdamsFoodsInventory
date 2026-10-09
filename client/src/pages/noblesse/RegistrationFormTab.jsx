@@ -278,7 +278,9 @@ export const RegistrationFormModal = ({
                   which strips the border and makes a dropdown look like a
                   plain text field. */}
               <Select size="sm" bg="white" border="1px solid" borderColor="gray.300"
-                value={draft.processingType || ""} onChange={set("processingType")}>
+                value={draft.processingType || ""}
+                // A pick from the list, stored as listed: uppercasing it stopped it matching its option.
+                onChange={(e) => setDraft({ ...draft, processingType: e.target.value })}>
                 <option value="">— Select processing type —</option>
                 {PROCESSING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 {/* Forms saved before this list existed hold free text. Keeping
@@ -626,7 +628,9 @@ export const RegistrationFormModal = ({
             </SheetField>
             <SheetField label="Checked By"><Input {...sheetInputProps} value={draft.checkedBy} onChange={set("checkedBy")} /></SheetField>
             <SheetField label="Status" plain>
-              <Select size="sm" bg="white" border="1px solid" borderColor="gray.300" value={draft.status} onChange={set("status")}>
+              <Select size="sm" bg="white" border="1px solid" borderColor="gray.300" value={draft.status}
+                // The value is a code the server checks; uppercased, the save was refused.
+                onChange={(e) => setDraft({ ...draft, status: e.target.value })}>
                 <option value="in_progress">In Progress</option>
                 <option value="completed">Completed</option>
               </Select>
