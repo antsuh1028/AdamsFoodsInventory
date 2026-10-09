@@ -11,7 +11,7 @@ import printProcessingReport from "./printProcessingReport";
 import LotPicker from "../../components/LotPicker";
 import {
   fmtDate, today, timeNow, upper, fmtWeight, PROCESSING_TYPES, PROCESSING_LINES,
-  fmtClock, minutesSince, fmtDuration,
+  fmtClock, minutesSince, fmtDuration, fmtLongDate,
   SheetField, sheetInputProps, SectionBar, SHEET_GRID,
 } from "./shared";
 import getRole, { canAcceptReports } from "../../utils/getRole";
@@ -67,6 +67,16 @@ const productIncomplete = (d) => PRODUCT_FIELDS.some(([k]) => isBlank(d[k]));
 // Blanks only: what the manager has typed outranks the lot, so re-picking can
 // never overwrite work. Pure and module-scope so the JSX stays readable.
 // Cases a lot has left: stock, less the runs typed by hand on its form (those never moved stock).
+// "Today" / "Yesterday" for a processing day, on the Pacific calendar; null otherwise.
+const dayTag = (day) => {
+  if (!day) return null;
+  const t = today();
+  if (day === t) return "Today";
+  const y = new Date(`${t}T12:00:00Z`);
+  y.setUTCDate(y.getUTCDate() - 1);
+  return day === y.toISOString().slice(0, 10) ? "Yesterday" : null;
+};
+
 const casesLeftOn = (row) => Math.max(0, (Number(row.qtyCases) || 0) - (Number(row.formManualCases) || 0));
 
 const withLotDefaults = (draft, lot, row) => {
@@ -236,6 +246,21 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     () => (filter ? reports.filter((r) => r.status === filter) : reports),
     [reports, filter]
   );
+
+  // Grouped by the day the run was done, newest day first; latest start first within a day.
+  const byDay = useMemo(() => {
+    const sorted = [...visible].sort((a, b) =>
+      String(b.processingDate || "").localeCompare(String(a.processingDate || ""))
+      || String(b.startTime || "").localeCompare(String(a.startTime || ""))
+      || b.reportId - a.reportId);
+    const groups = [];
+    for (const r of sorted) {
+      const day = r.processingDate || "";
+      if (!groups.length || groups[groups.length - 1].day !== day) groups.push({ day, rows: [] });
+      groups[groups.length - 1].rows.push(r);
+    }
+    return groups;
+  }, [visible]);
 
   const inputCases = useMemo(
     () => (draft ? draft.pulls.reduce((sum, p) => sum + (parseInt(p.cases, 10) || 0), 0) : 0),
@@ -505,7 +530,23 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
       )}
 
       <Flex direction="column" gap={2}>
-        {visible.map((r) => (
+        {byDay.map(({ day, rows }) => (
+        <React.Fragment key={day || "no-date"}>
+        {/* One heading per processing day, newest first, so the days read apart. */}
+        <Flex align="baseline" gap={2} mt={3} pb={1} borderBottom="2px solid" borderColor="gray.200"
+          position="sticky" top={0} bg="white" zIndex={1}>
+          {dayTag(day) && (
+            <Badge colorScheme={dayTag(day) === "Today" ? "green" : "gray"} fontSize="10px">{dayTag(day)}</Badge>
+          )}
+          <Text fontSize="sm" fontWeight="700" color="gray.700">
+            {day ? fmtLongDate(new Date(`${day}T12:00:00Z`)) : "No processing date"}
+          </Text>
+          <Text fontSize="xs" color="gray.500">
+            {rows.length} report{rows.length === 1 ? "" : "s"}
+            {" · "}{rows.reduce((n, x) => n + (Number(x.inputCases) || 0), 0)} cases
+          </Text>
+        </Flex>
+        {rows.map((r) => (
           <Box key={r.reportId} px={3} py={2} bg="white" borderRadius="md"
             border="1px solid" borderColor="gray.200"
             cursor="pointer"
@@ -629,6 +670,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </Flex>
             )}
           </Box>
+        ))}
+        </React.Fragment>
         ))}
         </Flex>
         </Box>
