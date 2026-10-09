@@ -533,8 +533,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         {byDay.map(({ day, rows }) => (
         <React.Fragment key={day || "no-date"}>
         {/* One heading per processing day, newest first, so the days read apart. */}
-        <Flex align="baseline" gap={2} mt={3} pb={1} borderBottom="2px solid" borderColor="gray.200"
-          position="sticky" top={0} bg="white" zIndex={1}>
+        {/* Padding, not margin, and a white band above it: pinned, nothing shows through over it. */}
+        <Flex align="baseline" gap={2} pt={3} pb={1} borderBottom="2px solid" borderColor="gray.200"
+          position="sticky" top={0} bg="white" zIndex={1} boxShadow="0 -48px 0 0 white">
           {dayTag(day) && (
             <Badge colorScheme={dayTag(day) === "Today" ? "green" : "gray"} fontSize="10px">{dayTag(day)}</Badge>
           )}
