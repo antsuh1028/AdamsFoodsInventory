@@ -229,7 +229,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   );
 
   const onTheLine = useMemo(
-    () => reports.filter((r) => r.status === "in_progress").length, [reports]
+    () => reports.filter((r) => r.status === "in_progress" && !r.autoFinishedAt).length, [reports]
   );
 
   const visible = useMemo(
@@ -530,6 +530,19 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 {STATUS_LABEL[r.status] || r.status}
               </Badge>
               {r.lineNo && <Badge colorScheme="gray" fontSize="9px">Line {r.lineNo}</Badge>}
+              {/* Nobody stopped it, so the 2:00 PM cutoff did. */}
+              {r.autoFinishedAt && r.status === "in_progress" && (
+                <Badge colorScheme="red" fontSize="9px"
+                  title="Still on the line at 2:00 PM with no cases entered. Enter the cases and confirm the run.">
+                  stopped at 2:00, needs cases
+                </Badge>
+              )}
+              {r.autoFinishedAt && r.status !== "in_progress" && (
+                <Badge colorScheme="gray" variant="outline" fontSize="9px"
+                  title="Nobody stopped this run, so it was finished at the 2:00 PM cutoff and sent to reception.">
+                  auto-finished
+                </Badge>
+              )}
               {r.status === "submitted" && r.mapSilenced && (
                 <Badge colorScheme="gray" variant="outline" fontSize="9px"
                   title={`Taken off the floor map${r.mapSilencedBy ? ` by ${r.mapSilencedBy}` : ""} for review`}>
@@ -537,7 +550,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 </Badge>
               )}
               {r.description && <Text fontSize="xs" color="gray.600">{r.description}</Text>}
-              {r.status === "in_progress" && r.startTime && (
+              {r.status === "in_progress" && r.startTime && !r.autoFinishedAt && (
                 <Text fontSize="xs" color="green.700" fontWeight="600"
                   style={{ fontVariantNumeric: "tabular-nums" }}>
                   Started {fmtClock(r.startTime)}

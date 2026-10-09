@@ -649,6 +649,10 @@ const steps = async () => {
   await run("noblesse_processing_reports map_silenced_by",
     `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS map_silenced_by TEXT`);
 
+  // When a run left on the line was finished by the 2:00 PM cutoff rather than a person.
+  await run("noblesse_processing_reports auto_finished_at",
+    `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS auto_finished_at TIMESTAMPTZ`);
+
   // Briefly lived on the pull instead. Dropped rather than left dangling: it
   // never carried a value in production, and a half-wired column reads like
   // something a query could rely on.

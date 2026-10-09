@@ -76,6 +76,8 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   // Taken off the floor map by reception while it is looked into.
   mapSilenced: Boolean(r.map_silenced_at),
   mapSilencedBy: r.map_silenced_by ?? null,
+  // Finished by the 2:00 PM cutoff because nobody stopped it.
+  autoFinishedAt: r.auto_finished_at ?? null,
   pulls: pulls.map((p) => ({
     pullId: p.pull_id, position: p.position, cases: p.cases, notes: p.notes,
   })),
