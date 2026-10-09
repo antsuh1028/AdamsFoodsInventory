@@ -5,7 +5,8 @@ import { esc, printDocument } from "./printWindow";
 // Opens a printable "Processing Report" in a new tab, laid out like the
 // registration form so the two read as one document family — same masthead,
 // same label/field grid, same section bars.
-const printProcessingReport = (report = {}) => {
+// `lotLine` is the lot's figures as the window shows them, hand-typed runs included.
+const printProcessingReport = (report = {}, { lotLine = null } = {}) => {
   const pulls = Array.isArray(report.pulls) ? report.pulls : [];
   const totalCases = pulls.reduce((sum, p) => sum + (Number(p && p.cases) || 0), 0);
   const inedible = report.inedibleWeight
@@ -139,6 +140,7 @@ const printProcessingReport = (report = {}) => {
               <td class="label">Total</td>
               <td class="field total" colspan="3">${totalCases} c/s</td>
             </tr>
+            ${lotLine ? fullRow("Lot", esc(lotLine)) : ""}
             ${row("Inedible (lbs)", inedible)}
 
             ${sectionHeader("Crew &amp; Notes")}

@@ -5,6 +5,7 @@ const requireRole = require("../middleware/requireRole");
 const { REPORT_ACCEPT_ROLES } = require("../middleware/receptionRoles");
 const { searchTerm, searchClause } = require("../utils/search");
 const { isCalendarDay } = require("../utils/weighedAt");
+const { manualCasesSql } = require("../utils/formManualCases");
 
 // The shop-floor record of one processing run: which lot, which line, who ran
 // it, how many cases went through.
@@ -154,6 +155,27 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
     })));
   } catch (err) {
     console.error("list processing reports:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Everyone who has been on a run, most often first, for the crew picker.
+// Registered before /:id, which would otherwise read "workers" as an id.
+router.get("/processing-reports/workers", verifyToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT UPPER(TRIM(w.name)) AS name, COUNT(*)::int AS runs, MAX(r.report_id) AS last
+         FROM noblesse_processing_report_workers w
+         JOIN noblesse_processing_reports r ON r.report_id = w.report_id
+        WHERE r.tenant_id = $1 AND TRIM(w.name) <> ''
+        GROUP BY 1
+        ORDER BY runs DESC, last DESC, name
+        LIMIT 200`,
+      [req.tenantId]
+    );
+    res.json(rows.map((r) => r.name));
+  } catch (err) {
+    console.error("list report workers:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -448,10 +470,11 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
     const formId = forms.rows[0].id;
 
     const stock = await client.query(
-      `SELECT id, qty_cases FROM nti_inventory
-        WHERE tenant_id = $2 AND stage = 'raw'
-          AND (lot_id = $1 OR (lot_id IS NULL AND lot = $3))
-        FOR UPDATE`,
+      `SELECT s.id, s.qty_cases, ${manualCasesSql("s")} AS manual_cases
+         FROM nti_inventory s
+        WHERE s.tenant_id = $2 AND s.stage = 'raw'
+          AND (s.lot_id = $1 OR (s.lot_id IS NULL AND s.lot = $3))
+        FOR UPDATE OF s`,
       [report.lot_id, req.tenantId, report.lot_number]
     );
     if (!stock.rows.length) {
@@ -462,7 +485,9 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
       });
     }
     const raw = stock.rows[0];
-    const onHand = Number(raw.qty_cases) || 0;
+    // Hand-typed runs on the form never came off stock, so they come off here.
+    const manual = Number(raw.manual_cases) || 0;
+    const onHand = (Number(raw.qty_cases) || 0) - manual;
 
     // Refused, never floored. The old processing-order path silently clamped to
     // zero, which is the behaviour this replaces.
@@ -470,7 +495,8 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
       await client.query("ROLLBACK");
       return res.status(409).json({
         code: "INSUFFICIENT_STOCK",
-        error: `The report uses ${report.input_cases} cases but only ${onHand} are on the lot.`,
+        error: `The report uses ${report.input_cases} cases but only ${Math.max(onHand, 0)} are on the lot`
+          + (manual ? ` (${manual} were processed by hand on the registration form).` : "."),
         requested: report.input_cases,
         onHand,
       });
