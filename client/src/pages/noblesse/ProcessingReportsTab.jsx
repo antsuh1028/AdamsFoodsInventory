@@ -192,7 +192,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         ...(raw.find((r) => r.lotId === f.parentLotId) || {}),
         lotId: f.lotId,
         lot: f.lotNumber,
-        qtyCases: f.waiting,
+        // Shown and prefilled: what is counted back and not yet run.
+        qtyCases: Math.max(f.ready, 0),
+        fpWaiting: f.waiting,
         registeredCases: f.sent,
         fpReturned: f.returned,
         fpReady: f.ready,
@@ -255,14 +257,16 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
       : `lot registered ${lotStock.registeredCases ?? "?"} cases`
         + (lotStock.registeredWeight ? ` = ${fmtWeight(lotStock.registeredWeight)} lb` : ""),
     handCases ? `${handCases} processed by hand on the form` : null,
-    `${casesLeft} ${lotStock.fp ? "waiting" : "left now"}`,
+    `${casesLeft} ${lotStock.fp ? "back and ready" : "left now"}`,
     draft && draft.status !== "accepted" && inputCases > 0 && inputCases <= casesLeft
       ? `${casesLeft - inputCases} after this` : null,
   ].filter(Boolean).join(" · ") : null;
-  const overdrawn = casesLeft != null && inputCases > casesLeft && draft?.status !== "accepted";
+  // The hard limit: more than the lot has (for an FP lot, more than was ever sent).
+  const hardLimit = lotStock && lotStock.fp ? lotStock.fpWaiting : casesLeft;
+  const overdrawn = hardLimit != null && inputCases > hardLimit && draft?.status !== "accepted";
   // An FP run asking for more than has come back from the freezer: a warning only.
   const stillFrozen = Boolean(lotStock && lotStock.fp && draft?.status !== "accepted"
-    && inputCases > 0 && inputCases > (lotStock.fpReady ?? 0) && !overdrawn);
+    && inputCases > 0 && inputCases > casesLeft && !overdrawn);
 
   // Staging needs only the lot: at the start of a run the cases are not known
   // yet. Confirming still needs them.
@@ -1032,15 +1036,15 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             {stillFrozen && (
               <Alert status="warning" borderRadius="md" fontSize="xs" py={2} mb={3}>
                 <AlertIcon boxSize={3} />
-                {`Only ${Math.max(lotStock.fpReady, 0)} of these cases are back from the freezer so far `
+                {`Only ${casesLeft} of these cases are recorded back from the freezer so far `
                   + `(${lotStock.fpInFreezer} still in it). It can still be accepted.`}
               </Alert>
             )}
             {overdrawn && (
               <Alert status="warning" borderRadius="md" fontSize="xs" py={2} mb={3}>
                 <AlertIcon boxSize={3} />
-                That is more than the {casesLeft} cases {lotStock?.fp
-                  ? `waiting on ${lotStock.lot}. Check the F.P Tracker for ${lotStock.parentLotNumber}, or reception`
+                That is more than the {hardLimit} cases {lotStock?.fp
+                  ? `sent to the freezer and not yet run on ${lotStock.lot}. Check the F.P Tracker for ${lotStock.parentLotNumber}, or reception`
                   : "left on this lot. Reception"} will not be able to accept it.
               </Alert>
             )}

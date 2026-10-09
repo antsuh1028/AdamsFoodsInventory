@@ -4,7 +4,7 @@ const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { RECEPTION_ROLES } = require("../middleware/receptionRoles");
 const { parseLot, parseFpLot, formatLot, pacificToday, dayOfYearFromDate } = require("../utils/lot");
-const { fpCounts, findFpChild, sentSql, takenSql } = require("../utils/fpLot");
+const { fpCounts, findFpChild, sentSql, takenSql, returnedSql } = require("../utils/fpLot");
 // Shared with routes/boxes.pg.js so a lot's totals and a manifest agree.
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
 const { weighedSql, boxesSql, estimatedSql, formWeightSql, yieldFrom } = require("../utils/lotYield");
@@ -43,6 +43,7 @@ const fmtLot = (row) => ({
   parentLotNumber: row.parent_lot_number ?? null,
   // An FP lot's cases still waiting for a run. Present only where the query joined it in.
   fpWaiting: row.fp_waiting ?? null,
+  fpReady: row.fp_ready ?? null,
   // What the lot IS, for screens that only ever showed a number. Present only
   // where the query joined it in; a lot number alone tells nobody what it is.
   description: row.description ?? null,
@@ -320,7 +321,9 @@ router.get("/lots", verifyToken, async (req, res) => {
       // of the list. The client renders the two blocks as separate groups.
       `SELECT l.*, d.description, d.registered,
               (SELECT p.lot_number FROM lots p WHERE p.lot_id = l.parent_lot_id) AS parent_lot_number,
-              CASE WHEN l.kind = 'further' THEN ${sentSql("l")} - ${takenSql("l")} END AS fp_waiting
+              CASE WHEN l.kind = 'further' THEN ${sentSql("l")} - ${takenSql("l")} END AS fp_waiting,
+              -- Counted back from the freezer and not yet run: what a run is shown.
+              CASE WHEN l.kind = 'further' THEN ${returnedSql("l")} - ${takenSql("l")} END AS fp_ready
          FROM lots l
          -- The registration form is what says what a lot is; the incoming
          -- weighing session is the fallback for a lot never registered.

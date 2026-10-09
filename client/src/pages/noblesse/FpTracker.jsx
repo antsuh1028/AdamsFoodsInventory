@@ -8,6 +8,8 @@ import LotPicker from "../../components/LotPicker";
 import axiosInstance from "../../utils/axiosInstance";
 import getRole, { canAcceptReports } from "../../utils/getRole";
 import { fmtDate, today, fmtWeight } from "./shared";
+import useLang from "../../hooks/useLang";
+import LangToggle from "../../components/LangToggle";
 
 // Reception's F.P Tracker: product sent to the AF freezer that comes back for
 // another run. The Excel sheet's columns, plus where its FP lot stands, and the
@@ -22,14 +24,14 @@ const RETURN_ROLES = new Set(["admin", "reception", "ntimanager", "noblesse"]);
 const num = { style: { fontVariantNumeric: "tabular-nums" } };
 
 // Boxes the dock labelled for this N lot, checked against the cases sent. Paperwork only.
-const LabelledCell = ({ r }) => {
+const LabelledCell = ({ r, t }) => {
   if (r.labelled == null) return <Td isNumeric>—</Td>;
   const off = r.labelled !== r.sent;
   return (
     <Td isNumeric {...num}
       title={off
-        ? `The dock labelled ${r.labelled} boxes for the freezer; ${r.sent} cases were sent. One of the two is wrong.`
-        : "Matches the cases sent."}>
+        ? t("The dock labelled {n} boxes for the freezer; {sent} cases were sent. One of the two is wrong.", { n: r.labelled, sent: r.sent })
+        : t("Matches the cases sent.")}>
       <Text as="span" color={off ? "red.600" : "gray.600"} fontWeight={off ? "700" : "400"}>
         {r.labelled}{off ? " ≠" : ""}
       </Text>
@@ -38,7 +40,7 @@ const LabelledCell = ({ r }) => {
 };
 
 // Where the lot stands: back from the freezer, still in it, and ready to run.
-const FreezerCells = ({ r }) => (
+const FreezerCells = ({ r, t }) => (
   <>
     <Td isNumeric {...num}>{r.returned}</Td>
     <Td isNumeric {...num}>
@@ -47,10 +49,10 @@ const FreezerCells = ({ r }) => (
         : <Text as="span" color="gray.400">0</Text>}
     </Td>
     <Td isNumeric {...num}
-      title={`${r.returned} back, ${r.taken} taken by accepted runs on ${r.fpLotNumber}`}>
+      title={t("{back} back, {taken} taken by accepted runs on {lot}", { back: r.returned, taken: r.taken, lot: r.fpLotNumber })}>
       {r.ready < 0
         ? <Text as="span" color="yellow.700" fontWeight="600"
-            title="Runs have used more than has come back so far">{r.ready}</Text>
+            title={t("Runs have used more than has come back so far")}>{r.ready}</Text>
         : r.ready > 0 ? <Text as="span" fontWeight="600">{r.ready}</Text>
           : <Text as="span" color="gray.400">0</Text>}
     </Td>
@@ -59,6 +61,7 @@ const FreezerCells = ({ r }) => (
 
 const FpTracker = ({ isOpen, onClose }) => {
   const toast = useToast();
+  const { lang, t, toggle: toggleLang } = useLang();
   const canEdit = canAcceptReports();
   const canReturn = RETURN_ROLES.has(getRole());
   const [rows, setRows] = useState([]);
@@ -88,7 +91,7 @@ const FpTracker = ({ isOpen, onClose }) => {
       setFpLots(l.data || []);
       setReturns(x.data || []);
     } catch (err) {
-      fail("Could not load the F.P Tracker")(err);
+      fail(t("Could not load the F.P Tracker"))(err);
     } finally {
       setLoading(false);
     }
@@ -109,7 +112,7 @@ const FpTracker = ({ isOpen, onClose }) => {
       if (done) done();
       await load();
     } catch (err) {
-      fail("That did not save")(err);
+      fail(t("That did not save"))(err);
     } finally {
       setBusy(null);
     }
@@ -121,8 +124,8 @@ const FpTracker = ({ isOpen, onClose }) => {
       rawWeight: draft.rawWeight.trim() || null, sentOn: draft.sentOn,
     });
     if (data.fpLotCreated) {
-      toast({ title: `${data.fpLotNumber} created`, status: "success", duration: 6000, position: "top",
-        description: `The floor can now pick ${data.fpLotNumber} for a run on this product.` });
+      toast({ title: t("{lot} created", { lot: data.fpLotNumber }), status: "success", duration: 6000, position: "top",
+        description: t("The floor can now pick {lot} for a run on this product.", { lot: data.fpLotNumber }) });
     }
   }, () => setDraft(EMPTY()));
 
@@ -130,8 +133,8 @@ const FpTracker = ({ isOpen, onClose }) => {
     const { data } = await axiosInstance.post("/fp-returns", {
       lotId: Number(ret.lotId), cases: ret.cases, returnedOn: ret.returnedOn, notes: ret.notes,
     });
-    toast({ title: `${ret.cases} cases back on ${data.fpLotNumber}`, status: "success", duration: 5000,
-      position: "top", description: `${data.inFreezer} still in the freezer, ${data.ready} ready to run.` });
+    toast({ title: t("{n} cases back on {lot}", { n: ret.cases, lot: data.fpLotNumber }), status: "success", duration: 5000,
+      position: "top", description: t("{inFreezer} still in the freezer, {ready} ready to run.", { inFreezer: data.inFreezer, ready: data.ready }) });
   }, () => setRet(EMPTY_RETURN()));
 
   const voidReturn = (x) => act(`r${x.returnId}`, () => axiosInstance.post(`/fp-returns/${x.returnId}/void`));
@@ -149,47 +152,46 @@ const FpTracker = ({ isOpen, onClose }) => {
   const picked = out.find((l) => String(l.parentLotId) === String(ret.lotId));
 
   return (
-    <FloatingWindow isOpen={isOpen} onClose={onClose} title="F.P Tracker" width={1150}>
+    <FloatingWindow isOpen={isOpen} onClose={onClose} title={t("F.P Tracker")} width={1150}
+      headerActions={<LangToggle lang={lang} onToggle={toggleLang} />}>
       <Text fontSize="xs" color="gray.500" mb={3}>
-        Product sent to the AF freezer that comes back for another run. The first row
-        for a lot creates its FP lot (N26237-04 becomes FP26237-04). What comes back is
-        counted at the incoming dock below; a run on it picks the FP lot on the Processing tab.
+        {t("Product sent to the AF freezer that comes back for another run. The first row for a lot creates its FP lot (N26237-04 becomes FP26237-04). What comes back is counted at the incoming dock below; a run on it picks the FP lot on the Processing tab.")}
       </Text>
 
       {canEdit && (
         <Flex gap={2} wrap="wrap" align="flex-end" mb={3} p={3} bg="gray.50" borderRadius="md"
           border="1px solid" borderColor="gray.200">
           <Text fontSize="xs" fontWeight="700" color="gray.600" textTransform="uppercase" w="100%">
-            Sent to the freezer
+            {t("Sent to the freezer")}
           </Text>
           <Box>
-            <Text fontSize="xs" color="gray.500" mb={1}>Date sent out</Text>
+            <Text fontSize="xs" color="gray.500" mb={1}>{t("Date sent out")}</Text>
             <Input {...cellInput} size="sm" type="date" max={today()} width="150px"
               value={draft.sentOn} onChange={(e) => setDraft({ ...draft, sentOn: e.target.value })} />
           </Box>
           <Box minW="220px">
-            <Text fontSize="xs" color="gray.500" mb={1}>Lot #</Text>
+            <Text fontSize="xs" color="gray.500" mb={1}>{t("Lot #")}</Text>
             <LotPicker size="sm" value={draft.lotId} lotNumber={draft.lotNumber}
               onChange={(l) => setDraft({ ...draft, lotId: l ? l.lotId : null, lotNumber: l ? l.lotNumber : "" })} />
           </Box>
           <Box flex="1 1 260px">
-            <Text fontSize="xs" color="gray.500" mb={1}>Item description</Text>
+            <Text fontSize="xs" color="gray.500" mb={1}>{t("Item description")}</Text>
             <Input {...cellInput} size="sm" list="fp-items" textTransform="uppercase" autoComplete="off"
               value={draft.item} onChange={(e) => setDraft({ ...draft, item: e.target.value })} />
             <datalist id="fp-items">{items.map((i) => <option key={i} value={i} />)}</datalist>
           </Box>
           <Box>
-            <Text fontSize="xs" color="gray.500" mb={1}>Qty (cases)</Text>
+            <Text fontSize="xs" color="gray.500" mb={1}>{t("Qty (cases)")}</Text>
             <Input {...cellInput} size="sm" width="90px" inputMode="numeric"
               value={draft.cases} onChange={(e) => setDraft({ ...draft, cases: e.target.value.replace(/\D/g, "") })} />
           </Box>
           <Box>
-            <Text fontSize="xs" color="gray.500" mb={1}>Raw weights</Text>
-            <Input {...cellInput} size="sm" width="110px" inputMode="decimal" placeholder="optional"
+            <Text fontSize="xs" color="gray.500" mb={1}>{t("Raw weights")}</Text>
+            <Input {...cellInput} size="sm" width="110px" inputMode="decimal" placeholder={t("optional")}
               value={draft.rawWeight} onChange={(e) => setDraft({ ...draft, rawWeight: e.target.value })} />
           </Box>
           <Button size="sm" colorScheme="blue" onClick={add} isLoading={busy === "new"} isDisabled={!ready}>
-            Add
+            {t("Add")}
           </Button>
         </Flex>
       )}
@@ -199,42 +201,42 @@ const FpTracker = ({ isOpen, onClose }) => {
         <Flex gap={2} wrap="wrap" align="flex-end" mb={4} p={3} bg="teal.50" borderRadius="md"
           border="1px solid" borderColor="teal.200">
           <Text fontSize="xs" fontWeight="700" color="teal.800" textTransform="uppercase" w="100%">
-            Back from the freezer
+            {t("Back from the freezer")}
           </Text>
           <Box>
-            <Text fontSize="xs" color="gray.500" mb={1}>Date back</Text>
+            <Text fontSize="xs" color="gray.500" mb={1}>{t("Date back")}</Text>
             <Input {...cellInput} size="sm" type="date" max={today()} width="150px"
               value={ret.returnedOn} onChange={(e) => setRet({ ...ret, returnedOn: e.target.value })} />
           </Box>
           <Box minW="260px">
-            <Text fontSize="xs" color="gray.500" mb={1}>Lot</Text>
-            <Select size="sm" bg="white" placeholder={out.length ? "Pick the lot" : "Nothing is in the freezer"}
+            <Text fontSize="xs" color="gray.500" mb={1}>{t("Lot")}</Text>
+            <Select size="sm" bg="white" placeholder={out.length ? t("Pick the lot") : t("Nothing is in the freezer")}
               isDisabled={!out.length}
               value={ret.lotId} onChange={(e) => setRet({ ...ret, lotId: e.target.value })}>
               {out.map((l) => (
                 <option key={l.lotId} value={l.parentLotId}>
-                  {`${l.parentLotNumber} (${l.lotNumber}): ${l.inFreezer} in the freezer`}
+                  {t("{lot} ({fp}): {n} in the freezer", { lot: l.parentLotNumber, fp: l.lotNumber, n: l.inFreezer })}
                 </option>
               ))}
             </Select>
           </Box>
           <Box>
-            <Text fontSize="xs" color="gray.500" mb={1}>Cases back</Text>
+            <Text fontSize="xs" color="gray.500" mb={1}>{t("Cases back")}</Text>
             <Input {...cellInput} size="sm" width="90px" inputMode="numeric"
               value={ret.cases} onChange={(e) => setRet({ ...ret, cases: e.target.value.replace(/\D/g, "") })} />
           </Box>
           <Box flex="1 1 200px">
-            <Text fontSize="xs" color="gray.500" mb={1}>Note</Text>
-            <Input {...cellInput} size="sm" placeholder="optional" value={ret.notes}
+            <Text fontSize="xs" color="gray.500" mb={1}>{t("Note")}</Text>
+            <Input {...cellInput} size="sm" placeholder={t("optional")} value={ret.notes}
               onChange={(e) => setRet({ ...ret, notes: e.target.value })} />
           </Box>
           <Button size="sm" colorScheme="teal" onClick={recordReturn} isLoading={busy === "return"}
             isDisabled={!retReady || (picked && Number(ret.cases) > picked.inFreezer)}>
-            Record
+            {t("Record")}
           </Button>
           {picked && Number(ret.cases) > picked.inFreezer && (
             <Text fontSize="xs" color="red.600" w="100%">
-              Only {picked.inFreezer} cases of {picked.parentLotNumber} are still in the freezer.
+              {t("Only {n} cases of {lot} are still in the freezer.", { n: picked.inFreezer, lot: picked.parentLotNumber })}
             </Text>
           )}
         </Flex>
@@ -242,11 +244,11 @@ const FpTracker = ({ isOpen, onClose }) => {
 
       <Flex gap={2} mb={2} wrap="wrap">
         <Select size="sm" width="190px" bg="white" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="all">All</option>
-          <option value="out">Still in the freezer</option>
-          <option value="back">All back</option>
+          <option value="all">{t("All")}</option>
+          <option value="out">{t("Still in the freezer")}</option>
+          <option value="back">{t("All back")}</option>
         </Select>
-        <Input size="sm" flex="1 1 200px" bg="white" placeholder="Search lot or item"
+        <Input size="sm" flex="1 1 200px" bg="white" placeholder={t("Search lot or item")}
           value={q} onChange={(e) => setQ(e.target.value)} />
       </Flex>
 
@@ -254,12 +256,12 @@ const FpTracker = ({ isOpen, onClose }) => {
         <Table size="sm" minWidth="1000px">
           <Thead>
             <Tr>
-              <Th>Date sent out</Th><Th>Lot #</Th><Th>FP lot</Th><Th>Item description</Th>
-              <Th isNumeric>Qty (cases)</Th><Th isNumeric>Raw weights</Th>
-              <Th isNumeric title="Counted back in at the incoming dock, for the whole lot">Back</Th>
-              <Th isNumeric title="Sent and not yet back, for the whole lot">In freezer</Th>
-              <Th isNumeric title="Back and not yet used by an accepted run">Ready</Th>
-              <Th isNumeric title="Boxes the dock weighed and labelled for the freezer, against the cases sent">Labelled at dock</Th>
+              <Th>{t("Date sent out")}</Th><Th>{t("Lot #")}</Th><Th>{t("FP lot")}</Th><Th>{t("Item description")}</Th>
+              <Th isNumeric>{t("Qty (cases)")}</Th><Th isNumeric>{t("Raw weights")}</Th>
+              <Th isNumeric title={t("Counted back in at the incoming dock, for the whole lot")}>{t("Back")}</Th>
+              <Th isNumeric title={t("Sent and not yet back, for the whole lot")}>{t("In freezer")}</Th>
+              <Th isNumeric title={t("Back and not yet used by an accepted run")}>{t("Ready")}</Th>
+              <Th isNumeric title={t("Boxes the dock weighed and labelled for the freezer, against the cases sent")}>{t("Labelled at dock")}</Th>
               {canEdit && <Th />}
             </Tr>
           </Thead>
@@ -268,7 +270,7 @@ const FpTracker = ({ isOpen, onClose }) => {
               <Tr><Td colSpan={11}><Flex justify="center" py={4}><Spinner size="sm" /></Flex></Td></Tr>
             )}
             {!loading && rows.length === 0 && (
-              <Tr><Td colSpan={11}><Text fontSize="sm" color="gray.500" py={2}>Nothing here yet.</Text></Td></Tr>
+              <Tr><Td colSpan={11}><Text fontSize="sm" color="gray.500" py={2}>{t("Nothing here yet.")}</Text></Td></Tr>
             )}
             {rows.map((r) => (editing?.fpId === r.fpId ? (
               <Tr key={r.fpId} bg="blue.50">
@@ -282,12 +284,12 @@ const FpTracker = ({ isOpen, onClose }) => {
                   onChange={(e) => setEditing({ ...editing, cases: e.target.value.replace(/\D/g, "") })} /></Td>
                 <Td isNumeric><Input {...cellInput} width="90px" inputMode="decimal" value={editing.rawWeight}
                   onChange={(e) => setEditing({ ...editing, rawWeight: e.target.value })} /></Td>
-                <FreezerCells r={r} />
-                <LabelledCell r={r} />
+                <FreezerCells r={r} t={t} />
+                <LabelledCell r={r} t={t} />
                 <Td>
                   <Flex gap={1} justify="flex-end">
-                    <Button size="xs" colorScheme="blue" onClick={saveEdit} isLoading={busy === r.fpId}>Save</Button>
-                    <Button size="xs" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+                    <Button size="xs" colorScheme="blue" onClick={saveEdit} isLoading={busy === r.fpId}>{t("Save")}</Button>
+                    <Button size="xs" variant="ghost" onClick={() => setEditing(null)}>{t("Cancel")}</Button>
                   </Flex>
                 </Td>
               </Tr>
@@ -299,34 +301,34 @@ const FpTracker = ({ isOpen, onClose }) => {
                 <Td>
                   {r.item}
                   {r.sourceReportId && (
-                    <Badge ml={2} colorScheme="gray" fontSize="9px" title="Written when that processing report was accepted">
-                      report {r.sourceReportId}
+                    <Badge ml={2} colorScheme="gray" fontSize="9px" title={t("Written when that processing report was accepted")}>
+                      {t("report {id}", { id: r.sourceReportId })}
                     </Badge>
                   )}
                 </Td>
                 <Td isNumeric {...num}>{r.cases}</Td>
                 <Td isNumeric {...num}>{r.rawWeight ? `${fmtWeight(r.rawWeight)} lb` : "—"}</Td>
-                <FreezerCells r={r} />
-                <LabelledCell r={r} />
+                <FreezerCells r={r} t={t} />
+                <LabelledCell r={r} t={t} />
                 {canEdit && (
                   <Td>
                     <Flex gap={1} justify="flex-end" wrap="wrap">
                       <Button size="xs" variant="ghost" colorScheme="blue"
                         onClick={() => setEditing({ fpId: r.fpId, item: r.item, cases: String(r.cases),
                           rawWeight: r.rawWeight ? fmtWeight(r.rawWeight) : "", sentOn: r.sentOn })}>
-                        Edit
+                        {t("Edit")}
                       </Button>
                       {/* Asked once: a voided row cannot be brought back from here. */}
                       {confirming === r.fpId ? (
                         <>
-                          <Text fontSize="xs" color="red.600" alignSelf="center">Void?</Text>
+                          <Text fontSize="xs" color="red.600" alignSelf="center">{t("Void?")}</Text>
                           <Button size="xs" colorScheme="red" isLoading={busy === r.fpId}
-                            onClick={() => { setConfirming(null); voidRow(r); }}>Yes</Button>
-                          <Button size="xs" variant="ghost" onClick={() => setConfirming(null)}>No</Button>
+                            onClick={() => { setConfirming(null); voidRow(r); }}>{t("Yes")}</Button>
+                          <Button size="xs" variant="ghost" onClick={() => setConfirming(null)}>{t("No")}</Button>
                         </>
                       ) : (
                         <Button size="xs" variant="ghost" colorScheme="red"
-                          onClick={() => setConfirming(r.fpId)}>Void</Button>
+                          onClick={() => setConfirming(r.fpId)}>{t("Void")}</Button>
                       )}
                     </Flex>
                   </Td>
@@ -341,12 +343,12 @@ const FpTracker = ({ isOpen, onClose }) => {
       {returns.length > 0 && (
         <Box mt={4}>
           <Text fontSize="xs" fontWeight="700" color="gray.600" textTransform="uppercase" mb={1}>
-            Returns counted
+            {t("Returns counted")}
           </Text>
           <Box overflowX="auto" border="1px solid" borderColor="gray.200" borderRadius="md" bg="white">
             <Table size="sm" minWidth="600px">
               <Thead>
-                <Tr><Th>Date back</Th><Th>Lot #</Th><Th isNumeric>Cases</Th><Th>Note</Th><Th>By</Th>{canReturn && <Th />}</Tr>
+                <Tr><Th>{t("Date back")}</Th><Th>{t("Lot #")}</Th><Th isNumeric>{t("Cases")}</Th><Th>{t("Note")}</Th><Th>{t("By")}</Th>{canReturn && <Th />}</Tr>
               </Thead>
               <Tbody>
                 {returns.map((x) => (
@@ -360,14 +362,14 @@ const FpTracker = ({ isOpen, onClose }) => {
                       <Td>
                         {confirming === `r${x.returnId}` ? (
                           <Flex gap={1} justify="flex-end">
-                            <Text fontSize="xs" color="red.600" alignSelf="center">Void?</Text>
+                            <Text fontSize="xs" color="red.600" alignSelf="center">{t("Void?")}</Text>
                             <Button size="xs" colorScheme="red" isLoading={busy === `r${x.returnId}`}
-                              onClick={() => { setConfirming(null); voidReturn(x); }}>Yes</Button>
-                            <Button size="xs" variant="ghost" onClick={() => setConfirming(null)}>No</Button>
+                              onClick={() => { setConfirming(null); voidReturn(x); }}>{t("Yes")}</Button>
+                            <Button size="xs" variant="ghost" onClick={() => setConfirming(null)}>{t("No")}</Button>
                           </Flex>
                         ) : (
                           <Button size="xs" variant="ghost" colorScheme="red"
-                            onClick={() => setConfirming(`r${x.returnId}`)}>Void</Button>
+                            onClick={() => setConfirming(`r${x.returnId}`)}>{t("Void")}</Button>
                         )}
                       </Td>
                     )}

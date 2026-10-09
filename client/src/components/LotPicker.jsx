@@ -31,7 +31,7 @@ const MAX_DESC = 38;
 
 const optionLabel = (l) => {
   const num = l.parentLotNumber
-    ? `${l.lotNumber}, from ${l.parentLotNumber}${l.fpWaiting != null ? ` (${l.fpWaiting} waiting)` : ""}`
+    ? `${l.lotNumber}, from ${l.parentLotNumber}${l.fpReady != null ? ` (${Math.max(l.fpReady, 0)} back)` : ""}`
     : l.lotNumber;
   const d = (l.description || "").trim();
   if (!d) return num;
