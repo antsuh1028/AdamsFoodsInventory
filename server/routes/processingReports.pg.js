@@ -590,6 +590,65 @@ router.post("/processing-reports/:id/silence", verifyToken, requireRole(...REPOR
   }
 });
 
+// Reception correcting an accepted report's details. Never its cases, lot or
+// date: those already moved stock and sit on the registration form.
+router.patch("/processing-reports/:id/details", verifyToken, requireRole(...REPORT_ACCEPT_ROLES), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid report id" });
+  const b = req.body || {};
+  for (const key of ["startTime", "endTime"]) {
+    if (b[key] && asTime(b[key]) === undefined) return res.status(400).json({ error: `${key} must be a time as HH:MM` });
+  }
+  for (const key of ["inedibleWeight", "outputWeight"]) {
+    if (asDecimal(b[key]) === undefined) {
+      return res.status(400).json({ error: `${key} must be a decimal string with at most 3 decimal places` });
+    }
+  }
+  const packDates = [...new Set((Array.isArray(b.packDates) ? b.packDates : [])
+    .map((d) => String(d ?? "").trim()).filter(isCalendarDay))].sort();
+  const workers = (Array.isArray(b.workers) ? b.workers : []).map((w) => String(w || "").trim()).filter(Boolean);
+  const text = (v) => (v == null || String(v).trim() === "" ? null : String(v));
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const cur = await client.query(
+      `SELECT status FROM noblesse_processing_reports WHERE report_id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [id, req.tenantId]);
+    if (!cur.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Report not found" }); }
+    if (cur.rows[0].status !== "accepted") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ code: "NOT_ACCEPTED",
+        error: "Only an accepted report is corrected this way. Edit the report itself instead." });
+    }
+    await client.query(
+      `UPDATE noblesse_processing_reports
+          SET processing_type = $1, line_no = $2, customer = $3, description = $4, brand = $5,
+              grade = $6, est_number = $7, pack_dates = $8::date[], start_time = $9, end_time = $10,
+              inedible_weight = $11, output_weight = $12, notes = $13
+        WHERE report_id = $14 AND tenant_id = $15`,
+      [text(b.processingType), text(b.lineNo), text(b.customer), text(b.description), text(b.brand),
+       text(b.grade), text(b.estNumber), packDates, asTime(b.startTime) ?? null, asTime(b.endTime) ?? null,
+       asDecimal(b.inedibleWeight), asDecimal(b.outputWeight), text(b.notes), id, req.tenantId]);
+    // The crew only; the pulls are the cases, and they stay as accepted.
+    await client.query(`DELETE FROM noblesse_processing_report_workers WHERE report_id = $1`, [id]);
+    if (workers.length) {
+      await client.query(
+        `INSERT INTO noblesse_processing_report_workers (report_id, position, name)
+         SELECT $1, p, n FROM UNNEST($2::int[], $3::text[]) AS t(p, n)`,
+        [id, workers.map((_, i) => i), workers]);
+    }
+    await client.query("COMMIT");
+    res.json(await loadReport(id, req.tenantId));
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("correct accepted report:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
+  }
+});
+
 // Sent back to the floor. Moves nothing.
 router.post("/processing-reports/:id/reject", verifyToken, requireRole(...REPORT_ACCEPT_ROLES), async (req, res) => {
   const id = Number(req.params.id);
@@ -620,8 +679,8 @@ router.post("/processing-reports/:id/reject", verifyToken, requireRole(...REPORT
   }
 });
 
-// The undo for an accept. Admin only, because it puts cases back.
-router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"), async (req, res) => {
+// The undo for an accept: puts cases back. Reception and admin, who accept.
+router.post("/processing-reports/:id/unaccept", verifyToken, requireRole(...REPORT_ACCEPT_ROLES), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid report id" });
 
