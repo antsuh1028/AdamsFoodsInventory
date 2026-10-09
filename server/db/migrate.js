@@ -284,6 +284,11 @@ const steps = async () => {
   await run("box_batches flag_reason",
     `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS flag_reason TEXT`);
 
+  // An outgoing session that went to the AF freezer for another run, weighed for
+  // its USDA labels. Not a departure: kept out of yield and off loads.
+  await run("box_batches further_processing",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS further_processing BOOLEAN NOT NULL DEFAULT false`);
+
   // Where a box's weight actually came from.
   await run("batch_items entry_method",
     `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS entry_method TEXT
@@ -442,6 +447,36 @@ const steps = async () => {
     `ALTER TABLE lots ADD COLUMN IF NOT EXISTS closed_out_lb NUMERIC(12,3)`);
   await run("lots status index",
     `CREATE INDEX IF NOT EXISTS lots_status_idx ON lots (tenant_id, status)`);
+
+  // Further-processing lots: FP{digits}, the child of one N lot, holding cases
+  // that went to the freezer for another run.
+  await run("lots parent_lot_id",
+    `ALTER TABLE lots ADD COLUMN IF NOT EXISTS parent_lot_id INT REFERENCES lots(lot_id)`);
+  // Widened only when it does not already allow 'further', so a reboot does not rebuild it.
+  await run("lots kind allows further", `
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'lots'::regclass AND conname = 'lots_kind_check'
+           AND pg_get_constraintdef(oid) LIKE '%further%'
+      ) THEN
+        ALTER TABLE lots DROP CONSTRAINT IF EXISTS lots_kind_check;
+        ALTER TABLE lots ADD CONSTRAINT lots_kind_check
+          CHECK (kind IN ('internal', 'external', 'further'));
+      END IF;
+    END $$`);
+  // One FP lot per N lot, and never one without a parent.
+  await run("lots one further per parent",
+    `CREATE UNIQUE INDEX IF NOT EXISTS lots_one_further_per_parent
+       ON lots (parent_lot_id) WHERE kind = 'further'`);
+  await run("lots further has parent", `
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                      WHERE conrelid = 'lots'::regclass AND conname = 'lots_further_has_parent') THEN
+        ALTER TABLE lots ADD CONSTRAINT lots_further_has_parent
+          CHECK (kind <> 'further' OR parent_lot_id IS NOT NULL);
+      END IF;
+    END $$`);
 
   // Back-references. ADD COLUMN IF NOT EXISTS skips the whole clause, FK
   // included, when the column is already there — so re-running is safe.
@@ -736,6 +771,59 @@ const steps = async () => {
      WHERE NOT EXISTS (SELECT 1 FROM item_descriptions d WHERE d.tenant_id = t.id)
     ON CONFLICT (tenant_id, name) DO NOTHING
   `, [ITEM_DESCRIPTIONS]);
+
+  // The F.P Tracker: cases sent to the AF freezer for another run. Keyed to
+  // the N lot; its cases stock the FP lot. Written by an accepted report, or by hand.
+  await run("fp_tracker", `
+    CREATE TABLE IF NOT EXISTS fp_tracker (
+      fp_id        SERIAL PRIMARY KEY,
+      tenant_id    UUID NOT NULL REFERENCES tenants(id),
+      lot_id       INT  NOT NULL REFERENCES lots(lot_id),
+      item         TEXT NOT NULL,
+      cases        INT  NOT NULL CHECK (cases > 0),
+      raw_weight   NUMERIC(10,3),
+      sent_on      DATE NOT NULL,
+      returned_on  DATE,
+      created_by   UUID,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      voided_at    TIMESTAMPTZ,
+      voided_by    UUID
+    )
+  `);
+  await run("fp_tracker lot index",
+    `CREATE INDEX IF NOT EXISTS fp_tracker_lot_idx ON fp_tracker (tenant_id, lot_id)`);
+
+  // What a run packed for further processing: one item, one count. Accepting it writes the tracker row.
+  await run("noblesse_processing_reports fp_cases",
+    `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS fp_cases INT CHECK (fp_cases > 0)`);
+  await run("noblesse_processing_reports fp_item",
+    `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS fp_item TEXT`);
+  await run("fp_tracker source_report_id",
+    `ALTER TABLE fp_tracker ADD COLUMN IF NOT EXISTS source_report_id INT
+       REFERENCES noblesse_processing_reports(report_id) ON DELETE SET NULL`);
+  // One tracker row per report, so accepting cannot send the same cases twice.
+  await run("fp_tracker one row per report",
+    `CREATE UNIQUE INDEX IF NOT EXISTS fp_tracker_source_report_idx
+       ON fp_tracker (source_report_id) WHERE source_report_id IS NOT NULL AND voided_at IS NULL`);
+
+  // Cases back from the AF freezer, counted at the incoming dock, not weighed.
+  // Partial returns are several rows. Keyed to the N lot, like the tracker.
+  await run("fp_returns", `
+    CREATE TABLE IF NOT EXISTS fp_returns (
+      return_id    SERIAL PRIMARY KEY,
+      tenant_id    UUID NOT NULL REFERENCES tenants(id),
+      lot_id       INT  NOT NULL REFERENCES lots(lot_id),
+      cases        INT  NOT NULL CHECK (cases > 0),
+      returned_on  DATE NOT NULL,
+      notes        TEXT,
+      created_by   UUID,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      voided_at    TIMESTAMPTZ,
+      voided_by    UUID
+    )
+  `);
+  await run("fp_returns lot index",
+    `CREATE INDEX IF NOT EXISTS fp_returns_lot_idx ON fp_returns (tenant_id, lot_id)`);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection

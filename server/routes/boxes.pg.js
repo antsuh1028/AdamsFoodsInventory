@@ -181,7 +181,7 @@ const validateItem = (item) => {
 // response returns the original batch instead of orphaning one.
 router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
   const { clientUuid, lotNumber, vendor, shipTo, billOfLading, itemDescription,
-          brand, estNumber, grade, direction, expectedBoxes, lotId } = req.body || {};
+          brand, estNumber, grade, direction, expectedBoxes, lotId, furtherProcessing } = req.body || {};
   if (!clientUuid || typeof clientUuid !== "string") {
     return res.status(400).json({ error: "clientUuid is required" });
   }
@@ -256,12 +256,12 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
       `INSERT INTO box_batches
          (tenant_id, client_uuid, lot_number, vendor, ship_to, bill_of_lading,
           item_description, brand, est_number, grade, lot_id, direction, expected_boxes,
-          created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          created_by, further_processing)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        ON CONFLICT (client_uuid) DO NOTHING
        RETURNING batch_id, status, created_at, lot_number,
                  vendor, ship_to, bill_of_lading, item_description,
-                 brand, est_number, grade, lot_id, direction, expected_boxes`,
+                 brand, est_number, grade, lot_id, direction, expected_boxes, further_processing`,
       [req.tenantId, clientUuid, lot.lotNumber,
        pick(vendor, "vendor"),
        shipTo || null, billOfLading || null,
@@ -269,7 +269,9 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
        pick(brand, "brand"),
        pick(estNumber, "est_number"),
        pick(grade, "grade"),
-       lot.lotId, dir, expected, req.userId || null]
+       lot.lotId, dir, expected, req.userId || null,
+       // Only an outgoing session can be a freezer trip.
+       dir === "outgoing" && furtherProcessing === true]
     );
 
     if (inserted.rows.length) {
@@ -281,7 +283,7 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
     const existing = await pool.query(
       `SELECT batch_id, status, created_at, lot_number,
               vendor, ship_to, bill_of_lading, item_description,
-              brand, est_number, grade, lot_id, direction, expected_boxes
+              brand, est_number, grade, lot_id, direction, expected_boxes, further_processing
          FROM box_batches
        WHERE client_uuid = $1 AND tenant_id = $2`,
       [clientUuid, req.tenantId]
@@ -1085,7 +1087,7 @@ router.get("/box-batches", verifyToken, async (req, res) => {
     const result = await pool.query(
       `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description,
               b.ship_to, b.bill_of_lading, b.brand, b.est_number, b.grade, b.source,
-              b.direction, b.status, b.created_at, b.closed_at, b.expected_boxes,
+              b.direction, b.status, b.created_at, b.closed_at, b.expected_boxes, b.further_processing,
               b.weighed_on::text AS weighed_on,
               b.flagged_at, b.flag_reason,
               -- The UUID resolved here so the row can name who raised it.
@@ -1523,6 +1525,7 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
     const batch = await pool.query(
       `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description,
               brand, est_number, grade, remarks, source, expected_boxes, direction,
+              further_processing,
               -- lot_id was missing here while useScanSession reads detail.lot_id
               -- when adopting, so EVERY adopted session silently lost its lot —
               -- the number still showed, because lot_number is its own column,

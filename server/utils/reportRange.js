@@ -78,6 +78,8 @@ const WEIGHING = `
     JOIN box_batches b ON b.batch_id = bi.batch_id
    WHERE b.tenant_id = $1
      AND bi.voided_at IS NULL
+     -- A freezer trip comes back; it is not weight out.
+     AND NOT b.further_processing
      AND ${weighedDay} BETWEEN $2 AND $3
    GROUP BY b.direction`;
 
@@ -151,6 +153,7 @@ const LOTS_TOUCHED = `
       JOIN box_batches b ON b.batch_id = bi.batch_id
      WHERE b.tenant_id = $1
        AND bi.voided_at IS NULL
+       AND NOT b.further_processing
        AND ${weighedDay} BETWEEN $2 AND $3
      GROUP BY 1, 2
   ),
@@ -374,7 +377,8 @@ const ATTENTION = `
              SELECT 1 FROM box_batches b
                JOIN batch_items bi ON bi.batch_id = b.batch_id
               WHERE b.tenant_id = s.tenant_id AND b.lot_id = si.lot_id
-                AND b.direction = 'outgoing' AND bi.voided_at IS NULL)
+                AND b.direction = 'outgoing' AND NOT b.further_processing
+                AND bi.voided_at IS NULL)
 
     UNION ALL
     -- Corrections are normal; a run of them on one session is not. Grouped by

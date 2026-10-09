@@ -234,6 +234,7 @@ const BatchBoxes = ({ detail, totalLb, batchId, isAdmin, onChanged }) => {
             boxes: items,
             weighedBy: detail.vendor || "",
             memo: detail.remarks || "",
+            furtherProcessing: Boolean(detail.further_processing),
           })}>
           {t("Print tag")}
         </Button>
@@ -713,7 +714,8 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // On NO load — not merely off the open one. A session belongs to one load and
   // the server refuses any other, so offering one already on a load (shipped or
   // cancelled included) is offering a 409. From the FULL list, never the search.
-  const untiedBatches = batches.filter((b) => !b.shipment && !tiedIds.has(b.batch_id));
+  // A freezer trip comes back; it is never part of a load.
+  const untiedBatches = batches.filter((b) => !b.shipment && !tiedIds.has(b.batch_id) && !b.further_processing);
 
   // One entry per LOT, in the order the sessions are listed — a lot weighed
   // across several pallets is one stop, not three.
@@ -788,6 +790,11 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           {b.item_description}
         </Text>
       )}
+      {b.further_processing && (
+        <Badge colorScheme="teal" fontSize="9px" title={t("Weighed for the AF freezer. It comes back for another run, so it is not counted as shipped.")}>
+          {t("for further processing")}
+        </Badge>
+      )}
       {b.ship_to && (
         <Badge colorScheme="blue" fontSize="9px">
           {t("to {shipTo}", { shipTo: b.ship_to })}
@@ -829,6 +836,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
               lotId: b.lot_id ?? null, lotNumber: b.lot_number || "",
               description: b.item_description || "", shipTo: b.ship_to || "",
               expectedBoxes: b.expected_boxes ?? null, nextPallet: true,
+              furtherProcessing: Boolean(b.further_processing),
             })}
             onDoubleClick={(e) => e.stopPropagation()}>
             {t("Next pallet")}

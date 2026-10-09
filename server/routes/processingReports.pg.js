@@ -5,7 +5,11 @@ const requireRole = require("../middleware/requireRole");
 const { REPORT_ACCEPT_ROLES } = require("../middleware/receptionRoles");
 const { searchTerm, searchClause } = require("../utils/search");
 const { isCalendarDay } = require("../utils/weighedAt");
+const { fpCounts, lockLot, ensureFpLot, findFpChild, normaliseItem } = require("../utils/fpLot");
+const { pacificToday } = require("../utils/lot");
 const { manualCasesSql } = require("../utils/formManualCases");
+
+const MAX_FP_ITEM = 120;
 
 // The shop-floor record of one processing run: which lot, which line, who ran
 // it, how many cases went through.
@@ -35,6 +39,9 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   reportId: r.report_id,
   lotId: r.lot_id,
   lotNumber: r.lot_number || null,
+  // 'further' for an FP lot, whose cases sit on its N lot's form.
+  lotKind: r.lot_kind || "internal",
+  parentLotNumber: r.parent_lot_number || null,
   processingDate: fmtDate(r.processing_date),
   startTime: r.start_time,
   endTime: r.end_time,
@@ -55,6 +62,9 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   outputCases: r.output_cases,
   outputWeight: r.output_weight,
   inedibleWeight: r.inedible_weight,
+  // Packed for further processing: goes to the AF freezer and onto the FP lot when accepted.
+  fpCases: r.fp_cases ?? null,
+  fpItem: r.fp_item ?? null,
   notes: r.notes,
   status: r.status,
   submittedBy: r.submitted_by,
@@ -74,7 +84,8 @@ const fmtReport = (r, pulls = [], workers = []) => ({
 
 const loadReport = async (reportId, tenantId, client = pool) => {
   const head = await client.query(
-    `SELECT r.*, l.lot_number
+    `SELECT r.*, l.lot_number, l.kind AS lot_kind,
+            (SELECT p.lot_number FROM lots p WHERE p.lot_id = l.parent_lot_id) AS parent_lot_number
        FROM noblesse_processing_reports r
        JOIN lots l ON l.lot_id = r.lot_id
       WHERE r.report_id = $1 AND r.tenant_id = $2`,
@@ -134,7 +145,8 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
   }
   try {
     const result = await pool.query(
-      `SELECT r.*, l.lot_number,
+      `SELECT r.*, l.lot_number, l.kind AS lot_kind,
+              (SELECT p.lot_number FROM lots p WHERE p.lot_id = l.parent_lot_id) AS parent_lot_number,
               (SELECT COALESCE(json_agg(json_build_object(
                         'pullId', p.pull_id, 'position', p.position,
                         'cases', p.cases, 'notes', p.notes) ORDER BY p.position, p.pull_id), '[]'::json)
@@ -220,6 +232,16 @@ const validateBody = (body, { staging = false } = {}) => {
     return { error: "outputCases must be a whole number greater than zero" };
   }
 
+  // Blank means nothing was packed for later.
+  const fpCases = body.fpCases == null || body.fpCases === "" ? null : asCases(body.fpCases);
+  if (body.fpCases != null && body.fpCases !== "" && fpCases === null) {
+    return { error: "Cases packed for further processing must be a whole number greater than zero" };
+  }
+  const fpItem = fpCases ? (normaliseItem(body.fpItem) || null) : null;
+  if (fpItem && fpItem.length > MAX_FP_ITEM) {
+    return { error: `The further-processing item must be at most ${MAX_FP_ITEM} characters` };
+  }
+
   const workers = (Array.isArray(body.workers) ? body.workers : [])
     .map((w) => String(w || "").trim()).filter(Boolean);
 
@@ -235,6 +257,8 @@ const validateBody = (body, { staging = false } = {}) => {
     cleanPulls,
     workers,
     outputCases,
+    fpCases,
+    fpItem,
     head: {
       processingDate: body.processingDate || null,
       startTime: asTime(body.startTime),
@@ -316,8 +340,8 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
          (tenant_id, lot_id, processing_date, processing_type, line_no, customer,
           description, brand, grade, est_number, pack_date, input_cases,
           output_cases, output_weight, inedible_weight, notes, submitted_by,
-          start_time, end_time, status, pack_dates)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::date[])
+          start_time, end_time, status, pack_dates, fp_cases, fp_item)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::date[],$22,$23)
        RETURNING report_id`,
       [req.tenantId, lotId, h.processingDate, h.processingType, h.lineNo, h.customer,
        h.description, h.brand, h.grade, h.estNumber, h.packDate, inputCases,
@@ -326,7 +350,7 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
        // A run opened at the start is not a claim about what came off it.
        // Reception only ever sees it once it has been confirmed.
        body.inProgress === true ? "in_progress" : "submitted",
-       h.packDates]
+       h.packDates, v.fpCases, v.fpItem]
     );
     const reportId = inserted.rows[0].report_id;
     await writeChildren(client, reportId, v.cleanPulls, v.workers);
@@ -372,6 +396,18 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
       });
     }
 
+    // The lot can be re-picked until accepted; omitted keeps the one it has.
+    let lotId = null;
+    if (req.body?.lotId != null && req.body.lotId !== "") {
+      lotId = Number(req.body.lotId);
+      const lot = Number.isInteger(lotId) && await client.query(
+        "SELECT lot_id FROM lots WHERE lot_id = $1 AND tenant_id = $2", [lotId, req.tenantId]);
+      if (!lot || !lot.rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ code: "NO_SUCH_LOT", error: "That lot is not in the registry" });
+      }
+    }
+
     const h = v.head;
     await client.query(
       `UPDATE noblesse_processing_reports
@@ -381,6 +417,7 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
               inedible_weight = $13, notes = $14,
               start_time = $17, end_time = $18,
               status = $19, pack_dates = $20::date[], reject_reason = NULL,
+              lot_id = COALESCE($21, lot_id), fp_cases = $22, fp_item = $23,
               -- An edited report is new information, so it goes back on the map.
               map_silenced_at = NULL, map_silenced_by = NULL
         WHERE report_id = $15 AND tenant_id = $16`,
@@ -392,7 +429,7 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
        // queue. Anything else is a confirmation, which is what hands it over —
        // and that stays the default, so every existing caller is unchanged.
        req.body?.inProgress === true ? "in_progress" : "submitted",
-       h.packDates]
+       h.packDates, lotId, v.fpCases, v.fpItem]
     );
     await writeChildren(client, id, v.cleanPulls, v.workers);
 
@@ -419,9 +456,11 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
 
     // Locked first: the lock is what makes a double-click safe.
     const head = await client.query(
-      `SELECT r.*, l.lot_number
+      `SELECT r.*, l.lot_number, l.kind AS lot_kind, l.parent_lot_id,
+              p.lot_number AS parent_lot_number
          FROM noblesse_processing_reports r
          JOIN lots l ON l.lot_id = r.lot_id
+         LEFT JOIN lots p ON p.lot_id = l.parent_lot_id
         WHERE r.report_id = $1 AND r.tenant_id = $2
           FOR UPDATE OF r`,
       [id, req.tenantId]
@@ -445,12 +484,17 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
       });
     }
 
+    // A run on an FP lot goes on its N lot's form and takes from the FP count, not raw stock.
+    const isFp = report.lot_kind === "further";
+    const formLotId = isFp ? report.parent_lot_id : report.lot_id;
+    const formLotNumber = isFp ? report.parent_lot_number : report.lot_number;
+
     const forms = await client.query(
       `SELECT id, lot_number FROM noblesse_registration_forms
         WHERE tenant_id = $2
           AND (lot_id = $1 OR (lot_id IS NULL AND lot_number = $3))
         ORDER BY id`,
-      [report.lot_id, req.tenantId, report.lot_number]
+      [formLotId, req.tenantId, formLotNumber]
     );
     if (!forms.rows.length) {
       await client.query("ROLLBACK");
@@ -469,45 +513,78 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
     }
     const formId = forms.rows[0].id;
 
-    const stock = await client.query(
-      `SELECT s.id, s.qty_cases, ${manualCasesSql("s")} AS manual_cases
-         FROM nti_inventory s
-        WHERE s.tenant_id = $2 AND s.stage = 'raw'
-          AND (s.lot_id = $1 OR (s.lot_id IS NULL AND s.lot = $3))
-        FOR UPDATE OF s`,
-      [report.lot_id, req.tenantId, report.lot_number]
-    );
-    if (!stock.rows.length) {
-      await client.query("ROLLBACK");
-      return res.status(409).json({
-        code: "NO_RAW_STOCK",
-        error: "There is no raw stock on this lot to take cases from.",
-      });
-    }
-    const raw = stock.rows[0];
-    // Hand-typed runs on the form never came off stock, so they come off here.
-    const manual = Number(raw.manual_cases) || 0;
-    const onHand = (Number(raw.qty_cases) || 0) - manual;
+    let raw = null;
+    let onHand;
+    if (isFp) {
+      // Serialised with tracker edits, which lock the same parent row.
+      await lockLot(client, req.tenantId, report.parent_lot_id);
+      onHand = (await fpCounts(client, req.tenantId, report.lot_id)).waiting;
+      if (report.input_cases > onHand) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          code: "INSUFFICIENT_STOCK",
+          error: `The report uses ${report.input_cases} cases but only ${onHand} are waiting on `
+            + `${report.lot_number}. Check the F.P Tracker for ${report.parent_lot_number}.`,
+          requested: report.input_cases,
+          onHand,
+        });
+      }
+    } else {
+      const stock = await client.query(
+        `SELECT s.id, s.qty_cases, ${manualCasesSql("s")} AS manual_cases
+           FROM nti_inventory s
+          WHERE s.tenant_id = $2 AND s.stage = 'raw'
+            AND (s.lot_id = $1 OR (s.lot_id IS NULL AND s.lot = $3))
+          FOR UPDATE OF s`,
+        [report.lot_id, req.tenantId, report.lot_number]
+      );
+      if (!stock.rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          code: "NO_RAW_STOCK",
+          error: "There is no raw stock on this lot to take cases from.",
+        });
+      }
+      raw = stock.rows[0];
+      // Hand-typed runs on the form never came off stock, so they come off here.
+      const manual = Number(raw.manual_cases) || 0;
+      onHand = (Number(raw.qty_cases) || 0) - manual;
 
-    // Refused, never floored. The old processing-order path silently clamped to
-    // zero, which is the behaviour this replaces.
-    if (report.input_cases > onHand) {
-      await client.query("ROLLBACK");
-      return res.status(409).json({
-        code: "INSUFFICIENT_STOCK",
-        error: `The report uses ${report.input_cases} cases but only ${Math.max(onHand, 0)} are on the lot`
-          + (manual ? ` (${manual} were processed by hand on the registration form).` : "."),
-        requested: report.input_cases,
-        onHand,
-      });
+      // Refused, never floored. The old processing-order path silently clamped to
+      // zero, which is the behaviour this replaces.
+      if (report.input_cases > onHand) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          code: "INSUFFICIENT_STOCK",
+          error: `The report uses ${report.input_cases} cases but only ${Math.max(onHand, 0)} are on the lot`
+            + (manual ? ` (${manual} were processed by hand on the registration form).` : "."),
+          requested: report.input_cases,
+          onHand,
+        });
+      }
+
+      // Cases only. `weight` is left alone: nobody weighed what went through.
+      await client.query(
+        `UPDATE nti_inventory SET qty_cases = qty_cases - $1
+          WHERE id = $2 AND tenant_id = $3`,
+        [report.input_cases, raw.id, req.tenantId]
+      );
     }
 
-    // Cases only. `weight` is left alone: nobody weighed what went through.
-    await client.query(
-      `UPDATE nti_inventory SET qty_cases = qty_cases - $1
-        WHERE id = $2 AND tenant_id = $3`,
-      [report.input_cases, raw.id, req.tenantId]
-    );
+    // Cases packed for later go to the freezer: a tracker row on the N lot, stocking its FP lot.
+    let sentToFp = null;
+    if (report.fp_cases > 0) {
+      const parentId = isFp ? report.parent_lot_id : report.lot_id;
+      if (!isFp) await lockLot(client, req.tenantId, parentId);
+      const fp = await ensureFpLot(client, req.tenantId, parentId, req.userId);
+      await client.query(
+        `INSERT INTO fp_tracker (tenant_id, lot_id, item, cases, sent_on, created_by, source_report_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [req.tenantId, parentId,
+         normaliseItem(report.fp_item || report.description) || "FURTHER PROCESSING",
+         report.fp_cases, fmtDate(report.processing_date) || pacificToday(), req.userId || null, id]);
+      sentToFp = { lotId: fp.lot.lot_id, lotNumber: fp.lot.lot_number, cases: report.fp_cases, created: fp.created };
+    }
 
     // Appended in SQL so a concurrent form save cannot clobber it in a
     // read-modify-write. reportId is what lets the form PATCH protect the row.
@@ -520,6 +597,8 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
         cases: String(report.input_cases),
         weight: "",
         reportId: id,
+        // The FP lot it came from; the form keeps these out of its Remaining.
+        ...(isFp ? { fp: report.lot_number } : {}),
       }]), formId, req.tenantId]
     );
 
@@ -547,8 +626,9 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
     pool.query(
       `INSERT INTO nti_inventory_history (tenant_id, action, item_id, lot, snapshot, performed_by)
        VALUES ($1, 'processed', $2, $3, $4, $5)`,
-      [req.tenantId, raw.id, forms.rows[0].lot_number,
-       JSON.stringify({ reportId: id, casesConsumed: report.input_cases, formId }),
+      [req.tenantId, raw ? raw.id : null, isFp ? report.lot_number : forms.rows[0].lot_number,
+       JSON.stringify({ reportId: id, casesConsumed: report.input_cases, formId,
+         ...(isFp ? { fpLot: report.lot_number, parentLot: report.parent_lot_number } : {}) }),
        req.username]
     ).catch((err) => console.error("nti history log error:", err.message));
 
@@ -558,9 +638,12 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
       lotNumber: report.lot_number,
       casesTaken: report.input_cases,
       casesLeft: onHand - report.input_cases,
+      sentToFp,
     });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
+    // An outside lot cannot have an FP lot; refused, nothing moved.
+    if (err.status) return res.status(409).json({ code: err.code, error: err.message });
     console.error("accept processing report:", err);
     res.status(500).json({ error: "Internal Server Error" });
   } finally {
@@ -587,6 +670,65 @@ router.post("/processing-reports/:id/silence", verifyToken, requireRole(...REPOR
   } catch (err) {
     console.error("silence processing report:", err);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Reception correcting an accepted report's details. Never its cases, lot or
+// date: those already moved stock and sit on the registration form.
+router.patch("/processing-reports/:id/details", verifyToken, requireRole(...REPORT_ACCEPT_ROLES), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid report id" });
+  const b = req.body || {};
+  for (const key of ["startTime", "endTime"]) {
+    if (b[key] && asTime(b[key]) === undefined) return res.status(400).json({ error: `${key} must be a time as HH:MM` });
+  }
+  for (const key of ["inedibleWeight", "outputWeight"]) {
+    if (asDecimal(b[key]) === undefined) {
+      return res.status(400).json({ error: `${key} must be a decimal string with at most 3 decimal places` });
+    }
+  }
+  const packDates = [...new Set((Array.isArray(b.packDates) ? b.packDates : [])
+    .map((d) => String(d ?? "").trim()).filter(isCalendarDay))].sort();
+  const workers = (Array.isArray(b.workers) ? b.workers : []).map((w) => String(w || "").trim()).filter(Boolean);
+  const text = (v) => (v == null || String(v).trim() === "" ? null : String(v));
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const cur = await client.query(
+      `SELECT status FROM noblesse_processing_reports WHERE report_id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [id, req.tenantId]);
+    if (!cur.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Report not found" }); }
+    if (cur.rows[0].status !== "accepted") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ code: "NOT_ACCEPTED",
+        error: "Only an accepted report is corrected this way. Edit the report itself instead." });
+    }
+    await client.query(
+      `UPDATE noblesse_processing_reports
+          SET processing_type = $1, line_no = $2, customer = $3, description = $4, brand = $5,
+              grade = $6, est_number = $7, pack_dates = $8::date[], start_time = $9, end_time = $10,
+              inedible_weight = $11, output_weight = $12, notes = $13
+        WHERE report_id = $14 AND tenant_id = $15`,
+      [text(b.processingType), text(b.lineNo), text(b.customer), text(b.description), text(b.brand),
+       text(b.grade), text(b.estNumber), packDates, asTime(b.startTime) ?? null, asTime(b.endTime) ?? null,
+       asDecimal(b.inedibleWeight), asDecimal(b.outputWeight), text(b.notes), id, req.tenantId]);
+    // The crew only; the pulls are the cases, and they stay as accepted.
+    await client.query(`DELETE FROM noblesse_processing_report_workers WHERE report_id = $1`, [id]);
+    if (workers.length) {
+      await client.query(
+        `INSERT INTO noblesse_processing_report_workers (report_id, position, name)
+         SELECT $1, p, n FROM UNNEST($2::int[], $3::text[]) AS t(p, n)`,
+        [id, workers.map((_, i) => i), workers]);
+    }
+    await client.query("COMMIT");
+    res.json(await loadReport(id, req.tenantId));
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("correct accepted report:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
   }
 });
 
@@ -620,8 +762,8 @@ router.post("/processing-reports/:id/reject", verifyToken, requireRole(...REPORT
   }
 });
 
-// The undo for an accept. Admin only, because it puts cases back.
-router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"), async (req, res) => {
+// The undo for an accept: puts cases back. Reception and admin, who accept.
+router.post("/processing-reports/:id/unaccept", verifyToken, requireRole(...REPORT_ACCEPT_ROLES), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid report id" });
 
@@ -629,7 +771,7 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
   try {
     await client.query("BEGIN");
     const head = await client.query(
-      `SELECT r.*, l.lot_number
+      `SELECT r.*, l.lot_number, l.kind AS lot_kind, l.parent_lot_id
          FROM noblesse_processing_reports r
          JOIN lots l ON l.lot_id = r.lot_id
         WHERE r.report_id = $1 AND r.tenant_id = $2
@@ -646,7 +788,9 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
       return res.status(409).json({ code: "NOT_ACCEPTED", error: "This report has not been accepted." });
     }
 
-    const restored = await client.query(
+    // An FP run took nothing from raw stock; its FP count recomputes once the status changes.
+    const isFp = report.lot_kind === "further";
+    const restored = isFp ? { rows: [] } : await client.query(
       `UPDATE nti_inventory SET qty_cases = COALESCE(qty_cases, 0) + $1
         WHERE tenant_id = $3 AND stage = 'raw'
           AND (lot_id = $2 OR (lot_id IS NULL AND lot = $4))
@@ -674,12 +818,36 @@ router.post("/processing-reports/:id/unaccept", verifyToken, requireRole("admin"
       [id, req.tenantId]
     );
 
+    // The freezer row this report sent comes back out, unless a later run already used those cases.
+    const parentId = isFp ? report.parent_lot_id : report.lot_id;
+    await lockLot(client, req.tenantId, parentId);
+    const voided = await client.query(
+      `UPDATE fp_tracker SET voided_at = now(), voided_by = $1
+        WHERE source_report_id = $2 AND tenant_id = $3 AND voided_at IS NULL
+      RETURNING fp_id`,
+      [req.userId || null, id, req.tenantId]);
+    if (voided.rows.length) {
+      const fpLot = await findFpChild(client, req.tenantId, parentId);
+      const c = fpLot && await fpCounts(client, req.tenantId, fpLot.lot_id);
+      if (c && c.waiting < 0) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          code: "FP_ALREADY_TAKEN",
+          error: `This report sent ${report.fp_cases} cases to ${fpLot.lot_number}, and accepted runs have `
+            + "already taken from them. Un-accept those runs first.",
+        });
+      }
+    }
+
     await client.query("COMMIT");
+    const casesLeft = isFp
+      ? (await fpCounts(pool, req.tenantId, report.lot_id)).waiting
+      : (restored.rows.length ? Number(restored.rows[0].qty_cases) : null);
     res.json({
       ...(await loadReport(id, req.tenantId)),
       lotNumber: report.lot_number,
       casesReturned: report.input_cases,
-      casesLeft: restored.rows.length ? Number(restored.rows[0].qty_cases) : null,
+      casesLeft,
     });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

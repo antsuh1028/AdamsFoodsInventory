@@ -34,6 +34,8 @@ const KIND = {
   shipped:            { label: "Shipped",        color: "green" },
   shipment_draft:     { label: "On a load",      color: "gray" },
   shipment_cancelled: { label: "Load cancelled", color: "red" },
+  fp_sent:            { label: "To the freezer", color: "blue" },
+  fp_returned:        { label: "Back from freezer", color: "teal" },
 };
 
 // A departure is not an arrival, and they rendered identically before the

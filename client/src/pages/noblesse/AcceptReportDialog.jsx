@@ -40,16 +40,25 @@ const AcceptReportDialog = ({ report, isOpen, busy, onCancel, onAccept }) => {
           <AlertDialogBody>
             <Text fontSize="sm" mb={3}>
               Accepting takes <b>{r.inputCases ?? 0} case{r.inputCases === 1 ? "" : "s"}</b> off
-              {" "}<b>{r.lotNumber || "the lot"}</b> and adds a run to its registration form.
+              {" "}<b>{r.lotNumber || "the lot"}</b>
+              {r.lotKind === "further"
+                ? <> (back from the freezer) and adds a run to <b>{r.parentLotNumber}</b>&apos;s registration form.
+                    It does not change {r.parentLotNumber}&apos;s remaining cases.</>
+                : " and adds a run to its registration form."}
             </Text>
             <Box mb={4}>
               <Row label="Date">{fmtDate(r.processingDate)}{time ? ` · ${time}` : ""}</Row>
               <Row label="Line">{r.lineNo}</Row>
               <Row label="Cases in / out">{`${r.inputCases ?? "—"} / ${r.outputCases ?? "—"}`}</Row>
-              <Row label="Output">{r.outputWeight ? `${r.outputWeight} lb` : null}</Row>
               <Row label="Inedible">{r.inedibleWeight ? `${r.inedibleWeight} lb` : null}</Row>
+              {/* Accepting also writes the freezer row, so it is checked here with the rest. */}
+              {r.fpCases > 0 && (
+                <Row label="To the freezer">
+                  {`${r.fpCases} cs${r.fpItem ? ` ${r.fpItem}` : ""}, onto `
+                    + (r.lotKind === "further" ? r.lotNumber : `FP${String(r.lotNumber || "").slice(1)}`)}
+                </Row>
+              )}
               <Row label="Pack dates">{(r.packDates || []).map(fmtDate).join(", ")}</Row>
-              <Row label="Customer">{r.customer}</Row>
               <Row label="Product">{r.description}</Row>
               <Row label="Ran it">{(r.workers || []).join(", ")}</Row>
               <Row label="Submitted by">{r.submittedBy}</Row>

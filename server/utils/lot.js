@@ -123,6 +123,26 @@ const parseLot = (input) => {
 // to tell "clean" apart from "cleaned up".
 const isCanonicalLot = (text) => LOT_SHAPE.test(String(text ?? "").trim());
 
+// ── Further-processing lots ──────────────────────────────────────────────────
+// FP{YY}{JJJ}-{NN}: the parent N lot's digits, never allocated on their own.
+
+const FP_SHAPE = /^FP(\d{2})(\d{3})-(\d{1,2})$/;
+
+/** The FP number for a canonical N lot, or null. */
+const fpNumberFor = (parentNumber) => {
+  const m = String(parentNumber ?? "").trim().match(LOT_SHAPE);
+  return m ? `FP${m[1]}${m[2]}-${pad(Number(m[3]), 2)}` : null;
+};
+
+/** Text that is an FP number, canonicalised, with its parent's number. */
+const parseFpLot = (input) => {
+  const m = String(input ?? "").trim().toUpperCase().match(FP_SHAPE);
+  if (!m) return { ok: false };
+  const parent = parseLot(`N${m[1]}${m[2]}-${m[3]}`);
+  if (!parent.ok) return { ok: false };
+  return { ok: true, lotNumber: `FP${parent.lotNumber.slice(1)}`, parentNumber: parent.lotNumber };
+};
+
 // ── Issuing a new lot ────────────────────────────────────────────────────────
 // Everything below has to agree exactly with `lotNumberForDate` in
 // client/src/pages/noblesse/shared.jsx. A lot issued by the server and a lot
@@ -162,6 +182,6 @@ const lotPrefixForDate = (dateStr) => {
 };
 
 module.exports = {
-  parseLot, formatLot, isCanonicalLot, dateFromDayOfYear, daysInYear,
+  parseLot, formatLot, isCanonicalLot, fpNumberFor, parseFpLot, dateFromDayOfYear, daysInYear,
   pacificToday, dayOfYearFromDate, lotPrefixForDate, PACIFIC_TZ,
 };

@@ -30,10 +30,13 @@ import axiosInstance from "../utils/axiosInstance";
 const MAX_DESC = 38;
 
 const optionLabel = (l) => {
+  const num = l.parentLotNumber
+    ? `${l.lotNumber}, from ${l.parentLotNumber}${l.fpReady != null ? ` (${Math.max(l.fpReady, 0)} back)` : ""}`
+    : l.lotNumber;
   const d = (l.description || "").trim();
-  if (!d) return l.lotNumber;
+  if (!d) return num;
   const short = d.length > MAX_DESC ? `${d.slice(0, MAX_DESC - 1)}\u2026` : d;
-  return `${l.lotNumber} \u2014 ${short}`;
+  return `${num} \u2014 ${short}`;
 };
 
 const LotPicker = ({
@@ -49,6 +52,8 @@ const LotPicker = ({
   // those up wants this - everywhere else a registered lot is a perfectly good
   // choice, so it is opt-in rather than the default.
   hideRegistered = false,
+  // Also offer FP lots. Only a processing run can take from one.
+  includeFurther = false,
 }) => {
   const [lots, setLots] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +70,7 @@ const LotPicker = ({
     setLoading(true);
     try {
       const [{ data }, preview] = await Promise.all([
-        axiosInstance.get("/lots", { params: { limit: 200 } }),
+        axiosInstance.get("/lots", { params: { limit: 200, ...(includeFurther ? { further: 1 } : {}) } }),
         allowCreate
           ? axiosInstance.get("/lots/next", { params: date ? { date } : {} }).catch(() => null)
           : Promise.resolve(null),
@@ -81,7 +86,7 @@ const LotPicker = ({
     } finally {
       setLoading(false);
     }
-  }, [allowCreate, date, toast]);
+  }, [allowCreate, date, includeFurther, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -109,8 +114,14 @@ const LotPicker = ({
   // so an older server that sends no `kind` degrades to one ungrouped list
   // rather than an empty picker.
   const ours = useMemo(
-    () => options.filter((l) => (l.kind || "internal") !== "external"),
+    () => options.filter((l) => (l.kind || "internal") === "internal"),
     [options]
+  );
+  // Only FP lots with cases waiting, plus the one already chosen so the select keeps it.
+  const further = useMemo(
+    () => options.filter((l) => l.kind === "further"
+      && (l.fpWaiting == null || l.fpWaiting > 0 || l.lotId === value)),
+    [options, value]
   );
   const outside = useMemo(
     () => options.filter((l) => l.kind === "external"),
@@ -238,6 +249,13 @@ const LotPicker = ({
           {ours.map((l) => (
             <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
           ))}
+          {further.length > 0 && (
+            <optgroup label="Further processing (back from the freezer)">
+              {further.map((l) => (
+                <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
+              ))}
+            </optgroup>
+          )}
           {outside.length > 0 && (
             <optgroup label="Not our lot numbers">
               {outside.map((l) => (

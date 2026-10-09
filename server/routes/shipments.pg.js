@@ -412,7 +412,7 @@ router.post("/shipments/:id/box-batches", verifyToken, requireRole(...RECEPTION_
     // Counted rather than trusted, so a session id from another tenant cannot
     // be attached to this load.
     const owned = await pool.query(
-      `SELECT batch_id, lot_number, direction
+      `SELECT batch_id, lot_number, direction, further_processing
          FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2`,
       [ids, req.tenantId]
     );
@@ -430,6 +430,17 @@ router.post("/shipments/:id/box-batches", verifyToken, requireRole(...RECEPTION_
                `the finished boxes weighed off the bench — weigh them with ` +
                `"Weigh finished boxes" on the Outgoing tab.`,
         sessions: incoming.map((b) => ({ batchId: b.batch_id, lotNumber: b.lot_number })),
+      });
+    }
+
+    // A freezer trip comes back for another run; it never leaves on a load.
+    const freezer = owned.rows.filter((b) => b.further_processing);
+    if (freezer.length) {
+      const names = freezer.map((b) => b.lot_number || `batch ${b.batch_id}`).join(", ");
+      return res.status(409).json({
+        code: "FREEZER_SESSION",
+        error: `${names} went to the AF freezer for further processing, so it is not part of a load.`,
+        sessions: freezer.map((b) => ({ batchId: b.batch_id, lotNumber: b.lot_number })),
       });
     }
 

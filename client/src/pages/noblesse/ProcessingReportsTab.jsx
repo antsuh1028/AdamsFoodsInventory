@@ -2,7 +2,7 @@ import upperInput from "../../utils/upperInput";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, IconButton, Input, Select, Textarea, Spinner,
-  Grid, Alert, AlertIcon, useToast,
+  Grid, Alert, AlertIcon, Checkbox, useToast,
 } from "@chakra-ui/react";
 import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
@@ -39,6 +39,7 @@ const emptyDraft = () => ({
   customer: "", description: "", brand: "", grade: "", estNumber: "", packDates: [],
   pulls: [{ cases: "" }],
   inedibleWeight: "",
+  fpOn: false, fpCases: "", fpItem: "",
   workers: [],
   notes: "",
 });
@@ -153,6 +154,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   }, []);
   useEffect(() => { fetchWorkers(); }, [fetchWorkers]);
   const [busyId, setBusyId] = useState(null);
+  const [unaccepting, setUnaccepting] = useState(null);
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState("");
   // The floor on its own, for a screen on the wall or a close look.
@@ -181,8 +183,30 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   // context the paper carries on its total line.
   const fetchStock = useCallback(async () => {
     try {
-      const { data } = await axiosInstance.get("/nti-inventory");
-      setStock((data || []).filter((r) => r.stage === "raw"));
+      const [{ data }, fp] = await Promise.all([
+        axiosInstance.get("/nti-inventory"),
+        axiosInstance.get("/fp-lots").catch(() => ({ data: [] })),
+      ]);
+      const raw = (data || []).filter((r) => r.stage === "raw");
+      // An FP lot's count is what is waiting; its product details are the parent's.
+      const further = (fp.data || []).map((f) => ({
+        ...(raw.find((r) => r.lotId === f.parentLotId) || {}),
+        lotId: f.lotId,
+        lot: f.lotNumber,
+        // Shown and prefilled: what is counted back and not yet run.
+        qtyCases: Math.max(f.ready, 0),
+        fpWaiting: f.waiting,
+        registeredCases: f.sent,
+        fpReturned: f.returned,
+        fpReady: f.ready,
+        fpInFreezer: f.inFreezer,
+        registeredWeight: null,
+        // The N lot's hand-typed runs are the N lot's; the FP count already stands alone.
+        formManualCases: 0,
+        fp: true,
+        parentLotNumber: f.parentLotNumber,
+      }));
+      setStock([...raw, ...further]);
     } catch {
       // Context only. Losing it must not stop a report being filed.
     }
@@ -228,19 +252,32 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   // The lot's figures in one line, shared by the window and the printout. An accepted
   // report's cases are already off, so it gets no "after this".
   const lotLine = lotStock ? [
-    `lot registered ${lotStock.registeredCases ?? "?"} cases`
-      + (lotStock.registeredWeight ? ` = ${fmtWeight(lotStock.registeredWeight)} lb` : ""),
+    lotStock.fp
+      ? `${lotStock.registeredCases} cases of ${lotStock.parentLotNumber} sent to the freezer`
+        + ` · ${lotStock.fpReturned ?? 0} back`
+      : `lot registered ${lotStock.registeredCases ?? "?"} cases`
+        + (lotStock.registeredWeight ? ` = ${fmtWeight(lotStock.registeredWeight)} lb` : ""),
     handCases ? `${handCases} processed by hand on the form` : null,
-    `${casesLeft} left now`,
+    `${casesLeft} ${lotStock.fp ? "back and ready" : "left now"}`,
     draft && draft.status !== "accepted" && inputCases > 0 && inputCases <= casesLeft
       ? `${casesLeft - inputCases} after this` : null,
   ].filter(Boolean).join(" · ") : null;
-  const overdrawn = casesLeft != null && inputCases > casesLeft && draft?.status !== "accepted";
+  // The hard limit: more than the lot has (for an FP lot, more than was ever sent).
+  const hardLimit = lotStock && lotStock.fp ? lotStock.fpWaiting : casesLeft;
+  const overdrawn = hardLimit != null && inputCases > hardLimit && draft?.status !== "accepted";
+  // An FP run asking for more than has come back from the freezer: a warning only.
+  const stillFrozen = Boolean(lotStock && lotStock.fp && draft?.status !== "accepted"
+    && inputCases > 0 && inputCases > casesLeft && !overdrawn);
 
   // Staging needs only the lot: at the start of a run the cases are not known
   // yet. Confirming still needs them.
   const canStage = Boolean(draft && draft.lotId);
-  const canSubmit = canStage && inputCases > 0;
+  // Ticked for further processing means a count is owed before it is handed over.
+  const fpMissing = Boolean(draft && draft.fpOn && !(parseInt(draft.fpCases, 10) > 0));
+  const canSubmit = canStage && inputCases > 0 && !fpMissing;
+  // The FP lot these cases would go to: an N lot's own, or the FP lot the run is already on.
+  const fpTarget = draft && /^N\d/.test(draft.lotNumber || "") ? `FP${draft.lotNumber.slice(1)}`
+    : (draft && /^FP\d/.test(draft.lotNumber || "") ? draft.lotNumber : null);
 
   const addWorker = () => {
     const name = upper(workerInput.trim());
@@ -258,6 +295,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
       const payload = {
         ...draft,
         inProgress,
+        fpCases: draft.fpOn && fpTarget ? draft.fpCases : null,
+        fpItem: draft.fpOn && fpTarget ? draft.fpItem : null,
         pulls: draft.pulls
           .map((p) => ({ cases: parseInt(p.cases, 10) }))
           .filter((p) => Number.isInteger(p.cases) && p.cases > 0),
@@ -331,6 +370,30 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     }
   };
 
+  // Reception may correct an accepted report's details; its cases, lot and date stay as accepted.
+  const canFixAccepted = Boolean(draft && draft.readOnly && draft.status === "accepted" && canAccept);
+  const infoLocked = Boolean(draft && draft.readOnly && !canFixAccepted);
+  const saveDetails = async () => {
+    setSaving(true);
+    try {
+      await axiosInstance.patch(`/processing-reports/${draft.reportId}/details`, {
+        processingType: draft.processingType, lineNo: draft.lineNo, customer: draft.customer,
+        description: draft.description, brand: draft.brand, grade: draft.grade, estNumber: draft.estNumber,
+        packDates: draft.packDates, startTime: draft.startTime, endTime: draft.endTime,
+        inedibleWeight: draft.inedibleWeight, outputWeight: draft.outputWeight, notes: draft.notes,
+        workers: draft.workers,
+      });
+      setDraft(null);
+      await fetchReports();
+      fetchWorkers();
+      toast({ status: "success", position: "top", duration: 4000, title: "Report corrected",
+        description: "The cases on it did not change." });
+    } catch (err) {
+      toast({ status: "error", position: "top", duration: 7000, isClosable: true,
+        title: "Could not save the correction", description: err.response?.data?.error || err.message });
+    } finally { setSaving(false); }
+  };
+
   // A waiting report opened by reception: the footer accepts or sends back instead of submitting.
   const reviewing = Boolean(draft && canAccept && draft.reportId && draft.status === "submitted");
   const [sendingBack, setSendingBack] = useState(false);
@@ -353,6 +416,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     // on a report filed before this field existed.
     packDates: r.packDates || [],
     inedibleWeight: r.inedibleWeight != null ? String(r.inedibleWeight) : "",
+    fpOn: Boolean(r.fpCases),
+    fpCases: r.fpCases != null ? String(r.fpCases) : "",
+    fpItem: r.fpItem || "",
   });
 
   return (
@@ -448,6 +514,18 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             onDoubleClick={() => openReport(r)}>
             <Flex align="baseline" gap={3} wrap="wrap">
               <LotMenu lotNumber={r.lotNumber} lotId={r.lotId} />
+              {r.lotKind === "further" && (
+                <Badge colorScheme="blue" variant="outline" fontSize="9px"
+                  title={`Back from the freezer. Goes on ${r.parentLotNumber}'s form.`}>
+                  FP of {r.parentLotNumber}
+                </Badge>
+              )}
+              {r.fpCases > 0 && (
+                <Badge colorScheme="teal" variant="subtle" fontSize="9px"
+                  title={`${r.fpCases} cases${r.fpItem ? ` of ${r.fpItem}` : ""} packed for another run`}>
+                  {r.fpCases} cs to freezer
+                </Badge>
+              )}
               <Badge colorScheme={STATUS_COLOR[r.status]} fontSize="9px">
                 {STATUS_LABEL[r.status] || r.status}
               </Badge>
@@ -510,13 +588,23 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {r.status === "submitted" && !canAccept && (
                 <Text fontSize="xs" color="gray.500">Waiting for reception</Text>
               )}
-              {isAdmin && r.status === "accepted" && (
+              {/* Puts the cases back on the lot, so it is asked once. */}
+              {canAccept && r.status === "accepted" && (unaccepting === r.reportId ? (
+                <Flex gap={1} align="center" onClick={(e) => e.stopPropagation()}>
+                  <Text fontSize="xs" color="red.600">Put {r.inputCases} cases back on {r.lotNumber}?</Text>
+                  <Button size="xs" colorScheme="red" isLoading={busyId === r.reportId}
+                    onClick={async () => { await act(r, unacceptReport); setUnaccepting(null); }}>
+                    Un-accept
+                  </Button>
+                  <Button size="xs" variant="ghost" onClick={() => setUnaccepting(null)}>No</Button>
+                </Flex>
+              ) : (
                 <Button size="xs" variant="ghost" colorScheme="red"
                   isLoading={busyId === r.reportId}
-                  onClick={(e) => { e.stopPropagation(); act(r, unacceptReport); }}>
+                  onClick={(e) => { e.stopPropagation(); setUnaccepting(r.reportId); }}>
                   Un-accept
                 </Button>
-              )}
+              ))}
               {isAdmin && r.status !== "accepted" && (
                 <Button size="xs" variant="ghost" colorScheme="red"
                   onClick={(e) => { e.stopPropagation(); remove(r); }}>
@@ -661,6 +749,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   Accept
                 </Button>
               )}
+              {canFixAccepted && (
+                <Button size="md" colorScheme="blue" onClick={saveDetails} isLoading={saving}>
+                  Save corrections
+                </Button>
+              )}
               {!draft?.readOnly && !reviewing && (
                 <Button size="md" variant="outline" colorScheme="yellow"
                   onClick={() => submit(true)}
@@ -683,7 +776,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
           <Box>
             <Text fontSize="xs" color="gray.600" mb={3}>
               {draft.readOnly
-                ? `Accepted by ${draft.acceptedBy || "reception"} — ${draft.inputCases} cases are off the lot. An admin can un-accept it from the list.`
+                ? `Accepted by ${draft.acceptedBy || "reception"} — ${draft.inputCases} cases are off the lot.`
+                  + (canFixAccepted
+                    ? " You can correct the details; the cases, lot and date stay as accepted. Un-accept from the list to change those."
+                    : " Reception can correct it or un-accept it from the list.")
                 : reviewing
                   ? "Waiting for your check. Accepting takes the cases off the lot; sending it back returns it to the floor."
                   : "Submitting files the report. Cases come off the lot when reception accepts it."}
@@ -699,6 +795,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   <LotPicker
                     size="sm"
                     allowCreate={false}
+                    includeFurther
                     isDisabled={draft.readOnly}
                     value={draft.lotId}
                     lotNumber={draft.lotNumber}
@@ -713,19 +810,19 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </SheetField>
 
               <SheetField label="Processing Type" full>
-                <Select {...sheetInputProps} isReadOnly={draft.readOnly} placeholder="Select…" value={draft.processingType}
+                <Select {...sheetInputProps} isReadOnly={infoLocked} placeholder="Select…" value={draft.processingType}
                   onChange={(e) => setDraft({ ...draft, processingType: e.target.value })}>
                   {PROCESSING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </Select>
               </SheetField>
 
               <SheetField label="Started">
-                <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="time"
+                <Input {...sheetInputProps} isReadOnly={infoLocked} type="time"
                   value={draft.startTime || ""}
                   onChange={(e) => setDraft({ ...draft, startTime: e.target.value })} />
               </SheetField>
               <SheetField label="Finished">
-                <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="time"
+                <Input {...sheetInputProps} isReadOnly={infoLocked} type="time"
                   value={draft.endTime || ""}
                   onChange={(e) => setDraft({ ...draft, endTime: e.target.value })} />
               </SheetField>
@@ -734,7 +831,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   an old report that is not in the list is kept as its own
                   option, so opening it cannot silently blank the field. */}
               <SheetField label="Line">
-                <Select {...sheetInputProps} isDisabled={draft.readOnly}
+                <Select {...sheetInputProps} isDisabled={infoLocked}
                   value={draft.lineNo || ""}
                   onChange={(e) => setDraft({ ...draft, lineNo: e.target.value })}>
                   <option value="">—</option>
@@ -762,23 +859,23 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
 
               {productOpen && (<>
               <SheetField label="Description" full>
-                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.description || ""}
+                <Input {...sheetInputProps} isReadOnly={infoLocked} value={draft.description || ""}
                   onChange={(e) => setDraft({ ...draft, description: upperInput(e) })} />
               </SheetField>
               <SheetField label="Brand">
-                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.brand || ""}
+                <Input {...sheetInputProps} isReadOnly={infoLocked} value={draft.brand || ""}
                   onChange={(e) => setDraft({ ...draft, brand: upperInput(e) })} />
               </SheetField>
               <SheetField label="Grade">
-                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.grade || ""}
+                <Input {...sheetInputProps} isReadOnly={infoLocked} value={draft.grade || ""}
                   onChange={(e) => setDraft({ ...draft, grade: upperInput(e) })} />
               </SheetField>
               <SheetField label="EST #">
-                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.estNumber || ""}
+                <Input {...sheetInputProps} isReadOnly={infoLocked} value={draft.estNumber || ""}
                   onChange={(e) => setDraft({ ...draft, estNumber: upperInput(e) })} />
               </SheetField>
               <SheetField label="Customer">
-                <Input {...sheetInputProps} isReadOnly={draft.readOnly} value={draft.customer || ""}
+                <Input {...sheetInputProps} isReadOnly={infoLocked} value={draft.customer || ""}
                   onChange={(e) => setDraft({ ...draft, customer: upperInput(e) })} />
               </SheetField>
               {/* A lot routinely spans several pack dates, so this takes the
@@ -790,7 +887,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                       bg="white" border="1px solid" borderColor="gray.300"
                       borderRadius="md" pl={2} pr={1} py={0.5}>
                       <Text fontSize="sm">{fmtDate(d)}</Text>
-                      {!draft.readOnly && (
+                      {!infoLocked && (
                         <Button size="xs" variant="ghost" colorScheme="red"
                           px={1} minW="auto" title="Remove this date"
                           onClick={() => setDraft({
@@ -802,7 +899,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                       )}
                     </Flex>
                   ))}
-                  {!draft.readOnly && (
+                  {!infoLocked && (
                     <Input
                       size="sm" type="date" bg="white" width="170px"
                       // Cleared after each pick, so the control is always ready
@@ -818,7 +915,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                       }}
                     />
                   )}
-                  {!(draft.packDates || []).length && draft.readOnly && (
+                  {!(draft.packDates || []).length && infoLocked && (
                     <Text fontSize="sm" color="gray.400">—</Text>
                   )}
                 </Flex>
@@ -878,9 +975,53 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </SheetField>
 
               <SheetField label="Inedible (lb)">
-                <Input {...sheetInputProps} isReadOnly={draft.readOnly} type="number" value={draft.inedibleWeight}
+                <Input {...sheetInputProps} isReadOnly={infoLocked} type="number" value={draft.inedibleWeight}
                   onChange={(e) => setDraft({ ...draft, inedibleWeight: e.target.value })} />
               </SheetField>
+
+              {/* Part of the run packed to be frozen and processed again later. One item, one count. */}
+              {/* Fills out the Inedible row, so the next field starts on its own line. */}
+              <Box gridColumn="3 / -1" display={{ base: "none", md: "block" }} />
+
+              <SheetField label="Further processing" full plain>
+                  <Box px={3} py={2}>
+                    <Checkbox isChecked={Boolean(draft.fpOn) && Boolean(fpTarget)}
+                      isDisabled={draft.readOnly || !fpTarget}
+                      size="lg" colorScheme="blue"
+                      // The default border is too pale to see on the grey sheet.
+                      sx={{ "& .chakra-checkbox__control:not([data-checked])": { borderColor: "gray.500", bg: "white" } }}
+                      onChange={(e) => setDraft({
+                        ...draft, fpOn: e.target.checked,
+                        fpItem: draft.fpItem || upper(draft.description || ""),
+                      })}>
+                      <Text as="span" fontSize="sm">Part of this run goes to the AF freezer for another run</Text>
+                    </Checkbox>
+                    {!fpTarget && (
+                      <Text fontSize="xs" color="gray.500" mt={1}>
+                        {draft.lotId ? "Only one of our N lots can send product to the freezer." : "Pick the lot first."}
+                      </Text>
+                    )}
+                    {draft.fpOn && fpTarget && (
+                      <>
+                        <Flex gap={3} align="center" wrap="wrap" mt={2}>
+                          <Input {...sheetInputProps} isReadOnly={draft.readOnly} bg="white"
+                            flex="0 0 130px" type="number" placeholder="cases"
+                            borderColor={fpMissing ? "red.300" : undefined}
+                            value={draft.fpCases}
+                            onChange={(e) => setDraft({ ...draft, fpCases: e.target.value })} />
+                          <Input {...sheetInputProps} isReadOnly={draft.readOnly} bg="white"
+                            flex="1 1 200px" placeholder="What it is (e.g. CLOD TIP)"
+                            value={draft.fpItem}
+                            onChange={(e) => setDraft({ ...draft, fpItem: upperInput(e) })} />
+                        </Flex>
+                        <Text fontSize="xs" color="gray.500" mt={1}>
+                          Cases packed for later, not the cases put in. When reception accepts this run
+                          they wait on <b>{fpTarget}</b> for the next run.
+                        </Text>
+                      </>
+                    )}
+                  </Box>
+                </SheetField>
 
               <SectionBar>Crew &amp; Notes</SectionBar>
 
@@ -892,7 +1033,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                         fontSize="sm" fontWeight="500">
                         {w}
                         <Box as="button" type="button" ml={2} color="blue.600"
-                          display={draft.readOnly ? "none" : undefined}
+                          display={infoLocked ? "none" : undefined}
                           onClick={() => setDraft({
                             ...draft, workers: draft.workers.filter((_, i) => i !== idx),
                           })}>
@@ -901,7 +1042,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                       </Badge>
                     ))}
                   </Flex>
-                  <Flex gap={2} display={draft.readOnly ? "none" : undefined}>
+                  <Flex gap={2} display={infoLocked ? "none" : undefined}>
                     <Input size="sm" bg="white" width="220px" placeholder="Name, then Enter"
                       list="report-worker-names" autoComplete="off"
                       value={workerInput}
@@ -915,7 +1056,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                     <Button size="sm" variant="outline" onClick={addWorker}>Add</Button>
                   </Flex>
                   {/* The regulars, one tap each; names already on this run drop out. */}
-                  {!draft.readOnly && knownWorkers.some((n) => !draft.workers.includes(n)) && (
+                  {!infoLocked && knownWorkers.some((n) => !draft.workers.includes(n)) && (
                     <Flex gap={1} wrap="wrap" mt={2}>
                       {knownWorkers.filter((n) => !draft.workers.includes(n)).slice(0, 14).map((n) => (
                         <Button key={n} size="xs" variant="outline" colorScheme="gray" borderRadius="full"
@@ -929,16 +1070,25 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </SheetField>
 
               <SheetField label="Remarks" full>
-                <Textarea {...sheetInputProps} isReadOnly={draft.readOnly} rows={2} value={draft.notes || ""}
+                <Textarea {...sheetInputProps} isReadOnly={infoLocked} rows={2} value={draft.notes || ""}
                   onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
               </SheetField>
             </Grid>
 
+            {/* Warned, not refused: product still in the freezer can be run on paper first. */}
+            {stillFrozen && (
+              <Alert status="warning" borderRadius="md" fontSize="xs" py={2} mb={3}>
+                <AlertIcon boxSize={3} />
+                {`Only ${casesLeft} of these cases are recorded back from the freezer so far `
+                  + `(${lotStock.fpInFreezer} still in it). It can still be accepted.`}
+              </Alert>
+            )}
             {overdrawn && (
               <Alert status="warning" borderRadius="md" fontSize="xs" py={2} mb={3}>
                 <AlertIcon boxSize={3} />
-                That is more than the {casesLeft} cases left on this lot. Reception will
-                not be able to accept it.
+                That is more than the {hardLimit} cases {lotStock?.fp
+                  ? `sent to the freezer and not yet run on ${lotStock.lot}. Check the F.P Tracker for ${lotStock.parentLotNumber}, or reception`
+                  : "left on this lot. Reception"} will not be able to accept it.
               </Alert>
             )}
           </Box>

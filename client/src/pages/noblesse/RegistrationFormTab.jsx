@@ -104,8 +104,33 @@ export const RegistrationFormModal = ({
 
   useEffect(() => { loadReports(); }, [loadReports]);
 
+  // The lot's FP lot, if any: what went to the freezer, and the runs on it.
+  const [further, setFurther] = useState(null);
+  const [fpReports, setFpReports] = useState([]);
+  useEffect(() => {
+    let live = true;
+    setFurther(null);
+    setFpReports([]);
+    if (!lotId) return undefined;
+    (async () => {
+      try {
+        const { data } = await axiosInstance.get(`/lots/${lotId}`);
+        const f = data.further && data.further.parentLotId === lotId ? data.further : null;
+        if (!live) return;
+        setFurther(f);
+        if (f) {
+          const runs = await axiosInstance.get("/processing-reports", { params: { lotId: f.fpLotId } });
+          if (live) setFpReports(runs.data || []);
+        }
+      } catch {
+        // Context only; the form stays usable without it.
+      }
+    })();
+    return () => { live = false; };
+  }, [lotId]);
+
   const reportById = useMemo(
-    () => new Map(reports.map((r) => [r.reportId, r])), [reports]
+    () => new Map([...reports, ...fpReports].map((r) => [r.reportId, r])), [reports, fpReports]
   );
 
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -114,6 +139,10 @@ export const RegistrationFormModal = ({
   const setCheck = (key) => (e) => setDraft({ ...draft, [key]: e.target.checked });
   const tally = caseTally(draft);
   const remainingCases = tally ? tally.remaining : null;
+  // FP runs are numbered and shown apart from the lot's own runs.
+  const runs = Array.isArray(draft.processingDates) ? draft.processingDates : [];
+  const runNumber = (idx) => runs.slice(0, idx).filter((p) => !p.fp).length + 1;
+  const fpRuns = runs.filter((p) => p.fp);
 
   // Every case arrived is accounted for — offer to close the form, do not close
   // it. Three things have to hold, and each rules out a way this would be wrong:
@@ -347,10 +376,11 @@ export const RegistrationFormModal = ({
               // it is shown rather than edited — retyping it by hand would make
               // the form disagree with the report that moved the stock. An
               // admin takes it back with Un-accept, not by deleting a row.
+              if (pd.fp) return null;
               const from = pd.reportId != null ? reportById.get(pd.reportId) : null;
               if (pd.reportId != null) {
                 return (
-                  <SheetField key={idx} label={`(${idx + 1}) Processed`} full plain>
+                  <SheetField key={idx} label={`(${runNumber(idx)}) Processed`} full plain>
                     <Box px={3} py={2} bg="green.50" borderRadius="sm">
                       <Flex align="baseline" gap={3} wrap="wrap">
                         <Text fontSize="sm" fontWeight="bold" color="green.900"
@@ -399,7 +429,7 @@ export const RegistrationFormModal = ({
                 {/* One processing event per row: weight, cases and the date it
                     happened. The date carries no label of its own — a date
                     input is self-evident, and the row reads left to right. */}
-                <SheetField label={`(${idx + 1}) Processed`} full>
+                <SheetField label={`(${runNumber(idx)}) Processed`} full>
                   {/* Three fields share one cell, so they are white and spaced:
                       the cell's own grey shows through as a gutter and the row
                       reads as weight / cases / date rather than one long strip.
@@ -497,6 +527,58 @@ export const RegistrationFormModal = ({
                   </Flex>
                 </SheetField>
               </React.Fragment>
+              );
+            })}
+
+            {/* Runs on product back from the freezer. Off the FP lot, never off this form's cases. */}
+            {(further || fpRuns.length > 0) && (
+              <Box gridColumn="1 / -1" px={3} py={2} bg="blue.50"
+                borderTop="1px solid" borderBottom="1px solid" borderColor="blue.100">
+                <Text fontSize="xs" color="blue.800" textTransform="uppercase" letterSpacing="wide">
+                  Further processing, {further ? further.fpLotNumber : fpRuns[0].fp}
+                </Text>
+                {further && (
+                  <Text fontSize="sm" color="blue.900" fontWeight="600" mt={1}
+                    style={{ fontVariantNumeric: "tabular-nums" }}>
+                    Sent to the freezer: {further.sent} cs
+                    {" · "}{further.returned ?? 0} back
+                    {" · "}{further.inFreezer ?? further.sent} still in the freezer
+                    {" · "}{further.taken} run on {further.fpLotNumber}
+                  </Text>
+                )}
+                {/* The dock's labelled boxes, a check on the count above; never added to it. */}
+                {further && further.labelled > 0 && (
+                  <Text fontSize="xs" mt={1} fontWeight={further.labelled !== further.sent ? "700" : "400"}
+                    color={further.labelled !== further.sent ? "red.600" : "gray.600"}>
+                    Labelled at the dock: {further.labelled} boxes
+                    {further.labelled !== further.sent ? ` (does not match the ${further.sent} cs sent)` : ""}
+                  </Text>
+                )}
+                <Text fontSize="xs" color="gray.600">
+                  Packed for another run. Not counted in Remaining below.
+                </Text>
+              </Box>
+            )}
+            {fpRuns.map((pd, i) => {
+              const from = pd.reportId != null ? reportById.get(pd.reportId) : null;
+              return (
+                <SheetField key={`fp-${pd.reportId ?? i}`} label={`(FP ${i + 1}) Processed`} full plain>
+                  <Flex align="baseline" gap={3} wrap="wrap" px={3} py={2} bg="blue.50" borderRadius="sm">
+                    <Text fontSize="sm" fontWeight="bold" color="blue.900"
+                      style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {pd.cases != null ? `${pd.cases} cases` : "—"}
+                    </Text>
+                    <Text fontSize="xs" color="gray.600">{fmtDate(pd.date) || "—"}</Text>
+                    {from && from.lineNo && (
+                      <Badge colorScheme="gray" fontSize="9px">Line {from.lineNo}</Badge>
+                    )}
+                    {from && from.processingType && (
+                      <Text fontSize="xs" color="gray.600">{from.processingType}</Text>
+                    )}
+                    <Box flex={1} />
+                    <Badge colorScheme="blue" fontSize="9px">from report, {pd.fp}</Badge>
+                  </Flex>
+                </SheetField>
               );
             })}
 
@@ -648,7 +730,7 @@ const processedPercent = (draft) => {
   const originalWeight = parseFloat(draft.originalWeight);
   if (!originalWeight || originalWeight <= 0) return null;
 
-  const consumed = draft.processingDates.reduce((sum, pd) => {
+  const consumed = draft.processingDates.filter((pd) => !pd.fp).reduce((sum, pd) => {
     const weight = parseFloat(pd.weight || 0);
     return sum + (isNaN(weight) ? 0 : weight);
   }, 0);
@@ -674,7 +756,9 @@ const caseTally = (draft) => {
   const total = parseFloat(draft.totalQuantity);
   if (isNaN(total)) return null;
 
+  // FP runs took from the FP lot, never from what this form says arrived.
   const processed = (Array.isArray(draft.processingDates) ? draft.processingDates : [])
+    .filter((pd) => !pd.fp)
     .reduce((sum, pd) => {
       const n = parseFloat(pd.cases);
       return sum + (isNaN(n) ? 0 : n);

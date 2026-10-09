@@ -13,6 +13,8 @@ const FAIL_TITLES = {
   ALREADY_ACCEPTED: "Already accepted",
   NOT_ACCEPTED: "That report was not accepted",
   NO_RAW_STOCK: "No raw stock on this lot",
+  NOT_AN_N_LOT: "This lot cannot have a further-processing lot",
+  FP_ALREADY_TAKEN: "Its freezer cases are already used",
   accept: "Could not accept",
   reject: "Could not send it back",
   unaccept: "Could not un-accept",
@@ -25,9 +27,13 @@ const cases = (n) => `${n} case${n === 1 ? "" : "s"}`;
 const OK = {
   accept: (d) => ({
     title: `${cases(d.casesTaken)} off ${d.lotNumber}`,
-    description: d.casesLeft === 0
+    description: (d.casesLeft === 0
       ? "That is the whole lot. A run was added to the registration form."
-      : `${cases(d.casesLeft)} left on the lot. A run was added to the registration form.`,
+      : `${cases(d.casesLeft)} left on the lot. A run was added to the registration form.`)
+      + (d.sentToFp
+        ? ` ${cases(d.sentToFp.cases)} went to the freezer on ${d.sentToFp.lotNumber}`
+          + `${d.sentToFp.created ? ", created just now" : ""}.`
+        : ""),
   }),
   unaccept: (d) => ({
     title: `${cases(d.casesReturned)} back on ${d.lotNumber}`,
