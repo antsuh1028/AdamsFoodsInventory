@@ -1,7 +1,7 @@
 // Deciding when a stream of scale readings means "a box".
 
-// Below this the platform counts as empty.
-const EMPTY_BELOW = 2.0;
+// At or below this the platform counts as empty: the heaviest empty box is 2.5 lb.
+const EMPTY_BELOW = 2.5;
 
 // How many identical settled readings before it counts as the box.
 const HOLD_READINGS = 3;
@@ -39,8 +39,8 @@ const createCaptureMachine = ({
   // `at` is injected so the module stays pure and the double-print window can be
   // driven exactly in tests rather than with real timers.
   const feed = (reading, at = Date.now()) => {
-    // An EMPTY platform is the one refusal that means something.
-    if (reading && !reading.ok && reading.code === "ZERO") {
+    // An EMPTY platform: zero, or below zero with the box tare set (-1.85 between boxes).
+    if (reading && !reading.ok && (reading.code === "ZERO" || reading.code === "NEGATIVE")) {
       reset();
       return { state, weight: 0, captured: null };
     }
@@ -53,7 +53,7 @@ const createCaptureMachine = ({
 
     // The platform cleared. This is what re-arms the machine, and it is the
     // only way out of DONE.
-    if (w < emptyBelow) {
+    if (w <= emptyBelow) {
       reset();
       return { state, weight: w, captured: null };
     }

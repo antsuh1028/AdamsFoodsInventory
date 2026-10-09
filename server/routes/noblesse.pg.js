@@ -7,6 +7,7 @@ const { syncProcessedStock } = require("../utils/processedStock");
 const { syncRegistrationStock } = require("../utils/registrationStock");
 const { yieldLateralSql, yieldFrom } = require("../utils/lotYield");
 const { searchTerm, searchClause } = require("../utils/search");
+const { manualCasesSql } = require("../utils/formManualCases");
 
 // Schema lives in ../db/migrate.js and is applied, in order, before this
 // module is ever required. Nothing here fires DDL at load any more — that
@@ -139,6 +140,9 @@ const fmtNtiItem = (row) => ({
   // qty_cases, which are what is left after shipping and processing.
   registeredWeight: row.registered_weight != null ? Number(row.registered_weight) : null,
   registeredCases:  row.registered_cases ?? null,
+  // Cases on the form's hand-typed runs, which never came off qty_cases. Present
+  // only where the query joined it in.
+  formManualCases:  row.form_manual_cases ?? 0,
   createdAt:    row.created_at,
 });
 
@@ -427,7 +431,8 @@ router.patch("/noblesse-receipts/:id/status", verifyToken, async (req, res) => {
 router.get("/nti-inventory", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM nti_inventory WHERE tenant_id = $1 ORDER BY created_at DESC`,
+      `SELECT n.*, ${manualCasesSql("n")} AS form_manual_cases
+         FROM nti_inventory n WHERE n.tenant_id = $1 ORDER BY n.created_at DESC`,
       [req.tenantId]
     );
     res.json(result.rows.map(fmtNtiItem));

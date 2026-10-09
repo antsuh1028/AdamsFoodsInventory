@@ -117,6 +117,33 @@ export const fmtDateOnly = (ts) => {
 // with an hour nobody was on the dock.
 export const timeNow = (date = new Date()) => TIME_FMT.format(date);
 
+// "06:05" -> "6:05 AM". The stored form is the 24-hour clock an <input type="time"> uses.
+export const fmtClock = (hhmm) => {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ""));
+  if (!m) return "";
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]} ${h < 12 ? "AM" : "PM"}`;
+};
+
+// Minutes since a run started, on the Pacific wall clock. Null if the start is unknown or ahead.
+export const minutesSince = (day, hhmm, now = new Date()) => {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
+  const t = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ""));
+  if (!d || !t) return null;
+  const [ny, nm, nd] = today(now).split("-").map(Number);
+  const [nh, nmin] = timeNow(now).split(":").map(Number);
+  const days = (Date.UTC(ny, nm - 1, nd) - Date.UTC(+d[1], +d[2] - 1, +d[3])) / 86400000;
+  const mins = days * 1440 + (nh * 60 + nmin) - (+t[1] * 60 + +t[2]);
+  return mins >= 0 ? mins : null;
+};
+
+// 83 -> "1h 23m", 45 -> "45m".
+export const fmtDuration = (mins) => {
+  if (mins == null) return "";
+  const h = Math.floor(mins / 60);
+  return h ? `${h}h ${String(mins % 60).padStart(2, "0")}m` : `${mins}m`;
+};
+
 // Lot numbers are N{YY}{JJJ} — two-digit year plus zero-padded day of the year —
 // with a per-record sequence appended downstream. 2026-09-01 is N26244.
 //

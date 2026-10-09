@@ -7,6 +7,7 @@ const { searchTerm, searchClause } = require("../utils/search");
 const { isCalendarDay } = require("../utils/weighedAt");
 const { fpCounts, lockLot, ensureFpLot, findFpChild, normaliseItem } = require("../utils/fpLot");
 const { pacificToday } = require("../utils/lot");
+const { manualCasesSql } = require("../utils/formManualCases");
 
 const MAX_FP_ITEM = 120;
 
@@ -72,6 +73,9 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   acceptedAt: r.accepted_at,
   rejectReason: r.reject_reason,
   appliedFormId: r.applied_form_id,
+  // Taken off the floor map by reception while it is looked into.
+  mapSilenced: Boolean(r.map_silenced_at),
+  mapSilencedBy: r.map_silenced_by ?? null,
   pulls: pulls.map((p) => ({
     pullId: p.pull_id, position: p.position, cases: p.cases, notes: p.notes,
   })),
@@ -163,6 +167,27 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
     })));
   } catch (err) {
     console.error("list processing reports:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Everyone who has been on a run, most often first, for the crew picker.
+// Registered before /:id, which would otherwise read "workers" as an id.
+router.get("/processing-reports/workers", verifyToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT UPPER(TRIM(w.name)) AS name, COUNT(*)::int AS runs, MAX(r.report_id) AS last
+         FROM noblesse_processing_report_workers w
+         JOIN noblesse_processing_reports r ON r.report_id = w.report_id
+        WHERE r.tenant_id = $1 AND TRIM(w.name) <> ''
+        GROUP BY 1
+        ORDER BY runs DESC, last DESC, name
+        LIMIT 200`,
+      [req.tenantId]
+    );
+    res.json(rows.map((r) => r.name));
+  } catch (err) {
+    console.error("list report workers:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -392,7 +417,9 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
               inedible_weight = $13, notes = $14,
               start_time = $17, end_time = $18,
               status = $19, pack_dates = $20::date[], reject_reason = NULL,
-              lot_id = COALESCE($21, lot_id), fp_cases = $22, fp_item = $23
+              lot_id = COALESCE($21, lot_id), fp_cases = $22, fp_item = $23,
+              -- An edited report is new information, so it goes back on the map.
+              map_silenced_at = NULL, map_silenced_by = NULL
         WHERE report_id = $15 AND tenant_id = $16`,
       [h.processingDate, h.processingType, h.lineNo, h.customer, h.description,
        h.brand, h.grade, h.estNumber, h.packDate, inputCases, v.outputCases,
@@ -504,10 +531,11 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
       }
     } else {
       const stock = await client.query(
-        `SELECT id, qty_cases FROM nti_inventory
-          WHERE tenant_id = $2 AND stage = 'raw'
-            AND (lot_id = $1 OR (lot_id IS NULL AND lot = $3))
-          FOR UPDATE`,
+        `SELECT s.id, s.qty_cases, ${manualCasesSql("s")} AS manual_cases
+           FROM nti_inventory s
+          WHERE s.tenant_id = $2 AND s.stage = 'raw'
+            AND (s.lot_id = $1 OR (s.lot_id IS NULL AND s.lot = $3))
+          FOR UPDATE OF s`,
         [report.lot_id, req.tenantId, report.lot_number]
       );
       if (!stock.rows.length) {
@@ -518,7 +546,9 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
         });
       }
       raw = stock.rows[0];
-      onHand = Number(raw.qty_cases) || 0;
+      // Hand-typed runs on the form never came off stock, so they come off here.
+      const manual = Number(raw.manual_cases) || 0;
+      onHand = (Number(raw.qty_cases) || 0) - manual;
 
       // Refused, never floored. The old processing-order path silently clamped to
       // zero, which is the behaviour this replaces.
@@ -526,7 +556,8 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
         await client.query("ROLLBACK");
         return res.status(409).json({
           code: "INSUFFICIENT_STOCK",
-          error: `The report uses ${report.input_cases} cases but only ${onHand} are on the lot.`,
+          error: `The report uses ${report.input_cases} cases but only ${Math.max(onHand, 0)} are on the lot`
+            + (manual ? ` (${manual} were processed by hand on the registration form).` : "."),
           requested: report.input_cases,
           onHand,
         });
@@ -617,6 +648,28 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
     res.status(500).json({ error: "Internal Server Error" });
   } finally {
     client.release();
+  }
+});
+
+// Off the floor map, or back on it. Moves nothing; the report stays in reception's list.
+router.post("/processing-reports/:id/silence", verifyToken, requireRole(...REPORT_ACCEPT_ROLES), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid report id" });
+  const silenced = req.body?.silenced !== false;
+  try {
+    const upd = await pool.query(
+      `UPDATE noblesse_processing_reports
+          SET map_silenced_at = CASE WHEN $1 THEN now() ELSE NULL END,
+              map_silenced_by = CASE WHEN $1 THEN $2 ELSE NULL END
+        WHERE report_id = $3 AND tenant_id = $4
+      RETURNING report_id`,
+      [silenced, req.username || null, id, req.tenantId]
+    );
+    if (!upd.rows.length) return res.status(404).json({ error: "Report not found" });
+    res.json(await loadReport(id, req.tenantId));
+  } catch (err) {
+    console.error("silence processing report:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

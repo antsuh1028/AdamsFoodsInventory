@@ -30,7 +30,9 @@ import axiosInstance from "../utils/axiosInstance";
 const MAX_DESC = 38;
 
 const optionLabel = (l) => {
-  const num = l.parentLotNumber ? `${l.lotNumber}, from ${l.parentLotNumber}` : l.lotNumber;
+  const num = l.parentLotNumber
+    ? `${l.lotNumber}, from ${l.parentLotNumber}${l.fpWaiting != null ? ` (${l.fpWaiting} waiting)` : ""}`
+    : l.lotNumber;
   const d = (l.description || "").trim();
   if (!d) return num;
   const short = d.length > MAX_DESC ? `${d.slice(0, MAX_DESC - 1)}\u2026` : d;
@@ -115,9 +117,11 @@ const LotPicker = ({
     () => options.filter((l) => (l.kind || "internal") === "internal"),
     [options]
   );
+  // Only FP lots with cases waiting, plus the one already chosen so the select keeps it.
   const further = useMemo(
-    () => options.filter((l) => l.kind === "further"),
-    [options]
+    () => options.filter((l) => l.kind === "further"
+      && (l.fpWaiting == null || l.fpWaiting > 0 || l.lotId === value)),
+    [options, value]
   );
   const outside = useMemo(
     () => options.filter((l) => l.kind === "external"),

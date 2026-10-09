@@ -11,6 +11,7 @@ import printProcessingReport from "./printProcessingReport";
 import LotPicker from "../../components/LotPicker";
 import {
   fmtDate, today, timeNow, upper, fmtWeight, PROCESSING_TYPES, PROCESSING_LINES,
+  fmtClock, minutesSince, fmtDuration,
   SheetField, sheetInputProps, SectionBar, SHEET_GRID,
 } from "./shared";
 import getRole, { canAcceptReports } from "../../utils/getRole";
@@ -65,6 +66,9 @@ const productIncomplete = (d) => PRODUCT_FIELDS.some(([k]) => isBlank(d[k]));
 //
 // Blanks only: what the manager has typed outranks the lot, so re-picking can
 // never overwrite work. Pure and module-scope so the JSX stays readable.
+// Cases a lot has left: stock, less the runs typed by hand on its form (those never moved stock).
+const casesLeftOn = (row) => Math.max(0, (Number(row.qtyCases) || 0) - (Number(row.formManualCases) || 0));
+
 const withLotDefaults = (draft, lot, row) => {
   const next = {
     ...draft,
@@ -89,7 +93,7 @@ const withLotDefaults = (draft, lot, row) => {
 
   // The cases still on the lot: processing what is left is the common case.
   // Never a zero, which is not a quantity anyone would submit.
-  const left = Number(row.qtyCases) || 0;
+  const left = casesLeftOn(row);
   if (left > 0 && next.pulls.length === 1 && !next.pulls[0].cases) {
     next.pulls = [{ cases: String(left) }];
   }
@@ -121,7 +125,14 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [filter, setFilter] = useState("submitted");
+  // Opens on what is running now; the floor's view first.
+  const [filter, setFilter] = useState("in_progress");
+  // Ticks so a running row's duration stays current.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
   // Searched on the server; the status buttons still narrow what comes back.
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
@@ -131,6 +142,17 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const [productOpen, setProductOpen] = useState(true);
   const [saving, setSaving] = useState(false);
   const [workerInput, setWorkerInput] = useState("");
+  // Names from earlier runs, most frequent first.
+  const [knownWorkers, setKnownWorkers] = useState([]);
+  const fetchWorkers = useCallback(async () => {
+    try {
+      const { data } = await axiosInstance.get("/processing-reports/workers");
+      setKnownWorkers(data || []);
+    } catch {
+      // Suggestions only; typing still works without them.
+    }
+  }, []);
+  useEffect(() => { fetchWorkers(); }, [fetchWorkers]);
   const [busyId, setBusyId] = useState(null);
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState("");
@@ -173,6 +195,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         qtyCases: f.waiting,
         registeredCases: f.sent,
         registeredWeight: null,
+        // The N lot's hand-typed runs are the N lot's; the FP count already stands alone.
+        formManualCases: 0,
         fp: true,
         parentLotNumber: f.parentLotNumber,
       }));
@@ -216,8 +240,22 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     () => (draft && draft.lotId ? stock.find((r) => r.lotId === draft.lotId) : null),
     [stock, draft]
   );
-  const casesLeft = lotStock ? Number(lotStock.qtyCases) || 0 : null;
-  const overdrawn = casesLeft != null && inputCases > casesLeft;
+  // Hand-typed runs on the form never came off stock, so they come off here.
+  const casesLeft = lotStock ? casesLeftOn(lotStock) : null;
+  const handCases = lotStock ? Number(lotStock.formManualCases) || 0 : 0;
+  // The lot's figures in one line, shared by the window and the printout. An accepted
+  // report's cases are already off, so it gets no "after this".
+  const lotLine = lotStock ? [
+    lotStock.fp
+      ? `${lotStock.registeredCases} cases of ${lotStock.parentLotNumber} sent to the freezer`
+      : `lot registered ${lotStock.registeredCases ?? "?"} cases`
+        + (lotStock.registeredWeight ? ` = ${fmtWeight(lotStock.registeredWeight)} lb` : ""),
+    handCases ? `${handCases} processed by hand on the form` : null,
+    `${casesLeft} ${lotStock.fp ? "waiting" : "left now"}`,
+    draft && draft.status !== "accepted" && inputCases > 0 && inputCases <= casesLeft
+      ? `${casesLeft - inputCases} after this` : null,
+  ].filter(Boolean).join(" · ") : null;
+  const overdrawn = casesLeft != null && inputCases > casesLeft && draft?.status !== "accepted";
 
   // Staging needs only the lot: at the start of a run the cases are not known
   // yet. Confirming still needs them.
@@ -261,6 +299,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
       const lot = draft.lotNumber || "the lot";
       setDraft(null);
       await fetchReports();
+      fetchWorkers();
       toast({
         status: "success", position: "top", duration: 6000, isClosable: true,
         title: wasRejected
@@ -284,6 +323,24 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     setBusyId(null);
     if (result.ok) { await fetchReports(); await fetchStock(); }
     return result.ok;
+  };
+
+  const silence = async (report, silenced) => {
+    setBusyId(report.reportId);
+    try {
+      await axiosInstance.post(`/processing-reports/${report.reportId}/silence`, { silenced });
+      await fetchReports();
+      toast({
+        status: "success", position: "top", duration: 4000,
+        title: silenced ? `${report.lotNumber} taken off the floor map` : `${report.lotNumber} back on the floor map`,
+        description: silenced ? "It stays here, waiting, until it is accepted or sent back." : undefined,
+      });
+    } catch (err) {
+      toast({ status: "error", position: "top", title: "Could not change the map",
+        description: err.response?.data?.error || err.message });
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const remove = async (report) => {
@@ -349,8 +406,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
           />
           <Flex gap={1}>
             {[
-              ["submitted", "Waiting", "yellow"],
               ["in_progress", "On the line", "gray"],
+              ["submitted", "Waiting", "yellow"],
               ["accepted", "Accepted", "green"],
               ["rejected", "Sent back", "red"],
               ["", "All", "teal"],
@@ -437,7 +494,21 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 {STATUS_LABEL[r.status] || r.status}
               </Badge>
               {r.lineNo && <Badge colorScheme="gray" fontSize="9px">Line {r.lineNo}</Badge>}
+              {r.status === "submitted" && r.mapSilenced && (
+                <Badge colorScheme="gray" variant="outline" fontSize="9px"
+                  title={`Taken off the floor map${r.mapSilencedBy ? ` by ${r.mapSilencedBy}` : ""} for review`}>
+                  off the map
+                </Badge>
+              )}
               {r.description && <Text fontSize="xs" color="gray.600">{r.description}</Text>}
+              {r.status === "in_progress" && r.startTime && (
+                <Text fontSize="xs" color="green.700" fontWeight="600"
+                  style={{ fontVariantNumeric: "tabular-nums" }}>
+                  Started {fmtClock(r.startTime)}
+                  {minutesSince(r.processingDate, r.startTime, now) != null
+                    && ` · running ${fmtDuration(minutesSince(r.processingDate, r.startTime, now))}`}
+                </Text>
+              )}
               <Text fontSize="sm" color="gray.700" ml="auto"
                 style={{ fontVariantNumeric: "tabular-nums" }}>
                 {r.inputCases} cases
@@ -463,6 +534,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               <Box flex={1} />
               {r.status === "submitted" && canAccept && (
                 <>
+                  <Button size="xs" variant="ghost" colorScheme="gray" isLoading={busyId === r.reportId}
+                    title={r.mapSilenced ? "Put it back on the floor map" : "Take it off the floor map while it is reviewed"}
+                    onClick={(e) => { e.stopPropagation(); silence(r, !r.mapSilenced); }}>
+                    {r.mapSilenced ? "Show on map" : "Silence"}
+                  </Button>
                   <Button size="xs" variant="ghost" isLoading={busyId === r.reportId}
                     onClick={(e) => { e.stopPropagation(); setRejecting(r.reportId); setReason(""); }}>
                     Send back
@@ -605,7 +681,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {/* Prints what is on screen, saved or not: the floor wants the
                   sheet in hand while the run is happening. */}
               <Button size="md" variant="outline"
-                onClick={() => printProcessingReport(draft)}>
+                onClick={() => printProcessingReport(draft, { lotLine })}>
                 Print
               </Button>
               <Button size="md" variant="ghost" onClick={closeDraft}>
@@ -835,15 +911,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                     style={{ fontVariantNumeric: "tabular-nums" }}>
                     {inputCases} cases
                   </Text>
-                  {lotStock && (
+                  {lotLine && (
                     <Text fontSize="xs" color="gray.500"
                       style={{ fontVariantNumeric: "tabular-nums" }}>
-                      {lotStock.fp
-                        ? `${lotStock.registeredCases} cases of ${lotStock.parentLotNumber} sent to the freezer`
-                        : `lot registered ${lotStock.registeredCases ?? "?"} cases`}
-                      {lotStock.registeredWeight ? ` = ${fmtWeight(lotStock.registeredWeight)} lb` : ""}
-                      {" · "}{casesLeft} {lotStock.fp ? "waiting" : "left now"}
-                      {inputCases > 0 && !overdrawn ? ` · ${casesLeft - inputCases} after this` : ""}
+                      {lotLine}
                     </Text>
                   )}
                 </Flex>
@@ -919,13 +990,28 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   </Flex>
                   <Flex gap={2} display={draft.readOnly ? "none" : undefined}>
                     <Input size="sm" bg="white" width="220px" placeholder="Name, then Enter"
+                      list="report-worker-names" autoComplete="off"
                       value={workerInput}
                       onChange={(e) => setWorkerInput(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") { e.preventDefault(); addWorker(); }
                       }} />
+                    <datalist id="report-worker-names">
+                      {knownWorkers.map((n) => <option key={n} value={n} />)}
+                    </datalist>
                     <Button size="sm" variant="outline" onClick={addWorker}>Add</Button>
                   </Flex>
+                  {/* The regulars, one tap each; names already on this run drop out. */}
+                  {!draft.readOnly && knownWorkers.some((n) => !draft.workers.includes(n)) && (
+                    <Flex gap={1} wrap="wrap" mt={2}>
+                      {knownWorkers.filter((n) => !draft.workers.includes(n)).slice(0, 14).map((n) => (
+                        <Button key={n} size="xs" variant="outline" colorScheme="gray" borderRadius="full"
+                          onClick={() => setDraft((d) => ({ ...d, workers: [...d.workers, n] }))}>
+                          + {n}
+                        </Button>
+                      ))}
+                    </Flex>
+                  )}
                 </Box>
               </SheetField>
 

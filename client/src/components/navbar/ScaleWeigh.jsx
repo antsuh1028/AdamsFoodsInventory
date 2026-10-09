@@ -58,8 +58,11 @@ const ScaleWeigh = ({
   weightsRef.current = weights;
   const onAddRef = useRef(onAdd);
   onAddRef.current = onAdd;
+  // Set with the state, not on render, so a line arriving before the re-render sees it.
   const queriedRef = useRef(null);
-  queriedRef.current = queried;
+  const ask = useCallback((q) => { queriedRef.current = q; setQueried(q); }, []);
+  // Boxes that settled while a question was open, in order, waiting their turn.
+  const pendingRef = useRef([]);
 
   // onAdd beeps and toasts for itself; what it returns is whether the box actually
   // landed.
@@ -74,35 +77,51 @@ const ScaleWeigh = ({
         title: "That box was not recorded", description: err.message,
       });
     }
-    if (!ok) return;
+    if (!ok) return false;
     setFlash({ weight, at: Date.now() });
     clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), FLASH_MS);
+    return true;
   }, [toast]);
+
+  // A captured box: asked about if it looks wrong, recorded if not.
+  const consider = useCallback(async (w) => {
+    // Advisory: stop the box at the gate rather than recording and apologising.
+    const outlier = looksWrong(w, weightsRef.current);
+    if (outlier.outlier) { beepError(); ask({ kind: "outlier", weight: w, ...outlier }); return; }
+
+    const repeat = looksLikeReweigh(w, weightsRef.current);
+    if (repeat.reweigh) { beepError(); ask({ kind: "reweigh", weight: w, ...repeat }); return; }
+
+    await record(w);
+  }, [ask, record]);
+
+  // After an answer, the boxes that settled meanwhile get their turn, in order.
+  const answer = useCallback(async (recordIt) => {
+    const w = queriedRef.current && queriedRef.current.weight;
+    ask(null);
+    if (recordIt && w) await record(w);
+    while (pendingRef.current.length && !queriedRef.current) {
+      // eslint-disable-next-line no-await-in-loop
+      await consider(pendingRef.current.shift());
+    }
+  }, [ask, consider, record]);
 
   // One line off the wire. Parse it, hand it to the machine, act on the verdict.
   const onLine = useCallback((raw) => {
-    // A capture waiting on an answer FREEZES the feed.
-    if (queriedRef.current) return;
-
     // assumeUnit because this indicator prints a bare number with no unit.
     const reading = parseScaleLine(raw, { assumeUnit: "LB" });
+    // Fed even while a question is open, so the machine sees a box come off and the
+    // next go on; otherwise a box weighed meanwhile is never recorded.
     const result = machineRef.current.feed(reading);
 
     if (result.weight != null) setLive(result.weight);
     setState(result.state);
     if (!result.captured) return;
 
-    // Advisory: stop the box at the gate rather than recording and apologising.
-    const w = result.captured;
-    const outlier = looksWrong(w, weightsRef.current);
-    if (outlier.outlier) { beepError(); setQueried({ kind: "outlier", weight: w, ...outlier }); return; }
-
-    const repeat = looksLikeReweigh(w, weightsRef.current);
-    if (repeat.reweigh) { beepError(); setQueried({ kind: "reweigh", weight: w, ...repeat }); return; }
-
-    record(w);
-  }, [record]);
+    if (queriedRef.current) { pendingRef.current.push(result.captured); return; }
+    consider(result.captured);
+  }, [consider]);
 
   const onLineRef = useRef(onLine);
   onLineRef.current = onLine;
@@ -121,6 +140,7 @@ const ScaleWeigh = ({
     setConnecting(true);
     try {
       machineRef.current.reset();
+      pendingRef.current = [];
       handleRef.current = await connectScale({
         pick,
         // Through a ref so the loop always uses the current handler rather than
@@ -321,11 +341,11 @@ const ScaleWeigh = ({
 
           <Flex gap={2} mt={3}>
             <Button size="sm" variant="outline"
-              onClick={() => setQueried(null)}>
+              onClick={() => answer(false)}>
               {queried.kind === "reweigh" ? t("Same box — skip it") : t("Skip it")}
             </Button>
             <Button size="sm" colorScheme="yellow"
-              onClick={() => { const w = queried.weight; setQueried(null); record(w); }}>
+              onClick={() => answer(true)}>
               {t("Record {weight} lb", { weight: queried.weight })}
             </Button>
           </Flex>

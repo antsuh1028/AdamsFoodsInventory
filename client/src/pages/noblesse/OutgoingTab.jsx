@@ -344,6 +344,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // A session to reopen the weighing window on, so an interrupted lot can be
   // carried on with instead of started again.
   const [adoptBatchId, setAdoptBatchId] = useState(null);
+  // A closed pallet whose heading the next one starts from.
+  const [nextFrom, setNextFrom] = useState(null);
+  const [reopening, setReopening] = useState(null);
   // A weighed session an admin wants gone. The route refuses while a load or a
   // form still references it, and the dialog says which.
   const [deletingBatch, setDeletingBatch] = useState(null);
@@ -732,6 +735,25 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   const cancelledLoads = shipments.filter((sh) => sh.status === "cancelled");
 
   // One weighed session's row.
+  // Closed by mistake: reopen and carry straight on. A session already on a load or
+  // a form is refused by the server for anyone but an admin, and the toast says why.
+  const reopenSession = async (b) => {
+    setReopening(b.batch_id);
+    try {
+      await axiosInstance.post(`/box-batches/${b.batch_id}/reopen`);
+      toast({ title: t("Session reopened"), status: "success", duration: 3000, position: "top" });
+      setAdoptBatchId(b.batch_id);
+      setWeighOpen(true);
+      fetchBatches();
+    } catch (err) {
+      toast({ title: t("Could not reopen this session"),
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 9000, isClosable: true, position: "top" });
+    } finally {
+      setReopening(null);
+    }
+  };
+
   const renderSession = (b) => (
     <Box key={b.batch_id}>
     {/* Flagged reads red at a glance. It still counts everywhere — the flag
@@ -798,6 +820,26 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
           onDoubleClick={(e) => e.stopPropagation()}>
           {t("Carry on weighing")}
         </Button>
+      )}
+      {/* A closed pallet: start the next one on the same heading, or reopen one closed by mistake. */}
+      {b.status === "closed" && (
+        <>
+          <Button size="xs" variant="ghost" colorScheme="teal"
+            onClick={() => setNextFrom({
+              lotId: b.lot_id ?? null, lotNumber: b.lot_number || "",
+              description: b.item_description || "", shipTo: b.ship_to || "",
+              expectedBoxes: b.expected_boxes ?? null, nextPallet: true,
+            })}
+            onDoubleClick={(e) => e.stopPropagation()}>
+            {t("Next pallet")}
+          </Button>
+          <Button size="xs" variant="ghost" colorScheme="gray"
+            isLoading={reopening === b.batch_id}
+            onClick={() => reopenSession(b)}
+            onDoubleClick={(e) => e.stopPropagation()}>
+            {t("Reopen")}
+          </Button>
+        </>
       )}
       {/* The dock weighs it and the dock notices when it is wrong, so this is
           open to everyone — unlike Delete below. */}
@@ -1561,12 +1603,12 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
       />
 
       <WeighFinishedBoxes
-        isOpen={weighOpen || Boolean(weighFor)}
+        isOpen={weighOpen || Boolean(weighFor) || Boolean(nextFrom)}
         adoptBatchId={adoptBatchId}
-        presetLot={weighFor}
+        presetLot={weighFor || nextFrom}
         onSessionClosed={weighFor ? tieClosedSession : null}
         onClose={() => {
-          setWeighOpen(false); setAdoptBatchId(null); setWeighFor(null); fetchBatches();
+          setWeighOpen(false); setAdoptBatchId(null); setWeighFor(null); setNextFrom(null); fetchBatches();
         }}
       />
     </Box>
