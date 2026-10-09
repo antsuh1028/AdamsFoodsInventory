@@ -669,7 +669,8 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
       UNION ALL
       -- Weighing sessions, on the day they were weighed.
       SELECT ${weighedAtSql("b")}, 'weighed',
-             (CASE WHEN b.direction = 'outgoing' THEN 'Weighed out' ELSE 'Weighed in' END
+             (CASE WHEN b.further_processing THEN 'Weighed to the AF freezer'
+                   WHEN b.direction = 'outgoing' THEN 'Weighed out' ELSE 'Weighed in' END
               || CASE WHEN b.source = 'imported' THEN ' (tally sheet imported)' ELSE '' END),
              COALESCE((SELECT SUM(${weightInLb("bi")}) FROM batch_items bi
                         WHERE bi.batch_id = b.batch_id AND bi.voided_at IS NULL), 0)::text,

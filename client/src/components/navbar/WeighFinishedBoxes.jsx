@@ -1,7 +1,7 @@
 import upperInput from "../../utils/upperInput";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Input, Badge, Textarea, Alert, AlertIcon, useToast,
+  Box, Flex, Text, Button, Input, Badge, Textarea, Alert, AlertIcon, Checkbox, useToast,
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
   AlertDialogContent, AlertDialogOverlay,
 } from "@chakra-ui/react";
@@ -48,6 +48,8 @@ const WeighFinishedBoxes = ({
   // Who the boxes are going to. Stored on the session, so a manifest printed
   // from it says where the product went.
   const [shipTo, setShipTo] = useState("");
+  // Going to the AF freezer for another run: documented for its labels, not a departure.
+  const [toFreezer, setToFreezer] = useState(false);
   const [busy, setBusy] = useState(false);
   const [typeMode, setTypeMode] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -64,6 +66,7 @@ const WeighFinishedBoxes = ({
     if (presetLot.description) setItemDescription(presetLot.description);
     if (presetLot.shipTo) setShipTo(presetLot.shipTo);
     if (presetLot.expectedBoxes != null) setExpectedBoxes(String(presetLot.expectedBoxes));
+    if (presetLot.furtherProcessing) setToFreezer(true);
   }, [isOpen, presetLot, session]);
 
   // Next pallet asks how many boxes the new pallet holds before it starts.
@@ -122,6 +125,7 @@ const WeighFinishedBoxes = ({
         itemDescription: itemDescription.trim().toUpperCase() || null,
         shipTo: shipTo.trim().toUpperCase() || null,
         direction: "outgoing",
+        furtherProcessing: toFreezer,
       });
     } catch (err) {
       toast({ title: t("Could not start weighing"), description: err.message,
@@ -202,6 +206,7 @@ const WeighFinishedBoxes = ({
       setExpectedBoxes("");
       setItemDescription("");
       setShipTo("");
+      setToFreezer(false);
       onClose();
     } catch (err) {
       toast({ title: t("Could not stop the session"), description: err.message,
@@ -225,6 +230,7 @@ const WeighFinishedBoxes = ({
       itemDescription: (session?.itemDescription || itemDescription || "").trim().toUpperCase() || null,
       shipTo: (session?.shipTo || shipTo || "").trim().toUpperCase() || null,
       direction: "outgoing",
+      furtherProcessing: Boolean(session?.furtherProcessing),
     };
     try {
       const result = await stop(remarks.trim() || null);
@@ -440,6 +446,27 @@ const WeighFinishedBoxes = ({
               {t("What is in the boxes. Left blank it is taken from the lot's incoming session, which is the raw product rather than this one.")}
             </Text>
 
+            {/* A trip to the AF freezer is weighed for its USDA labels; the product comes back. */}
+            <Box mt={4} p={3} borderRadius="md" border="1px solid"
+              borderColor={toFreezer ? "blue.300" : "gray.200"} bg={toFreezer ? "blue.50" : "white"}>
+              <Checkbox size="lg" isChecked={toFreezer}
+                sx={{ "& .chakra-checkbox__control:not([data-checked])": { borderColor: "gray.500", bg: "white" } }}
+                onChange={(e) => {
+                  setToFreezer(e.target.checked);
+                  if (e.target.checked && !shipTo.trim()) setShipTo("AF FREEZER");
+                  if (!e.target.checked && shipTo === "AF FREEZER") setShipTo("");
+                }}>
+                <Text as="span" fontSize="sm" fontWeight="600">
+                  {t("Going to the AF freezer for further processing")}
+                </Text>
+              </Checkbox>
+              {toFreezer && (
+                <Text fontSize="xs" color="gray.600" mt={1}>
+                  {t("Weighed and labelled for the freezer. It comes back for another run, so it is not counted as shipped. Nominal batch weights are fine.")}
+                </Text>
+              )}
+            </Box>
+
             <Text fontSize="xs" color="gray.500" textTransform="uppercase" mt={4} mb={1}>
               {t("Going to")} <Text as="span" textTransform="none">{t("(optional)")}</Text>
             </Text>
@@ -474,6 +501,9 @@ const WeighFinishedBoxes = ({
                 <Badge colorScheme="blue" fontSize="9px">
                   {t("to {shipTo}", { shipTo: session.shipTo })}
                 </Badge>
+              )}
+              {session.furtherProcessing && (
+                <Badge colorScheme="teal" fontSize="9px">{t("for further processing")}</Badge>
               )}
             </Flex>
 

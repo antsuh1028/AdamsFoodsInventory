@@ -14,6 +14,22 @@ import { fmtDate, today, fmtWeight } from "./shared";
 
 const EMPTY = () => ({ lotId: null, lotNumber: "", item: "", cases: "", rawWeight: "", sentOn: today() });
 
+// Boxes the dock labelled for this N lot, checked against the cases sent. Paperwork only.
+const LabelledCell = ({ r }) => {
+  if (r.labelled == null) return <Td isNumeric>—</Td>;
+  const off = r.labelled !== r.sent;
+  return (
+    <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}
+      title={off
+        ? `The dock labelled ${r.labelled} boxes for the freezer; ${r.sent} cases were sent. One of the two is wrong.`
+        : "Matches the cases sent."}>
+      <Text as="span" color={off ? "red.600" : "gray.600"} fontWeight={off ? "700" : "400"}>
+        {r.labelled}{off ? " ≠" : ""}
+      </Text>
+    </Td>
+  );
+};
+
 const FpTracker = ({ isOpen, onClose }) => {
   const toast = useToast();
   const canEdit = canAcceptReports();
@@ -143,15 +159,16 @@ const FpTracker = ({ isOpen, onClose }) => {
             <Tr>
               <Th>Date sent out</Th><Th>Date returned</Th><Th>Lot #</Th><Th>FP lot</Th><Th>Item description</Th>
               <Th isNumeric>Qty (cases)</Th><Th isNumeric>Raw weights</Th><Th isNumeric>Waiting</Th>
+              <Th isNumeric title="Boxes the dock weighed and labelled for the freezer, against the cases sent">Labelled at dock</Th>
               {canEdit && <Th />}
             </Tr>
           </Thead>
           <Tbody>
             {loading && rows.length === 0 && (
-              <Tr><Td colSpan={9}><Flex justify="center" py={4}><Spinner size="sm" /></Flex></Td></Tr>
+              <Tr><Td colSpan={10}><Flex justify="center" py={4}><Spinner size="sm" /></Flex></Td></Tr>
             )}
             {!loading && rows.length === 0 && (
-              <Tr><Td colSpan={9}><Text fontSize="sm" color="gray.500" py={2}>Nothing here yet.</Text></Td></Tr>
+              <Tr><Td colSpan={10}><Text fontSize="sm" color="gray.500" py={2}>Nothing here yet.</Text></Td></Tr>
             )}
             {rows.map((r) => (editing?.fpId === r.fpId ? (
               <Tr key={r.fpId} bg="blue.50">
@@ -167,6 +184,7 @@ const FpTracker = ({ isOpen, onClose }) => {
                 <Td isNumeric><Input {...cellInput} width="90px" inputMode="decimal" value={editing.rawWeight}
                   onChange={(e) => setEditing({ ...editing, rawWeight: e.target.value })} /></Td>
                 <Td isNumeric>{r.waiting}</Td>
+                <LabelledCell r={r} />
                 <Td>
                   <Flex gap={1} justify="flex-end">
                     <Button size="xs" colorScheme="blue" onClick={saveEdit} isLoading={busy === r.fpId}>Save</Button>
@@ -199,6 +217,7 @@ const FpTracker = ({ isOpen, onClose }) => {
                   {r.waiting > 0 ? <Text as="span" fontWeight="600">{r.waiting}</Text>
                     : <Text as="span" color="gray.400">done</Text>}
                 </Td>
+                <LabelledCell r={r} />
                 {canEdit && (
                   <Td>
                     <Flex gap={1} justify="flex-end" wrap="wrap">

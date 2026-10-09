@@ -21,6 +21,8 @@ const show = (n) => fromHundredths(n);
 const printOutgoingTag = ({
   lotNumber, date, shipTo, itemDescription, billOfLading,
   boxes: scans = [], weighedBy = "", memo = "",
+  // Going to the AF freezer for another run. The lot stays the N number.
+  furtherProcessing = false,
 } = {}) => {
   // A voided box was taken off the tally on purpose; a duplicate is one box
   // counted twice. Neither travels on the tag.
@@ -65,7 +67,9 @@ const printOutgoingTag = ({
   const tag = `
         <div class="tag">
           <h1>Noblesse Trading</h1>
-          <div class="kind">OUTGOING &mdash; WEIGHED BOXES</div>
+          <div class="kind">${furtherProcessing
+            ? "FOR FURTHER PROCESSING &mdash; TO THE AF FREEZER"
+            : "OUTGOING &mdash; WEIGHED BOXES"}</div>
 
           <table class="head">
             <tr>

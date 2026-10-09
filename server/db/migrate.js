@@ -284,6 +284,11 @@ const steps = async () => {
   await run("box_batches flag_reason",
     `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS flag_reason TEXT`);
 
+  // An outgoing session that went to the AF freezer for another run, weighed for
+  // its USDA labels. Not a departure: kept out of yield and off loads.
+  await run("box_batches further_processing",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS further_processing BOOLEAN NOT NULL DEFAULT false`);
+
   // Where a box's weight actually came from.
   await run("batch_items entry_method",
     `ALTER TABLE batch_items ADD COLUMN IF NOT EXISTS entry_method TEXT

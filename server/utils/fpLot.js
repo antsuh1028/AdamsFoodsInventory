@@ -20,17 +20,25 @@ const takenSql = (fp) => `
              WHERE r.tenant_id = ${fp}.tenant_id AND r.lot_id = ${fp}.lot_id
                AND r.status = 'accepted'), 0)::int`;
 
+// Boxes the dock weighed and labelled for the freezer. Paperwork only: checked
+// against `sent`, never added to it. `fp` as above.
+const labelledSql = (fp) => `
+  COALESCE((SELECT COUNT(*) FROM batch_items bi
+              JOIN box_batches b ON b.batch_id = bi.batch_id
+             WHERE b.tenant_id = ${fp}.tenant_id AND b.lot_id = ${fp}.parent_lot_id
+               AND b.further_processing AND bi.voided_at IS NULL), 0)::int`;
+
 const COUNTS_SQL = `
-  SELECT ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken
+  SELECT ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled
     FROM lots fp WHERE fp.lot_id = $1 AND fp.tenant_id = $2 AND fp.kind = 'further'`;
 
-/** { sent, taken, waiting } for an FP lot, or null when it is not one. */
+/** { sent, taken, waiting, labelled } for an FP lot, or null when it is not one. */
 const fpCounts = async (db, tenantId, fpLotId) => {
   const { rows } = await db.query(COUNTS_SQL, [fpLotId, tenantId]);
   if (!rows.length) return null;
   const sent = Number(rows[0].sent);
   const taken = Number(rows[0].taken);
-  return { sent, taken, waiting: sent - taken };
+  return { sent, taken, waiting: sent - taken, labelled: Number(rows[0].labelled) };
 };
 
 // Serialises everything that reads and then changes a lot's FP count.
@@ -66,5 +74,5 @@ const ensureFpLot = async (db, tenantId, parentLotId, userId) => {
 };
 
 module.exports = {
-  normaliseItem, sentSql, takenSql, COUNTS_SQL, fpCounts, lockLot, findFpChild, ensureFpLot,
+  normaliseItem, sentSql, takenSql, labelledSql, COUNTS_SQL, fpCounts, lockLot, findFpChild, ensureFpLot,
 };

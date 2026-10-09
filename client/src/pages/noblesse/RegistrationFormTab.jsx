@@ -545,6 +545,14 @@ export const RegistrationFormModal = ({
                     {" · "}{further.waiting} cs waiting on {further.fpLotNumber}
                   </Text>
                 )}
+                {/* The dock's labelled boxes, a check on the count above; never added to it. */}
+                {further && further.labelled > 0 && (
+                  <Text fontSize="xs" mt={1} fontWeight={further.labelled !== further.sent ? "700" : "400"}
+                    color={further.labelled !== further.sent ? "red.600" : "gray.600"}>
+                    Labelled at the dock: {further.labelled} boxes
+                    {further.labelled !== further.sent ? ` (does not match the ${further.sent} cs sent)` : ""}
+                  </Text>
+                )}
                 <Text fontSize="xs" color="gray.600">
                   Packed for another run. Not counted in Remaining below.
                 </Text>

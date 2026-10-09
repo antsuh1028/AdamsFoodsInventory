@@ -20,7 +20,8 @@ const weighedSql = (direction) => {
   return `COALESCE((SELECT SUM(${weightInLb("bi")}) FROM batch_items bi
                       JOIN box_batches b ON b.batch_id = bi.batch_id
                      WHERE b.lot_id = $1 AND b.tenant_id = $2
-                       AND b.direction = '${direction}' AND bi.voided_at IS NULL), 0)::text`;
+                       AND b.direction = '${direction}' AND bi.voided_at IS NULL
+                       AND NOT b.further_processing), 0)::text`;
 };
 
 // Boxes on one side of a lot. Zero is what separates "nothing has been weighed
@@ -30,7 +31,8 @@ const boxesSql = (direction) => {
   return `COALESCE((SELECT COUNT(*) FROM batch_items bi
                       JOIN box_batches b ON b.batch_id = bi.batch_id
                      WHERE b.lot_id = $1 AND b.tenant_id = $2
-                       AND b.direction = '${direction}' AND bi.voided_at IS NULL), 0)::int`;
+                       AND b.direction = '${direction}' AND bi.voided_at IS NULL
+                       AND NOT b.further_processing), 0)::int`;
 };
 
 // Boxes on one side whose weight was TYPED as a nominal figure, not read off
@@ -42,6 +44,7 @@ const estimatedSql = (direction) => {
                       JOIN box_batches b ON b.batch_id = bi.batch_id
                      WHERE b.lot_id = $1 AND b.tenant_id = $2
                        AND b.direction = '${direction}' AND bi.voided_at IS NULL
+                       AND NOT b.further_processing
                        AND bi.is_estimated), 0)::int`;
 };
 
@@ -70,6 +73,8 @@ const yieldLateralSql = (alias) => `
       JOIN box_batches b ON b.batch_id = bi.batch_id
      WHERE b.tenant_id = ${alias}.tenant_id
        AND bi.voided_at IS NULL
+       -- A freezer trip comes back, so it is not weight out.
+       AND NOT b.further_processing
        -- Forms predate the registry, so some carry only the text.
        AND b.lot_id = COALESCE(${alias}.lot_id,
              (SELECT l.lot_id FROM lots l

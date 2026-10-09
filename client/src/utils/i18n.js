@@ -210,6 +210,13 @@ const ES = {
   "Next pallet of {lot}, same heading. Enter how many boxes are on this pallet.":
     "Siguiente tarima de {lot}, mismo encabezado. Escriba cuántas cajas lleva esta tarima.",
   "Reopen": "Reabrir",
+  "Going to the AF freezer for further processing":
+    "Va al congelador de AF para otro proceso",
+  "Weighed and labelled for the freezer. It comes back for another run, so it is not counted as shipped. Nominal batch weights are fine.":
+    "Pesado y etiquetado para el congelador. Regresa para otro proceso, así que no cuenta como enviado. Se pueden usar pesos nominales por lote.",
+  "for further processing": "para otro proceso",
+  "Weighed for the AF freezer. It comes back for another run, so it is not counted as shipped.":
+    "Pesado para el congelador de AF. Regresa para otro proceso, así que no cuenta como enviado.",
   "Session reopened": "Sesión reabierta",
   "Could not reopen this session": "No se pudo reabrir esta sesión",
   "Delete": "Borrar",

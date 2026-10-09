@@ -4,7 +4,7 @@ const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { REPORT_ACCEPT_ROLES } = require("../middleware/receptionRoles");
 const {
-  normaliseItem, sentSql, takenSql, fpCounts, lockLot, findFpChild, ensureFpLot,
+  normaliseItem, sentSql, takenSql, labelledSql, fpCounts, lockLot, findFpChild, ensureFpLot,
 } = require("../utils/fpLot");
 const { isCalendarDay } = require("../utils/weighedAt");
 const { pacificToday } = require("../utils/lot");
@@ -39,6 +39,8 @@ const fmt = (r) => ({
   sent: r.sent,
   taken: r.taken,
   waiting: r.sent - r.taken,
+  // Boxes the dock labelled for the freezer; null until the FP lot exists.
+  labelled: r.labelled ?? null,
 });
 
 const ROW_SQL = `
@@ -46,7 +48,7 @@ const ROW_SQL = `
          t.item, t.cases, t.raw_weight::text AS raw_weight,
          t.sent_on::text AS sent_on, t.returned_on::text AS returned_on, t.created_at, t.source_report_id,
          (SELECT u.username FROM users u WHERE u.id = t.created_by) AS created_by,
-         ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken
+         ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled
     FROM fp_tracker t
     JOIN lots l ON l.lot_id = t.lot_id
     LEFT JOIN lots fp ON fp.parent_lot_id = t.lot_id AND fp.kind = 'further'`;
@@ -126,7 +128,7 @@ router.get("/fp-lots", verifyToken, async (req, res) => {
     const { rows } = await pool.query(
       `SELECT fp.lot_id, fp.lot_number, p.lot_id AS parent_lot_id, p.lot_number AS parent_lot_number,
               ${lotDescriptionSql("p")} AS description,
-              ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken
+              ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled
          FROM lots fp JOIN lots p ON p.lot_id = fp.parent_lot_id
         WHERE fp.tenant_id = $1 AND fp.kind = 'further'
         ORDER BY fp.lot_date DESC NULLS LAST, fp.lot_number DESC`,
@@ -140,6 +142,7 @@ router.get("/fp-lots", verifyToken, async (req, res) => {
       sent: r.sent,
       taken: r.taken,
       waiting: r.sent - r.taken,
+      labelled: r.labelled,
     })));
   } catch (err) {
     console.error("list fp lots:", err);
