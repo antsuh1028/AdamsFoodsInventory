@@ -6,8 +6,17 @@ import FloatingWindow from "../../components/FloatingWindow";
 import axiosInstance from "../../utils/axiosInstance";
 import { matchDescription, normaliseName } from "../../utils/descriptionMatch";
 
-// The standard outgoing item descriptions. The one way in, so every new name
-// and every correction is checked against what is already there.
+// A managed name list (items or customers). Every new name and correction is checked.
+
+export const ITEM_LIST = {
+  endpoint: "/item-descriptions", title: "Item List", noun: "product", add: "Add an item",
+  intro: "What the dock picks from when weighing outgoing boxes. Correct a misspelling with Edit; retire a name that should no longer be offered.",
+};
+
+export const CUSTOMER_LIST = {
+  endpoint: "/customers", title: "Customer List", noun: "customer", add: "Add a customer",
+  intro: "Where outgoing pallets go. The dock picks from it, and shipments are grouped by it. Correct a misspelling with Edit; retire a customer that should no longer be offered.",
+};
 
 // What a proposed name would collide with, against every other entry.
 const checkName = (typed, items, exceptId = null) => {
@@ -18,17 +27,17 @@ const checkName = (typed, items, exceptId = null) => {
 };
 
 // A sentence for a name that should not go in as typed, or null.
-const warning = (check) => {
+const warning = (check, noun) => {
   if (check.kind === "exact" || check.kind === "spelling") {
     return { block: true, text: `Already on the list as ${check.name}${check.retired ? " (retired)" : ""}.` };
   }
   if (check.kind === "near") {
-    return { block: false, text: `Very close to ${check.name}. Only add it if it is a different product.` };
+    return { block: false, text: `Very close to ${check.name}. Only add it if it is a different ${noun}.` };
   }
   return null;
 };
 
-const ItemListManager = ({ isOpen, onClose }) => {
+const ItemListManager = ({ isOpen, onClose, list = ITEM_LIST }) => {
   const toast = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -43,15 +52,15 @@ const ItemListManager = ({ isOpen, onClose }) => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await axiosInstance.get("/item-descriptions", { params: { all: "1" } });
+      const { data } = await axiosInstance.get(list.endpoint, { params: { all: "1" } });
       setItems(data || []);
     } catch (err) {
-      fail("Could not load the item list")(err);
+      fail(`Could not load the ${list.title.toLowerCase()}`)(err);
     } finally {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [list.endpoint]);
 
   useEffect(() => { if (isOpen) load(); }, [isOpen, load]);
 
@@ -60,16 +69,16 @@ const ItemListManager = ({ isOpen, onClose }) => {
     return needle ? items.filter((i) => i.name.includes(needle)) : items;
   }, [items, q]);
 
-  const addWarn = newName.trim() ? warning(checkName(newName, items)) : null;
+  const addWarn = newName.trim() ? warning(checkName(newName, items), list.noun) : null;
   const editWarn = editing && normaliseName(editing.name)
-    ? warning(checkName(editing.name, items, editing.id)) : null;
+    ? warning(checkName(editing.name, items, editing.id), list.noun) : null;
 
   const add = async () => {
     const name = normaliseName(newName);
     if (!name || addWarn?.block) return;
     setBusyId("new");
     try {
-      const { data } = await axiosInstance.post("/item-descriptions", { name });
+      const { data } = await axiosInstance.post(list.endpoint, { name });
       toast({ title: `Added ${data.name}`, status: "success", duration: 2500, position: "top" });
       setNewName("");
       await load();
@@ -83,7 +92,7 @@ const ItemListManager = ({ isOpen, onClose }) => {
   const patch = async (id, body, title) => {
     setBusyId(id);
     try {
-      await axiosInstance.patch(`/item-descriptions/${id}`, body);
+      await axiosInstance.patch(`${list.endpoint}/${id}`, body);
       setEditing(null);
       await load();
     } catch (err) {
@@ -100,14 +109,11 @@ const ItemListManager = ({ isOpen, onClose }) => {
   };
 
   return (
-    <FloatingWindow isOpen={isOpen} onClose={onClose} title="Item List" width={560}>
-      <Text fontSize="xs" color="gray.500" mb={3}>
-        What the dock picks from when weighing outgoing boxes. Correct a misspelling
-        with Edit; retire a name that should no longer be offered.
-      </Text>
+    <FloatingWindow isOpen={isOpen} onClose={onClose} title={list.title} width={560}>
+      <Text fontSize="xs" color="gray.500" mb={3}>{list.intro}</Text>
 
       <Flex gap={2}>
-        <Input size="sm" bg="white" placeholder="Add an item" value={newName}
+        <Input size="sm" bg="white" placeholder={list.add} value={newName}
           textTransform="uppercase" autoComplete="off"
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") add(); }} />

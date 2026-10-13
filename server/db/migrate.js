@@ -3,6 +3,7 @@
 
 const pool = require("../utils/pg");
 const ITEM_DESCRIPTIONS = require("../data/itemDescriptions");
+const CUSTOMERS = require("../data/customers");
 
 const RETRIES = 3;
 // Overridable so the retry path can be tested without sleeping for real.
@@ -771,6 +772,28 @@ const steps = async () => {
      WHERE NOT EXISTS (SELECT 1 FROM item_descriptions d WHERE d.tenant_id = t.id)
     ON CONFLICT (tenant_id, name) DO NOTHING
   `, [ITEM_DESCRIPTIONS]);
+
+  // The customers outgoing pallets go to.
+  await run("customers", `
+    CREATE TABLE IF NOT EXISTS customers (
+      id          SERIAL PRIMARY KEY,
+      tenant_id   UUID NOT NULL REFERENCES tenants(id),
+      name        TEXT NOT NULL,
+      active      BOOLEAN NOT NULL DEFAULT true,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_by  UUID,
+      UNIQUE (tenant_id, name)
+    )
+  `);
+
+  // Only into an empty list.
+  await run("customers seed", `
+    INSERT INTO customers (tenant_id, name)
+    SELECT t.id, s.name
+      FROM tenants t CROSS JOIN unnest($1::text[]) AS s(name)
+     WHERE NOT EXISTS (SELECT 1 FROM customers c WHERE c.tenant_id = t.id)
+    ON CONFLICT (tenant_id, name) DO NOTHING
+  `, [CUSTOMERS]);
 
   // The F.P Tracker: cases sent to the AF freezer for another run. Keyed to
   // the N lot; its cases stock the FP lot. Written by an accepted report, or by hand.

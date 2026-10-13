@@ -42,7 +42,7 @@ import { lotNumberForDate, fmtLongDate } from "./noblesse/shared";
 import ScannerDiagnostic from "../components/navbar/scannerDiagnostic";
 import ScaleDiagnostic from "../components/navbar/scaleDiagnostic";
 import DailyReport from "./noblesse/DailyReport";
-import ItemListManager from "./noblesse/ItemListManager";
+import ItemListManager, { CUSTOMER_LIST } from "./noblesse/ItemListManager";
 import FpTracker from "./noblesse/FpTracker";
 import ntiLogo from "../assets/nti.jpg";
 
@@ -66,6 +66,7 @@ const NoblesseScreen = () => {
   const [scaleDiagOpen, setScaleDiagOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [itemListOpen, setItemListOpen] = useState(false);
+  const [customerListOpen, setCustomerListOpen] = useState(false);
   const manageItems = canManageItems();
   const [fpOpen, setFpOpen] = useState(false);
   const {
@@ -588,6 +589,7 @@ const NoblesseScreen = () => {
               </>
             )}
             {manageItems && drawerBtn("Item List", () => setItemListOpen(true))}
+            {manageItems && drawerBtn("Customer List", () => setCustomerListOpen(true))}
             {/* The dock's account is fenced to Outgoing and would be refused. */}
             {!outgoingOnly && drawerBtn("F.P Tracker", () => setFpOpen(true))}
 
@@ -629,6 +631,10 @@ const NoblesseScreen = () => {
       )}
       {manageItems && (
         <ItemListManager isOpen={itemListOpen} onClose={() => setItemListOpen(false)} />
+      )}
+      {manageItems && (
+        <ItemListManager list={CUSTOMER_LIST}
+          isOpen={customerListOpen} onClose={() => setCustomerListOpen(false)} />
       )}
       {!outgoingOnly && <FpTracker isOpen={fpOpen} onClose={() => setFpOpen(false)} />}
 

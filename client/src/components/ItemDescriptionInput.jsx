@@ -18,6 +18,7 @@ const noFocus = { tabIndex: -1, onMouseDown: (e) => e.preventDefault() };
 const ItemDescriptionInput = ({
   value, onChange, size = "md", compact = false,
   listId = "item-descriptions", placeholder = "e.g. HUMERUS BONE",
+  endpoint = "/item-descriptions", allLabel = "All items", notOnList = "Not on the item list",
 }) => {
   const { t } = useLang();
   const [items, setItems] = useState([]);
@@ -26,14 +27,14 @@ const ItemDescriptionInput = ({
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await axiosInstance.get("/item-descriptions");
+        const { data } = await axiosInstance.get(endpoint);
         if (!cancelled) setItems(data || []);
       } catch {
         // The list is a convenience; the field still works as plain text without it.
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [endpoint]);
 
   const names = useMemo(() => items.map((i) => i.name), [items]);
   // The most used float to the top of the tap list.
@@ -53,7 +54,7 @@ const ItemDescriptionInput = ({
               {top.map((i) => <option key={`top-${i.id}`} value={i.name}>{i.name}</option>)}
             </optgroup>
           )}
-          <optgroup label={t("All items")}>
+          <optgroup label={t(allLabel)}>
             {alpha.map((n) => <option key={n} value={n}>{n}</option>)}
           </optgroup>
         </Select>
@@ -80,7 +81,7 @@ const ItemDescriptionInput = ({
         </Flex>
       )}
       {match.kind === "none" && names.length > 0 && (
-        <Text fontSize="xs" color="gray.500" mt={1}>{t("Not on the item list")}</Text>
+        <Text fontSize="xs" color="gray.500" mt={1}>{t(notOnList)}</Text>
       )}
     </Box>
   );

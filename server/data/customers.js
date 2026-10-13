@@ -1,0 +1,20 @@
+// The first customer list, seeded only into an empty table.
+module.exports = [
+  "ADAMS",
+  "BEEBEE",
+  "CHAMPS SD",
+  "CHEF OLLEH SD",
+  "DIEGO",
+  "DTLA AYCE",
+  "EHWA",
+  "GO MEAT",
+  "MIODU",
+  "MOANA",
+  "MYUNG'S",
+  "NEXT TRADING",
+  "ON TRADING",
+  "SAMCHANG",
+  "SHABUYA",
+  "WABA",
+  "WOOLTARI",
+];

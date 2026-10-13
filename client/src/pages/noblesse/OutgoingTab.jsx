@@ -15,6 +15,7 @@ import { groupOutgoing, milsToLb, clockOf } from "./outgoingGroups";
 import getRole, { canReceive } from "../../utils/getRole";
 import LotTimeline from "../../components/LotTimeline";
 import ItemDescriptionInput from "../../components/ItemDescriptionInput";
+import CustomerInput from "../../components/CustomerInput";
 import printPackingList from "./printPackingList";
 import printOutgoingTag from "./printOutgoingTag";
 import useLang from "../../hooks/useLang";
@@ -112,6 +113,11 @@ const HeadingEditor = ({ batchId, detail, isAdmin, onSaved, onCancel }) => {
             {key === "itemDescription" && detail.direction === "outgoing" ? (
               <ItemDescriptionInput compact size="xs"
                 listId={`item-descriptions-edit-${batchId}`}
+                value={draft[key]}
+                onChange={(v) => setDraft((d) => ({ ...d, [key]: upper(v) }))} />
+            ) : key === "shipTo" && detail.direction === "outgoing" ? (
+              <CustomerInput compact size="xs"
+                listId={`customers-edit-${batchId}`}
                 value={draft[key]}
                 onChange={(v) => setDraft((d) => ({ ...d, [key]: upper(v) }))} />
             ) : (
