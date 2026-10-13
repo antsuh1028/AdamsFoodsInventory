@@ -10,7 +10,8 @@ import WeighFinishedBoxes from "../../components/navbar/WeighFinishedBoxes";
 import DeleteBatchDialog from "./DeleteBatchDialog";
 import FlagSession from "./FlagSession";
 import { toDisplay } from "../../utils/weight";
-import { fmtDate, fmtDateOnly, fmtDateTime, today, upper } from "./shared";
+import { fmtDate, fmtDateOnly, fmtDateTime, fmtLongDate, today, upper } from "./shared";
+import { groupOutgoing, milsToLb, clockOf } from "./outgoingGroups";
 import getRole, { canReceive } from "../../utils/getRole";
 import LotTimeline from "../../components/LotTimeline";
 import ItemDescriptionInput from "../../components/ItemDescriptionInput";
@@ -367,6 +368,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   const [weighFor, setWeighFor] = useState(null);
   // Which lot's history is open, for reception to read the figures and close it.
   const [timelineLot, setTimelineLot] = useState(null);
+  // Shipment groups the user opened or closed by hand.
+  const [toggledGroups, setToggledGroups] = useState(() => new Set());
+  const [pastOpen, setPastOpen] = useState(false);
   const cancelRef = useRef(null);
 
   // Nothing else reads the load list, so a search simply replaces it. A reply
@@ -506,14 +510,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     await axiosInstance.delete(`/shipments/${openId}/box-batches/${batchId}`);
     await refreshOpen(openId);
   }, null, t("Could not untie that session"));
-
-  const startDraft = () => {
-    setDraft({
-      shipDate: today(), destinationType: "adamsfoods", destinationName: "",
-      billOfLading: "", carrier: "", driver: "", shipTo: "",
-    });
-    setCreating(true);
-  };
 
   const startEdit = () => {
     setDraft({
@@ -730,8 +726,17 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   const shownBatches = foundBatches ?? batches;
   const isDraft = detail && detail.status === "draft";
 
-  // Shipped is the only state that has left; a cancelled load came back.
-  const waitingBatches = shownBatches.filter((b) => b.shipment?.status !== "shipped");
+  const days = useMemo(() => groupOutgoing(shownBatches), [shownBatches]);
+  const todayStr = today();
+  const yesterdayStr = today(new Date(Date.now() - 86400000));
+  // Groups with a pallet still being weighed start open.
+  const groupIsOpen = (g) => g.open !== toggledGroups.has(g.id);
+  const toggleGroup = (id) => setToggledGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
   const draftLoads = shipments.filter((sh) => sh.status === "draft");
   const shippedLoads = shipments.filter((sh) => sh.status === "shipped");
   const cancelledLoads = shipments.filter((sh) => sh.status === "cancelled");
@@ -872,6 +877,45 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     )}
     </Box>
   );
+
+  // One auto-grouped shipment: a customer's pallets close together on one day.
+  const renderShipment = (g) => {
+    const open = groupIsOpen(g);
+    const start = clockOf(g.startMs);
+    const end = g.open ? t("now") : clockOf(g.endMs);
+    return (
+      <Box key={g.id} border="1px solid" borderRadius="md" overflow="hidden"
+        borderColor={g.flagged ? "red.300" : open ? "blue.300" : "gray.200"}>
+        <Flex px={3} py={2} gap={3} align="center" wrap="wrap" cursor="pointer"
+          bg={g.freezer ? "teal.50" : open ? "blue.50" : "white"}
+          onClick={() => toggleGroup(g.id)}>
+          <Text fontSize="sm" fontWeight="bold" color={g.freezer ? "teal.700" : "gray.800"}>
+            {g.freezer ? t("To the AF freezer") : (g.destination || t("No destination"))}
+          </Text>
+          <Text fontSize="xs" color="gray.500" whiteSpace="nowrap">
+            {start === end ? start : `${start} - ${end}`}
+          </Text>
+          {g.open && <Badge colorScheme="yellow" fontSize="9px">{t("Weighing")}</Badge>}
+          <Flex gap={1} wrap="wrap">
+            {g.lots.map((l) => (
+              <Badge key={l} variant="outline" colorScheme="gray" fontSize="9px">{l}</Badge>
+            ))}
+          </Flex>
+          <Text fontSize="sm" color="gray.700" ml="auto" whiteSpace="nowrap"
+            style={{ fontVariantNumeric: "tabular-nums" }}>
+            {t(g.sessions.length === 1 ? "{n} pallet" : "{n} pallets", { n: g.sessions.length })}
+            {" · "}{g.boxes} c/s · {lb(milsToLb(g.mils))} lb
+          </Text>
+        </Flex>
+        {open && (
+          <Flex direction="column" gap={1} p={2} bg="gray.50"
+            borderTop="1px solid" borderColor="gray.200">
+            {g.sessions.map(renderSession)}
+          </Flex>
+        )}
+      </Box>
+    );
+  };
 
   // One load's row, drawn on whichever side of the tab its status puts it.
   const renderLoad = (s) => {
@@ -1256,9 +1300,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
         <Box flexShrink={0}>
           <Text fontSize="lg" fontWeight="bold" color="gray.800">{t("Outgoing")}</Text>
           <Text fontSize="sm" color="gray.500">
-            {reception
-              ? t("Weigh the boxes, then tie them to a load and ship it. Stock moves when a load ships.")
-              : t("Weigh the boxes going out. Reception ties them to a load.")}
+            {t("Pallets going to the same customer close together are grouped as one shipment.")}
           </Text>
         </Box>
         <Flex gap={2} wrap="wrap" align="center" flex={1}
@@ -1272,107 +1314,60 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
         <Flex gap={2} wrap="wrap" align="center" flexShrink={0}>
           {/* Shared with the weighing window, so the two never disagree. */}
           <LangToggle lang={lang} onToggle={toggleLang} />
-          {/* Weighing finished product is a separate act from building a load:
-              it happens at the bench as boxes come off the line, often before
-              anyone knows which shipment they will go on. So it opens its own
-              session rather than hanging off a draft. */}
-          <Button size="sm" variant="outline" colorScheme="blue"
+          <Button size="sm" colorScheme="blue"
             onClick={() => setWeighOpen(true)}>
             {t("Weigh finished boxes")}
           </Button>
-          {reception && (
-            <Button size="sm" colorScheme="blue" onClick={startDraft}>{t("New shipment")}</Button>
-          )}
         </Flex>
       </Flex>
 
-      {/* Two sides: what is still here, and what has gone out. A shipped
-          session is not listed on its own — it is inside its load. */}
-      <Flex direction={{ base: "column", lg: "row" }} gap={5} align="flex-start" mb={4}>
-        <Box flex="1 1 0" minW={0} width="100%">
-          <Text fontSize="md" fontWeight="bold" color="gray.800" mb={3}>
-            {t("Not shipped yet")}
-          </Text>
-
-          <Box mb={5}>
-            <Flex align="baseline" gap={2} wrap="wrap">
-              <Text fontSize="sm" fontWeight="bold" color="gray.800">
-                {t("Finished product weighed")}
+      {/* Every outgoing pallet, by day, auto-grouped into shipments. */}
+      <Box mb={4}>
+        {days.length === 0 && (
+          <EmptyNote>
+            {q ? t("No weighed sessions match “{q}”.", { q }) : t("Nothing has been weighed out yet.")}
+          </EmptyNote>
+        )}
+        {days.map((d) => (
+          <Box key={d.day} mb={4}>
+            <Flex align="baseline" gap={2} wrap="wrap"
+              pt={{ base: "28px", md: "36px" }} pb={2} mb={1}
+              position="sticky" top={{ base: "-12px", md: "-20px" }} bg="white" zIndex={1}
+              borderBottom="2px solid" borderColor="gray.200">
+              <Text fontSize="md" fontWeight="bold" color="gray.800">
+                {d.day ? fmtLongDate(new Date(`${d.day}T20:00:00Z`)) : t("No date")}
               </Text>
-              {untiedBatches.length > 0 && (
-                <Badge colorScheme="yellow" fontSize="9px">
-                  {t(untiedBatches.length === 1
-                    ? "{n} weighed session not on a load"
-                    : "{n} weighed sessions not on a load", { n: untiedBatches.length })}
+              {(d.day === todayStr || d.day === yesterdayStr) && (
+                <Badge colorScheme={d.day === todayStr ? "blue" : "gray"} fontSize="9px">
+                  {d.day === todayStr ? t("Today") : t("Yesterday")}
                 </Badge>
               )}
-            </Flex>
-            <Text fontSize="xs" color="gray.500" mb={2}>
-              {t("Boxes weighed off the bench on their way out. Tie one to a load below, or leave it until there is a load for it.")}
-            </Text>
-            {waitingBatches.length === 0 && (
-              <Text fontSize="sm" color="gray.500">
-                {q
-                  ? t("No weighed sessions match “{q}”.", { q })
-                  : t("Nothing is waiting for a load.")}
+              <Text fontSize="xs" color="gray.500" ml="auto" style={{ fontVariantNumeric: "tabular-nums" }}>
+                {t(d.shipments.length === 1 ? "{n} shipment" : "{n} shipments", { n: d.shipments.length })}
+                {" · "}{d.boxes} c/s · {lb(milsToLb(d.mils))} lb
               </Text>
-            )}
-            <Flex direction="column" gap={1}>
-              {waitingBatches.map(renderSession)}
             </Flex>
+            <Flex direction="column" gap={2}>{d.shipments.map(renderShipment)}</Flex>
           </Box>
+        ))}
+      </Box>
 
-          {/* Reception's half: the loads. A dock account never sees it, and the
-              server refuses those calls regardless. */}
-          {reception && (
-            <Box>
-              <Text fontSize="sm" fontWeight="bold" color="gray.800" mb={2}>
-                {t("Loads being built")}
-              </Text>
-              {loading ? (
-                <Flex justify="center" py={6}><Spinner color="blue.500" /></Flex>
-              ) : draftLoads.length === 0 ? (
-                <EmptyNote>
-                  {q
-                    ? t("No loads match “{q}”.", { q })
-                    : t("No load is being built. Start one with New shipment.")}
-                </EmptyNote>
-              ) : (
-                <Flex direction="column" gap={2}>{draftLoads.map(renderLoad)}</Flex>
-              )}
-            </Box>
-          )}
+      {/* Loads made the old way, kept for the record. */}
+      {reception && shipments.length > 0 && (
+        <Box mb={4}>
+          <Button size="sm" variant="ghost" colorScheme="gray" px={1}
+            onClick={() => setPastOpen((v) => !v)}>
+            {pastOpen ? "▾" : "▸"} {t("Past loads ({n})", { n: shipments.length })}
+          </Button>
+          {pastOpen && (loading ? (
+            <Flex justify="center" py={6}><Spinner color="blue.500" /></Flex>
+          ) : (
+            <Flex direction="column" gap={2} mt={2}>
+              {[...draftLoads, ...shippedLoads, ...cancelledLoads].map(renderLoad)}
+            </Flex>
+          ))}
         </Box>
-
-        {reception && (
-          <Box flex="1 1 0" minW={0} width="100%">
-            <Text fontSize="md" fontWeight="bold" color="gray.800" mb={3}>
-              {t("Shipped loads")}
-            </Text>
-            {loading ? (
-              <Flex justify="center" py={6}><Spinner color="blue.500" /></Flex>
-            ) : shippedLoads.length === 0 && cancelledLoads.length === 0 ? (
-              <EmptyNote>
-                {q ? t("No loads match “{q}”.", { q }) : t("Nothing has shipped yet.")}
-              </EmptyNote>
-            ) : (
-              <>
-                <Flex direction="column" gap={2}>{shippedLoads.map(renderLoad)}</Flex>
-                {/* A load that came back: kept for the record, apart from the rest. */}
-                {cancelledLoads.length > 0 && (
-                  <>
-                    <Text fontSize="xs" color="gray.500" textTransform="uppercase"
-                      letterSpacing="wide" mt={4} mb={2}>
-                      {t("Cancelled loads")}
-                    </Text>
-                    <Flex direction="column" gap={2}>{cancelledLoads.map(renderLoad)}</Flex>
-                  </>
-                )}
-              </>
-            )}
-          </Box>
-        )}
-      </Flex>
+      )}
 
       {reception && (<>
       {/* One form for both: making a draft and correcting its header. */}
