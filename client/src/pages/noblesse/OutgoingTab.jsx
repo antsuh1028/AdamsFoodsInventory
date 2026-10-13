@@ -1,7 +1,7 @@
 import upperInput from "../../utils/upperInput";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Flex, Text, Button, Badge, Spinner, Input, Select, Checkbox, Alert, AlertIcon, Tooltip,
+  Box, Flex, Text, Button, Badge, Spinner, Input, Alert, AlertIcon,
   AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader,
   AlertDialogContent, AlertDialogOverlay, useToast,
 } from "@chakra-ui/react";
@@ -32,16 +32,6 @@ const STATUS = {
 };
 
 const lb = (v) => (v === null || v === undefined || v === "" ? "0.00" : toDisplay(v));
-
-// The stock row's own description, or what the bench typed when weighing it out.
-// Trimmed so the lot number itself is not pushed off a narrow select.
-const MAX_DESC = 32;
-
-const stockDescription = (a) => {
-  const d = (a.description || a.weighedDescription || "").trim();
-  if (!d) return "";
-  return d.length > MAX_DESC ? `${d.slice(0, MAX_DESC - 1)}\u2026` : d;
-};
 
 // The heading fields, paired with the column each reads back from.
 const HEADING_FIELDS = [
@@ -301,14 +291,6 @@ const EmptyNote = ({ children }) => (
   </Box>
 );
 
-const Field = ({ label, children, w }) => (
-  <Box flex={w ? `0 0 ${w}` : "1 1 150px"} minW="120px">
-    <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide" mb={1}>
-      {label}
-    </Text>
-    {children}
-  </Box>
-);
 
 export const OutgoingTab = ({ refreshSignal = 0 }) => {
   const isAdmin = getRole() === "admin";
@@ -326,30 +308,16 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState(null);
   const [detail, setDetail] = useState(null);
-  const [available, setAvailable] = useState([]);
-  const [stockError, setStockError] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState(null);
-  // Set while the same form is editing an existing draft rather than making one.
-  const [editingId, setEditingId] = useState(null);
-
-  // A new line being added to the open draft.
-  const [line, setLine] = useState({ stockKey: "", weight: "", qtyCases: "" });
-
-  // Finished product weighed at the bench. Listed on this tab in its own right
-  // now, not just offered inside an open draft.
+  // Every outgoing pallet.
   const [batches, setBatches] = useState([]);
-  // One box narrows both lists. Sessions are searched APART from `batches`,
-  // which the tie picker inside a load reads — replacing it would hide every
-  // new, untied session whenever the search named something else.
+  // One box narrows both lists; matches are kept apart from the full list.
   const [q, setQ] = useState("");
   const [foundBatches, setFoundBatches] = useState(null);   // null = not searching
   const [searching, setSearching] = useState(false);
   const shipSeq = useRef(0);
   const batchSeq = useRef(0);
-  const [pickedBatches, setPickedBatches] = useState(() => new Set());
   // A session to reopen the weighing window on, so an interrupted lot can be
   // carried on with instead of started again.
   const [adoptBatchId, setAdoptBatchId] = useState(null);
@@ -360,7 +328,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // form still references it, and the dialog says which.
   const [deletingBatch, setDeletingBatch] = useState(null);
 
-  const [confirmShip, setConfirmShip] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Weighing finished product. Opens the same session machinery the incoming
@@ -370,9 +337,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // id so collapsing and reopening does not refetch.
   const [openBatch, setOpenBatch] = useState(null);
   const [batchDetail, setBatchDetail] = useState({});
-  // Weighing straight into a line: the lot is already decided, so the window
-  // opens bound to it and the finished session is tied to this load on close.
-  const [weighFor, setWeighFor] = useState(null);
   // Which lot's history is open, for reception to read the figures and close it.
   const [timelineLot, setTimelineLot] = useState(null);
   // Shipment groups the user opened or closed by hand.
@@ -400,19 +364,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     }
   }, [toast, q]);
 
-  const fetchAvailable = useCallback(async () => {
-    try {
-      const { data } = await axiosInstance.get("/shipments/available");
-      setAvailable(data || []);
-      setStockError(null);
-    } catch (err) {
-      // Tolerated so a failure here cannot blank the shipments themselves — but
-      // NOT swallowed: an empty dropdown with no explanation reads as "there is
-      // nothing to ship".
-      setStockError(err.response?.data?.error || err.message);
-    }
-  }, []);
-
   // OUTGOING ONLY.
   // The full list AND, while searching, the matches — together, so every
   // existing refresh of this list refreshes a search too.
@@ -427,16 +378,15 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
       setBatches(all.data || []);
       setFoundBatches(hits ? hits.data || [] : null);
     } catch {
-      // Tying a session is optional, so failing to list them must not stop a
-      // load being built by typing its totals.
+      // Kept quiet; the next poll retries.
     } finally {
       if (mine === batchSeq.current) setSearching(false);
     }
   }, [q]);
 
   useEffect(() => {
-    fetchShipments(); fetchAvailable(); fetchBatches();
-  }, [fetchShipments, fetchAvailable, fetchBatches]);
+    fetchShipments(); fetchBatches();
+  }, [fetchShipments, fetchBatches]);
 
   // The parent polls every 60s and bumps this.
   const lastSignal = useRef(refreshSignal);
@@ -444,11 +394,8 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     if (lastSignal.current === refreshSignal) return;
     lastSignal.current = refreshSignal;
     fetchShipments();
-    fetchAvailable();
-    // Weighed sessions are primary content on this tab now, not just a picker
-    // inside a draft, so they have to follow the poll.
     fetchBatches();
-  }, [refreshSignal, fetchShipments, fetchAvailable, fetchBatches]);
+  }, [refreshSignal, fetchShipments, fetchBatches]);
 
   const openShipment = async (id) => {
     if (openId === id) { setOpenId(null); setDetail(null); return; }
@@ -465,13 +412,10 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     }
   };
 
-  // Sessions too: tying, shipping and cancelling all change which load a
-  // session says it is on, and the picker reads that to decide what to offer.
   const refreshOpen = async (id) => {
     const { data } = await axiosInstance.get(`/shipments/${id}`);
     setDetail(data);
     fetchShipments();
-    fetchAvailable();
     fetchBatches();
   };
 
@@ -509,120 +453,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     }
   };
 
-  const tieSessions = () => run(async () => {
-    await axiosInstance.post(`/shipments/${openId}/box-batches`,
-      { batchIds: [...pickedBatches] });
-    setPickedBatches(new Set());
-    await refreshOpen(openId);
-  }, t("Weighing sessions tied"), t("Could not tie those sessions"));
-
-  const untieSession = (batchId) => run(async () => {
-    await axiosInstance.delete(`/shipments/${openId}/box-batches/${batchId}`);
-    await refreshOpen(openId);
-  }, null, t("Could not untie that session"));
-
-  const startEdit = () => {
-    setDraft({
-      shipDate: detail.shipDate || today(),
-      destinationType: detail.destinationType || "adamsfoods",
-      destinationName: detail.destinationName || "",
-      billOfLading: detail.billOfLading || "",
-      carrier: detail.carrier || "",
-      driver: detail.driver || "",
-      shipTo: detail.shipTo || "",
-    });
-    setEditingId(detail.shipmentId);
-    setCreating(true);
-  };
-
-  const closeForm = () => { setCreating(false); setEditingId(null); setDraft(null); };
-
-  const saveHeader = () => run(async () => {
-    await axiosInstance.patch(`/shipments/${editingId}`, draft);
-    closeForm();
-    await fetchShipments();
-    await refreshOpen(editingId);
-  }, t("Shipment updated"), t("Could not save the shipment"));
-
-  const createDraft = () => run(async () => {
-    const { data } = await axiosInstance.post("/shipments", draft);
-    closeForm();
-    await fetchShipments();
-    setOpenId(data.shipmentId);
-    setDetail(data);
-  }, t("Draft created"), t("Could not create the draft"));
-
-  const addLine = () => run(async () => {
-    const stock = available.find((a) => String(a.ntiItemId) === String(line.stockKey));
-    // Thrown rather than returned: `run` reports a throw and swallows a return,
-    // so this used to no-op and still say "Lot added".
-    if (!stock) throw new Error(t("That stock row is no longer available — refresh and pick again."));
-    await axiosInstance.post(`/shipments/${openId}/items`, {
-      lotId: stock.lotId,
-      ntiItemId: stock.ntiItemId,
-      weight: String(line.weight).trim(),
-      qtyCases: line.qtyCases !== "" ? Number(line.qtyCases) : null,
-      description: stock.description,
-    });
-    setLine({ stockKey: "", weight: "", qtyCases: "" });
-    await refreshOpen(openId);
-  }, t("Lot added"), t("Could not add that lot"));
-
-  // Called by the weighing window as it closes, with the session it just shut.
-  const tieClosedSession = async (batchId) => {
-    const target = weighFor?.shipmentId;
-    if (!target) return;
-    try {
-      await axiosInstance.post(`/shipments/${target}/box-batches`,
-        { batchIds: [batchId] });
-      toast({ title: t("Boxes tied to this load"), status: "success",
-        duration: 3000, position: "top" });
-      if (openId === target) await refreshOpen(target);
-    } catch (err) {
-      // The boxes are recorded whatever happens here; only the link failed, and
-      // it can still be made by hand from the session list.
-      toast({
-        status: "warning", duration: 10000, isClosable: true, position: "top",
-        title: t("Weights saved, but not tied to the load"),
-        description: t("{error} — tie the session to the load by hand below.",
-          { error: err.response?.data?.error || err.message }),
-      });
-    }
-  };
-
-  // One line per weighed lot, from the sessions already tied to this load.
-  // The bench has said what is leaving; this is that, in the form shipping
-  // understands.
-  const addWeighedAsLines = () => run(async () => {
-    const already = new Set((detail.items || []).map((it) => it.lotId));
-    const pending = [...weighedByLot.entries()].filter(([lotId]) => !already.has(lotId));
-    if (!pending.length) throw new Error(t("Every weighed lot is already on this load."));
-
-    try {
-      for (const [lotId, w] of pending) {
-        // Matched to a stock row where there is one, so shipping deducts what
-        // it should; without one the line still ships and `movedNothing` says
-        // so. /shipments/available orders processed stock first, so a lot with
-        // both raw and processed rows matches the processed one — which is
-        // what was just weighed off the bench.
-        const stock = available.find((a) => a.lotId === lotId);
-        const session = (detail.sessions || []).find((b) => b.lotId === lotId);
-        await axiosInstance.post(`/shipments/${openId}/items`, {
-          lotId,
-          ntiItemId: stock ? stock.ntiItemId : null,
-          // Thousandths, as the route requires.
-          weight: (w.mils / 1000).toFixed(3),
-          qtyCases: w.boxes,
-          description: session?.itemDescription || stock?.description || null,
-        });
-      }
-    } finally {
-      // Whatever happened, show what actually landed: a run that failed on the
-      // second lot still added the first, and leaving the screen stale hides it.
-      await refreshOpen(openId);
-    }
-  }, t("Weighed lots added to this load"), t("Could not add the weighed lots"));
-
   // Double-click a weighed session to see the individual boxes, the way the
   // Weight Manifests tab does. Read-only here: correcting or voiding a box is
   // that tab's job, and it has the guards for it.
@@ -649,31 +479,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     await fetchBatches();
   };
 
-  const removeLine = (itemId) => run(async () => {
-    await axiosInstance.delete(`/shipments/${openId}/items/${itemId}`);
-    await refreshOpen(openId);
-  }, null, t("Could not remove that lot"));
-
-  const ship = () => run(async () => {
-    setConfirmShip(false);
-    const { data } = await axiosInstance.post(`/shipments/${openId}/ship`);
-    await refreshOpen(openId);
-    // A line with no stock row behind it ships and deducts nothing. That is
-    // correct — there is nothing to take off — but silent it reads as though
-    // inventory moved.
-    const nil = data?.movedNothing || [];
-    if (nil.length) {
-      toast({
-        status: "warning", position: "top", duration: 10000, isClosable: true,
-        title: t(nil.length === 1 ? "{n} line moved no stock" : "{n} lines moved no stock",
-          { n: nil.length }),
-        description: t("{lines} — not in NTI inventory, so nothing was deducted.", {
-          lines: nil.map((n) => `${n.lotNumber} (${lb(n.weight)} lb)`).join(", "),
-        }),
-      });
-    }
-  }, t("Shipped — stock deducted"), t("Could not ship this load"));
-
   const cancel = () => run(async () => {
     setConfirmCancel(false);
     await axiosInstance.post(`/shipments/${openId}/cancel`);
@@ -684,11 +489,11 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // — the open row is collapsed and the list reloaded instead.
   const deleteDraft = () => run(async () => {
     setConfirmDelete(false);
-    const { data } = await axiosInstance.delete(`/shipments/${openId}`);
+    await axiosInstance.delete(`/shipments/${openId}`);
     setOpenId(null);
     setDetail(null);
     await fetchShipments();
-    if (data?.stockRestored) await fetchAvailable();
+    await fetchBatches();
   }, t("Shipment deleted"), t("Could not delete this shipment"));
 
   // Weighed boxes per lot on the open load, so a line can say whether its
@@ -705,23 +510,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     }
     return m;
   }, [detail]);
-
-  // Named in the ship dialog: leaving without weighing means that lot can never
-  // have a yield.
-  const unweighed = (detail?.items || []).filter((it) => !weighedByLot.has(it.lotId));
-
-  // The mirror: boxes weighed onto this load whose lot is not a line yet, so
-  // they count for nothing when it ships.
-  const lineLots = new Set((detail?.items || []).map((it) => it.lotId));
-  const weighedNotOnLoad = [...weighedByLot.keys()].filter((id) => !lineLots.has(id));
-
-  const selectedStock = available.find((a) => String(a.ntiItemId) === String(line.stockKey));
-  const tiedIds = new Set((detail?.sessions || []).map((b) => b.batchId));
-  // On NO load — not merely off the open one. A session belongs to one load and
-  // the server refuses any other, so offering one already on a load (shipped or
-  // cancelled included) is offering a 409. From the FULL list, never the search.
-  // A freezer trip comes back; it is never part of a load.
-  const untiedBatches = batches.filter((b) => !b.shipment && !tiedIds.has(b.batch_id) && !b.further_processing);
 
   // One entry per LOT, in the order the sessions are listed — a lot weighed
   // across several pallets is one stop, not three.
@@ -978,7 +766,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     );
   };
 
-  // One load's row, drawn on whichever side of the tab its status puts it.
+  // One past load: read-only, apart from an admin's cancel and delete.
   const renderLoad = (s) => {
     const st = STATUS[s.status] || STATUS.draft;
     const open = openId === s.shipmentId;
@@ -1042,25 +830,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                           style={{ fontVariantNumeric: "tabular-nums" }}>
                           {it.qtyCases != null ? `${it.qtyCases} cs · ` : ""}{lb(it.weight)} lb
                         </Text>
-                        {isDraft && (
-                          <Button size="xs" variant="ghost" colorScheme="blue"
-                            onClick={() => setWeighFor({
-                              shipmentId: detail.shipmentId,
-                              lotId: it.lotId, lotNumber: it.lotNumber,
-                              // The load already says what is on the truck
-                              // and where it is going.
-                              description: it.description || "",
-                              shipTo: detail.shipTo || detail.destinationName || "",
-                            })}>
-                            {t("Weigh boxes")}
-                          </Button>
-                        )}
-                        {isDraft && (
-                          <Button size="xs" variant="ghost" colorScheme="red"
-                            isLoading={busy} onClick={() => removeLine(it.itemId)}>
-                            {t("Remove")}
-                          </Button>
-                        )}
                       </Flex>
                     ))}
                     <Flex px={3} py={2} gap={3} align="baseline" bg="gray.100"
@@ -1072,109 +841,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                       </Text>
                     </Flex>
                   </Box>
-                )}
-
-                {isDraft && (
-                  <Flex gap={2} align="flex-end" wrap="wrap" mb={3}
-                    p={3} bg="gray.50" borderRadius="md">
-                    <Field label={t("Lot to ship")} w="260px">
-                      <Select size="sm" bg="white" placeholder="Pick from stock…"
-                        value={line.stockKey}
-                        onChange={(e) => {
-                          const stock = available.find((a) => String(a.ntiItemId) === e.target.value);
-                          setLine({
-                            stockKey: e.target.value,
-                            // Prefilled with everything on hand, which is
-                            // the common case; a partial load is typed over.
-                            weight: stock ? String(stock.onHand) : "",
-                            qtyCases: stock && stock.qtyCases != null ? String(stock.qtyCases) : "",
-                          });
-                        }}>
-                        {/* Cases first for raw stock: processing deducts
-                            cases, not pounds, so the case count is the
-                            live figure and the weight is what was
-                            registered on arrival. */}
-                        {available.map((a) => (
-                          <option key={a.ntiItemId} value={a.ntiItemId}>
-                            {a.lotNumber} · {a.stage === "raw" ? "RAW · " : ""}
-                            {/* A lot number says nothing about what it
-                                is, and picking the wrong one here ships
-                                the wrong product. */}
-                            {stockDescription(a) ? `${stockDescription(a)} · ` : ""}
-                            {a.stage === "raw"
-                              ? `${a.qtyCases ?? "?"} cs left · ${lb(a.onHand)} lb registered`
-                              : `${lb(a.onHand)} lb`}
-                            {a.inProcessing ? " · in processing" : ""}
-                            {a.unlinked ? " · NOT IN LOT REGISTRY — cannot ship" : ""}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    <Field label={t("Weight (lbs)")} w="120px">
-                      <Input size="sm" bg="white" type="number" value={line.weight}
-                        onChange={(e) => setLine((l) => ({ ...l, weight: e.target.value }))} />
-                    </Field>
-                    <Field label={t("Cases")} w="90px">
-                      <Input size="sm" bg="white" type="number" value={line.qtyCases}
-                        onChange={(e) => setLine((l) => ({ ...l, qtyCases: e.target.value }))} />
-                    </Field>
-                    {/* Refused here rather than by the server: the route
-                        answers "lotId is required", which says nothing
-                        about which row or what to do. */}
-                    <Button size="sm" colorScheme="blue" isLoading={busy}
-                      isDisabled={!line.stockKey || !String(line.weight).trim()
-                        || Boolean(selectedStock && selectedStock.unlinked)}
-                      onClick={addLine}>
-                      {t("Add lot")}
-                    </Button>
-
-                    {stockError && (
-                      <Alert status="error" borderRadius="md" fontSize="xs" py={2} flex="1 1 100%">
-                        <AlertIcon boxSize={3} />
-                        {t("Could not load what is in stock — the list above may be incomplete. {error}",
-                          { error: stockError })}
-                      </Alert>
-                    )}
-
-                    {/* Shippable, but nothing downstream can attribute it:
-                        no lot_id means no yield, no lot timeline. */}
-                    {selectedStock && selectedStock.unlinked && (
-                      <Alert status="warning" borderRadius="md" fontSize="xs" py={2} flex="1 1 100%">
-                        <AlertIcon boxSize={3} />
-                        <Box>
-                          <b>{t("{lot} is not in the lot registry", { lot: selectedStock.lotNumber })}</b>
-                          {t(", so it cannot go on a load: every line is attributed to a lot, which is what makes a yield possible. Open its registration form and set the lot, then come back — it will be selectable here.")}
-                        </Box>
-                      </Alert>
-                    )}
-
-                    {/* Warned, not blocked: there may be a good reason to
-                        ship a lot that is mid-processing. */}
-                    {selectedStock && selectedStock.inProcessing && (
-                      <Alert status="warning" borderRadius="md" fontSize="xs" py={2} flex="1 1 100%">
-                        <AlertIcon boxSize={3} />
-                        {t("{lot} has processing still open. You can ship it anyway.",
-                          { lot: selectedStock.lotNumber })}
-                      </Alert>
-                    )}
-                    {/* Said plainly, because the number above is the one
-                        somebody will type into the weight field: a
-                        processed lot has had cases taken off it but its
-                        weight is still what the registration form
-                        claimed on arrival. */}
-                    {selectedStock && selectedStock.stage === "raw" && (
-                      <Alert status="warning" borderRadius="md" fontSize="xs" py={2} flex="1 1 100%">
-                        <AlertIcon boxSize={3} />
-                        <Box>
-                          {t("{lot} is raw — it has not been processed. The {weight} lb is the weight registered on arrival, not a live figure: processing takes cases off a lot, not pounds. {cases} cases are left.", {
-                            lot: selectedStock.lotNumber,
-                            weight: lb(selectedStock.onHand),
-                            cases: selectedStock.qtyCases ?? "?",
-                          })}
-                        </Box>
-                      </Alert>
-                    )}
-                  </Flex>
                 )}
 
                 {/* What the boxes actually weighed, beside what the
@@ -1213,84 +879,8 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                           style={{ fontVariantNumeric: "tabular-nums" }}>
                           {b.boxCount} × {lb(b.total)} lb
                         </Text>
-                        {isDraft && (
-                          <Button size="xs" variant="ghost" colorScheme="red"
-                            isLoading={busy} onClick={() => untieSession(b.batchId)}>
-                            {t("Untie")}
-                          </Button>
-                        )}
                       </Flex>
                     ))}
-
-                    {/* Weighing a lot onto a load does not put it ON the
-                        load: lines are what ship and what move stock. The
-                        two were never joined, so a load could hold
-                        thousands of weighed pounds and still refuse to
-                        ship as empty. */}
-                    {isDraft && weighedNotOnLoad.length > 0 && (
-                      <Alert status="warning" borderRadius="md" fontSize="xs" py={2} mt={2}
-                        alignItems="flex-start">
-                        <AlertIcon boxSize={3} />
-                        <Box flex="1">
-                          <Text fontWeight="600">
-                            {t(weighedNotOnLoad.length === 1
-                              ? "{n} weighed lot is not on this load yet."
-                              : "{n} weighed lots are not on this load yet.",
-                            { n: weighedNotOnLoad.length })}
-                          </Text>
-                          <Text color="gray.700" mt={0.5}>
-                            {t("Boxes weighed here do not ship on their own — a lot has to be on the load for stock to move and for it to reach the packing list.")}
-                          </Text>
-                          <Button size="xs" colorScheme="blue" mt={2} isLoading={busy}
-                            onClick={addWeighedAsLines}>
-                            {t(weighedNotOnLoad.length === 1
-                              ? "Add {n} weighed lot to the load"
-                              : "Add {n} weighed lots to the load",
-                            { n: weighedNotOnLoad.length })}
-                          </Button>
-                        </Box>
-                      </Alert>
-                    )}
-                  </Box>
-                )}
-
-                {isDraft && untiedBatches.length > 0 && (
-                  <Box mb={3}>
-                    <Text fontSize="xs" color="gray.500" textTransform="uppercase"
-                      letterSpacing="wide" mb={1}>
-                      {t("Tie a weighing session (optional)")}
-                    </Text>
-                    <Box maxH="120px" overflowY="auto" bg="white" borderRadius="md"
-                      border="1px solid" borderColor="gray.200" px={2} py={1} mb={2}>
-                      {untiedBatches.map((b) => (
-                        <Checkbox key={b.batch_id} size="sm" width="100%" py={1}
-                          isChecked={pickedBatches.has(b.batch_id)}
-                          onChange={() => setPickedBatches((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(b.batch_id)) next.delete(b.batch_id);
-                            else next.add(b.batch_id);
-                            return next;
-                          })}>
-                          <Flex align="baseline" gap={2} wrap="wrap" fontSize="sm">
-                            <Text as="span" fontWeight="600" color="blue.700">
-                              {b.lot_number || t("Batch {id}", { id: b.batch_id })}
-                            </Text>
-                            <Text as="span" color="gray.500" fontSize="xs">
-                              {t(Number(b.box_count) === 1 ? "{n} box" : "{n} boxes",
-                                { n: b.box_count })}
-                            </Text>
-                          </Flex>
-                        </Checkbox>
-                      ))}
-                    </Box>
-                    <Button size="xs" variant="ghost" colorScheme="blue" px={2}
-                      isLoading={busy} isDisabled={pickedBatches.size === 0}
-                      onClick={tieSessions}>
-                      {pickedBatches.size === 0
-                        ? t("Tie sessions")
-                        : t(pickedBatches.size === 1 ? "Tie {n} session" : "Tie {n} sessions",
-                          { n: pickedBatches.size })}
-                    </Button>
                   </Box>
                 )}
 
@@ -1300,27 +890,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                     onClick={() => printPackingList(detail)}>
                     {t("Packing list")}
                   </Button>
-                  {isDraft && (
-                    <Tooltip isDisabled={detail.items.length > 0} hasArrow
-                      label={weighedNotOnLoad.length
-                        ? t("Weighed boxes are tied to this load but no lot is on it yet. Add them as lines first.")
-                        : t("Add at least one lot to ship.")}>
-                      <Box>
-                        <Button size="sm" colorScheme="green" isLoading={busy}
-                          isDisabled={detail.items.length === 0}
-                          onClick={() => setConfirmShip(true)}>
-                          {t("Ship")}
-                        </Button>
-                      </Box>
-                    </Tooltip>
-                  )}
-                  {/* Destination, date and BOL are all typed before the
-                      truck is loaded, so they are all wrong sometimes. */}
-                  {isDraft && (
-                    <Button size="sm" variant="outline" onClick={startEdit}>
-                      {t("Edit details")}
-                    </Button>
-                  )}
                   {detail.status === "shipped" && isAdmin && (
                     <Button size="sm" variant="ghost" colorScheme="red"
                       onClick={() => setConfirmCancel(true)}>
@@ -1431,129 +1000,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
       )}
 
       {reception && (<>
-      {/* One form for both: making a draft and correcting its header. */}
-      <AlertDialog isOpen={creating} leastDestructiveRef={cancelRef}
-        onClose={closeForm} isCentered>
-        <AlertDialogOverlay>
-          <AlertDialogContent maxW="560px">
-            <AlertDialogHeader fontSize="lg" fontWeight="bold">
-              {editingId ? t("Edit shipment") : t("New shipment")}
-            </AlertDialogHeader>
-            <AlertDialogBody>
-              {draft && (
-                <Flex gap={3} wrap="wrap">
-                  {/* The options stay English: what is inside a field is data. */}
-                  <Field label={t("Going to")} w="160px">
-                    <Select size="sm" value={draft.destinationType}
-                      onChange={(e) => setDraft({ ...draft, destinationType: e.target.value })}>
-                      <option value="adamsfoods">AdamsFoods</option>
-                      <option value="customer">Customer</option>
-                    </Select>
-                  </Field>
-                  {draft.destinationType === "customer" && (
-                    <Field label={t("Customer")} w="220px">
-                      <Input size="sm" placeholder="e.g. Sysco" value={draft.destinationName}
-                        onChange={(e) => setDraft({ ...draft, destinationName: upperInput(e) })} />
-                    </Field>
-                  )}
-                  <Field label={t("Ship date")} w="150px">
-                    <Input size="sm" type="date" value={draft.shipDate}
-                      onChange={(e) => setDraft({ ...draft, shipDate: e.target.value })} />
-                  </Field>
-                  <Field label={t("Ship to")} w="220px">
-                    <Input size="sm" value={draft.shipTo}
-                      onChange={(e) => setDraft({ ...draft, shipTo: upperInput(e) })} />
-                  </Field>
-                  <Field label={t("BOL #")} w="120px">
-                    <Input size="sm" value={draft.billOfLading}
-                      onChange={(e) => setDraft({ ...draft, billOfLading: upperInput(e) })} />
-                  </Field>
-                  <Field label={t("Carrier")} w="150px">
-                    <Input size="sm" value={draft.carrier}
-                      onChange={(e) => setDraft({ ...draft, carrier: upperInput(e) })} />
-                  </Field>
-                  <Field label={t("Driver")} w="150px">
-                    <Input size="sm" value={draft.driver}
-                      onChange={(e) => setDraft({ ...draft, driver: upperInput(e) })} />
-                  </Field>
-                </Flex>
-              )}
-            </AlertDialogBody>
-            <AlertDialogFooter gap={2}>
-              <Button ref={cancelRef} onClick={closeForm}>{t("Go back")}</Button>
-              <Button colorScheme="blue" onClick={editingId ? saveHeader : createDraft}
-                isLoading={busy}
-                isDisabled={!draft || !draft.shipDate ||
-                  (draft.destinationType === "customer" && !draft.destinationName.trim())}>
-                {editingId ? t("Save changes") : t("Create draft")}
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialogOverlay>
-      </AlertDialog>
-
-      {/* Ship — the point stock actually moves, so it states what is leaving. */}
-      <AlertDialog isOpen={confirmShip} leastDestructiveRef={cancelRef}
-        onClose={() => setConfirmShip(false)} isCentered>
-        <AlertDialogOverlay>
-          <AlertDialogContent>
-            <AlertDialogHeader fontSize="lg" fontWeight="bold">{t("Ship this load?")}</AlertDialogHeader>
-            <AlertDialogBody>
-              {detail && (
-                <>
-                  <Text fontSize="sm" mb={3}>
-                    {t("This deducts every lot below from stock and closes the shipment to further changes. Cancelling afterwards puts the stock back.")}
-                  </Text>
-                  {/* Warned, not blocked — but it is in the dialog someone has to
-                      read to ship, because it cannot be put right afterwards. */}
-                  {unweighed.length > 0 && (
-                    <Alert status="warning" borderRadius="md" fontSize="sm" py={2} mb={3}>
-                      <AlertIcon />
-                      <Box>
-                        <Text fontWeight="600">
-                          {t(unweighed.length === 1
-                            ? "{n} lot shipping unweighed — {lots}."
-                            : "{n} lots shipping unweighed — {lots}.", {
-                            n: unweighed.length,
-                            lots: unweighed.map((it) => it.lotNumber).join(", "),
-                          })}
-                        </Text>
-                        <Text fontSize="xs" color="gray.700">
-                          {t(unweighed.length === 1
-                            ? "Nothing was weighed off the bench for it, so that lot will never have a yield. Weigh the boxes first if they are still here."
-                            : "Nothing was weighed off the bench for them, so those lots will never have a yield. Weigh the boxes first if they are still here.")}
-                        </Text>
-                      </Box>
-                    </Alert>
-                  )}
-                  <Box px={3} py={2} bg="gray.50" borderRadius="md"
-                    border="1px solid" borderColor="gray.200">
-                    <Text fontSize="sm" fontWeight="bold" color="gray.800">
-                      {detail.destinationName} · {fmtDate(detail.shipDate)}
-                    </Text>
-                    {detail.items.map((it) => (
-                      <Text key={it.itemId} fontSize="sm" color="gray.700" mt={1}>
-                        {it.lotNumber} — {lb(it.weight)} lb
-                        {it.qtyCases != null ? ` · ${it.qtyCases} cs` : ""}
-                        {it.stage === "raw" ? ` · ${t("RAW")}` : ""}
-                      </Text>
-                    ))}
-                    <Text fontSize="lg" fontWeight="bold" color="blue.800" mt={2}
-                      style={{ fontVariantNumeric: "tabular-nums" }}>
-                      {t("{weight} lb total", { weight: lb(detail.totalWeight) })}
-                    </Text>
-                  </Box>
-                </>
-              )}
-            </AlertDialogBody>
-            <AlertDialogFooter gap={2}>
-              <Button ref={cancelRef} onClick={() => setConfirmShip(false)}>{t("Go back")}</Button>
-              <Button colorScheme="green" onClick={ship} isLoading={busy}>{t("Ship it")}</Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialogOverlay>
-      </AlertDialog>
-
       {/* Cancel — restores stock, keeps the record. */}
       <AlertDialog isOpen={confirmCancel} leastDestructiveRef={cancelRef}
         onClose={() => setConfirmCancel(false)} isCentered>
@@ -1647,7 +1093,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
         onDeleted={fetchBatches}
         // On this screen "untie it in Outgoing" is a pointer at the screen you
         // are already standing on.
-        shipmentHint="untie it from the load below, or delete that draft."
+        shipmentHint="an admin can delete that load under Past loads."
       />
 
       {/* Reception reads the lot's figures here and decides whether it is
@@ -1667,12 +1113,11 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
       />
 
       <WeighFinishedBoxes
-        isOpen={weighOpen || Boolean(weighFor) || Boolean(nextFrom)}
+        isOpen={weighOpen || Boolean(nextFrom)}
         adoptBatchId={adoptBatchId}
-        presetLot={weighFor || nextFrom}
-        onSessionClosed={weighFor ? tieClosedSession : null}
+        presetLot={nextFrom}
         onClose={() => {
-          setWeighOpen(false); setAdoptBatchId(null); setWeighFor(null); setNextFrom(null); fetchBatches();
+          setWeighOpen(false); setAdoptBatchId(null); setNextFrom(null); fetchBatches();
         }}
       />
     </Box>
