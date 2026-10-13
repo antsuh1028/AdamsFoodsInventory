@@ -1048,7 +1048,7 @@ router.get("/vendors", verifyToken, async (req, res) => {
 // which must match a manifest whenever it matches one of its sessions.
 const batchSearchColumns = (a) => [
   "lot_number", "vendor", "item_description", "ship_to", "bill_of_lading",
-  "brand", "est_number", "grade", "remarks",
+  "brand", "est_number", "grade", "remarks", "driver",
 ].map((c) => `${a}.${c}`).concat(`${a}.batch_id::text`);
 
 router.get("/box-batches", verifyToken, async (req, res) => {
@@ -1088,7 +1088,7 @@ router.get("/box-batches", verifyToken, async (req, res) => {
       `SELECT b.batch_id, b.lot_number, b.lot_id, b.vendor, b.item_description,
               b.ship_to, b.bill_of_lading, b.brand, b.est_number, b.grade, b.source,
               b.direction, b.status, b.created_at, b.closed_at, b.expected_boxes, b.further_processing,
-              b.weighed_on::text AS weighed_on,
+              b.weighed_on::text AS weighed_on, b.driver,
               b.flagged_at, b.flag_reason,
               -- The UUID resolved here so the row can name who raised it.
               (SELECT u.username FROM users u WHERE u.id = b.flagged_by) AS flagged_by,
@@ -1326,6 +1326,45 @@ router.post("/box-batches/:id/flag", verifyToken, async (req, res) => {
   }
 });
 
+const MAX_DRIVER = 80;
+
+// Set the driver on every pallet of one shipment, all or none.
+router.post("/box-batches/driver", verifyToken, async (req, res) => {
+  const ids = req.body?.batchIds;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 200
+      || !ids.every((id) => Number.isInteger(id) && id > 0)) {
+    return res.status(400).json({ error: "batchIds must be a list of session ids" });
+  }
+  const raw = req.body?.driver;
+  if (raw != null && typeof raw !== "string") {
+    return res.status(400).json({ error: "driver must be text" });
+  }
+  // Blank clears it.
+  const driver = String(raw ?? "").trim().replace(/\s+/g, " ").toUpperCase() || null;
+  if (driver && driver.length > MAX_DRIVER) {
+    return res.status(400).json({ error: `driver must be at most ${MAX_DRIVER} characters` });
+  }
+  const unique = [...new Set(ids)];
+  try {
+    const r = await pool.query(
+      `UPDATE box_batches SET driver = $3
+        WHERE tenant_id = $1 AND batch_id = ANY($2::int[]) AND direction = 'outgoing'
+          AND (SELECT COUNT(*) FROM box_batches c
+                WHERE c.tenant_id = $1 AND c.batch_id = ANY($2::int[]) AND c.direction = 'outgoing')
+              = cardinality($2::int[])
+        RETURNING batch_id`,
+      [req.tenantId, unique, driver]
+    );
+    if (r.rowCount !== unique.length) {
+      return res.status(404).json({ code: "NOT_ALL_FOUND", error: "Some of those outgoing sessions were not found. Nothing was changed." });
+    }
+    res.json({ driver, updated: r.rowCount });
+  } catch (err) {
+    console.error("set driver:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 // Edit a session's heading after the fact.
 const EDITABLE_HEADER = {
   vendor: "vendor",
@@ -1525,7 +1564,7 @@ router.get("/box-batches/:id", verifyToken, async (req, res) => {
     const batch = await pool.query(
       `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description,
               brand, est_number, grade, remarks, source, expected_boxes, direction,
-              further_processing,
+              further_processing, driver,
               -- lot_id was missing here while useScanSession reads detail.lot_id
               -- when adopting, so EVERY adopted session silently lost its lot —
               -- the number still showed, because lot_number is its own column,

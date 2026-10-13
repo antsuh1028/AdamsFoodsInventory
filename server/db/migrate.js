@@ -278,6 +278,9 @@ const steps = async () => {
   // the authority to remove it does. Deleting is still admin-only, and an
   // operator being able to take weight out of a total by flagging it would be
   // that gate with a different name on it.
+  // Who drove an outgoing shipment, set on every pallet in it.
+  await run("box_batches driver",
+    `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS driver TEXT`);
   await run("box_batches flagged_at",
     `ALTER TABLE box_batches ADD COLUMN IF NOT EXISTS flagged_at TIMESTAMPTZ`);
   await run("box_batches flagged_by",

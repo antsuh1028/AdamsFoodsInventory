@@ -19,7 +19,7 @@ const cents = (s) => Number(toDisplayHundredths(s ?? "0"));
 const show = (n) => fromHundredths(n);
 
 const printOutgoingTag = ({
-  lotNumber, date, shipTo, itemDescription, billOfLading,
+  lotNumber, date, shipTo, itemDescription, billOfLading, driver = "",
   boxes: scans = [], weighedBy = "", memo = "",
   // Going to the AF freezer for another run. The lot stays the N number.
   furtherProcessing = false,
@@ -84,6 +84,10 @@ const printOutgoingTag = ({
               <td class="lbl-lot">Lot#</td>
               <td class="val-lot">${esc(lotNumber || "")}</td>
             </tr>
+            ${driver ? `<tr>
+              <td class="lbl">Driver</td>
+              <td class="val" colspan="3">${esc(driver)}</td>
+            </tr>` : ""}
           </table>
 
           <div class="grid-wrap">

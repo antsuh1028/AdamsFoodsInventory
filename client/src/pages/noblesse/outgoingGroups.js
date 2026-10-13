@@ -51,6 +51,10 @@ export const groupOutgoing = (sessions, now = Date.now()) => {
         if (b.lot_number && !g.lots.includes(b.lot_number)) g.lots.push(b.lot_number);
       }
       for (const g of shipments) {
+        const drivers = [...new Set(g.sessions.map((s) => s.driver).filter(Boolean))];
+        g.driver = drivers[0] || "";
+        // Some pallets lack the driver, or carry a different one.
+        g.driverMixed = drivers.length > 1 || (drivers.length === 1 && g.sessions.some((s) => !s.driver));
         g.open = g.sessions.some((s) => s.status === "open");
         g.flagged = g.sessions.some((s) => s.flagged_at);
         g.sessions.reverse();

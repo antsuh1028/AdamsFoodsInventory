@@ -238,6 +238,7 @@ const BatchBoxes = ({ detail, totalLb, batchId, isAdmin, onChanged }) => {
             shipTo: detail.ship_to,
             itemDescription: detail.item_description,
             billOfLading: detail.bill_of_lading,
+            driver: detail.driver || "",
             boxes: items,
             weighedBy: detail.vendor || "",
             memo: detail.remarks || "",
@@ -377,6 +378,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // Shipment groups the user opened or closed by hand.
   const [toggledGroups, setToggledGroups] = useState(() => new Set());
   const [pastOpen, setPastOpen] = useState(false);
+  // The shipment whose driver is being typed: { id, value }.
+  const [driverEdit, setDriverEdit] = useState(null);
+  const [savingDriver, setSavingDriver] = useState(false);
   const cancelRef = useRef(null);
 
   // Nothing else reads the load list, so a search simply replaces it. A reply
@@ -416,7 +420,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     const mine = ++batchSeq.current;
     try {
       const [all, hits] = await Promise.all([
-        axiosInstance.get("/box-batches", { params: { direction: "outgoing" } }),
+        axiosInstance.get("/box-batches", { params: { direction: "outgoing", limit: 200 } }),
         q ? axiosInstance.get("/box-batches", { params: { direction: "outgoing", q } }) : null,
       ]);
       if (mine !== batchSeq.current) return;
@@ -884,6 +888,56 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     </Box>
   );
 
+  // Sets the driver on every pallet of a shipment.
+  const saveDriver = async (g) => {
+    setSavingDriver(true);
+    try {
+      await axiosInstance.post("/box-batches/driver", {
+        batchIds: g.sessions.map((s) => s.batch_id), driver: driverEdit.value,
+      });
+      setDriverEdit(null);
+      await fetchBatches();
+    } catch (err) {
+      toast({ title: t("Could not save the driver"),
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 6000, isClosable: true, position: "top" });
+    } finally {
+      setSavingDriver(false);
+    }
+  };
+
+  const stop = (e) => e.stopPropagation();
+
+  const renderDriver = (g) => {
+    if (driverEdit?.id === g.id) {
+      return (
+        <Flex gap={1} align="center" onClick={stop}>
+          <Input size="xs" bg="white" width="160px" autoFocus autoComplete="off"
+            placeholder={t("Driver's name")} value={driverEdit.value}
+            textTransform="uppercase"
+            onChange={(e) => setDriverEdit({ ...driverEdit, value: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveDriver(g);
+              if (e.key === "Escape") setDriverEdit(null);
+            }} />
+          <Button size="xs" colorScheme="blue" isLoading={savingDriver} onClick={() => saveDriver(g)}>
+            {t("Save")}
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => setDriverEdit(null)}>{t("Cancel")}</Button>
+        </Flex>
+      );
+    }
+    return (
+      <Button size="xs" variant="ghost" colorScheme={g.driver ? "gray" : "blue"}
+        onClick={(e) => { stop(e); setDriverEdit({ id: g.id, value: g.driver }); }}
+        title={g.driverMixed ? t("Not every pallet has this driver. Save to set it on all of them.") : undefined}>
+        {g.driver
+          ? `${t("Driver")}: ${g.driver}${g.driverMixed ? " *" : ""}`
+          : t("+ Driver")}
+      </Button>
+    );
+  };
+
   // One auto-grouped shipment: a customer's pallets close together on one day.
   const renderShipment = (g) => {
     const open = groupIsOpen(g);
@@ -902,6 +956,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
             {start === end ? start : `${start} - ${end}`}
           </Text>
           {g.open && <Badge colorScheme="yellow" fontSize="9px">{t("Weighing")}</Badge>}
+          {renderDriver(g)}
           <Flex gap={1} wrap="wrap">
             {g.lots.map((l) => (
               <Badge key={l} variant="outline" colorScheme="gray" fontSize="9px">{l}</Badge>

@@ -473,6 +473,11 @@ const ES = {
   "Nothing has been weighed out yet.": "Todavía no se ha pesado nada de salida.",
   "Past loads ({n})": "Cargas anteriores ({n})",
   "All customers": "Todos los clientes",
+  "+ Driver": "+ Chofer",
+  "Driver's name": "Nombre del chofer",
+  "Could not save the driver": "No se pudo guardar el chofer",
+  "Not every pallet has this driver. Save to set it on all of them.":
+    "No todas las tarimas tienen este chofer. Guarde para ponerlo en todas.",
   "Not on the customer list": "No está en la lista de clientes",
   "e.g. SHABUYA": "p. ej. SHABUYA",
   "Shipped loads": "Cargas enviadas",
