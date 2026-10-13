@@ -53,7 +53,7 @@ const AcceptReportDialog = ({ report, isOpen, busy, onCancel, onAccept }) => {
               <Row label="Inedible">{r.inedibleWeight ? `${r.inedibleWeight} lb` : null}</Row>
               {/* Accepting also writes the freezer row, so it is checked here with the rest. */}
               {r.fpCases > 0 && (
-                <Row label="To the freezer">
+                <Row label="Packed for the freezer">
                   {`${r.fpCases} cs${r.fpItem ? ` ${r.fpItem}` : ""}, onto `
                     + (r.lotKind === "further" ? r.lotNumber : `FP${String(r.lotNumber || "").slice(1)}`)}
                 </Row>

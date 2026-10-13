@@ -523,7 +523,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {r.fpCases > 0 && (
                 <Badge colorScheme="teal" variant="subtle" fontSize="9px"
                   title={`${r.fpCases} cases${r.fpItem ? ` of ${r.fpItem}` : ""} packed for another run`}>
-                  {r.fpCases} cs to freezer
+                  {r.fpCases} cs packed for freezer
                 </Badge>
               )}
               <Badge colorScheme={STATUS_COLOR[r.status]} fontSize="9px">
@@ -983,7 +983,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {/* Fills out the Inedible row, so the next field starts on its own line. */}
               <Box gridColumn="3 / -1" display={{ base: "none", md: "block" }} />
 
-              <SheetField label="Further processing" full plain>
+              <SheetField label="Packed for the freezer" full plain>
                   <Box px={3} py={2}>
                     <Checkbox isChecked={Boolean(draft.fpOn) && Boolean(fpTarget)}
                       isDisabled={draft.readOnly || !fpTarget}
@@ -994,7 +994,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                         ...draft, fpOn: e.target.checked,
                         fpItem: draft.fpItem || upper(draft.description || ""),
                       })}>
-                      <Text as="span" fontSize="sm">Part of this run goes to the AF freezer for another run</Text>
+                      <Text as="span" fontSize="sm">This run packed product to freeze and run again later (e.g. clods to slice once frozen)</Text>
                     </Checkbox>
                     {!fpTarget && (
                       <Text fontSize="xs" color="gray.500" mt={1}>
@@ -1005,7 +1005,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                       <>
                         <Flex gap={3} align="center" wrap="wrap" mt={2}>
                           <Input {...sheetInputProps} isReadOnly={draft.readOnly} bg="white"
-                            flex="0 0 130px" type="number" placeholder="cases"
+                            flex="0 0 200px" type="number" placeholder="Cases packed for the freezer"
                             borderColor={fpMissing ? "red.300" : undefined}
                             value={draft.fpCases}
                             onChange={(e) => setDraft({ ...draft, fpCases: e.target.value })} />
@@ -1015,8 +1015,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                             onChange={(e) => setDraft({ ...draft, fpItem: upperInput(e) })} />
                         </Flex>
                         <Text fontSize="xs" color="gray.500" mt={1}>
-                          Cases packed for later, not the cases put in. When reception accepts this run
-                          they wait on <b>{fpTarget}</b> for the next run.
+                          Count only what this run made and packed for the freezer. Cases you didn't get
+                          to stay on the lot; don't enter them here. Once accepted, these wait
+                          on <b>{fpTarget}</b> for the next run.
                         </Text>
                       </>
                     )}
