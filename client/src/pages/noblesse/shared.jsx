@@ -39,9 +39,7 @@ export const PROCESSING_TYPES = [
   "111 MARIN Marinading",
 ];
 
-// The stations a run happens on. Named equipment, not bare numbers — "2" meant
-// nothing to anyone reading the report afterwards. The slicers, the lines and
-// the bandsaws are each their own station.
+// Stations a run can happen on.
 export const PROCESSING_LINES = [
   "Slicer #1",
   "Slicer #2",
@@ -53,8 +51,7 @@ export const PROCESSING_LINES = [
 
 export const PACIFIC_TZ = "America/Los_Angeles";
 
-// Built once each: constructing an Intl formatter is the expensive part, and
-// these run per row in lists that re-render on every keystroke.
+// Pacific date formatters, built once.
 const PARTS_FMT = new Intl.DateTimeFormat("en-US", {
   timeZone: PACIFIC_TZ,
   year: "numeric", month: "2-digit", day: "2-digit",
@@ -83,9 +80,7 @@ export const today = (date = new Date()) => {
   return `${year}-${pad(month)}-${pad(day)}`;
 };
 
-// The Pacific day a session's boxes were weighed: the date someone set after
-// the fact, else the day it was opened. Not created_at sliced — that string is
-// UTC, so a session opened after 5pm Pacific would read as the next day.
+// The Pacific day a session was weighed.
 export const weighedDay = (b) => {
   if (!b) return "";
   if (b.weighed_on) return b.weighed_on;
