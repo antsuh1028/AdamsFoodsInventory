@@ -11,9 +11,9 @@ import { fmtDate, today, fmtWeight } from "./shared";
 import useLang from "../../hooks/useLang";
 import LangToggle from "../../components/LangToggle";
 
-// Reception's F.P Tracker: product sent to the AF freezer that comes back for
-// another run. The Excel sheet's columns, plus where its FP lot stands, and the
-// incoming dock's count of what has come back.
+// The F.P Tracker: trips to the AF freezer that come back for another run.
+// A trip is a pallet weighed out at the dock, or a row entered by hand for one
+// that was not weighed. Plus where each FP lot stands, and the returns counted.
 
 const EMPTY = () => ({ lotId: null, lotNumber: "", item: "", cases: "", rawWeight: "", sentOn: today() });
 const EMPTY_RETURN = () => ({ lotId: "", cases: "", returnedOn: today(), notes: "" });
@@ -23,21 +23,12 @@ const RETURN_ROLES = new Set(["admin", "reception", "ntimanager", "noblesse"]);
 
 const num = { style: { fontVariantNumeric: "tabular-nums" } };
 
-// Boxes the dock labelled for this N lot, checked against the cases sent. Paperwork only.
-const LabelledCell = ({ r, t }) => {
-  if (r.labelled == null) return <Td isNumeric>—</Td>;
-  const off = r.labelled !== r.sent;
-  return (
-    <Td isNumeric {...num}
-      title={off
-        ? t("The dock labelled {n} boxes for the freezer; {sent} cases were sent. One of the two is wrong.", { n: r.labelled, sent: r.sent })
-        : t("Matches the cases sent.")}>
-      <Text as="span" color={off ? "red.600" : "gray.600"} fontWeight={off ? "700" : "400"}>
-        {r.labelled}{off ? " ≠" : ""}
-      </Text>
-    </Td>
-  );
-};
+// Where a trip's count came from.
+const KindBadge = ({ r, t }) => (r.kind === "weighed" ? (
+  <Badge ml={2} colorScheme="green" fontSize="9px" title={t("Weighed out at the dock")}>{t("weighed")}</Badge>
+) : (
+  <Badge ml={2} colorScheme="gray" fontSize="9px" title={t("Entered by hand, not weighed at the dock")}>{t("by hand")}</Badge>
+));
 
 // Where the lot stands: back from the freezer, still in it, and ready to run.
 const FreezerCells = ({ r, t }) => (
@@ -75,6 +66,8 @@ const FpTracker = ({ isOpen, onClose }) => {
   const [busy, setBusy] = useState(null);
   const [editing, setEditing] = useState(null);   // { fpId, item, cases, rawWeight, sentOn }
   const [confirming, setConfirming] = useState(null);
+  // The server's warning that the dock already weighed this lot to the freezer that day.
+  const [sameDay, setSameDay] = useState(null);
 
   const fail = (title) => (err) => toast({ title, description: err.response?.data?.error || err.message,
     status: "error", duration: 6000, position: "top", isClosable: true });
@@ -118,16 +111,27 @@ const FpTracker = ({ isOpen, onClose }) => {
     }
   };
 
-  const add = () => act("new", async () => {
-    const { data } = await axiosInstance.post("/fp-tracker", {
-      lotId: draft.lotId, item: draft.item, cases: draft.cases,
-      rawWeight: draft.rawWeight.trim() || null, sentOn: draft.sentOn,
-    });
-    if (data.fpLotCreated) {
-      toast({ title: t("{lot} created", { lot: data.fpLotNumber }), status: "success", duration: 6000, position: "top",
-        description: t("The floor can now pick {lot} for a run on this product.", { lot: data.fpLotNumber }) });
+  const add = async (confirmNotWeighed = false) => {
+    setBusy("new");
+    try {
+      const { data } = await axiosInstance.post("/fp-tracker", {
+        lotId: draft.lotId, item: draft.item, cases: draft.cases,
+        rawWeight: draft.rawWeight.trim() || null, sentOn: draft.sentOn, confirmNotWeighed,
+      });
+      setSameDay(null);
+      setDraft(EMPTY());
+      if (data.fpLotCreated) {
+        toast({ title: t("{lot} created", { lot: data.fpLotNumber }), status: "success", duration: 6000, position: "top",
+          description: t("The floor can now pick {lot} for a run on this product.", { lot: data.fpLotNumber }) });
+      }
+      await load();
+    } catch (err) {
+      if (err.response?.data?.code === "WEIGHED_SAME_DAY") setSameDay(err.response.data.error);
+      else fail(t("That did not save"))(err);
+    } finally {
+      setBusy(null);
     }
-  }, () => setDraft(EMPTY()));
+  };
 
   const recordReturn = () => act("return", async () => {
     const { data } = await axiosInstance.post("/fp-returns", {
@@ -155,14 +159,14 @@ const FpTracker = ({ isOpen, onClose }) => {
     <FloatingWindow isOpen={isOpen} onClose={onClose} title={t("F.P Tracker")} width={1150}
       headerActions={<LangToggle lang={lang} onToggle={toggleLang} />}>
       <Text fontSize="xs" color="gray.500" mb={3}>
-        {t("Product sent to the AF freezer that comes back for another run. The first row for a lot creates its FP lot (N26237-04 becomes FP26237-04). What comes back is counted at the incoming dock below; a run on it picks the FP lot on the Processing tab.")}
+        {t("Product sent to the AF freezer that comes back for another run. Pallets the dock weighs out with \"Going to the AF freezer\" ticked appear here on their own, and the first one for a lot creates its FP lot (N26237-04 becomes FP26237-04). What comes back is counted at the incoming dock below; a run on it picks the FP lot on the Processing tab.")}
       </Text>
 
       {canEdit && (
         <Flex gap={2} wrap="wrap" align="flex-end" mb={3} p={3} bg="gray.50" borderRadius="md"
           border="1px solid" borderColor="gray.200">
           <Text fontSize="xs" fontWeight="700" color="gray.600" textTransform="uppercase" w="100%">
-            {t("Sent to the freezer")}
+            {t("Add a trip the dock did not weigh")}
           </Text>
           <Box>
             <Text fontSize="xs" color="gray.500" mb={1}>{t("Date sent out")}</Text>
@@ -190,9 +194,20 @@ const FpTracker = ({ isOpen, onClose }) => {
             <Input {...cellInput} size="sm" width="110px" inputMode="decimal" placeholder={t("optional")}
               value={draft.rawWeight} onChange={(e) => setDraft({ ...draft, rawWeight: e.target.value })} />
           </Box>
-          <Button size="sm" colorScheme="blue" onClick={add} isLoading={busy === "new"} isDisabled={!ready}>
+          <Button size="sm" colorScheme="blue" onClick={() => add(false)} isLoading={busy === "new"} isDisabled={!ready}>
             {t("Add")}
           </Button>
+          {/* The same trip typed after the dock weighed it would count twice. */}
+          {sameDay && (
+            <Flex w="100%" gap={2} align="center" wrap="wrap" p={2} bg="yellow.50" borderRadius="md"
+              border="1px solid" borderColor="yellow.300">
+              <Text fontSize="xs" color="yellow.900" flex="1 1 300px">{sameDay}</Text>
+              <Button size="xs" colorScheme="yellow" onClick={() => add(true)} isLoading={busy === "new"}>
+                {t("Add anyway")}
+              </Button>
+              <Button size="xs" variant="ghost" onClick={() => setSameDay(null)}>{t("Cancel")}</Button>
+            </Flex>
+          )}
         </Flex>
       )}
 
@@ -257,23 +272,22 @@ const FpTracker = ({ isOpen, onClose }) => {
           <Thead>
             <Tr>
               <Th>{t("Date sent out")}</Th><Th>{t("Lot #")}</Th><Th>{t("FP lot")}</Th><Th>{t("Item description")}</Th>
-              <Th isNumeric>{t("Qty (cases)")}</Th><Th isNumeric>{t("Raw weights")}</Th>
+              <Th isNumeric>{t("Qty (cases)")}</Th><Th isNumeric>{t("Weight (lb)")}</Th>
               <Th isNumeric title={t("Counted back in at the incoming dock, for the whole lot")}>{t("Back")}</Th>
               <Th isNumeric title={t("Sent and not yet back, for the whole lot")}>{t("In freezer")}</Th>
               <Th isNumeric title={t("Back and not yet used by an accepted run")}>{t("Ready")}</Th>
-              <Th isNumeric title={t("Boxes the dock weighed and labelled for the freezer, against the cases sent")}>{t("Labelled at dock")}</Th>
               {canEdit && <Th />}
             </Tr>
           </Thead>
           <Tbody>
             {loading && rows.length === 0 && (
-              <Tr><Td colSpan={11}><Flex justify="center" py={4}><Spinner size="sm" /></Flex></Td></Tr>
+              <Tr><Td colSpan={10}><Flex justify="center" py={4}><Spinner size="sm" /></Flex></Td></Tr>
             )}
             {!loading && rows.length === 0 && (
-              <Tr><Td colSpan={11}><Text fontSize="sm" color="gray.500" py={2}>{t("Nothing here yet.")}</Text></Td></Tr>
+              <Tr><Td colSpan={10}><Text fontSize="sm" color="gray.500" py={2}>{t("Nothing here yet.")}</Text></Td></Tr>
             )}
-            {rows.map((r) => (editing?.fpId === r.fpId ? (
-              <Tr key={r.fpId} bg="blue.50">
+            {rows.map((r) => (r.kind === "hand" && editing?.fpId === r.fpId ? (
+              <Tr key={r.key} bg="blue.50">
                 <Td><Input {...cellInput} type="date" max={today()} value={editing.sentOn}
                   onChange={(e) => setEditing({ ...editing, sentOn: e.target.value })} /></Td>
                 <Td fontWeight="600">{r.lotNumber}</Td>
@@ -285,7 +299,6 @@ const FpTracker = ({ isOpen, onClose }) => {
                 <Td isNumeric><Input {...cellInput} width="90px" inputMode="decimal" value={editing.rawWeight}
                   onChange={(e) => setEditing({ ...editing, rawWeight: e.target.value })} /></Td>
                 <FreezerCells r={r} t={t} />
-                <LabelledCell r={r} t={t} />
                 <Td>
                   <Flex gap={1} justify="flex-end">
                     <Button size="xs" colorScheme="blue" onClick={saveEdit} isLoading={busy === r.fpId}>{t("Save")}</Button>
@@ -294,12 +307,13 @@ const FpTracker = ({ isOpen, onClose }) => {
                 </Td>
               </Tr>
             ) : (
-              <Tr key={r.fpId}>
+              <Tr key={r.key}>
                 <Td whiteSpace="nowrap">{fmtDate(r.sentOn)}</Td>
                 <Td fontWeight="600" color="blue.700">{r.lotNumber}</Td>
-                <Td whiteSpace="nowrap">{r.fpLotNumber}</Td>
+                <Td whiteSpace="nowrap">{r.fpLotNumber || "—"}</Td>
                 <Td>
-                  {r.item}
+                  {r.item || "—"}
+                  <KindBadge r={r} t={t} />
                   {r.sourceReportId && (
                     <Badge ml={2} colorScheme="gray" fontSize="9px" title={t("Written when that processing report was accepted")}>
                       {t("report {id}", { id: r.sourceReportId })}
@@ -307,15 +321,16 @@ const FpTracker = ({ isOpen, onClose }) => {
                   )}
                 </Td>
                 <Td isNumeric {...num}>{r.cases}</Td>
-                <Td isNumeric {...num}>{r.rawWeight ? `${fmtWeight(r.rawWeight)} lb` : "—"}</Td>
+                <Td isNumeric {...num}>{r.weight ? fmtWeight(r.weight) : "—"}</Td>
                 <FreezerCells r={r} t={t} />
-                <LabelledCell r={r} t={t} />
-                {canEdit && (
+                {/* A weighed trip is corrected in its weighing session, not here. */}
+                {canEdit && r.kind === "weighed" && <Td />}
+                {canEdit && r.kind === "hand" && (
                   <Td>
                     <Flex gap={1} justify="flex-end" wrap="wrap">
                       <Button size="xs" variant="ghost" colorScheme="blue"
                         onClick={() => setEditing({ fpId: r.fpId, item: r.item, cases: String(r.cases),
-                          rawWeight: r.rawWeight ? fmtWeight(r.rawWeight) : "", sentOn: r.sentOn })}>
+                          rawWeight: r.weight ? fmtWeight(r.weight) : "", sentOn: r.sentOn })}>
                         {t("Edit")}
                       </Button>
                       {/* Asked once: a voided row cannot be brought back from here. */}

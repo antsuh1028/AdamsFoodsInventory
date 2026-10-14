@@ -5,8 +5,7 @@ const requireRole = require("../middleware/requireRole");
 const { REPORT_ACCEPT_ROLES } = require("../middleware/receptionRoles");
 const { searchTerm, searchClause } = require("../utils/search");
 const { isCalendarDay } = require("../utils/weighedAt");
-const { fpCounts, lockLot, ensureFpLot, findFpChild, normaliseItem } = require("../utils/fpLot");
-const { pacificToday } = require("../utils/lot");
+const { fpCounts, lockLot, findFpChild, normaliseItem } = require("../utils/fpLot");
 const { manualCasesSql } = require("../utils/formManualCases");
 
 const MAX_FP_ITEM = 120;
@@ -571,21 +570,6 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
       );
     }
 
-    // Cases packed for later go to the freezer: a tracker row on the N lot, stocking its FP lot.
-    let sentToFp = null;
-    if (report.fp_cases > 0) {
-      const parentId = isFp ? report.parent_lot_id : report.lot_id;
-      if (!isFp) await lockLot(client, req.tenantId, parentId);
-      const fp = await ensureFpLot(client, req.tenantId, parentId, req.userId);
-      await client.query(
-        `INSERT INTO fp_tracker (tenant_id, lot_id, item, cases, sent_on, created_by, source_report_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [req.tenantId, parentId,
-         normaliseItem(report.fp_item || report.description) || "FURTHER PROCESSING",
-         report.fp_cases, fmtDate(report.processing_date) || pacificToday(), req.userId || null, id]);
-      sentToFp = { lotId: fp.lot.lot_id, lotNumber: fp.lot.lot_number, cases: report.fp_cases, created: fp.created };
-    }
-
     // Appended in SQL so a concurrent form save cannot clobber it in a
     // read-modify-write. reportId is what lets the form PATCH protect the row.
     await client.query(
@@ -638,12 +622,9 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
       lotNumber: report.lot_number,
       casesTaken: report.input_cases,
       casesLeft: onHand - report.input_cases,
-      sentToFp,
     });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
-    // An outside lot cannot have an FP lot; refused, nothing moved.
-    if (err.status) return res.status(409).json({ code: err.code, error: err.message });
     console.error("accept processing report:", err);
     res.status(500).json({ error: "Internal Server Error" });
   } finally {

@@ -4,53 +4,76 @@ const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { REPORT_ACCEPT_ROLES } = require("../middleware/receptionRoles");
 const {
-  normaliseItem, sentSql, takenSql, labelledSql, returnedSql, shape, fpCounts, lockLot, findFpChild, ensureFpLot,
+  normaliseItem, sentSql, weighedSql, weighedLbSql, byHandSql, takenSql, returnedSql,
+  shapeRow, fpCounts, lockLot, findFpChild, ensureFpLot,
 } = require("../utils/fpLot");
+const { weightInLb } = require("../utils/sqlWeight");
 const { isCalendarDay } = require("../utils/weighedAt");
 const { pacificToday } = require("../utils/lot");
 const { toThousandths } = require("../utils/weight");
 const { searchTerm } = require("../utils/search");
 const { lotDescriptionSql } = require("../utils/lotDescription");
 
-// The F.P Tracker: reception's sheet of product sent to the AF freezer for
-// another run. Each row is keyed to the N lot, and its cases stock that lot's
-// FP lot, which the first row creates. Rows are voided, never deleted, and
-// never cut below what accepted runs on the FP lot have already taken.
+// The F.P Tracker: trips to the AF freezer for another run. A trip is a pallet
+// the dock weighed out to the freezer, or a row entered by hand for one that
+// was not weighed. Both stock the N lot's FP lot. Hand rows are voided, never
+// deleted, and never cut below what accepted runs have already taken.
 
 const MAX_ITEM = 120;
 const STATUSES = new Set(["out", "back", "all"]);
 
+// The FP lot's figures, as columns on any row that carries `fp`.
+const COUNT_COLS = `
+  ${weighedSql("fp")} AS weighed, ${byHandSql("fp")} AS by_hand, ${weighedLbSql("fp")} AS weighed_lb,
+  ${takenSql("fp")} AS taken, ${returnedSql("fp")} AS returned`;
+
 const fmt = (r) => ({
-  fpId: r.fp_id,
+  // "weighed" (a dock session) or "hand" (a tracker row).
+  kind: r.kind,
+  key: `${r.kind}-${r.id}`,
+  fpId: r.kind === "hand" ? r.id : null,
+  batchId: r.kind === "weighed" ? r.id : null,
   lotId: r.lot_id,
   lotNumber: r.lot_number,
   fpLotId: r.fp_lot_id,
   fpLotNumber: r.fp_lot_number,
   item: r.item,
   cases: r.cases,
-  rawWeight: r.raw_weight,
+  // Weighed pounds for a dock trip, the typed raw weight for a hand row.
+  weight: r.weight,
   sentOn: r.sent_on,
-  returnedOn: r.returned_on,
   createdBy: r.created_by,
   createdAt: r.created_at,
-  // The accepted processing report that sent these cases, when one did.
+  // The accepted processing report that wrote a hand row, from before trips came from the dock.
   sourceReportId: r.source_report_id ?? null,
-  // For the FP lot as a whole: several rows feed one lot, and returns are counted per lot.
-  ...shape(r.sent, r.taken, r.returned, r.labelled),
-  // Boxes the dock labelled for the freezer; null until the FP lot exists.
-  labelled: r.fp_lot_id ? r.labelled : null,
+  // For the FP lot as a whole: several trips feed one lot, and returns are counted per lot.
+  ...shapeRow(r),
 });
 
-const ROW_SQL = `
-  SELECT t.fp_id, t.lot_id, l.lot_number, fp.lot_id AS fp_lot_id, fp.lot_number AS fp_lot_number,
-         t.item, t.cases, t.raw_weight::text AS raw_weight,
-         t.sent_on::text AS sent_on, t.returned_on::text AS returned_on, t.created_at, t.source_report_id,
-         (SELECT u.username FROM users u WHERE u.id = t.created_by) AS created_by,
-         ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled,
-         ${returnedSql("fp")} AS returned
-    FROM fp_tracker t
-    JOIN lots l ON l.lot_id = t.lot_id
-    LEFT JOIN lots fp ON fp.parent_lot_id = t.lot_id AND fp.kind = 'further'`;
+// One row per trip, both kinds, each with its FP lot's figures.
+const TRIPS_SQL = `
+  WITH trips AS (
+    SELECT 'hand' AS kind, t.fp_id AS id, t.tenant_id, t.lot_id, t.item, t.cases,
+           t.raw_weight::text AS weight, t.sent_on::text AS sent_on, t.created_at, t.source_report_id,
+           (SELECT u.username FROM users u WHERE u.id = t.created_by) AS created_by
+      FROM fp_tracker t WHERE t.voided_at IS NULL
+    UNION ALL
+    SELECT 'weighed', b.batch_id, b.tenant_id, b.lot_id, COALESCE(b.item_description, ''),
+           (SELECT COUNT(*) FROM batch_items bi WHERE bi.batch_id = b.batch_id AND bi.voided_at IS NULL)::int,
+           (SELECT SUM(${weightInLb("bi")}) FROM batch_items bi
+             WHERE bi.batch_id = b.batch_id AND bi.voided_at IS NULL)::text,
+           COALESCE(b.weighed_on, (b.created_at AT TIME ZONE 'America/Los_Angeles')::date)::text,
+           b.created_at, NULL,
+           (SELECT u.username FROM users u WHERE u.id = b.created_by)
+      FROM box_batches b WHERE b.direction = 'outgoing' AND b.further_processing AND b.lot_id IS NOT NULL
+  )
+  SELECT tr.*, l.lot_number, fp.lot_id AS fp_lot_id, fp.lot_number AS fp_lot_number, ${COUNT_COLS}
+    FROM trips tr
+    JOIN lots l ON l.lot_id = tr.lot_id
+    LEFT JOIN lots fp ON fp.parent_lot_id = tr.lot_id AND fp.kind = 'further'`;
+
+// A single hand row, shaped like a trip.
+const ROW_SQL = `SELECT * FROM (${TRIPS_SQL}) x WHERE x.kind = 'hand'`;
 
 // A plain day, not in the future, not before 2000. Blank gives `fallback`.
 const parseDay = (raw, label, fallback = null) => {
@@ -104,24 +127,24 @@ const overdrawn = async (client, tenantId, parentLotId) => {
 };
 
 const loadRow = (id, tenantId) =>
-  pool.query(`${ROW_SQL} WHERE t.fp_id = $1 AND t.tenant_id = $2`, [id, tenantId]);
+  pool.query(`${ROW_SQL} AND x.id = $1 AND x.tenant_id = $2`, [id, tenantId]);
 
 router.get("/fp-tracker", verifyToken, async (req, res) => {
   const status = STATUSES.has(req.query.status) ? req.query.status : "all";
   const term = searchTerm(req.query.q);
   const params = [req.tenantId];
-  let where = "WHERE t.tenant_id = $1 AND t.voided_at IS NULL";
+  let where = "WHERE tr.tenant_id = $1";
   // Per lot: anything sent and not yet counted back is still in the freezer.
   if (status === "out") where += ` AND ${sentSql("fp")} > ${returnedSql("fp")}`;
   if (status === "back") where += ` AND ${sentSql("fp")} <= ${returnedSql("fp")}`;
   if (term) {
     params.push(term);
     where += ` AND (l.lot_number ILIKE $${params.length} OR fp.lot_number ILIKE $${params.length}`
-      + ` OR t.item ILIKE $${params.length})`;
+      + ` OR tr.item ILIKE $${params.length})`;
   }
   try {
     const result = await pool.query(
-      `${ROW_SQL} ${where} ORDER BY t.sent_on DESC, t.fp_id DESC LIMIT 300`, params);
+      `${TRIPS_SQL} ${where} ORDER BY tr.sent_on DESC, tr.created_at DESC LIMIT 300`, params);
     res.json(result.rows.map(fmt));
   } catch (err) {
     console.error("list fp tracker:", err);
@@ -134,9 +157,7 @@ router.get("/fp-lots", verifyToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT fp.lot_id, fp.lot_number, p.lot_id AS parent_lot_id, p.lot_number AS parent_lot_number,
-              ${lotDescriptionSql("p")} AS description,
-              ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled,
-              ${returnedSql("fp")} AS returned
+              ${lotDescriptionSql("p")} AS description, ${COUNT_COLS}
          FROM lots fp JOIN lots p ON p.lot_id = fp.parent_lot_id
         WHERE fp.tenant_id = $1 AND fp.kind = 'further'
         ORDER BY fp.lot_date DESC NULLS LAST, fp.lot_number DESC`,
@@ -147,7 +168,7 @@ router.get("/fp-lots", verifyToken, async (req, res) => {
       parentLotId: r.parent_lot_id,
       parentLotNumber: r.parent_lot_number,
       description: r.description ?? null,
-      ...shape(r.sent, r.taken, r.returned, r.labelled),
+      ...shapeRow(r),
     })));
   } catch (err) {
     console.error("list fp lots:", err);
@@ -173,6 +194,21 @@ router.post("/fp-tracker", verifyToken, requireRole(...REPORT_ACCEPT_ROLES), asy
     await client.query("BEGIN");
     // The parent lock makes the first row's FP lot one lot, not two.
     await lockLot(client, req.tenantId, lotId);
+    // The same trip typed in after the dock weighed it would be counted twice.
+    if (b.confirmNotWeighed !== true) {
+      const same = await client.query(
+        `SELECT COUNT(*)::int AS n FROM box_batches b
+          WHERE b.tenant_id = $1 AND b.lot_id = $2 AND b.direction = 'outgoing' AND b.further_processing
+            AND COALESCE(b.weighed_on, (b.created_at AT TIME ZONE 'America/Los_Angeles')::date) = $3::date`,
+        [req.tenantId, lotId, sent.value]);
+      if (same.rows[0].n > 0) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ code: "WEIGHED_SAME_DAY",
+          error: `The dock already weighed ${same.rows[0].n === 1 ? "a pallet" : `${same.rows[0].n} pallets`} `
+            + "of this lot to the freezer that day, and those already count as sent. "
+            + "Only add this if it is a different trip." });
+      }
+    }
     const fp = await ensureFpLot(client, req.tenantId, lotId, req.userId);
     const ins = await client.query(
       `INSERT INTO fp_tracker (tenant_id, lot_id, item, cases, raw_weight, sent_on, created_by)
