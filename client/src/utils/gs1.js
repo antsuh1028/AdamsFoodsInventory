@@ -26,6 +26,8 @@
  * @property {string | null} packagingDate
  * @property {string | null} serial
  * @property {string | null} lot
+ * @property {string | null} itemCode     AI 240: our own item code
+ * @property {string | null} customerPart AI 241: the customer's item number
  * @property {Gs1Weight | null} weight
  * @property {string} raw
  * @property {string[]} unparsed
@@ -269,7 +271,7 @@ const parseGs1 = (raw) => {
   /** @type {Gs1Parse} */
   const result = {
     gtin: null, productionDate: null, packagingDate: null, serial: null, lot: null,
-    weight: null, raw, unparsed: [],
+    itemCode: null, customerPart: null, weight: null, raw, unparsed: [],
   };
 
   // Both transmission forms reduce to the same list of (AI, value) pairs, so
@@ -302,6 +304,10 @@ const parseGs1 = (raw) => {
       result.lot = value;
     } else if (ai === "21") {
       result.serial = value;
+    } else if (ai === "240") {
+      result.itemCode = value;
+    } else if (ai === "241") {
+      result.customerPart = value;
     } else {
       result.unparsed.push(ai + value);
     }

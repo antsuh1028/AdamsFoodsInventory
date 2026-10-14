@@ -5,6 +5,7 @@ import {
 } from "@chakra-ui/react";
 import FloatingWindow from "../FloatingWindow";
 import { parseGs1 } from "../../utils/gs1";
+import CUSTOMER_ITEMS from "../../utils/customerItems";
 
 // Answers the one question that cannot be answered without the hardware in hand:
 // what does this particular scanner actually transmit? Trigger one scan into
@@ -135,7 +136,7 @@ const ScannerDiagnostic = ({ isOpen, onClose }) => {
         ? `inter-key ms: min ${capture.timing.min} / avg ${capture.timing.avg} / max ${capture.timing.max}`
         : "inter-key ms: n/a",
       capture.parsed
-        ? `parsed: ${capture.parsed.weight.value} ${capture.parsed.weight.unit}, gtin ${capture.parsed.gtin}, serial ${capture.parsed.serial}, production ${capture.parsed.productionDate || "-"}, packaging ${capture.parsed.packagingDate || "-"}, lot ${capture.parsed.lot || "-"}`
+        ? `parsed: ${capture.parsed.weight.value} ${capture.parsed.weight.unit}, gtin ${capture.parsed.gtin}, serial ${capture.parsed.serial}, production ${capture.parsed.productionDate || "-"}, packaging ${capture.parsed.packagingDate || "-"}, lot ${capture.parsed.lot || "-"}, item code ${capture.parsed.itemCode || "-"}, customer item ${capture.parsed.customerPart || "-"}`
         : `parse FAILED: ${capture.parseError.code} — ${capture.parseError.message}`,
     ].join("\n");
     navigator.clipboard?.writeText(report);
@@ -236,7 +237,27 @@ const ScannerDiagnostic = ({ isOpen, onClose }) => {
                 <Text><strong>Packaging date:</strong> {capture.parsed.packagingDate || "—"}</Text>
                 <Text><strong>Lot:</strong> {capture.parsed.lot || "—"}</Text>
                 <Text><strong>Serial:</strong> {capture.parsed.serial || "—"}</Text>
+                {capture.parsed.itemCode && (
+                  <Text><strong>Our item code:</strong> {capture.parsed.itemCode}</Text>
+                )}
               </Flex>
+              {/* One of our own labels: whose item number it carries, checked against their list. */}
+              {capture.parsed.customerPart && (() => {
+                const known = CUSTOMER_ITEMS[capture.parsed.customerPart];
+                return (
+                  <Alert status={known ? "success" : "error"} borderRadius="md" fontSize="sm" mt={3}>
+                    <AlertIcon />
+                    <Box>
+                      <Text><strong>Customer item #{capture.parsed.customerPart}</strong></Text>
+                      <Text>
+                        {known
+                          ? `${known.customer}: ${known.description}`
+                          : "Not on any customer's item list. Check the number typed into this label."}
+                      </Text>
+                    </Box>
+                  </Alert>
+                );
+              })()}
             </Box>
           ) : (
             <Box>
