@@ -51,6 +51,12 @@ export const PROCESSING_LINES = [
   "Bandsaw #2",
 ];
 
+// A lot number without our N (or FP) prefix is EHWA's.
+export const isEhwaLot = (lotNumber) => {
+  const s = String(lotNumber || "").trim().toUpperCase();
+  return Boolean(s) && !/^(N|FP)\d/.test(s);
+};
+
 export const PACIFIC_TZ = "America/Los_Angeles";
 
 // Built once each: constructing an Intl formatter is the expensive part, and

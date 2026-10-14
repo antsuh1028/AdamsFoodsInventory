@@ -39,6 +39,15 @@ const optionLabel = (l) => {
   return `${num} \u2014 ${short}`;
 };
 
+// The plain lot number when a typed one has a name or a dot attached: "26285-05 EHWA" -> "26285-05".
+export const tidyLot = (raw) => {
+  const s = String(raw || "").trim().toUpperCase();
+  const m = /^(N?)(\d{5})[-.](\d{2})(?:\s*[^\d\s].*)?$/.exec(s);
+  if (!m) return null;
+  const clean = `${m[1]}${m[2]}-${m[3]}`;
+  return clean === s ? null : clean;
+};
+
 const LotPicker = ({
   value = null,                 // selected lotId, or null
   lotNumber = "",               // the text, needed when there is no lotId to show
@@ -177,8 +186,8 @@ const LotPicker = ({
   // normalisation in one place, so "N26244-3" still becomes "N26244-03" rather
   // than being waved through as free-form because the client's idea of the
   // format was narrower than lot.js's.
-  const adoptTyped = async () => {
-    const text = typed.trim();
+  const adoptTyped = async (given) => {
+    const text = (typeof given === "string" ? given : typed).trim();
     if (!text) return;
     setBusy(true);
     try {
@@ -257,7 +266,7 @@ const LotPicker = ({
             </optgroup>
           )}
           {outside.length > 0 && (
-            <optgroup label="Not our lot numbers">
+            <optgroup label="EHWA (not our lot numbers)">
               {outside.map((l) => (
                 <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
               ))}
@@ -373,6 +382,24 @@ const LotPicker = ({
                 {freeForm?.reason ? ` — ${freeForm.reason}` : ""}.
                 Ours look like <Text as="span" fontFamily="mono">N26253-04</Text>.
               </Text>
+              {/* A lot number with a name or a dot attached becomes a second lot for the same product. */}
+              {freeForm && tidyLot(freeForm.text) && (
+                <Flex align="center" gap={2} mb={3} px={3} py={2} bg="blue.50" borderRadius="md"
+                  border="1px solid" borderColor="blue.200" wrap="wrap">
+                  <Text fontSize="sm" color="blue.900" flex="1 1 200px">
+                    Lot numbers are just the number. Did you mean <b>{tidyLot(freeForm.text)}</b>?
+                  </Text>
+                  <Button size="sm" colorScheme="blue"
+                    onClick={() => {
+                      const clean = tidyLot(freeForm.text);
+                      // One of ours goes back through the registry; an outside number stays outside.
+                      if (clean.startsWith("N")) { setFreeForm(null); adoptTyped(clean); }
+                      else setFreeForm({ ...freeForm, text: clean, reason: null });
+                    }}>
+                    Use {tidyLot(freeForm.text)}
+                  </Button>
+                </Flex>
+              )}
               <Text fontSize="sm" mb={2}>
                 You can still use it. It will be recorded on this record exactly as
                 written, which is right for a supplier's own number off a box or a

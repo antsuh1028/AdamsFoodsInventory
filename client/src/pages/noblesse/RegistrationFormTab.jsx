@@ -6,7 +6,7 @@ import {
 } from "@chakra-ui/react";
 import { DeleteIcon, ChevronDownIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
-import { fmtDate, today, Th, Td, timeNow, upper, fmtWeight, PROCESSING_TYPES, SheetField, sheetInputProps, SectionBar } from "./shared";
+import { fmtDate, today, Th, Td, timeNow, upper, fmtWeight, PROCESSING_TYPES, SheetField, sheetInputProps, SectionBar, isEhwaLot } from "./shared";
 import printRegistrationForm from "./printRegistrationForm";
 import BoxWeightLink from "./BoxWeightLink";
 import ProcessingReportLink from "./ProcessingReportLink";
@@ -969,7 +969,11 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   const pageCount = Math.max(1, Math.ceil(days.length / DAYS_PER_PAGE));
   const safePage = Math.min(page, pageCount - 1);
   const pageDays = new Set(days.slice(safePage * DAYS_PER_PAGE, (safePage + 1) * DAYS_PER_PAGE));
-  const filteredForms = matching.filter((f) => pageDays.has(f.dateReceived || ""));
+  const pageForms = matching.filter((f) => pageDays.has(f.dateReceived || ""));
+  // Ours first, then EHWA's: their lot numbers carry no N.
+  const ourForms = pageForms.filter((f) => !isEhwaLot(f.lotNumber));
+  const ehwaForms = pageForms.filter((f) => isEhwaLot(f.lotNumber));
+  const filteredForms = [...ourForms, ...ehwaForms];
 
   const pageLabel = (() => {
     const shown = [...pageDays].filter(Boolean).sort();
@@ -1076,6 +1080,17 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
               const remainingCases = caseTally(f)?.remaining;
               return (
               <React.Fragment key={f.id}>
+                {i === ourForms.length && (
+                  <tr>
+                    <td colSpan={8} style={{ padding: "14px 8px 6px", borderBottom: "2px solid #E2E8F0" }}>
+                      <Text fontSize="sm" fontWeight="bold" color="gray.700">
+                        EHWA <Text as="span" fontWeight="normal" color="gray.500">
+                          · not our lot numbers · {ehwaForms.length} form{ehwaForms.length === 1 ? "" : "s"}
+                        </Text>
+                      </Text>
+                    </td>
+                  </tr>
+                )}
                 <tr
                   style={{
                     backgroundColor: rowBg,

@@ -233,7 +233,8 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
         });
       }
     } else {
-      lot = await lotColumns(req.tenantId, req.userId, lotNumber);
+      // The picker's id, so an outside lot (no N to parse) is still linked.
+      lot = await lotColumns(req.tenantId, req.userId, lotNumber, pool, lotId ?? null);
     }
 
     // What the product IS was recorded when it arrived.

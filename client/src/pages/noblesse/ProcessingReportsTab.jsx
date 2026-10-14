@@ -12,7 +12,7 @@ import LotPicker from "../../components/LotPicker";
 import {
   fmtDate, today, timeNow, upper, fmtWeight, PROCESSING_TYPES, PROCESSING_LINES,
   fmtClock, minutesSince, fmtDuration,
-  SheetField, sheetInputProps, SectionBar, SHEET_GRID,
+  SheetField, sheetInputProps, SectionBar, SHEET_GRID, isEhwaLot,
 } from "./shared";
 import getRole, { canAcceptReports } from "../../utils/getRole";
 import { acceptReport, rejectReport, unacceptReport } from "./reportActions";
@@ -235,6 +235,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     () => (filter ? reports.filter((r) => r.status === filter) : reports),
     [reports, filter]
   );
+  // Ours first, then EHWA's: their lot numbers carry no N.
+  const ourReports = visible.filter((r) => !isEhwaLot(r.lotNumber));
+  const ehwaReports = visible.filter((r) => isEhwaLot(r.lotNumber));
+  const orderedReports = [...ourReports, ...ehwaReports];
 
   const inputCases = useMemo(
     () => (draft ? draft.pulls.reduce((sum, p) => sum + (parseInt(p.cases, 10) || 0), 0) : 0),
@@ -494,8 +498,17 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
       )}
 
       <Flex direction="column" gap={2}>
-        {visible.map((r) => (
-          <Box key={r.reportId} px={3} py={2} bg="white" borderRadius="md"
+        {orderedReports.map((r, i) => (
+          <React.Fragment key={r.reportId}>
+          {i === ourReports.length && (
+            <Text fontSize="sm" fontWeight="bold" color="gray.700" mt={3} pb={1}
+              borderBottom="2px solid" borderColor="gray.200">
+              EHWA <Text as="span" fontWeight="normal" color="gray.500">
+                · not our lot numbers · {ehwaReports.length} report{ehwaReports.length === 1 ? "" : "s"}
+              </Text>
+            </Text>
+          )}
+          <Box px={3} py={2} bg="white" borderRadius="md"
             border="1px solid" borderColor="gray.200"
             cursor="pointer"
             _hover={{ borderColor: "blue.300", bg: "blue.50" }}
@@ -612,6 +625,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               </Flex>
             )}
           </Box>
+          </React.Fragment>
         ))}
         </Flex>
         </Box>
