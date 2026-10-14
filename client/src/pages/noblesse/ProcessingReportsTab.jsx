@@ -11,7 +11,7 @@ import printProcessingReport from "./printProcessingReport";
 import LotPicker from "../../components/LotPicker";
 import {
   fmtDate, today, timeNow, upper, fmtWeight, PROCESSING_TYPES, PROCESSING_LINES,
-  fmtClock, minutesSince, fmtDuration,
+  fmtClock, minutesSince, fmtDuration, fmtLongDate,
   SheetField, sheetInputProps, SectionBar, SHEET_GRID, isEhwaLot,
 } from "./shared";
 import getRole, { canAcceptReports } from "../../utils/getRole";
@@ -66,6 +66,16 @@ const productIncomplete = (d) => PRODUCT_FIELDS.some(([k]) => isBlank(d[k]));
 // Blanks only: what the manager has typed outranks the lot, so re-picking can
 // never overwrite work. Pure and module-scope so the JSX stays readable.
 // Cases a lot has left: stock, less the runs typed by hand on its form (those never moved stock).
+// "Today" / "Yesterday" for a processing day, on the Pacific calendar; null otherwise.
+const dayTag = (day) => {
+  if (!day) return null;
+  const t = today();
+  if (day === t) return "Today";
+  const y = new Date(`${t}T12:00:00Z`);
+  y.setUTCDate(y.getUTCDate() - 1);
+  return day === y.toISOString().slice(0, 10) ? "Yesterday" : null;
+};
+
 const casesLeftOn = (row) => Math.max(0, (Number(row.qtyCases) || 0) - (Number(row.formManualCases) || 0));
 
 const withLotDefaults = (draft, lot, row) => {
@@ -235,10 +245,20 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     () => (filter ? reports.filter((r) => r.status === filter) : reports),
     [reports, filter]
   );
-  // Ours first, then EHWA's: their lot numbers carry no N.
-  const ourReports = visible.filter((r) => !isEhwaLot(r.lotNumber));
-  const ehwaReports = visible.filter((r) => isEhwaLot(r.lotNumber));
-  const orderedReports = [...ourReports, ...ehwaReports];
+  // By processing day, newest first; within a day ours then EHWA's, latest start first.
+  const byDay = useMemo(() => {
+    const sorted = [...visible].sort((a, b) =>
+      String(b.processingDate || "").localeCompare(String(a.processingDate || ""))
+      || String(b.startTime || "").localeCompare(String(a.startTime || ""))
+      || b.reportId - a.reportId);
+    const groups = [];
+    for (const r of sorted) {
+      const day = r.processingDate || "";
+      if (!groups.length || groups[groups.length - 1].day !== day) groups.push({ day, ours: [], ehwa: [] });
+      groups[groups.length - 1][isEhwaLot(r.lotNumber) ? "ehwa" : "ours"].push(r);
+    }
+    return groups.map((g) => ({ ...g, rows: [...g.ours, ...g.ehwa] }));
+  }, [visible]);
 
   const inputCases = useMemo(
     () => (draft ? draft.pulls.reduce((sum, p) => sum + (parseInt(p.cases, 10) || 0), 0) : 0),
@@ -498,13 +518,30 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
       )}
 
       <Flex direction="column" gap={2}>
-        {orderedReports.map((r, i) => (
+        {byDay.map((g) => (
+        <React.Fragment key={g.day || "no-date"}>
+        {/* Pinned over the tab panel's 12/20px padding so no row shows above it. */}
+        <Flex align="baseline" gap={2} pt={{ base: "28px", md: "36px" }} pb={1}
+          borderBottom="2px solid" borderColor="gray.200"
+          position="sticky" top={{ base: "-12px", md: "-20px" }} bg="white" zIndex={1}>
+          {dayTag(g.day) && (
+            <Badge colorScheme={dayTag(g.day) === "Today" ? "green" : "gray"} fontSize="10px">{dayTag(g.day)}</Badge>
+          )}
+          <Text fontSize="sm" fontWeight="700" color="gray.700">
+            {g.day ? fmtLongDate(new Date(`${g.day}T12:00:00Z`)) : "No processing date"}
+          </Text>
+          <Text fontSize="xs" color="gray.500">
+            {g.rows.length} report{g.rows.length === 1 ? "" : "s"}
+            {" · "}{g.rows.reduce((n, x) => n + (Number(x.inputCases) || 0), 0)} cases
+          </Text>
+        </Flex>
+        {g.rows.map((r, i) => (
           <React.Fragment key={r.reportId}>
-          {i === ourReports.length && (
-            <Text fontSize="sm" fontWeight="bold" color="gray.700" mt={3} pb={1}
-              borderBottom="2px solid" borderColor="gray.200">
-              EHWA <Text as="span" fontWeight="normal" color="gray.500">
-                · not our lot numbers · {ehwaReports.length} report{ehwaReports.length === 1 ? "" : "s"}
+          {i === g.ours.length && (
+            <Text fontSize="xs" fontWeight="bold" color="gray.600" textTransform="uppercase"
+              letterSpacing="wide" mt={1}>
+              EHWA <Text as="span" fontWeight="normal" textTransform="none" letterSpacing="normal" color="gray.500">
+                · not our lot numbers · {g.ehwa.length} report{g.ehwa.length === 1 ? "" : "s"}
               </Text>
             </Text>
           )}
@@ -626,6 +663,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             )}
           </Box>
           </React.Fragment>
+        ))}
+        </React.Fragment>
         ))}
         </Flex>
         </Box>
