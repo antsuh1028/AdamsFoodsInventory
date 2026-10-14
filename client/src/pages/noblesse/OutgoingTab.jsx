@@ -64,6 +64,10 @@ const HeadingEditor = ({ batchId, detail, isAdmin, onSaved, onCancel }) => {
   // "" = the day the session was opened. Admin-only on an outgoing session,
   // like the rest of this heading beyond the dock's two fields.
   const [weighedOn, setWeighedOn] = useState(detail.weighed_on || "");
+  // Fields whose typo correction was undone, so the server keeps them as typed.
+  const [keepAsTyped, setKeepAsTyped] = useState([]);
+  const keepField = (field) => (v) => setKeepAsTyped((prev) =>
+    v ? [...new Set([...prev, field])] : prev.filter((f) => f !== field));
 
   const dateChanged = isAdmin && weighedOn !== (detail.weighed_on || "");
   const dirty = dateChanged
@@ -82,10 +86,15 @@ const HeadingEditor = ({ batchId, detail, isAdmin, onSaved, onCancel }) => {
           .filter((k) => draft[k].trim() !== original[k].trim())
           .map((k) => [k, draft[k].trim() || null]));
       if (dateChanged) changed.weighedOn = weighedOn || null;
-      await axiosInstance.patch(`/box-batches/${batchId}`, changed);
+      if (keepAsTyped.length) changed.keepAsTyped = keepAsTyped;
+      const { data } = await axiosInstance.patch(`/box-batches/${batchId}`, changed);
       await onSaved();
-      toast({ status: "success", title: t("Session updated"),
-        duration: 2000, position: "top" });
+      const fixed = data?.corrections || [];
+      toast({ status: "success", duration: fixed.length ? 6000 : 2000, position: "top",
+        title: t("Session updated"),
+        description: fixed.length
+          ? fixed.map((c) => t("Corrected {from} to {to}", { from: c.from, to: c.to })).join(" · ")
+          : undefined });
     } catch (err) {
       toast({ status: "error", position: "top", duration: 7000, isClosable: true,
         title: t("Could not save"),
@@ -103,12 +112,12 @@ const HeadingEditor = ({ batchId, detail, isAdmin, onSaved, onCancel }) => {
             {key === "itemDescription" && detail.direction === "outgoing" ? (
               <ItemDescriptionInput compact size="xs"
                 listId={`item-descriptions-edit-${batchId}`}
-                value={draft[key]}
+                value={draft[key]} onKeepChange={keepField(key)}
                 onChange={(v) => setDraft((d) => ({ ...d, [key]: upper(v) }))} />
             ) : key === "shipTo" && detail.direction === "outgoing" ? (
               <CustomerInput compact size="xs"
                 listId={`customers-edit-${batchId}`}
-                value={draft[key]}
+                value={draft[key]} onKeepChange={keepField(key)}
                 onChange={(v) => setDraft((d) => ({ ...d, [key]: upper(v) }))} />
             ) : (
               <Input size="xs" value={draft[key]} onChange={set(key)}

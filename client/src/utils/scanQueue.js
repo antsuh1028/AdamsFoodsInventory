@@ -396,7 +396,9 @@ const createScanQueue = ({
     const base = { clientUuid: uuid, ...meta, status: "open", stats: emptyStats() };
     await backend.setSession({ ...base, batchId: null });
     const created = await api.createBatch(uuid, meta);
-    const session = { ...base, batchId: created.batch_id };
+    // Names the server corrected to the list's spelling, so the screen shows what was saved.
+    const fixed = Object.fromEntries((created.corrections || []).map((c) => [c.field, c.to]));
+    const session = { ...base, ...fixed, batchId: created.batch_id };
     await backend.setSession(session);
     return session;
   };

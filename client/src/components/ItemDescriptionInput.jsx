@@ -19,9 +19,16 @@ const ItemDescriptionInput = ({
   value, onChange, size = "md", compact = false,
   listId = "item-descriptions", placeholder = "e.g. HUMERUS BONE",
   endpoint = "/item-descriptions", allLabel = "All items", notOnList = "Not on the item list",
+  // Told true when the user undoes a correction, so the server keeps it as typed too.
+  onKeepChange,
 }) => {
   const { t } = useLang();
   const [items, setItems] = useState([]);
+  // What was typed before a correction, while the corrected name is still in the field.
+  const [fixedFrom, setFixedFrom] = useState(null);
+  const [kept, setKept] = useState(false);
+
+  const setKeep = (v) => { setKept(v); if (onKeepChange) onKeepChange(v); };
 
   useEffect(() => {
     let cancelled = false;
@@ -42,13 +49,31 @@ const ItemDescriptionInput = ({
   const alpha = useMemo(() => [...names].sort(), [names]);
   const match = useMemo(() => matchDescription(value, names), [value, names]);
 
+  // A clear typo takes the list's spelling as soon as the field is left.
+  const autoCorrect = () => {
+    if (kept || (match.kind !== "spelling" && match.kind !== "near")) return;
+    setFixedFrom(String(value || "").trim().toUpperCase());
+    onChange(match.name);
+  };
+
+  const undo = () => {
+    onChange(fixedFrom);
+    setFixedFrom(null);
+    setKeep(true);
+  };
+
+  const showFixed = fixedFrom && value === match.name && match.kind === "exact";
+
   return (
     <Box width="100%">
       {!compact && names.length > 0 && (
         <Select size={size} bg="white" mb={2}
           placeholder={t("Pick from the list…")}
           value={match.kind === "exact" ? match.name : ""}
-          onChange={(e) => { if (e.target.value) onChange(e.target.value); e.target.blur(); }}>
+          onChange={(e) => {
+            if (e.target.value) { onChange(e.target.value); setFixedFrom(null); if (kept) setKeep(false); }
+            e.target.blur();
+          }}>
           {top.length > 0 && (
             <optgroup label={t("Most used")}>
               {top.map((i) => <option key={`top-${i.id}`} value={i.name}>{i.name}</option>)}
@@ -62,12 +87,31 @@ const ItemDescriptionInput = ({
 
       <Input size={size} bg="white" autoComplete="off" list={listId}
         placeholder={compact ? "" : t(placeholder)}
-        value={value} onChange={(e) => onChange(upperInput(e))} />
+        value={value} onBlur={autoCorrect}
+        onChange={(e) => {
+          onChange(upperInput(e));
+          setFixedFrom(null);
+          if (kept) setKeep(false);
+        }} />
       <datalist id={listId}>
         {names.map((n) => <option key={n} value={n} />)}
       </datalist>
 
-      {(match.kind === "spelling" || match.kind === "near") && (
+      {showFixed && (
+        <Flex align="center" gap={2} mt={1} wrap="wrap">
+          <Text fontSize="xs" color="green.700">
+            {t("Corrected from {from}", { from: fixedFrom })}
+          </Text>
+          <Button size="xs" variant="ghost" colorScheme="gray" {...noFocus} onClick={undo}>
+            {t("Undo")}
+          </Button>
+        </Flex>
+      )}
+      {kept && match.kind !== "exact" && (
+        <Text fontSize="xs" color="gray.600" mt={1}>{t("Kept as typed")}</Text>
+      )}
+
+      {!kept && (match.kind === "spelling" || match.kind === "near") && (
         <Flex align="center" gap={2} mt={1} wrap="wrap">
           <Text fontSize="xs" color="yellow.800">
             {match.kind === "spelling"
@@ -75,12 +119,12 @@ const ItemDescriptionInput = ({
               : t("Did you mean {name}?", { name: match.name })}
           </Text>
           <Button size="xs" colorScheme="yellow" variant="outline" {...noFocus}
-            onClick={() => onChange(match.name)}>
+            onClick={() => { onChange(match.name); if (kept) setKeep(false); }}>
             {t("Use it")}
           </Button>
         </Flex>
       )}
-      {match.kind === "none" && names.length > 0 && (
+      {!kept && match.kind === "none" && names.length > 0 && (
         <Text fontSize="xs" color="gray.500" mt={1}>{t(notOnList)}</Text>
       )}
     </Box>

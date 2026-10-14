@@ -1,7 +1,8 @@
-// Matching a typed item description against the standard list.
+// Matching a typed name (item, customer) against a standard list.
+// Mirrored byte for byte in server/utils/descriptionMatch.js; a test enforces it.
 
 // How the list stores a name: trimmed, single-spaced, upper case.
-export const normaliseName = (s) => String(s ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+const normaliseName = (s) => String(s ?? "").trim().replace(/\s+/g, " ").toUpperCase();
 
 // Letters and digits only, so "BONE-IN" and "BONE IN" are the same key.
 const key = (s) => normaliseName(s).replace(/[^A-Z0-9]/g, "");
@@ -24,11 +25,11 @@ const distance = (a, b, cap) => {
 };
 
 /**
- * Where a typed description stands against the list.
+ * Where a typed name stands against the list.
  * "exact": on the list as typed. "spelling": the same words, spaced or
  * punctuated differently. "near": a letter or two off. "none": not close.
  */
-export const matchDescription = (typed, names) => {
+const matchDescription = (typed, names) => {
   const n = normaliseName(typed);
   if (!n) return { kind: "empty", name: null };
   if (names.includes(n)) return { kind: "exact", name: n };
@@ -48,3 +49,17 @@ export const matchDescription = (typed, names) => {
   }
   return best ? { kind: "near", name: best.name } : { kind: "none", name: null };
 };
+
+// Word count, ignoring punctuation.
+const words = (s) => normaliseName(s).split(/[^A-Z0-9]+/).filter(Boolean).length;
+
+// The list's spelling when the typed name is clearly a typo of it, else the name as typed.
+// A near match may fix letters but never add or drop a word: "CLOD SLICE 2MM" is not "CLOD SLICE XT 2MM".
+const correctName = (typed, names) => {
+  const m = matchDescription(typed, names);
+  const n = normaliseName(typed);
+  const clear = m.kind === "spelling" || (m.kind === "near" && words(n) === words(m.name));
+  return clear ? { name: m.name, corrected: true, from: n } : { name: n, corrected: false, from: n };
+};
+
+module.exports = { normaliseName, matchDescription, correctName };

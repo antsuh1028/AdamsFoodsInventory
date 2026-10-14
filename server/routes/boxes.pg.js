@@ -7,6 +7,7 @@ const { parseTallySheet } = require("../utils/tallySheet");
 const { toPounds, kgToLb, sumWeights, trimTrailingZeros } = require("../utils/weight");
 const { lotColumns, lookupLot } = require("../utils/lotRegistry");
 const { ensureFpLotNow } = require("../utils/fpLot");
+const { correctHeading, parseKeep } = require("../utils/nameCorrect");
 const { searchTerm, searchClause } = require("../utils/search");
 const { weighedAtSql, parseWeighedOn, parseSheetDay } = require("../utils/weighedAt");
 const { upload } = require("../utils/aws");
@@ -255,6 +256,17 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
 
     // A freezer pallet stocks the lot's FP lot, so that lot must exist first.
     const toFreezer = dir === "outgoing" && furtherProcessing === true;
+
+    // Clear typos in what was typed take the list's spelling, unless kept as typed.
+    let typedItem = itemDescription;
+    let typedShipTo = shipTo;
+    let corrections = [];
+    if (dir === "outgoing") {
+      const keep = parseKeep(req.body?.keepAsTyped).concat(toFreezer ? ["shipTo"] : []);
+      const fixed = await correctHeading(pool, req.tenantId, { itemDescription, shipTo }, keep);
+      ({ itemDescription: typedItem, shipTo: typedShipTo } = fixed.values);
+      corrections = fixed.corrections;
+    }
     let fpLot = null;
     if (toFreezer) {
       try {
@@ -277,8 +289,8 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
                  brand, est_number, grade, lot_id, direction, expected_boxes, further_processing`,
       [req.tenantId, clientUuid, lot.lotNumber,
        pick(vendor, "vendor"),
-       shipTo || null, billOfLading || null,
-       pick(itemDescription, "item_description"),
+       typedShipTo || null, billOfLading || null,
+       pick(typedItem, "item_description"),
        pick(brand, "brand"),
        pick(estNumber, "est_number"),
        pick(grade, "grade"),
@@ -286,7 +298,7 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
     );
 
     if (inserted.rows.length) {
-      return res.status(201).json({ ...inserted.rows[0], reused: false,
+      return res.status(201).json({ ...inserted.rows[0], reused: false, corrections,
         ...(fpLot ? { fpLotNumber: fpLot.lot_number } : {}) });
     }
 
@@ -1404,7 +1416,7 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
   // The lot comes as a registry id, never as text, so a typo cannot mint a lot.
   const body = req.body || {};
   const unknown = Object.keys(body)
-    .filter((k) => !EDITABLE_HEADER[k] && k !== "lotId" && k !== "weighedOn");
+    .filter((k) => !EDITABLE_HEADER[k] && k !== "lotId" && k !== "weighedOn" && k !== "keepAsTyped");
   if (unknown.length) {
     return res.status(400).json({
       code: "NOT_EDITABLE",
@@ -1440,7 +1452,7 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
 
   try {
     const batch = await pool.query(
-      `SELECT status, direction, lot_id FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
+      `SELECT status, direction, lot_id, further_processing FROM box_batches WHERE batch_id = $1 AND tenant_id = $2`,
       [batchId, req.tenantId]
     );
     if (!batch.rows.length) return res.status(404).json({ error: "Session not found" });
@@ -1469,6 +1481,18 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
         code: "CLOSED_SESSION",
         error: "This session is closed. Only an admin can edit it.",
       });
+    }
+
+    // Clear typos in an outgoing item or customer take the list's spelling, unless kept as typed.
+    let corrections = [];
+    if (direction === "outgoing") {
+      const keep = parseKeep(body.keepAsTyped).concat(batch.rows[0].further_processing ? ["shipTo"] : []);
+      const fixed = await correctHeading(pool, req.tenantId, Object.fromEntries(fields), keep);
+      for (const f of fixed.corrections) {
+        const at = fields.findIndex(([k]) => k === f.field);
+        fields[at] = [f.field, f.to];
+      }
+      corrections = fixed.corrections;
     }
 
     // Blank means "clear it", stored as NULL rather than "" so an empty field
@@ -1538,7 +1562,7 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
                 weighed_on::text AS weighed_on`,
       values
     );
-    res.json(updated.rows[0]);
+    res.json({ ...updated.rows[0], corrections });
   } catch (err) {
     console.error("update batch heading:", err);
     res.status(500).json({ error: "Internal Server Error" });
