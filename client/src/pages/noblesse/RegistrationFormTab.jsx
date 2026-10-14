@@ -543,21 +543,19 @@ export const RegistrationFormModal = ({
                   <Text fontSize="sm" color="blue.900" fontWeight="600" mt={1}
                     style={{ fontVariantNumeric: "tabular-nums" }}>
                     Sent to the freezer: {further.sent} cs
+                    {Number(further.weighedLb) > 0 ? ` (${fmtWeight(further.weighedLb)} lb)` : ""}
                     {" · "}{further.returned ?? 0} back
                     {" · "}{further.inFreezer ?? further.sent} still in the freezer
                     {" · "}{further.taken} run on {further.fpLotNumber}
                   </Text>
                 )}
-                {/* The dock's labelled boxes, a check on the count above; never added to it. */}
-                {further && further.labelled > 0 && (
-                  <Text fontSize="xs" mt={1} fontWeight={further.labelled !== further.sent ? "700" : "400"}
-                    color={further.labelled !== further.sent ? "red.600" : "gray.600"}>
-                    Labelled at the dock: {further.labelled} boxes
-                    {further.labelled !== further.sent ? ` (does not match the ${further.sent} cs sent)` : ""}
+                {further && further.byHand > 0 && (
+                  <Text fontSize="xs" color="gray.600" mt={1}>
+                    {further.weighed} cs weighed out at the dock, {further.byHand} entered by hand in the F.P Tracker.
                   </Text>
                 )}
                 <Text fontSize="xs" color="gray.600">
-                  Packed for another run. Not counted in Remaining below.
+                  Weighed out to the AF freezer for another run. Not counted in Remaining below.
                 </Text>
               </Box>
             )}

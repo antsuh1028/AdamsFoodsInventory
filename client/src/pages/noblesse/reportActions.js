@@ -27,13 +27,9 @@ const cases = (n) => `${n} case${n === 1 ? "" : "s"}`;
 const OK = {
   accept: (d) => ({
     title: `${cases(d.casesTaken)} off ${d.lotNumber}`,
-    description: (d.casesLeft === 0
+    description: d.casesLeft === 0
       ? "That is the whole lot. A run was added to the registration form."
-      : `${cases(d.casesLeft)} left on the lot. A run was added to the registration form.`)
-      + (d.sentToFp
-        ? ` ${cases(d.sentToFp.cases)} went to the freezer on ${d.sentToFp.lotNumber}`
-          + `${d.sentToFp.created ? ", created just now" : ""}.`
-        : ""),
+      : `${cases(d.casesLeft)} left on the lot. A run was added to the registration form.`,
   }),
   unaccept: (d) => ({
     title: `${cases(d.casesReturned)} back on ${d.lotNumber}`,

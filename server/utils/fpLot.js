@@ -1,32 +1,45 @@
 "use strict";
 
 const { fpNumberFor } = require("./lot");
+const { weightInLb } = require("./sqlWeight");
 
-// Further-processing lots. An FP lot holds the cases of one N lot that went to
-// the AF freezer for another run. Its count is computed every time, never
-// stored: cases on the parent's tracker rows, less cases taken by accepted
-// runs on the FP lot. A correction anywhere shows at once and nothing drifts.
+// Further-processing lots: cases of one N lot sent to the AF freezer for another
+// run. Counts are computed, never stored.
 
 // One spelling per item: trimmed, single-spaced, upper case.
 const normaliseItem = (s) => String(s ?? "").trim().replace(/\s+/g, " ").toUpperCase();
 
-// Sent / taken for an FP lot. `fp` is a lots alias carrying lot_id, parent_lot_id, tenant_id.
-const sentSql = (fp) => `
+// `fp` is a lots alias carrying lot_id, parent_lot_id, tenant_id.
+
+// Boxes weighed out to the freezer on the parent lot; one box is one case.
+const weighedSql = (fp) => `
+  COALESCE((SELECT COUNT(*) FROM batch_items bi
+              JOIN box_batches b ON b.batch_id = bi.batch_id
+             WHERE b.tenant_id = ${fp}.tenant_id AND b.lot_id = ${fp}.parent_lot_id
+               AND b.direction = 'outgoing' AND b.further_processing
+               AND bi.voided_at IS NULL), 0)::int`;
+
+// Pounds of those boxes.
+const weighedLbSql = (fp) => `
+  COALESCE((SELECT SUM(${weightInLb("bi")}) FROM batch_items bi
+              JOIN box_batches b ON b.batch_id = bi.batch_id
+             WHERE b.tenant_id = ${fp}.tenant_id AND b.lot_id = ${fp}.parent_lot_id
+               AND b.direction = 'outgoing' AND b.further_processing
+               AND bi.voided_at IS NULL), 0)::text`;
+
+// Trips entered by hand in the tracker, not weighed at the dock.
+const byHandSql = (fp) => `
   COALESCE((SELECT SUM(t.cases) FROM fp_tracker t
              WHERE t.tenant_id = ${fp}.tenant_id AND t.lot_id = ${fp}.parent_lot_id
                AND t.voided_at IS NULL), 0)::int`;
+
+// Everything sent to the freezer.
+const sentSql = (fp) => `(${weighedSql(fp)} + ${byHandSql(fp)})`;
+
 const takenSql = (fp) => `
   COALESCE((SELECT SUM(r.input_cases) FROM noblesse_processing_reports r
              WHERE r.tenant_id = ${fp}.tenant_id AND r.lot_id = ${fp}.lot_id
                AND r.status = 'accepted'), 0)::int`;
-
-// Boxes the dock weighed and labelled for the freezer. Paperwork only: checked
-// against `sent`, never added to it. `fp` as above.
-const labelledSql = (fp) => `
-  COALESCE((SELECT COUNT(*) FROM batch_items bi
-              JOIN box_batches b ON b.batch_id = bi.batch_id
-             WHERE b.tenant_id = ${fp}.tenant_id AND b.lot_id = ${fp}.parent_lot_id
-               AND b.further_processing AND bi.voided_at IS NULL), 0)::int`;
 
 // Cases counted back in from the freezer. `fp` as above.
 const returnedSql = (fp) => `
@@ -35,25 +48,32 @@ const returnedSql = (fp) => `
                AND x.voided_at IS NULL), 0)::int`;
 
 const COUNTS_SQL = `
-  SELECT ${sentSql("fp")} AS sent, ${takenSql("fp")} AS taken, ${labelledSql("fp")} AS labelled,
-         ${returnedSql("fp")} AS returned
+  SELECT ${weighedSql("fp")} AS weighed, ${byHandSql("fp")} AS by_hand, ${weighedLbSql("fp")} AS weighed_lb,
+         ${takenSql("fp")} AS taken, ${returnedSql("fp")} AS returned
     FROM lots fp WHERE fp.lot_id = $1 AND fp.tenant_id = $2 AND fp.kind = 'further'`;
 
-/** The FP lot's figures from its sent, taken and returned counts. */
-const shape = (sent, taken, returned, labelled) => ({
-  sent, taken, returned, labelled,
-  // What runs may still take, back or not; runs past `ready` are warned, not refused.
-  waiting: sent - taken,
-  inFreezer: Math.max(0, sent - returned),
-  ready: returned - taken,
+/** The FP lot's figures. Sent is weighed boxes plus hand-entered trips. */
+const shape = ({ weighed = 0, byHand = 0, weighedLb = "0", taken = 0, returned = 0 }) => {
+  const sent = weighed + byHand;
+  return {
+    sent, weighed, byHand, weighedLb, taken, returned,
+    // What runs may still take, back or not; runs past `ready` are warned, not refused.
+    waiting: sent - taken,
+    inFreezer: Math.max(0, sent - returned),
+    ready: returned - taken,
+  };
+};
+
+/** shape() from a row carrying weighed, by_hand, weighed_lb, taken, returned. */
+const shapeRow = (r) => shape({
+  weighed: Number(r.weighed) || 0, byHand: Number(r.by_hand) || 0,
+  weighedLb: r.weighed_lb ?? "0", taken: Number(r.taken) || 0, returned: Number(r.returned) || 0,
 });
 
-/** { sent, taken, returned, waiting, inFreezer, ready, labelled } for an FP lot, or null. */
+/** The FP lot's figures (see shape), or null. */
 const fpCounts = async (db, tenantId, fpLotId) => {
   const { rows } = await db.query(COUNTS_SQL, [fpLotId, tenantId]);
-  if (!rows.length) return null;
-  const r = rows[0];
-  return shape(Number(r.sent), Number(r.taken), Number(r.returned), Number(r.labelled));
+  return rows.length ? shapeRow(rows[0]) : null;
 };
 
 // Serialises everything that reads and then changes a lot's FP count.
@@ -88,6 +108,25 @@ const ensureFpLot = async (db, tenantId, parentLotId, userId) => {
   return { lot: ins.rows[0], created: true };
 };
 
+/** ensureFpLot in its own transaction, for callers outside one. */
+const ensureFpLotNow = async (pool, tenantId, parentLotId, userId) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await lockLot(client, tenantId, parentLotId);
+    const out = await ensureFpLot(client, tenantId, parentLotId, userId);
+    await client.query("COMMIT");
+    return out;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
-  normaliseItem, sentSql, takenSql, labelledSql, returnedSql, shape, COUNTS_SQL, fpCounts, lockLot, findFpChild, ensureFpLot,
+  ensureFpLotNow,
+  normaliseItem, sentSql, weighedSql, weighedLbSql, byHandSql, takenSql, returnedSql,
+  shape, shapeRow, COUNTS_SQL, fpCounts, lockLot, findFpChild, ensureFpLot,
 };

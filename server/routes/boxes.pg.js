@@ -6,6 +6,7 @@ const { parseGs1 } = require("../utils/gs1");
 const { parseTallySheet } = require("../utils/tallySheet");
 const { toPounds, kgToLb, sumWeights, trimTrailingZeros } = require("../utils/weight");
 const { lotColumns, lookupLot } = require("../utils/lotRegistry");
+const { ensureFpLotNow } = require("../utils/fpLot");
 const { searchTerm, searchClause } = require("../utils/search");
 const { weighedAtSql, parseWeighedOn, parseSheetDay } = require("../utils/weighedAt");
 const { upload } = require("../utils/aws");
@@ -252,6 +253,18 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
         ? given
         : (inherited[fallbackKey] || null);
 
+    // A freezer pallet stocks the lot's FP lot, so that lot must exist first.
+    const toFreezer = dir === "outgoing" && furtherProcessing === true;
+    let fpLot = null;
+    if (toFreezer) {
+      try {
+        fpLot = (await ensureFpLotNow(pool, req.tenantId, lot.lotId, req.userId)).lot;
+      } catch (err) {
+        if (!err.status) throw err;
+        return res.status(400).json({ code: err.code, error: err.message });
+      }
+    }
+
     const inserted = await pool.query(
       `INSERT INTO box_batches
          (tenant_id, client_uuid, lot_number, vendor, ship_to, bill_of_lading,
@@ -269,13 +282,12 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
        pick(brand, "brand"),
        pick(estNumber, "est_number"),
        pick(grade, "grade"),
-       lot.lotId, dir, expected, req.userId || null,
-       // Only an outgoing session can be a freezer trip.
-       dir === "outgoing" && furtherProcessing === true]
+       lot.lotId, dir, expected, req.userId || null, toFreezer]
     );
 
     if (inserted.rows.length) {
-      return res.status(201).json({ ...inserted.rows[0], reused: false });
+      return res.status(201).json({ ...inserted.rows[0], reused: false,
+        ...(fpLot ? { fpLotNumber: fpLot.lot_number } : {}) });
     }
 
     // Already existed. Scope the lookup by tenant so a UUID guessed from
