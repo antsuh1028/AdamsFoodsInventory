@@ -5,7 +5,7 @@ import {
 } from "@chakra-ui/react";
 import FloatingWindow from "../FloatingWindow";
 import { parseGs1 } from "../../utils/gs1";
-import CUSTOMER_ITEMS from "../../utils/customerItems";
+import ITEM_CODES from "../../utils/itemCodes";
 
 // Answers the one question that cannot be answered without the hardware in hand:
 // what does this particular scanner actually transmit? Trigger one scan into
@@ -237,22 +237,22 @@ const ScannerDiagnostic = ({ isOpen, onClose }) => {
                 <Text><strong>Packaging date:</strong> {capture.parsed.packagingDate || "—"}</Text>
                 <Text><strong>Lot:</strong> {capture.parsed.lot || "—"}</Text>
                 <Text><strong>Serial:</strong> {capture.parsed.serial || "—"}</Text>
-                {capture.parsed.itemCode && (
-                  <Text><strong>Our item code:</strong> {capture.parsed.itemCode}</Text>
+                {capture.parsed.customerPart && (
+                  <Text><strong>Customer item #:</strong> {capture.parsed.customerPart}</Text>
                 )}
               </Flex>
-              {/* One of our own labels: whose item number it carries, checked against their list. */}
-              {capture.parsed.customerPart && (() => {
-                const known = CUSTOMER_ITEMS[capture.parsed.customerPart];
+              {/* One of our own labels: its item code, checked against the list. */}
+              {capture.parsed.itemCode && (() => {
+                const known = ITEM_CODES[capture.parsed.itemCode];
                 return (
                   <Alert status={known ? "success" : "error"} borderRadius="md" fontSize="sm" mt={3}>
                     <AlertIcon />
                     <Box>
-                      <Text><strong>Customer item #{capture.parsed.customerPart}</strong></Text>
+                      <Text><strong>Item code {capture.parsed.itemCode}</strong></Text>
                       <Text>
                         {known
-                          ? `${known.customer}: ${known.description}`
-                          : "Not on any customer's item list. Check the number typed into this label."}
+                          ? `${known.description} (${known.customer})`
+                          : "Not on the item code list. Check the number typed into this label."}
                       </Text>
                     </Box>
                   </Alert>

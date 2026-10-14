@@ -1,7 +1,7 @@
-// Customers' own item numbers (GS1 AI 241) printed on our box labels.
-// Shabuya's list, "GEN_SHABUYA", as they sent it on 2026-10-14.
+// Our item codes (GS1 AI 240) printed on box labels, with what each product is.
+// The Shabuya products, from the "GEN_SHABUYA" list of 2026-10-14.
 
-const CUSTOMER_ITEMS = {
+const ITEM_CODES = {
   "102916": { customer: "SHABUYA", description: "Prime BNLS Beef Flat Iron Trimmed & Roll (Vac. Pack)" },
   "102917": { customer: "SHABUYA", description: "BNLS Beef Cross Rib Block (Angus CH or Prime) *PR-Hawaii*" },
   "102918": { customer: "SHABUYA", description: "FZ BNLS Beef Blade Meat Block (Angus CH or Prime)" },
@@ -13,4 +13,4 @@ const CUSTOMER_ITEMS = {
   "502000": { customer: "SHABUYA", description: "BNLS Lamb Shoulder Rolls/Tubes (Frozen)" },
 };
 
-export default CUSTOMER_ITEMS;
+export default ITEM_CODES;
