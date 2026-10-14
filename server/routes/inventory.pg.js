@@ -4,6 +4,12 @@ const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const validLocations = require("../utils/locations");
 
+// Ends any transaction a handler returned from early, so the pool never hands one on.
+const release = async (client) => {
+  try { await client.query("ROLLBACK"); } catch { /* nothing was open */ }
+  client.release();
+};
+
 const EDITABLE_FIELDS = ["lot", "vendor", "brand", "species", "description", "grade", "packdate", "date_recvd", "est", "price", "type"];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -95,7 +101,7 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
     console.error("inventoryAdd error:", err);
     res.status(500).json({ error: "An error occurred while adding the item." });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
@@ -177,7 +183,7 @@ router.post("/inventoryUpdate", verifyToken, async (req, res) => {
     await client.query("ROLLBACK");
     res.status(500).json({ error: "An error occurred while updating the item." });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
@@ -201,7 +207,7 @@ router.post("/inventoryRemove", verifyToken, async (req, res) => {
     await client.query("ROLLBACK");
     res.status(500).json({ error: "An error occurred while removing the item." });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
@@ -228,7 +234,7 @@ router.post("/inventoryMove", verifyToken, async (req, res) => {
     await client.query("ROLLBACK");
     res.status(500).json({ error: "An error occurred while moving the item." });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
@@ -272,7 +278,7 @@ router.post("/inventoryOrderRemove", verifyToken, async (req, res) => {
     await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
@@ -297,7 +303,7 @@ router.post("/inventoryBulkRemove", verifyToken, async (req, res) => {
     console.error("inventoryBulkRemove error:", err.message);
     res.status(500).json({ error: err.message });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
@@ -329,7 +335,7 @@ router.patch("/inventory/:id/field", verifyToken, async (req, res) => {
     await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
@@ -368,7 +374,7 @@ router.patch("/inventory/:id/box/remove", verifyToken, async (req, res) => {
     await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
@@ -421,7 +427,7 @@ router.patch("/inventory/:id/box/bulk-remove", verifyToken, async (req, res) => 
     await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
@@ -449,7 +455,7 @@ router.patch("/inventory/:id/box/add", verifyToken, async (req, res) => {
     await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
@@ -482,7 +488,7 @@ router.patch("/inventory/:id/box/bulk-add", verifyToken, async (req, res) => {
     await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
@@ -524,7 +530,7 @@ router.post("/inventoryRestore", verifyToken, requireRole("admin", "manager"), a
     console.error("inventoryRestore error:", err);
     res.status(500).json({ error: "Failed to restore item" });
   } finally {
-    client.release();
+    await release(client);
   }
 });
 
