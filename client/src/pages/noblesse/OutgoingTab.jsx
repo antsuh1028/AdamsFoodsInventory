@@ -393,6 +393,13 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     }
   }, [q]);
 
+  // One session's boxes, always from the server; the stored copy only fills the wait.
+  const loadBatchDetail = useCallback(async (batchId) => {
+    const { data } = await axiosInstance.get(`/box-batches/${batchId}`);
+    setBatchDetail((prev) => ({ ...prev, [batchId]: data }));
+  }, []);
+  const openBatchRef = useRef(null);
+
   useEffect(() => {
     fetchShipments(); fetchBatches();
   }, [fetchShipments, fetchBatches]);
@@ -404,7 +411,9 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
     lastSignal.current = refreshSignal;
     fetchShipments();
     fetchBatches();
-  }, [refreshSignal, fetchShipments, fetchBatches]);
+    // The open session's boxes too, or a box weighed since it was opened never shows.
+    if (openBatchRef.current) loadBatchDetail(openBatchRef.current).catch(() => {});
+  }, [refreshSignal, fetchShipments, fetchBatches, loadBatchDetail]);
 
   const openShipment = async (id) => {
     if (openId === id) { setOpenId(null); setDetail(null); return; }
@@ -466,25 +475,24 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // Weight Manifests tab does. Read-only here: correcting or voiding a box is
   // that tab's job, and it has the guards for it.
   const toggleBatch = async (batchId) => {
-    if (openBatch === batchId) { setOpenBatch(null); return; }
+    if (openBatch === batchId) { setOpenBatch(null); openBatchRef.current = null; return; }
     setOpenBatch(batchId);
-    if (batchDetail[batchId]) return;
+    openBatchRef.current = batchId;
     try {
-      const { data } = await axiosInstance.get(`/box-batches/${batchId}`);
-      setBatchDetail((prev) => ({ ...prev, [batchId]: data }));
+      await loadBatchDetail(batchId);
     } catch (err) {
       toast({ title: t("Could not open that session"),
         description: err.response?.data?.error || err.message,
         status: "error", duration: 5000, position: "top" });
       setOpenBatch(null);
+      openBatchRef.current = null;
     }
   };
 
   // After a heading edit: the detail AND the row above it both show the item
   // and where it is going, so refreshing one alone leaves the other stale.
   const reloadBatch = async (batchId) => {
-    const { data } = await axiosInstance.get(`/box-batches/${batchId}`);
-    setBatchDetail((prev) => ({ ...prev, [batchId]: data }));
+    await loadBatchDetail(batchId);
     await fetchBatches();
   };
 

@@ -12,7 +12,8 @@ app.set("trust proxy", TRUST_PROXY);
 const allowedOrigins = [process.env.ALLOWED_ORIGIN, "http://localhost:3000"].filter(Boolean);
 const corsOptions = { origin: allowedOrigins };
 
-app.use(express.json());
+// The default 100 KB refused the full-inventory export snapshot (~600 KB).
+app.use(express.json({ limit: "5mb" }));
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 

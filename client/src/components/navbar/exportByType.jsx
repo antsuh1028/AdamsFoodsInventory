@@ -234,11 +234,13 @@ const ExportByType = ({ isOpen, onClose }) => {
 
   const saveSnapshot = async (exportItems, label) => {
     try {
-      await authFetch(`${API_BASE_URL}/inventorySnapshot`, {
+      const res = await authFetch(`${API_BASE_URL}/inventorySnapshot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ snapshot: exportItems, label }),
       });
+      // fetch does not throw on a refusal, which is how this failed unseen.
+      if (res && res.ok === false) console.warn("snapshot not saved:", res.status);
       cache.del("snapshots");
     } catch (_) {
       // non-fatal
