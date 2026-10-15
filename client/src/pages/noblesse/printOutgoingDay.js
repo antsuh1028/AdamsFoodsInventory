@@ -5,9 +5,9 @@ import { esc, printDocument } from "./printWindow";
 // lines underneath for anything not recorded in the system.
 
 // Rows on a page, so the blank lines run to the foot of the sheet.
-const MIN_ROWS = 24;
+const MIN_ROWS = 26;
 // Rows on a page with shorter lines, used to keep the writing space on one sheet.
-const COMPACT_ROWS = 30;
+const COMPACT_ROWS = 32;
 // Blank lines always left on the last page for what is not in the system.
 const KEEP_BLANK = 4;
 
@@ -63,13 +63,13 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
 
   const page = ({ entries, rows, compact }, n) => `
     <section class="page${compact ? " compact" : ""}">
-      <h1>Noblesse Trading</h1>
-      <table class="head">
-        <tr>
-          <td class="pageno">${pages.length > 1 ? `Page ${n} of ${pages.length}` : ""}</td>
-          <td class="lbl">Date</td><td class="val">${esc(shortDate(day))}</td>
-        </tr>
-      </table>
+      <div class="top">
+        <h1>Noblesse Trading</h1>
+        <div class="when">
+          ${pages.length > 1 ? `<span class="pageno">Page ${n} of ${pages.length}</span>` : ""}
+          <span class="lbl">Date</span><span class="val">${esc(shortDate(day))}</span>
+        </div>
+      </div>
       <div class="fill">
         <table class="sheet">
           <thead><tr><th>Box / Pcs.</th><th>Item</th></tr></thead>
@@ -88,11 +88,10 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           @page { size: letter portrait; margin: 0; }
           * { box-sizing: border-box; }
           body { font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; margin: 0; }
-          h1 { text-align: center; font-size: 32px; font-style: italic; font-weight: 800; margin: 0 0 14px; }
-          table.head { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 15px; }
-          table.head td { padding: 4pt; vertical-align: bottom; }
-          td.lbl { width: 50px; white-space: nowrap; text-align: right; }
-          td.val { width: 150px; border-bottom: 1px solid #000; font-size: 17px; font-weight: 700; }
+          .top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+          h1 { font-size: 32px; font-style: italic; font-weight: 800; margin: 0; }
+          .when { display: flex; align-items: baseline; gap: 6pt; font-size: 15px; }
+          .when .val { min-width: 120px; padding: 0 4pt 2pt; border-bottom: 1px solid #000; font-size: 17px; font-weight: 700; }
           table.sheet { width: 100%; border-collapse: collapse; border: 1.5px solid #000; }
           table.sheet th { font-size: 15px; border: 1.5px solid #000; padding: 4pt; }
           table.sheet td { border-left: 1.5px solid #000; border-right: 1.5px solid #000;
@@ -109,7 +108,7 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           .fill { flex: 1; min-height: 0; }
           .fill table.sheet { height: 100%; }
           section.page:last-of-type { break-after: auto; page-break-after: auto; }
-          td.pageno { font-size: 13px; color: #444; }
+          .pageno { font-size: 13px; color: #444; margin-right: 10pt; }
           .no-print { text-align: center; margin: 14px 0; }
           @media print { .no-print { display: none; } }
         </style>
