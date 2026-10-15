@@ -1,8 +1,8 @@
 import { esc, printDocument } from "./printWindow";
 
 // The day's outgoing sheet, laid out like the paper pad the dock writes by hand:
-// pallets and item (customer) on one line, cases and lot on the next, a Price
-// column, and blank lines underneath for anything not recorded in the system.
+// pallets and item (customer) on one line, cases and lot on the next, and blank
+// lines underneath for anything not recorded in the system.
 
 // Rows on the first page, so the blank lines run to the foot of the sheet.
 const MIN_ROWS = 30;
@@ -37,17 +37,15 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
     <tr>
       <td class="qty">${l.pallets} PLT</td>
       <td class="item">${esc(l.item)}${l.who ? ` <span class="who">(${esc(l.who)})</span>` : ""}</td>
-      <td class="price"></td>
     </tr>
     <tr class="second">
       <td class="qty"></td>
       <td class="item"><span class="cs">${l.cases} c/s</span><span class="lot">${l.lot ? `#${esc(l.lot)}` : ""}</span></td>
-      <td class="price"></td>
     </tr>`).join("");
 
   const blanks = Math.max(MIN_ROWS - lines.length * 2, 6);
   const blankRows = Array.from({ length: blanks },
-    () => `<tr><td class="qty"></td><td class="item"></td><td class="price"></td></tr>`).join("");
+    () => `<tr><td class="qty"></td><td class="item"></td></tr>`).join("");
 
   const html = `<!doctype html>
     <html>
@@ -70,7 +68,6 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           table.sheet td { border-left: 1.5px solid #000; border-right: 1.5px solid #000;
             border-bottom: 1px solid #000; height: 27px; padding: 4pt; font-size: 14px; }
           td.qty { width: 72px; white-space: nowrap; font-weight: 700; }
-          td.price { width: 90px; }
           tr.second td { border-bottom: 1.5px solid #000; }
           .who { font-weight: 700; }
           .cs { display: inline-block; min-width: 120px; }
@@ -96,7 +93,7 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
         </table>
 
         <table class="sheet">
-          <thead><tr><th>Box / Pcs.</th><th>Item</th><th>Price</th></tr></thead>
+          <thead><tr><th>Box / Pcs.</th><th>Item</th></tr></thead>
           <tbody>${entryRows}${blankRows}</tbody>
         </table>
 
