@@ -64,11 +64,9 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
   const page = ({ entries, rows, compact }, n) => `
     <section class="page${compact ? " compact" : ""}">
       <div class="top">
+        <span class="pageno">${pages.length > 1 ? `Page ${n} of ${pages.length}` : ""}</span>
         <h1>Noblesse Trading</h1>
-        <div class="when">
-          ${pages.length > 1 ? `<span class="pageno">Page ${n} of ${pages.length}</span>` : ""}
-          <span class="lbl">Date</span><span class="val">${esc(shortDate(day))}</span>
-        </div>
+        <div class="when"><span class="lbl">Date</span><span class="val">${esc(shortDate(day))}</span></div>
       </div>
       <div class="fill">
         <table class="sheet">
@@ -88,9 +86,10 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           @page { size: letter portrait; margin: 0; }
           * { box-sizing: border-box; }
           body { font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; margin: 0; }
-          .top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
-          h1 { font-size: 32px; font-style: italic; font-weight: 800; margin: 0; }
-          .when { display: flex; align-items: baseline; gap: 6pt; font-size: 15px; }
+          /* Page number left, title centred, date right. */
+          .top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline; margin-bottom: 16px; }
+          h1 { font-size: 32px; font-style: italic; font-weight: 800; margin: 0; text-align: center; }
+          .when { display: flex; align-items: baseline; justify-content: flex-end; gap: 6pt; font-size: 15px; }
           .when .val { min-width: 120px; padding: 0 4pt 2pt; border-bottom: 1px solid #000; font-size: 17px; font-weight: 700; }
           table.sheet { width: 100%; border-collapse: collapse; border: 1.5px solid #000; }
           table.sheet th { font-size: 15px; border: 1.5px solid #000; padding: 4pt; }
@@ -108,7 +107,7 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           .fill { flex: 1; min-height: 0; }
           .fill table.sheet { height: 100%; }
           section.page:last-of-type { break-after: auto; page-break-after: auto; }
-          .pageno { font-size: 13px; color: #444; margin-right: 10pt; }
+          .pageno { font-size: 13px; color: #444; }
           .no-print { text-align: center; margin: 14px 0; }
           @media print { .no-print { display: none; } }
         </style>
