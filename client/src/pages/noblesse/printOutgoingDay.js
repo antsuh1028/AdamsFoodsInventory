@@ -5,7 +5,7 @@ import { esc, printDocument } from "./printWindow";
 // lines underneath for anything not recorded in the system.
 
 // Rows on every page, so the blank lines run to the foot of the sheet.
-const MIN_ROWS = 18;
+const MIN_ROWS = 20;
 
 // "2026-10-14" -> "10/14/26".
 const shortDate = (day) => {
@@ -93,7 +93,7 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           .cs { display: inline-block; min-width: 140px; }
           .lot { font-weight: 700; padding-left: 120px; }
           /* One letter sheet each; the table stretches its lines to the bottom margin. */
-          section.page { height: 278mm; padding: 15mm 18mm; display: flex; flex-direction: column;
+          section.page { height: 278mm; padding: 8mm 10mm; display: flex; flex-direction: column;
             overflow: hidden; break-after: page; page-break-after: always; }
           .fill { flex: 1; min-height: 0; }
           .fill table.sheet { height: 100%; }
