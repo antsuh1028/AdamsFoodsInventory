@@ -4,8 +4,12 @@ import { esc, printDocument } from "./printWindow";
 // pallets and item (customer) on one line, cases and lot on the next, and blank
 // lines underneath for anything not recorded in the system.
 
-// Rows on every page, so the blank lines run to the foot of the sheet.
+// Rows on a page, so the blank lines run to the foot of the sheet.
 const MIN_ROWS = 24;
+// Rows on a page with shorter lines, used to keep the writing space on one sheet.
+const COMPACT_ROWS = 30;
+// Blank lines always left on the last page for what is not in the system.
+const KEEP_BLANK = 4;
 
 // "2026-10-14" -> "10/14/26".
 const shortDate = (day) => {
@@ -45,14 +49,20 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
   const blankRows = (n) => Array.from({ length: n },
     () => `<tr><td class="qty"></td><td class="item"></td></tr>`).join("");
 
-  // Whole pages: an entry's two lines never split, and every page is topped up with blank lines.
-  const perPage = Math.floor(MIN_ROWS / 2);
+  // Whole pages: an entry's two lines never split. The last page keeps KEEP_BLANK lines,
+  // on shorter rows if that keeps it to one sheet, else the rest carries to a new page.
   const pages = [];
-  for (let i = 0; i < lines.length; i += perPage) pages.push(lines.slice(i, i + perPage));
-  if (!pages.length) pages.push([]);
+  let rest = lines;
+  for (;;) {
+    const need = rest.length * 2 + KEEP_BLANK;
+    if (need <= MIN_ROWS) { pages.push({ entries: rest, rows: MIN_ROWS }); break; }
+    if (need <= COMPACT_ROWS) { pages.push({ entries: rest, rows: COMPACT_ROWS, compact: true }); break; }
+    pages.push({ entries: rest.slice(0, MIN_ROWS / 2), rows: MIN_ROWS });
+    rest = rest.slice(MIN_ROWS / 2);
+  }
 
-  const page = (entries, n) => `
-    <section class="page">
+  const page = ({ entries, rows, compact }, n) => `
+    <section class="page${compact ? " compact" : ""}">
       <h1>Noblesse Trading</h1>
       <table class="head">
         <tr>
@@ -63,7 +73,7 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
       <div class="fill">
         <table class="sheet">
           <thead><tr><th>Box / Pcs.</th><th>Item</th></tr></thead>
-          <tbody>${entries.map(entryRows).join("")}${blankRows(MIN_ROWS - entries.length * 2)}</tbody>
+          <tbody>${entries.map(entryRows).join("")}${blankRows(rows - entries.length * 2)}</tbody>
         </table>
       </div>
     </section>`;
@@ -89,6 +99,7 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
             border-bottom: 1px solid #000; height: 36px; padding: 6pt 4pt; font-size: 16px; }
           td.qty { width: 84px; white-space: nowrap; font-weight: 700; }
           tr.second td { border-bottom: 1.5px solid #000; }
+          .compact table.sheet td { height: 28px; padding: 3pt 4pt; }
           .who { font-weight: 700; }
           .cs { display: inline-block; min-width: 140px; }
           .lot { font-weight: 700; padding-left: 120px; }
@@ -104,7 +115,7 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
         </style>
       </head>
       <body>
-        ${pages.map((entries, i) => page(entries, i + 1)).join("")}
+        ${pages.map((p, i) => page(p, i + 1)).join("")}
 
         <div class="no-print">
           <button onclick="window.print()" style="padding:8px 18px;font-size:14px;cursor:pointer;">Print</button>
