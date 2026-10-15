@@ -90,17 +90,16 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           .top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline; margin-bottom: 16px; }
           h1 { font-size: 32px; font-style: italic; font-weight: 800; margin: 0; text-align: center; }
           .when { display: flex; align-items: baseline; justify-content: flex-end; gap: 6pt; font-size: 15px; }
-          .when .val { min-width: 120px; padding: 0 4pt 2pt; border-bottom: 1px solid #000; font-size: 17px; font-weight: 700; }
-          table.sheet { width: 100%; border-collapse: collapse; border: 1.5px solid #000; }
-          table.sheet th { font-size: 15px; border: 1.5px solid #000; padding: 4pt; }
-          table.sheet td { border-left: 1.5px solid #000; border-right: 1.5px solid #000;
-            border-bottom: 1px solid #000; height: 36px; padding: 6pt 4pt; font-size: 16px; }
-          td.qty { width: 84px; white-space: nowrap; font-weight: 700; }
-          tr.second td { border-bottom: 1.5px solid #000; }
+          .when .val { min-width: 120px; padding: 0 4pt 2pt; border-bottom: 1px dotted #000; font-size: 17px; }
+          table.sheet { width: 100%; border-collapse: collapse; border: 1px dotted #000; }
+          table.sheet th { font-size: 15px; font-weight: normal; border: 1px dotted #000; padding: 4pt; }
+          table.sheet td { border-left: 1px dotted #000; border-right: 1px dotted #000;
+            border-bottom: 1px dotted #000; height: 36px; padding: 6pt 4pt; font-size: 16px; }
+          td.qty { width: 84px; white-space: nowrap; }
+          tr.second td { border-bottom: 1px dotted #000; }
           .compact table.sheet td { height: 28px; padding: 3pt 4pt; }
-          .who { font-weight: 700; }
           .cs { display: inline-block; min-width: 140px; }
-          .lot { font-weight: 700; padding-left: 120px; }
+          .lot { padding-left: 120px; }
           /* One letter sheet each; the table stretches its lines to the bottom margin. */
           section.page { height: 278mm; padding: 8mm 10mm; display: flex; flex-direction: column;
             overflow: hidden; break-after: page; page-break-after: always; }
