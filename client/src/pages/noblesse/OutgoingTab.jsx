@@ -10,7 +10,7 @@ import WeighFinishedBoxes from "../../components/navbar/WeighFinishedBoxes";
 import DeleteBatchDialog from "./DeleteBatchDialog";
 import FlagSession from "./FlagSession";
 import { toDisplay } from "../../utils/weight";
-import { fmtDate, fmtDateOnly, fmtDateTime, fmtLongDate, today, upper } from "./shared";
+import { fmtDate, fmtDateOnly, fmtDateTime, fmtLongDate, today, upper, weighedDay } from "./shared";
 import { groupOutgoing, milsToLb, clockOf } from "./outgoingGroups";
 import getRole, { canReceive } from "../../utils/getRole";
 import LotTimeline from "../../components/LotTimeline";
@@ -18,6 +18,7 @@ import ItemDescriptionInput from "../../components/ItemDescriptionInput";
 import CustomerInput from "../../components/CustomerInput";
 import printPackingList from "./printPackingList";
 import printOutgoingTag from "./printOutgoingTag";
+import printOutgoingDay from "./printOutgoingDay";
 import useLang from "../../hooks/useLang";
 import LangToggle from "../../components/LangToggle";
 import SearchBar from "../../components/SearchBar";
@@ -543,6 +544,13 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
 
   const days = useMemo(() => groupOutgoing(shownBatches), [shownBatches]);
   const todayStr = today();
+  // The day's sheet from every session that day, not just what a search shows.
+  const printDay = (day) => {
+    const ok = printOutgoingDay({ day, sessions: batches.filter((b) => weighedDay(b) === day) });
+    if (!ok) {
+      toast({ title: t("Allow pop-ups to print"), status: "warning", duration: 5000, position: "top" });
+    }
+  };
   const yesterdayStr = today(new Date(Date.now() - 86400000));
   // Groups with a pallet still being weighed start open.
   const groupIsOpen = (g) => g.open !== toggledGroups.has(g.id);
@@ -984,6 +992,11 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
               <Text fontSize="md" fontWeight="bold" color="gray.800">
                 {d.day ? fmtLongDate(new Date(`${d.day}T20:00:00Z`)) : t("No date")}
               </Text>
+              {d.day && (
+                <Button size="xs" variant="outline" colorScheme="blue" onClick={() => printDay(d.day)}>
+                  {t("Print day")}
+                </Button>
+              )}
               {(d.day === todayStr || d.day === yesterdayStr) && (
                 <Badge colorScheme={d.day === todayStr ? "blue" : "gray"} fontSize="9px">
                   {d.day === todayStr ? t("Today") : t("Yesterday")}

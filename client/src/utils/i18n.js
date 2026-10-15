@@ -475,6 +475,8 @@ const ES = {
     "No todas las tarimas tienen este chofer. Guarde para ponerlo en todas.",
   "Not on the customer list": "No está en la lista de clientes",
   "e.g. SHABUYA": "p. ej. SHABUYA",
+  "Print day": "Imprimir día",
+  "Allow pop-ups to print": "Permita ventanas emergentes para imprimir",
   "Corrected from {from}": "Corregido de {from}",
   "Undo": "Deshacer",
   "Kept as typed": "Se dejó como se escribió",
