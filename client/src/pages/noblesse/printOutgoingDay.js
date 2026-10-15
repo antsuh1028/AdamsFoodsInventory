@@ -60,15 +60,15 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           body { font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; margin: 0; }
           h1 { text-align: center; font-size: 30px; font-style: italic; font-weight: 800; margin: 0 0 14px; }
           table.head { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 13px; }
-          table.head td { padding: 6px 4px 2px; vertical-align: bottom; }
+          table.head td { padding: 4pt; vertical-align: bottom; }
           td.lbl { width: 90px; white-space: nowrap; }
           td.line { border-bottom: 1px solid #000; }
           td.val { border-bottom: 1px solid #000; font-size: 15px; font-weight: 700; }
           td.gap { width: 24px; }
           table.sheet { width: 100%; border-collapse: collapse; border: 1.5px solid #000; }
-          table.sheet th { font-size: 13px; border: 1.5px solid #000; padding: 4px; }
+          table.sheet th { font-size: 13px; border: 1.5px solid #000; padding: 4pt; }
           table.sheet td { border-left: 1.5px solid #000; border-right: 1.5px solid #000;
-            border-bottom: 1px solid #000; height: 27px; padding: 2px 6px; font-size: 14px; }
+            border-bottom: 1px solid #000; height: 27px; padding: 4pt; font-size: 14px; }
           td.qty { width: 72px; white-space: nowrap; font-weight: 700; }
           td.price { width: 90px; }
           tr.second td { border-bottom: 1.5px solid #000; }
@@ -76,7 +76,7 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           .cs { display: inline-block; min-width: 120px; }
           .lot { font-weight: 700; padding-left: 140px; }
           table.sign { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 13px; font-weight: 700; }
-          table.sign td { padding: 18px 4px 2px; }
+          table.sign td { padding: 18px 4pt 4pt; }
           table.sign td.line { border-bottom: 1px solid #000; width: 35%; }
           .no-print { text-align: center; margin: 14px 0; }
           @media print { .no-print { display: none; } }
@@ -86,15 +86,11 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
         <h1>Noblesse Trading</h1>
         <table class="head">
           <tr>
-            <td class="lbl">Customer</td><td class="line"></td><td class="gap"></td>
+            <td class="lbl">Bill of Lading</td><td class="line"></td><td class="gap"></td>
             <td class="lbl">Date</td><td class="val">${esc(shortDate(day))}</td>
           </tr>
           <tr>
-            <td class="lbl">Ship To</td><td class="line"></td><td class="gap"></td>
-            <td class="lbl">Delivery By</td><td class="line"></td>
-          </tr>
-          <tr>
-            <td class="lbl">Bill of Lading</td><td class="line"></td><td class="gap"></td>
+            <td></td><td></td><td class="gap"></td>
             <td class="lbl">Pick Up</td><td class="line"></td>
           </tr>
         </table>
