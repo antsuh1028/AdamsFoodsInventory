@@ -16,6 +16,10 @@ import TypeWeights from "./TypeWeights";
 import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import { isSupported as scaleSupported } from "../../utils/scaleSerial";
 import { toDisplayHundredths, fromHundredths } from "../../utils/weight";
+import axiosInstance from "../../utils/axiosInstance";
+import { tagFromDetail } from "../../pages/noblesse/printSessionTag";
+
+const PRINT_ON_STOP_KEY = "weighPrintTagOnStop";
 
 // Weighing finished boxes on their way out.
 
@@ -75,6 +79,33 @@ const WeighFinishedBoxes = ({
 
   // Next pallet asks how many boxes the new pallet holds before it starts.
   const [nextAsk, setNextAsk] = useState(false);
+  // Print the closed pallet's tag on stop; remembered on this device.
+  const [printOnStop, setPrintOnStopState] = useState(() => {
+    try { return localStorage.getItem(PRINT_ON_STOP_KEY) !== "0"; } catch { return true; }
+  });
+  const setPrintOnStop = (v) => {
+    setPrintOnStopState(v);
+    try { localStorage.setItem(PRINT_ON_STOP_KEY, v ? "1" : "0"); } catch { /* not remembered */ }
+  };
+
+  // Opened on the click itself so the browser does not block it; filled once the pallet is closed.
+  const openTagWindow = () => {
+    if (!printOnStop) return null;
+    const w = window.open("", "_blank");
+    if (w) w.document.write("<p style=\"font-family:sans-serif\">Loading the tag…</p>");
+    return w;
+  };
+  const fillTagWindow = async (w, batchId) => {
+    if (!w) return;
+    try {
+      const { data } = await axiosInstance.get(`/box-batches/${batchId}`);
+      tagFromDetail(data, w);
+    } catch (err) {
+      w.close();
+      toast({ title: t("Could not print the tag"), description: err.response?.data?.error || err.message,
+        status: "warning", position: "top", duration: 6000, isClosable: true });
+    }
+  };
   const [nextExpected, setNextExpected] = useState("");
 
   // Opened on a session that is already running, so the lot is already known and
@@ -171,6 +202,7 @@ const WeighFinishedBoxes = ({
   };
 
   const onStop = async () => {
+    const tagWin = openTagWindow();
     setBusy(true);
     // Read before stop() clears it — the caller needs the id to tie it.
     const closedId = session?.batchId ?? null;
@@ -180,6 +212,7 @@ const WeighFinishedBoxes = ({
       // Weights the server has not taken yet. The window stays where it is:
       // closing it here would hide the only screen that can still send them.
       if (!result?.closed) {
+        if (tagWin) tagWin.close();
         toast({
           status: "warning", position: "top", duration: 9000, isClosable: true,
           title: t("Not stopped — weights still unsent"),
@@ -204,6 +237,8 @@ const WeighFinishedBoxes = ({
       } else if (closedId != null && onSessionClosed) {
         await onSessionClosed(closedId);
       }
+      if (result.gone || closedId == null) { if (tagWin) tagWin.close(); }
+      else await fillTagWindow(tagWin, closedId);
 
       setConfirmStop(false);
       setRemarks("");
@@ -214,6 +249,7 @@ const WeighFinishedBoxes = ({
       setToFreezer(false);
       onClose();
     } catch (err) {
+      if (tagWin && !tagWin.closed) tagWin.close();
       toast({ title: t("Could not stop the session"), description: err.message,
         status: "error", position: "top" });
     } finally { setBusy(false); }
@@ -226,6 +262,7 @@ const WeighFinishedBoxes = ({
   // form, so it survives a session that was adopted or resumed rather than
   // typed here.
   const onNextPallet = async () => {
+    const tagWin = openTagWindow();
     setBusy(true);
     const closedId = session?.batchId ?? null;
     const heading = {
@@ -243,6 +280,7 @@ const WeighFinishedBoxes = ({
 
       // Same refusal as a plain stop: unsent weights keep the bench where it is.
       if (!result?.closed) {
+        if (tagWin) tagWin.close();
         toast({
           status: "warning", position: "top", duration: 9000, isClosable: true,
           title: t("Not stopped — weights still unsent"),
@@ -255,6 +293,8 @@ const WeighFinishedBoxes = ({
       if (!result.gone && closedId != null && onSessionClosed) {
         await onSessionClosed(closedId);
       }
+      if (result.gone || closedId == null) { if (tagWin) tagWin.close(); }
+      else await fillTagWindow(tagWin, closedId);
 
       setConfirmStop(false);
       setNextAsk(false);
@@ -268,6 +308,7 @@ const WeighFinishedBoxes = ({
           { lot: heading.lotNumber || t("Lot") }),
       });
     } catch (err) {
+      if (tagWin && !tagWin.closed) tagWin.close();
       toast({ title: t("Could not start the next pallet"), description: err.message,
         status: "error", position: "top", duration: 6000, isClosable: true });
     } finally { setBusy(false); }
@@ -657,6 +698,9 @@ const WeighFinishedBoxes = ({
             <Textarea size="sm" value={remarks} rows={2}
               onChange={(e) => setRemarks(e.target.value)}
               placeholder="Anything worth noting about this run" />
+            <Checkbox mt={3} isChecked={printOnStop} onChange={(e) => setPrintOnStop(e.target.checked)}>
+              <Text as="span" fontSize="sm">{t("Print the pallet tag")}</Text>
+            </Checkbox>
             {nextAsk && (
               <Box mt={3} p={3} bg="teal.50" borderRadius="md" border="1px solid" borderColor="teal.200">
                 <Text fontSize="xs" color="gray.600" textTransform="uppercase" mb={1}>

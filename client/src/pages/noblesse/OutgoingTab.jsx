@@ -10,14 +10,14 @@ import WeighFinishedBoxes from "../../components/navbar/WeighFinishedBoxes";
 import DeleteBatchDialog from "./DeleteBatchDialog";
 import FlagSession from "./FlagSession";
 import { toDisplay } from "../../utils/weight";
-import { fmtDate, fmtDateOnly, fmtDateTime, fmtLongDate, today, upper, weighedDay } from "./shared";
+import { fmtDate, fmtDateTime, fmtLongDate, today, upper, weighedDay } from "./shared";
 import { groupOutgoing, milsToLb, clockOf } from "./outgoingGroups";
 import getRole, { canReceive } from "../../utils/getRole";
 import LotTimeline from "../../components/LotTimeline";
 import ItemDescriptionInput from "../../components/ItemDescriptionInput";
 import CustomerInput from "../../components/CustomerInput";
 import printPackingList from "./printPackingList";
-import printOutgoingTag from "./printOutgoingTag";
+import printSessionTag, { tagFromDetail } from "./printSessionTag";
 import printOutgoingDay from "./printOutgoingDay";
 import useLang from "../../hooks/useLang";
 import LangToggle from "../../components/LangToggle";
@@ -230,20 +230,7 @@ const BatchBoxes = ({ detail, totalLb, batchId, isAdmin, onChanged }) => {
           {t("Boxes")}
         </Text>
         <Button size="xs" variant="outline" colorScheme="blue" ml="auto"
-          onClick={() => printOutgoingTag({
-            lotNumber: detail.lot_number,
-            date: detail.weighed_on
-              ? fmtDate(detail.weighed_on)
-              : fmtDateOnly(detail.closed_at || detail.created_at),
-            shipTo: detail.ship_to,
-            itemDescription: detail.item_description,
-            billOfLading: detail.bill_of_lading,
-            driver: detail.driver || "",
-            boxes: items,
-            weighedBy: detail.vendor || "",
-            memo: detail.remarks || "",
-            furtherProcessing: Boolean(detail.further_processing),
-          })}>
+          onClick={() => tagFromDetail(detail)}>
           {t("Print tag")}
         </Button>
         <Text fontSize="sm" fontWeight="600" color="gray.800"
@@ -334,6 +321,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // A closed pallet whose heading the next one starts from.
   const [nextFrom, setNextFrom] = useState(null);
   const [reopening, setReopening] = useState(null);
+  const [printingTag, setPrintingTag] = useState(null);
   // A weighed session an admin wants gone. The route refuses while a load or a
   // form still references it, and the dialog says which.
   const [deletingBatch, setDeletingBatch] = useState(null);
@@ -567,6 +555,19 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
   // One weighed session's row.
   // Closed by mistake: reopen and carry straight on. A session already on a load or
   // a form is refused by the server for anyone but an admin, and the toast says why.
+  // A pallet's tag in one click, without opening its boxes first.
+  const printTag = async (batchId) => {
+    setPrintingTag(batchId);
+    try {
+      await printSessionTag(batchId);
+    } catch (err) {
+      toast({ title: t("Could not print the tag"), description: t(err.response?.data?.error || err.message),
+        status: "error", duration: 6000, isClosable: true, position: "top" });
+    } finally {
+      setPrintingTag(null);
+    }
+  };
+
   const reopenSession = async (b) => {
     setReopening(b.batch_id);
     try {
@@ -668,6 +669,12 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
             })}
             onDoubleClick={(e) => e.stopPropagation()}>
             {t("Next pallet")}
+          </Button>
+          <Button size="xs" variant="ghost" colorScheme="blue"
+            isLoading={printingTag === b.batch_id}
+            onClick={() => printTag(b.batch_id)}
+            onDoubleClick={(e) => e.stopPropagation()}>
+            {t("Print tag")}
           </Button>
           <Button size="xs" variant="ghost" colorScheme="gray"
             isLoading={reopening === b.batch_id}

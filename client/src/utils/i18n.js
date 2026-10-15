@@ -476,6 +476,8 @@ const ES = {
   "Not on the customer list": "No está en la lista de clientes",
   "e.g. SHABUYA": "p. ej. SHABUYA",
   "Print day": "Imprimir día",
+  "Print the pallet tag": "Imprimir la etiqueta de la tarima",
+  "Could not print the tag": "No se pudo imprimir la etiqueta",
   "Sent": "Enviadas",
   "Product coming back from the AF freezer. Count the cases; they are not weighed. A run on them picks the FP lot on the Processing tab.":
     "Producto que regresa del congelador de AF. Cuente las cajas; no se pesan. Un proceso con ellas elige el lote FP en la pestaña de Procesamiento.",

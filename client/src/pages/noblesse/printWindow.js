@@ -13,9 +13,12 @@ export const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
 // Open a built document in a new tab. Returns false when the popup was
 // blocked, which is the caller's only failure case — everything before this is
 // string building and cannot throw.
-export const printDocument = (html) => {
-  const win = window.open("", "_blank");
+// `opened` is a window already opened on the click, for callers that load data first.
+export const printDocument = (html, opened = null) => {
+  const win = opened || window.open("", "_blank");
   if (!win) return false;
+  // Replaces anything already shown in it, like a loading note.
+  win.document.open();
   win.document.write(html);
   win.document.close();
   return true;

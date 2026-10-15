@@ -23,6 +23,8 @@ const printOutgoingTag = ({
   boxes: scans = [], weighedBy = "", memo = "",
   // Going to the AF freezer for another run. The lot stays the N number.
   furtherProcessing = false,
+  // A window opened on the click, when the boxes had to be loaded first.
+  win = null,
 } = {}) => {
   // A voided box was taken off the tally on purpose; a duplicate is one box
   // counted twice. Neither travels on the tag.
@@ -246,7 +248,7 @@ const printOutgoingTag = ({
       </body>
     </html>`;
 
-  printDocument(html);
+  return printDocument(html, win);
 };
 
 export default printOutgoingTag;
