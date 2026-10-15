@@ -992,11 +992,6 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
               <Text fontSize="md" fontWeight="bold" color="gray.800">
                 {d.day ? fmtLongDate(new Date(`${d.day}T20:00:00Z`)) : t("No date")}
               </Text>
-              {d.day && (
-                <Button size="xs" variant="outline" colorScheme="blue" onClick={() => printDay(d.day)}>
-                  {t("Print day")}
-                </Button>
-              )}
               {(d.day === todayStr || d.day === yesterdayStr) && (
                 <Badge colorScheme={d.day === todayStr ? "blue" : "gray"} fontSize="9px">
                   {d.day === todayStr ? t("Today") : t("Yesterday")}
@@ -1006,6 +1001,11 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                 {t(d.shipments.length === 1 ? "{n} shipment" : "{n} shipments", { n: d.shipments.length })}
                 {" · "}{d.boxes} c/s · {lb(milsToLb(d.mils))} lb
               </Text>
+              {d.day && (
+                <Button size="xs" variant="outline" colorScheme="blue" onClick={() => printDay(d.day)}>
+                  {t("Print day")}
+                </Button>
+              )}
             </Flex>
             <Flex direction="column" gap={2}>{d.shipments.map(renderShipment)}</Flex>
           </Box>
