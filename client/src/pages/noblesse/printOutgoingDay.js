@@ -5,9 +5,7 @@ import { esc, printDocument } from "./printWindow";
 // lines underneath for anything not recorded in the system.
 
 // Rows on every page, so the blank lines run to the foot of the sheet.
-const MIN_ROWS = 17;
-// Blank lines the last page keeps for handwriting before another page is added.
-const MIN_BLANK = 4;
+const MIN_ROWS = 21;
 
 // "2026-10-14" -> "10/14/26".
 const shortDate = (day) => {
@@ -52,8 +50,6 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
   const pages = [];
   for (let i = 0; i < lines.length; i += perPage) pages.push(lines.slice(i, i + perPage));
   if (!pages.length) pages.push([]);
-  // A last page too full to write on gets a blank one after it.
-  if (MIN_ROWS - pages[pages.length - 1].length * 2 < MIN_BLANK) pages.push([]);
 
   const page = (entries, n) => `
     <section class="page">
