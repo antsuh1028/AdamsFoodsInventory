@@ -5,7 +5,7 @@ import { esc, printDocument } from "./printWindow";
 // lines underneath for anything not recorded in the system.
 
 // Rows on every page, so the blank lines run to the foot of the sheet.
-const MIN_ROWS = 20;
+const MIN_ROWS = 24;
 
 // "2026-10-14" -> "10/14/26".
 const shortDate = (day) => {
@@ -78,16 +78,16 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           @page { size: letter portrait; margin: 0; }
           * { box-sizing: border-box; }
           body { font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; margin: 0; }
-          h1 { text-align: center; font-size: 36px; font-style: italic; font-weight: 800; margin: 0 0 14px; }
-          table.head { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 16px; }
+          h1 { text-align: center; font-size: 32px; font-style: italic; font-weight: 800; margin: 0 0 14px; }
+          table.head { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 15px; }
           table.head td { padding: 4pt; vertical-align: bottom; }
           td.lbl { width: 50px; white-space: nowrap; text-align: right; }
-          td.val { width: 150px; border-bottom: 1px solid #000; font-size: 19px; font-weight: 700; }
+          td.val { width: 150px; border-bottom: 1px solid #000; font-size: 17px; font-weight: 700; }
           table.sheet { width: 100%; border-collapse: collapse; border: 1.5px solid #000; }
-          table.sheet th { font-size: 16px; border: 1.5px solid #000; padding: 4pt; }
+          table.sheet th { font-size: 15px; border: 1.5px solid #000; padding: 4pt; }
           table.sheet td { border-left: 1.5px solid #000; border-right: 1.5px solid #000;
-            border-bottom: 1px solid #000; height: 42px; padding: 8pt 4pt; font-size: 18px; }
-          td.qty { width: 92px; white-space: nowrap; font-weight: 700; }
+            border-bottom: 1px solid #000; height: 36px; padding: 6pt 4pt; font-size: 16px; }
+          td.qty { width: 84px; white-space: nowrap; font-weight: 700; }
           tr.second td { border-bottom: 1.5px solid #000; }
           .who { font-weight: 700; }
           .cs { display: inline-block; min-width: 140px; }
