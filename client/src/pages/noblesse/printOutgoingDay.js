@@ -90,20 +90,25 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           .top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline; margin-bottom: 16px; }
           h1 { font-size: 32px; font-style: italic; font-weight: 800; margin: 0; text-align: center; }
           .when { display: flex; align-items: baseline; justify-content: flex-end; gap: 6pt; font-size: 15px; }
-          .when .val { min-width: 120px; padding: 0 4pt 2pt; border-bottom: 1px dotted #000; font-size: 17px; }
-          table.sheet { width: 100%; border-collapse: collapse; border: 1px dotted #000; }
+          .when .val { min-width: 120px; padding: 0 4pt 2pt; border-bottom: 0.5px solid #000; font-size: 17px; }
+          table.sheet { width: 100%; border-collapse: collapse; border: none; }
           table.sheet th { font-size: 15px; font-weight: normal; border: 1px dotted #000; padding: 4pt; }
           table.sheet td { border-left: 1px dotted #000; border-right: 1px dotted #000;
             border-bottom: 1px dotted #000; height: 36px; padding: 6pt 4pt; font-size: 16px; }
           td.qty { width: 84px; white-space: nowrap; }
           tr.second td { border-bottom: 1px dotted #000; }
+          /* The outer frame is one hairline; the inside lines stay dotted and stop at it. */
+          table.sheet tr > :first-child { border-left: none; }
+          table.sheet tr > :last-child { border-right: none; }
+          table.sheet thead th { border-top: none; }
+          table.sheet tbody tr:last-child td { border-bottom: none; }
           .compact table.sheet td { height: 28px; padding: 3pt 4pt; }
           .cs { display: inline-block; min-width: 140px; }
           .lot { padding-left: 120px; }
           /* One letter sheet each; the table stretches its lines to the bottom margin. */
           section.page { height: 278mm; padding: 8mm 10mm; display: flex; flex-direction: column;
             overflow: hidden; break-after: page; page-break-after: always; }
-          .fill { flex: 1; min-height: 0; }
+          .fill { flex: 1; min-height: 0; border: 0.5px solid #000; }
           .fill table.sheet { height: 100%; }
           section.page:last-of-type { break-after: auto; page-break-after: auto; }
           .pageno { font-size: 13px; color: #444; }
