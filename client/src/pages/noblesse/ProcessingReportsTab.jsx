@@ -2,7 +2,7 @@ import upperInput from "../../utils/upperInput";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, IconButton, Input, Select, Textarea, Spinner,
-  Grid, Alert, AlertIcon, useToast,
+  Grid, Alert, AlertIcon, Checkbox, useToast,
 } from "@chakra-ui/react";
 import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
@@ -39,6 +39,7 @@ const emptyDraft = () => ({
   customer: "", description: "", brand: "", grade: "", estNumber: "", packDates: [],
   pulls: [{ cases: "" }],
   inedibleWeight: "",
+  furtherProcessing: false,
   workers: [],
   notes: "",
 });
@@ -432,6 +433,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     // on a report filed before this field existed.
     packDates: r.packDates || [],
     inedibleWeight: r.inedibleWeight != null ? String(r.inedibleWeight) : "",
+    furtherProcessing: Boolean(r.furtherProcessing),
   });
 
   return (
@@ -557,6 +559,12 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 <Badge colorScheme="blue" variant="outline" fontSize="9px"
                   title={`Back from the freezer. Goes on ${r.parentLotNumber}'s form.`}>
                   FP of {r.parentLotNumber}
+                </Badge>
+              )}
+              {r.furtherProcessing && (
+                <Badge colorScheme="teal" variant="subtle" fontSize="9px"
+                  title="This run packed product to freeze and run again later">
+                  further processing
                 </Badge>
               )}
               <Badge colorScheme={STATUS_COLOR[r.status]} fontSize="9px">
@@ -1026,6 +1034,20 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               <SheetField label="Inedible (lb)">
                 <Input {...sheetInputProps} isReadOnly={infoLocked} type="number" value={draft.inedibleWeight}
                   onChange={(e) => setDraft({ ...draft, inedibleWeight: e.target.value })} />
+              </SheetField>
+
+              {/* A flag only; how many went to the freezer is counted when the dock weighs them out. */}
+              <SheetField label="Further processing" full plain>
+                <Box px={3} py={2}>
+                  <Checkbox isChecked={Boolean(draft.furtherProcessing)} isDisabled={draft.readOnly}
+                    size="lg" colorScheme="blue"
+                    sx={{ "& .chakra-checkbox__control:not([data-checked])": { borderColor: "gray.500", bg: "white" } }}
+                    onChange={(e) => setDraft({ ...draft, furtherProcessing: e.target.checked })}>
+                    <Text as="span" fontSize="sm">
+                      This run packed product to freeze and run again later (not the cases left over)
+                    </Text>
+                  </Checkbox>
+                </Box>
               </SheetField>
 
               <SectionBar>Crew &amp; Notes</SectionBar>

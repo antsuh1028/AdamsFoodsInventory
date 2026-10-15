@@ -51,6 +51,7 @@ const AcceptReportDialog = ({ report, isOpen, busy, onCancel, onAccept }) => {
               <Row label="Line">{r.lineNo}</Row>
               <Row label="Cases in / out">{`${r.inputCases ?? "—"} / ${r.outputCases ?? "—"}`}</Row>
               <Row label="Inedible">{r.inedibleWeight ? `${r.inedibleWeight} lb` : null}</Row>
+              <Row label="Further processing">{r.furtherProcessing ? "Yes, packed to freeze and run again" : "No"}</Row>
               <Row label="Pack dates">{(r.packDates || []).map(fmtDate).join(", ")}</Row>
               <Row label="Product">{r.description}</Row>
               <Row label="Ran it">{(r.workers || []).join(", ")}</Row>

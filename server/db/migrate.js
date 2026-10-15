@@ -828,6 +828,9 @@ const steps = async () => {
     `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS fp_cases INT CHECK (fp_cases > 0)`);
   await run("noblesse_processing_reports fp_item",
     `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS fp_item TEXT`);
+  // A run marked as further processing; the count itself comes from the dock.
+  await run("noblesse_processing_reports further_processing",
+    `ALTER TABLE noblesse_processing_reports ADD COLUMN IF NOT EXISTS further_processing BOOLEAN NOT NULL DEFAULT false`);
   await run("fp_tracker source_report_id",
     `ALTER TABLE fp_tracker ADD COLUMN IF NOT EXISTS source_report_id INT
        REFERENCES noblesse_processing_reports(report_id) ON DELETE SET NULL`);

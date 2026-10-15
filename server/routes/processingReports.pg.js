@@ -5,10 +5,8 @@ const requireRole = require("../middleware/requireRole");
 const { REPORT_ACCEPT_ROLES } = require("../middleware/receptionRoles");
 const { searchTerm, searchClause } = require("../utils/search");
 const { isCalendarDay } = require("../utils/weighedAt");
-const { fpCounts, lockLot, findFpChild, normaliseItem } = require("../utils/fpLot");
+const { fpCounts, lockLot, findFpChild } = require("../utils/fpLot");
 const { manualCasesSql } = require("../utils/formManualCases");
-
-const MAX_FP_ITEM = 120;
 
 // The shop-floor record of one processing run: which lot, which line, who ran
 // it, how many cases went through.
@@ -62,8 +60,7 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   outputWeight: r.output_weight,
   inedibleWeight: r.inedible_weight,
   // Packed for further processing: goes to the AF freezer and onto the FP lot when accepted.
-  fpCases: r.fp_cases ?? null,
-  fpItem: r.fp_item ?? null,
+  furtherProcessing: Boolean(r.further_processing),
   notes: r.notes,
   status: r.status,
   submittedBy: r.submitted_by,
@@ -233,15 +230,8 @@ const validateBody = (body, { staging = false } = {}) => {
     return { error: "outputCases must be a whole number greater than zero" };
   }
 
-  // Blank means nothing was packed for later.
-  const fpCases = body.fpCases == null || body.fpCases === "" ? null : asCases(body.fpCases);
-  if (body.fpCases != null && body.fpCases !== "" && fpCases === null) {
-    return { error: "Cases packed for further processing must be a whole number greater than zero" };
-  }
-  const fpItem = fpCases ? (normaliseItem(body.fpItem) || null) : null;
-  if (fpItem && fpItem.length > MAX_FP_ITEM) {
-    return { error: `The further-processing item must be at most ${MAX_FP_ITEM} characters` };
-  }
+  // A flag only: how much went to the freezer is counted at the dock.
+  const furtherProcessing = body.furtherProcessing === true;
 
   const workers = (Array.isArray(body.workers) ? body.workers : [])
     .map((w) => String(w || "").trim()).filter(Boolean);
@@ -258,8 +248,7 @@ const validateBody = (body, { staging = false } = {}) => {
     cleanPulls,
     workers,
     outputCases,
-    fpCases,
-    fpItem,
+    furtherProcessing,
     head: {
       processingDate: body.processingDate || null,
       startTime: asTime(body.startTime),
@@ -341,8 +330,8 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
          (tenant_id, lot_id, processing_date, processing_type, line_no, customer,
           description, brand, grade, est_number, pack_date, input_cases,
           output_cases, output_weight, inedible_weight, notes, submitted_by,
-          start_time, end_time, status, pack_dates, fp_cases, fp_item)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::date[],$22,$23)
+          start_time, end_time, status, pack_dates, further_processing)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::date[],$22)
        RETURNING report_id`,
       [req.tenantId, lotId, h.processingDate, h.processingType, h.lineNo, h.customer,
        h.description, h.brand, h.grade, h.estNumber, h.packDate, inputCases,
@@ -351,7 +340,7 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
        // A run opened at the start is not a claim about what came off it.
        // Reception only ever sees it once it has been confirmed.
        body.inProgress === true ? "in_progress" : "submitted",
-       h.packDates, v.fpCases, v.fpItem]
+       h.packDates, v.furtherProcessing]
     );
     const reportId = inserted.rows[0].report_id;
     await writeChildren(client, reportId, v.cleanPulls, v.workers);
@@ -418,7 +407,7 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
               inedible_weight = $13, notes = $14,
               start_time = $17, end_time = $18,
               status = $19, pack_dates = $20::date[], reject_reason = NULL,
-              lot_id = COALESCE($21, lot_id), fp_cases = $22, fp_item = $23,
+              lot_id = COALESCE($21, lot_id), further_processing = $22,
               -- An edited report is new information, so it goes back on the map.
               map_silenced_at = NULL, map_silenced_by = NULL
         WHERE report_id = $15 AND tenant_id = $16`,
@@ -430,7 +419,7 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
        // queue. Anything else is a confirmation, which is what hands it over —
        // and that stays the default, so every existing caller is unchanged.
        req.body?.inProgress === true ? "in_progress" : "submitted",
-       h.packDates, lotId, v.fpCases, v.fpItem]
+       h.packDates, lotId, v.furtherProcessing]
     );
     await writeChildren(client, id, v.cleanPulls, v.workers);
 
