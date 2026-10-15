@@ -60,12 +60,8 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
       <h1>Noblesse Trading</h1>
       <table class="head">
         <tr>
-          <td class="lbl">Bill of Lading</td><td class="line"></td><td class="gap"></td>
+          <td class="pageno">${pages.length > 1 ? `Page ${n} of ${pages.length}` : ""}</td>
           <td class="lbl">Date</td><td class="val">${esc(shortDate(day))}</td>
-        </tr>
-        <tr>
-          <td class="pageno" colspan="2">${pages.length > 1 ? `Page ${n} of ${pages.length}` : ""}</td><td class="gap"></td>
-          <td class="lbl">Pick Up</td><td class="line"></td>
         </tr>
       </table>
       <table class="sheet">
@@ -86,10 +82,8 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           h1 { text-align: center; font-size: 36px; font-style: italic; font-weight: 800; margin: 0 0 14px; }
           table.head { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 16px; }
           table.head td { padding: 4pt; vertical-align: bottom; }
-          td.lbl { width: 90px; white-space: nowrap; }
-          td.line { border-bottom: 1px solid #000; }
-          td.val { border-bottom: 1px solid #000; font-size: 19px; font-weight: 700; }
-          td.gap { width: 24px; }
+          td.lbl { width: 50px; white-space: nowrap; text-align: right; }
+          td.val { width: 150px; border-bottom: 1px solid #000; font-size: 19px; font-weight: 700; }
           table.sheet { width: 100%; border-collapse: collapse; border: 1.5px solid #000; }
           table.sheet th { font-size: 16px; border: 1.5px solid #000; padding: 4pt; }
           table.sheet td { border-left: 1.5px solid #000; border-right: 1.5px solid #000;
