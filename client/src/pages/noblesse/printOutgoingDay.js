@@ -5,7 +5,7 @@ import { esc, printDocument } from "./printWindow";
 // lines underneath for anything not recorded in the system.
 
 // Rows on every page, so the blank lines run to the foot of the sheet.
-const MIN_ROWS = 21;
+const MIN_ROWS = 18;
 
 // "2026-10-14" -> "10/14/26".
 const shortDate = (day) => {
@@ -60,10 +60,12 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           <td class="lbl">Date</td><td class="val">${esc(shortDate(day))}</td>
         </tr>
       </table>
-      <table class="sheet">
-        <thead><tr><th>Box / Pcs.</th><th>Item</th></tr></thead>
-        <tbody>${entries.map(entryRows).join("")}${blankRows(MIN_ROWS - entries.length * 2)}</tbody>
-      </table>
+      <div class="fill">
+        <table class="sheet">
+          <thead><tr><th>Box / Pcs.</th><th>Item</th></tr></thead>
+          <tbody>${entries.map(entryRows).join("")}${blankRows(MIN_ROWS - entries.length * 2)}</tbody>
+        </table>
+      </div>
     </section>`;
 
   const html = `<!doctype html>
@@ -72,7 +74,8 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
         <meta charset="utf-8" />
         <title>Outgoing ${esc(shortDate(day))}</title>
         <style>
-          @page { size: letter portrait; margin: 20mm; }
+          /* Margins live on each page, so the browser's margin setting cannot clip the table. */
+          @page { size: letter portrait; margin: 0; }
           * { box-sizing: border-box; }
           body { font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; margin: 0; }
           h1 { text-align: center; font-size: 36px; font-style: italic; font-weight: 800; margin: 0 0 14px; }
@@ -89,7 +92,11 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           .who { font-weight: 700; }
           .cs { display: inline-block; min-width: 140px; }
           .lot { font-weight: 700; padding-left: 120px; }
-          section.page { break-after: page; page-break-after: always; }
+          /* One letter sheet each; the table stretches its lines to the bottom margin. */
+          section.page { height: 278mm; padding: 15mm 18mm; display: flex; flex-direction: column;
+            overflow: hidden; break-after: page; page-break-after: always; }
+          .fill { flex: 1; min-height: 0; }
+          .fill table.sheet { height: 100%; }
           section.page:last-of-type { break-after: auto; page-break-after: auto; }
           td.pageno { font-size: 13px; color: #444; }
           .no-print { text-align: center; margin: 14px 0; }
