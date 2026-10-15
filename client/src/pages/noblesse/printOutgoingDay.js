@@ -5,7 +5,7 @@ import { esc, printDocument } from "./printWindow";
 // lines underneath for anything not recorded in the system.
 
 // Rows on the first page, so the blank lines run to the foot of the sheet.
-const MIN_ROWS = 30;
+const MIN_ROWS = 20;
 
 // "2026-10-14" -> "10/14/26".
 const shortDate = (day) => {
@@ -53,7 +53,7 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
         <meta charset="utf-8" />
         <title>Outgoing ${esc(shortDate(day))}</title>
         <style>
-          @page { size: letter portrait; margin: 12mm 14mm; }
+          @page { size: letter portrait; margin: 20mm; }
           * { box-sizing: border-box; }
           body { font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; margin: 0; }
           h1 { text-align: center; font-size: 30px; font-style: italic; font-weight: 800; margin: 0 0 14px; }
@@ -66,15 +66,12 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           table.sheet { width: 100%; border-collapse: collapse; border: 1.5px solid #000; }
           table.sheet th { font-size: 13px; border: 1.5px solid #000; padding: 4pt; }
           table.sheet td { border-left: 1.5px solid #000; border-right: 1.5px solid #000;
-            border-bottom: 1px solid #000; height: 27px; padding: 4pt; font-size: 14px; }
+            border-bottom: 1px solid #000; height: 36px; padding: 8pt 4pt; font-size: 14px; }
           td.qty { width: 72px; white-space: nowrap; font-weight: 700; }
           tr.second td { border-bottom: 1.5px solid #000; }
           .who { font-weight: 700; }
           .cs { display: inline-block; min-width: 120px; }
           .lot { font-weight: 700; padding-left: 140px; }
-          table.sign { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 13px; font-weight: 700; }
-          table.sign td { padding: 18px 4pt 4pt; }
-          table.sign td.line { border-bottom: 1px solid #000; width: 35%; }
           .no-print { text-align: center; margin: 14px 0; }
           @media print { .no-print { display: none; } }
         </style>
@@ -95,14 +92,6 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
         <table class="sheet">
           <thead><tr><th>Box / Pcs.</th><th>Item</th></tr></thead>
           <tbody>${entryRows}${blankRows}</tbody>
-        </table>
-
-        <table class="sign">
-          <tr>
-            <td style="width:110px">ASSEMBLED BY</td><td class="line"></td>
-            <td style="width:30px"></td>
-            <td style="width:100px">CHECKED BY</td><td class="line"></td>
-          </tr>
         </table>
 
         <div class="no-print">
