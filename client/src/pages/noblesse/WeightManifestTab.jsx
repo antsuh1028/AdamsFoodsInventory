@@ -13,7 +13,7 @@ import FlagSession from "./FlagSession";
 import ScanSheet from "../../components/navbar/ScanSheet";
 import BoxScanner from "../../components/navbar/boxScanner";
 import printWeightManifest from "./printWeightManifest";
-import ImportTally from "./ImportTally";
+import FpReturnWindow from "./FpReturnWindow";
 import FloatingWindow from "../../components/FloatingWindow";
 import { fmtDate, fmtDateTime, today, weighedDay } from "./shared";
 import getRole from "../../utils/getRole";
@@ -658,7 +658,9 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
   // When the scanner is opened by reopening a manifest, it carries the session
   // to pick up — so nobody has to go and find it in a list.
   const [scannerAdopt, setScannerAdopt] = useState(null);
-  const [importOpen, setImportOpen] = useState(false);
+  const [returnsOpen, setReturnsOpen] = useState(false);
+  // Who counts freezer returns at the incoming dock; the server's RETURN_ROLES is the control.
+  const canReturnFp = ["admin", "reception", "ntimanager", "noblesse"].includes(getRole());
   const toast = useToast();
 
   // ARRIVALS ONLY. A weight manifest is the tally for product that came IN.
@@ -1217,9 +1219,11 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
               Pick one more to combine
             </Text>
           )}
-          <Button size="xs" variant="outline" colorScheme="teal" onClick={() => setImportOpen(true)}>
-            Import tally sheet
-          </Button>
+          {canReturnFp && (
+            <Button size="xs" variant="outline" colorScheme="teal" onClick={() => setReturnsOpen(true)}>
+              Back from freezer
+            </Button>
+          )}
           <Button size="xs" colorScheme="teal" onClick={() => setScannerOpen(true)}>
             + New Box Weighing Session
           </Button>
@@ -1872,7 +1876,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       </FloatingWindow>
 
       <BoxScanner isOpen={scannerOpen} onClose={onScannerClose} adoptBatchId={scannerAdopt} />
-      <ImportTally isOpen={importOpen} onClose={() => setImportOpen(false)} onImported={fetchBatches} />
+      <FpReturnWindow isOpen={returnsOpen} onClose={() => setReturnsOpen(false)} />
     </Box>
   );
 };

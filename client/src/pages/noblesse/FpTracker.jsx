@@ -10,13 +10,13 @@ import getRole, { canAcceptReports } from "../../utils/getRole";
 import { fmtDate, today, fmtWeight } from "./shared";
 import useLang from "../../hooks/useLang";
 import LangToggle from "../../components/LangToggle";
+import FpReturnForm from "./FpReturnForm";
 
 // The F.P Tracker: trips to the AF freezer that come back for another run.
 // A trip is a pallet weighed out at the dock, or a row entered by hand for one
 // that was not weighed. Plus where each FP lot stands, and the returns counted.
 
 const EMPTY = () => ({ lotId: null, lotNumber: "", item: "", cases: "", rawWeight: "", sentOn: today() });
-const EMPTY_RETURN = () => ({ lotId: "", cases: "", returnedOn: today(), notes: "" });
 
 // Who counts returns at the incoming dock. The server's RETURN_ROLES is the control.
 const RETURN_ROLES = new Set(["admin", "reception", "ntimanager", "noblesse"]);
@@ -62,7 +62,6 @@ const FpTracker = ({ isOpen, onClose }) => {
   const [status, setStatus] = useState("all");
   const [q, setQ] = useState("");
   const [draft, setDraft] = useState(EMPTY);
-  const [ret, setRet] = useState(EMPTY_RETURN);
   const [busy, setBusy] = useState(null);
   const [editing, setEditing] = useState(null);   // { fpId, item, cases, rawWeight, sentOn }
   const [confirming, setConfirming] = useState(null);
@@ -95,8 +94,6 @@ const FpTracker = ({ isOpen, onClose }) => {
 
   // Items typed before, so the same product is spelled the same way.
   const items = useMemo(() => [...new Set(rows.map((r) => r.item))].sort(), [rows]);
-  // Only lots with something still in the freezer can have a return counted.
-  const out = useMemo(() => fpLots.filter((l) => l.inFreezer > 0), [fpLots]);
 
   const act = async (key, run, done) => {
     setBusy(key);
@@ -133,14 +130,6 @@ const FpTracker = ({ isOpen, onClose }) => {
     }
   };
 
-  const recordReturn = () => act("return", async () => {
-    const { data } = await axiosInstance.post("/fp-returns", {
-      lotId: Number(ret.lotId), cases: ret.cases, returnedOn: ret.returnedOn, notes: ret.notes,
-    });
-    toast({ title: t("{n} cases back on {lot}", { n: ret.cases, lot: data.fpLotNumber }), status: "success", duration: 5000,
-      position: "top", description: t("{inFreezer} still in the freezer, {ready} ready to run.", { inFreezer: data.inFreezer, ready: data.ready }) });
-  }, () => setRet(EMPTY_RETURN()));
-
   const voidReturn = (x) => act(`r${x.returnId}`, () => axiosInstance.post(`/fp-returns/${x.returnId}/void`));
 
   const saveEdit = () => act(editing.fpId, () => axiosInstance.patch(`/fp-tracker/${editing.fpId}`, {
@@ -151,9 +140,7 @@ const FpTracker = ({ isOpen, onClose }) => {
   const voidRow = (r) => act(r.fpId, () => axiosInstance.post(`/fp-tracker/${r.fpId}/void`));
 
   const ready = draft.lotId && draft.item.trim() && Number(draft.cases) > 0;
-  const retReady = ret.lotId && Number(ret.cases) > 0;
   const cellInput = { size: "xs", bg: "white" };
-  const picked = out.find((l) => String(l.parentLotId) === String(ret.lotId));
 
   return (
     <FloatingWindow isOpen={isOpen} onClose={onClose} title={t("F.P Tracker")} width={1150}
@@ -211,51 +198,7 @@ const FpTracker = ({ isOpen, onClose }) => {
         </Flex>
       )}
 
-      {/* Counted at the incoming dock, not weighed. A partial return is just one of several. */}
-      {canReturn && (
-        <Flex gap={2} wrap="wrap" align="flex-end" mb={4} p={3} bg="teal.50" borderRadius="md"
-          border="1px solid" borderColor="teal.200">
-          <Text fontSize="xs" fontWeight="700" color="teal.800" textTransform="uppercase" w="100%">
-            {t("Back from the freezer")}
-          </Text>
-          <Box>
-            <Text fontSize="xs" color="gray.500" mb={1}>{t("Date back")}</Text>
-            <Input {...cellInput} size="sm" type="date" max={today()} width="150px"
-              value={ret.returnedOn} onChange={(e) => setRet({ ...ret, returnedOn: e.target.value })} />
-          </Box>
-          <Box minW="260px">
-            <Text fontSize="xs" color="gray.500" mb={1}>{t("Lot")}</Text>
-            <Select size="sm" bg="white" placeholder={out.length ? t("Pick the lot") : t("Nothing is in the freezer")}
-              isDisabled={!out.length}
-              value={ret.lotId} onChange={(e) => setRet({ ...ret, lotId: e.target.value })}>
-              {out.map((l) => (
-                <option key={l.lotId} value={l.parentLotId}>
-                  {t("{lot} ({fp}): {n} in the freezer", { lot: l.parentLotNumber, fp: l.lotNumber, n: l.inFreezer })}
-                </option>
-              ))}
-            </Select>
-          </Box>
-          <Box>
-            <Text fontSize="xs" color="gray.500" mb={1}>{t("Cases back")}</Text>
-            <Input {...cellInput} size="sm" width="90px" inputMode="numeric"
-              value={ret.cases} onChange={(e) => setRet({ ...ret, cases: e.target.value.replace(/\D/g, "") })} />
-          </Box>
-          <Box flex="1 1 200px">
-            <Text fontSize="xs" color="gray.500" mb={1}>{t("Note")}</Text>
-            <Input {...cellInput} size="sm" placeholder={t("optional")} value={ret.notes}
-              onChange={(e) => setRet({ ...ret, notes: e.target.value })} />
-          </Box>
-          <Button size="sm" colorScheme="teal" onClick={recordReturn} isLoading={busy === "return"}
-            isDisabled={!retReady || (picked && Number(ret.cases) > picked.inFreezer)}>
-            {t("Record")}
-          </Button>
-          {picked && Number(ret.cases) > picked.inFreezer && (
-            <Text fontSize="xs" color="red.600" w="100%">
-              {t("Only {n} cases of {lot} are still in the freezer.", { n: picked.inFreezer, lot: picked.parentLotNumber })}
-            </Text>
-          )}
-        </Flex>
-      )}
+      {canReturn && <Box mb={4}><FpReturnForm fpLots={fpLots} onRecorded={load} /></Box>}
 
       <Flex gap={2} mb={2} wrap="wrap">
         <Select size="sm" width="190px" bg="white" value={status} onChange={(e) => setStatus(e.target.value)}>
