@@ -43,7 +43,7 @@ const STATIONS = [
 // A run still on the line outranks one waiting on reception: the station is
 // physically busy, which is what somebody looking at the map is asking.
 const stateOf = (runs) => {
-  // A run the 2:00 PM cutoff stopped is not running; it is waiting on its cases.
+  // A run the 2:30 PM cutoff stopped is not running; it is waiting on its cases.
   if (runs.some((r) => r.status === "in_progress" && !r.autoFinishedAt)) return "running";
   if (runs.some((r) => r.status === "submitted")) return "waiting";
   return "idle";

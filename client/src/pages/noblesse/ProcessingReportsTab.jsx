@@ -571,16 +571,16 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 {STATUS_LABEL[r.status] || r.status}
               </Badge>
               {r.lineNo && <Badge colorScheme="gray" fontSize="9px">Line {r.lineNo}</Badge>}
-              {/* Nobody stopped it, so the 2:00 PM cutoff did. */}
+              {/* Nobody stopped it, so the 2:30 PM cutoff did. */}
               {r.autoFinishedAt && r.status === "in_progress" && (
                 <Badge colorScheme="red" fontSize="9px"
-                  title="Still on the line at 2:00 PM with no cases entered. Enter the cases and confirm the run.">
-                  stopped at 2:00, needs cases
+                  title="Still on the line at 2:30 PM with no cases entered. Enter the cases and confirm the run.">
+                  stopped at 2:30, needs cases
                 </Badge>
               )}
               {r.autoFinishedAt && r.status !== "in_progress" && (
                 <Badge colorScheme="gray" variant="outline" fontSize="9px"
-                  title="Nobody stopped this run, so it was finished at the 2:00 PM cutoff and sent to reception.">
+                  title="Nobody stopped this run, so it was finished at the 2:30 PM cutoff and sent to reception.">
                   auto-finished
                 </Badge>
               )}

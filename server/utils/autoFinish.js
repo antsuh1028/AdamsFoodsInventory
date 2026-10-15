@@ -2,12 +2,12 @@
 
 const { pacificToday, PACIFIC_TZ } = require("./lot");
 
-// Runs left on the line past the 2:00 PM cutoff are finished for the manager.
+// Runs left on the line past the 2:30 PM cutoff are finished for the manager.
 // One with cases goes to reception like Confirm run; one with none cannot be
 // sent, so it keeps its place on the line with the finish stamped and a flag.
 // Each run is finished once: auto_finished_at stops it being touched again.
 
-const CUTOFF = "14:00";
+const CUTOFF = "14:30";
 const EVERY_MS = 5 * 60 * 1000;
 
 const CLOCK = new Intl.DateTimeFormat("en-US", {
@@ -22,7 +22,7 @@ const pacificClock = (now = new Date()) => {
 };
 
 // Due: from an earlier day, or today once past the cutoff for a run that began before it.
-// A run that started after 2:00 is left alone that day. $1 today, $2 the clock now, $3 cutoff.
+// A run that started after 2:30 is left alone that day. $1 today, $2 the clock now, $3 cutoff.
 const DUE = `
   status = 'in_progress' AND auto_finished_at IS NULL
   AND (
