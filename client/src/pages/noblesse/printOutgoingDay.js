@@ -1,4 +1,15 @@
 import { esc, printDocument } from "./printWindow";
+import { toDisplay } from "../../utils/weight";
+
+// A session's pounds in thousandths, so totals add exactly.
+const lbMils = (s) =>
+  Math.round(Number((s.totals || []).find((t) => t.unit === "LB")?.total || 0) * 1000);
+
+// Thousandths as a display weight with thousands commas: 2610500 -> "2,610.50".
+const fmtLb = (mils) => {
+  const [whole, frac] = toDisplay(`${Math.floor(mils / 1000)}.${String(mils % 1000).padStart(3, "0")}`).split(".");
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${frac}`;
+};
 
 // The day's outgoing sheet, laid out like the paper pad the dock writes by hand:
 // pallets and item (customer) on one line, cases and lot on the next, and blank
@@ -25,11 +36,12 @@ const linesFor = (sessions) => {
     const who = s.further_processing ? "F.P." : (s.ship_to || "");
     const key = [who, s.lot_number || "", s.item_description || ""].join("|");
     if (!byKey.has(key)) {
-      byKey.set(key, { who, lot: s.lot_number || "", item: s.item_description || "", pallets: 0, cases: 0 });
+      byKey.set(key, { who, lot: s.lot_number || "", item: s.item_description || "", pallets: 0, cases: 0, mils: 0 });
     }
     const line = byKey.get(key);
     line.pallets += 1;
     line.cases += Number(s.box_count) || 0;
+    line.mils += lbMils(s);
   }
   return [...byKey.values()];
 };
@@ -41,13 +53,14 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
     <tr>
       <td class="qty">${l.pallets} PLT</td>
       <td class="item">${esc(l.item)}${l.who ? ` <span class="who">(${esc(l.who)})</span>` : ""}</td>
+      <td class="wt" rowspan="2">${l.mils ? `${fmtLb(l.mils)} lb` : ""}</td>
     </tr>
     <tr class="second">
       <td class="qty"></td>
       <td class="item"><span class="cs">${l.cases} c/s</span><span class="lot">${l.lot ? `#${esc(l.lot)}` : ""}</span></td>
     </tr>`;
   const blankRows = (n) => Array.from({ length: n },
-    () => `<tr><td class="qty"></td><td class="item"></td></tr>`).join("");
+    () => `<tr><td class="qty"></td><td class="item"></td><td class="wt"></td></tr>`).join("");
 
   // Whole pages: an entry's two lines never split. The last page keeps KEEP_BLANK lines,
   // on shorter rows if that keeps it to one sheet, else the rest carries to a new page.
@@ -70,7 +83,7 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
       </div>
       <div class="fill">
         <table class="sheet">
-          <thead><tr><th>Box / Pcs.</th><th>Item</th></tr></thead>
+          <thead><tr><th>Box / Pcs.</th><th>Item</th><th>Total Weight</th></tr></thead>
           <tbody>${entries.map(entryRows).join("")}${blankRows(rows - entries.length * 2)}</tbody>
         </table>
       </div>
@@ -96,12 +109,16 @@ const printOutgoingDay = ({ day, sessions = [] }) => {
           table.sheet td { border-left: 1px dotted #000; border-right: 1px dotted #000;
             border-bottom: 1px dotted #000; height: 36px; padding: 6pt 4pt; font-size: 16px; }
           td.qty { width: 84px; white-space: nowrap; }
+          td.wt { width: 120px; white-space: nowrap; text-align: right; vertical-align: middle;
+            font-variant-numeric: tabular-nums; border-bottom: 1px dotted #000; }
           tr.second td { border-bottom: 1px dotted #000; }
           /* The outer frame is one hairline; the inside lines stay dotted and stop at it. */
           table.sheet tr > :first-child { border-left: none; }
           table.sheet tr > :last-child { border-right: none; }
           table.sheet thead th { border-top: none; }
           table.sheet tbody tr:last-child td { border-bottom: none; }
+          /* The weight cell spans both lines, so the second line's item cell keeps its divider. */
+          table.sheet tr.second > td.item { border-right: 1px dotted #000; }
           .compact table.sheet td { height: 28px; padding: 3pt 4pt; }
           .cs { display: inline-block; min-width: 140px; }
           .lot { padding-left: 120px; }
