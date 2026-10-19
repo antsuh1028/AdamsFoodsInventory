@@ -1,11 +1,14 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const { generalLimiter } = require("./middleware/rateLimits");
 const { migrate } = require("./db/migrate");
 const { TRUST_PROXY } = require("./utils/proxy");
 
 const app = express();
+// Standard security headers. The client is on another subdomain, so responses stay loadable cross-origin.
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 // Rate limits key on req.ip; without this every user is Apache's address.
 app.set("trust proxy", TRUST_PROXY);
 
