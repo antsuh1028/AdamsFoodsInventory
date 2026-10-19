@@ -255,9 +255,7 @@ const LotPicker = ({
               an outside number has neither, so mixing them means sorting a
               thing by a key it does not have — and the operator loses the top
               of the list, which is where today's lot lives. */}
-          {ours.map((l) => (
-            <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
-          ))}
+          {/* FP lots first: only a few, and the ones a run is usually picking. */}
           {further.length > 0 && (
             <optgroup label="Further processing (back from the freezer)">
               {further.map((l) => (
@@ -265,6 +263,15 @@ const LotPicker = ({
               ))}
             </optgroup>
           )}
+          {further.length > 0 ? (
+            <optgroup label="Our lots">
+              {ours.map((l) => (
+                <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
+              ))}
+            </optgroup>
+          ) : ours.map((l) => (
+            <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
+          ))}
           {outside.length > 0 && (
             <optgroup label="EHWA (not our lot numbers)">
               {outside.map((l) => (
