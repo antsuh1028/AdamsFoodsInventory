@@ -8,8 +8,8 @@
 // So this is an ALLOW-list, checked in one place and failing closed. Hiding the
 // other tabs in the client is presentation; this is the control (CLAUDE.md §8).
 //
-// A role absent from SCOPES is unscoped here and keeps whatever requireRole
-// gates it already passes — this narrows, it never widens.
+// Adams Foods and Noblesse share one tenant, so roles are what keep each
+// facility to its own routes. requireRole still gates single routes within a side.
 
 // [pattern, methods] — methods null means every method.
 const OUTGOING = [
@@ -27,9 +27,51 @@ const OUTGOING = [
   [/^\/customers$/, ["GET"]],
 ];
 
-const SCOPES = { outgoing: OUTGOING };
+// Adams Foods: the inventory app.
+const ADAMS = [
+  [/^\/inventory/, null],
+  [/^\/verifyLocation$/, null],
+  [/^\/(add|get)History(\/|$)/, null],
+  [/^\/production-orders(\/|$)/, null],
+  [/^\/extract-(form|order)$/, null],
+  [/^\/scanner-resolve(\/|$)/, null],
+  [/^\/(upload|get|delete)-pdf(\/|$)/, null],
+  [/^\/list-(pdfs|scans)$/, null],
+  [/^\/(get-scan-image|scan-url)(\/|$)/, null],
+];
+
+// Noblesse Trading: processing, weighing and outgoing.
+const NOBLESSE = [
+  [/^\/lots(\/|$)/, null],
+  [/^\/shipments(\/|$)/, null],
+  [/^\/noblesse-/, null],
+  [/^\/nti-/, null],
+  [/^\/box-batches(\/|$)/, null],
+  [/^\/box-removals(\/|$)/, null],
+  [/^\/form-manifests(\/|$)/, null],
+  [/^\/manifest-groups(\/|$)/, null],
+  [/^\/vendors(\/|$)/, null],
+  [/^\/processing-reports(\/|$)/, null],
+  [/^\/item-descriptions(\/|$)/, null],
+  [/^\/customers(\/|$)/, null],
+  [/^\/fp-(lots|returns|tracker)(\/|$)/, null],
+];
+
+// Every role is listed; null is unrestricted. A role not listed reaches nothing.
+const SCOPES = {
+  admin: null,
+  user: ADAMS,
+  manager: ADAMS,
+  noblesse: NOBLESSE,
+  ntimanager: NOBLESSE,
+  reception: NOBLESSE,
+  outgoing: OUTGOING,
+};
 
 const roleScope = (req, res, next) => {
+  if (!Object.prototype.hasOwnProperty.call(SCOPES, req.role)) {
+    return res.status(403).json({ error: "Access denied." });
+  }
   const allowed = SCOPES[req.role];
   if (!allowed) return next();
 
