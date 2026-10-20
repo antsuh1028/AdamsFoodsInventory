@@ -400,15 +400,22 @@ const lotFigures = async (tenantId, lotId, client = pool) => {
     `SELECT
        COALESCE((SELECT SUM(${stockWeightInLb()}) FROM nti_inventory
                   WHERE lot_id = $1 AND tenant_id = $2 AND stage = 'raw'), 0)::text        AS raw_on_hand,
+       -- Stock is kept in cases; its weight column stays at what was registered.
+       COALESCE((SELECT SUM(qty_cases) FROM nti_inventory
+                  WHERE lot_id = $1 AND tenant_id = $2 AND stage = 'raw'), 0)::int         AS raw_cases,
        COALESCE((SELECT SUM(${stockWeightInLb()}) FROM nti_inventory
                   WHERE lot_id = $1 AND tenant_id = $2 AND stage = 'processed'), 0)::text  AS processed_on_hand,
        COALESCE((SELECT SUM(qty_cases) FROM nti_inventory
                   WHERE lot_id = $1 AND tenant_id = $2 AND stage = 'processed'), 0)::int   AS processed_cases,
-       -- Committed to a processing order that has not finished. The weight is
-       -- already out of stock, so it is neither on hand nor processed yet.
-       COALESCE((SELECT SUM(i.weight_in) FROM noblesse_processing_order_items i
-                   JOIN noblesse_processing_orders o ON o.id = i.processing_order_id
-                  WHERE i.lot_id = $1 AND o.tenant_id = $2 AND o.status <> 'completed'), 0)::text AS in_processing,
+       -- Cases on processing runs, for the lot and its FP lot: still open, and accepted.
+       COALESCE((SELECT SUM(r.input_cases) FROM noblesse_processing_reports r
+                  WHERE r.tenant_id = $2 AND r.status IN ('in_progress', 'submitted')
+                    AND r.lot_id IN (SELECT $1 UNION SELECT c.lot_id FROM lots c
+                                      WHERE c.parent_lot_id = $1 AND c.kind = 'further')), 0)::int AS run_open_cases,
+       COALESCE((SELECT SUM(r.input_cases) FROM noblesse_processing_reports r
+                  WHERE r.tenant_id = $2 AND r.status = 'accepted'
+                    AND r.lot_id IN (SELECT $1 UNION SELECT c.lot_id FROM lots c
+                                      WHERE c.parent_lot_id = $1 AND c.kind = 'further')), 0)::int AS run_done_cases,
        -- What the boxes actually weighed, split by direction. Summed together
        -- these added an arrival to a departure and reported the total as the
        -- lot's weight, which made every figure below it wrong.
@@ -421,12 +428,6 @@ const lotFigures = async (tenantId, lotId, client = pool) => {
        ${estimatedSql("outgoing")} AS estimated_out,
        -- Only used when nothing was weighed in, and the basis says so.
        ${formWeightSql} AS form_weight,
-       COALESCE((SELECT COUNT(*) FROM noblesse_processing_orders o
-                   JOIN noblesse_processing_order_items i ON i.processing_order_id = o.id
-                  WHERE i.lot_id = $1 AND o.tenant_id = $2 AND o.status <> 'completed'), 0)::int AS open_orders,
-       COALESCE((SELECT COUNT(*) FROM noblesse_processing_orders o
-                   JOIN noblesse_processing_order_items i ON i.processing_order_id = o.id
-                  WHERE i.lot_id = $1 AND o.tenant_id = $2 AND o.status = 'completed'), 0)::int AS done_orders,
        -- A draft load still holding this lot means that product has not left,
        -- so the lot cannot be finished and no close is suggested.
        COALESCE((SELECT COUNT(*) FROM noblesse_shipment_items si
@@ -472,8 +473,8 @@ const closeSuggestion = (lot, f, y) => {
 
 const lotStatus = (f) => {
   if (Number(f.processed_on_hand) > 0) return "processed";
-  if (Number(f.open_orders) > 0) return "processing";
-  if (Number(f.done_orders) > 0) return "processed";
+  if (Number(f.run_open_cases) > 0) return "processing";
+  if (Number(f.run_done_cases) > 0) return "processed";
   return "received";
 };
 
@@ -483,7 +484,8 @@ router.get("/lots/:id", verifyToken, async (req, res) => {
 
   try {
     const lot = await pool.query(
-      `SELECT * FROM lots WHERE lot_id = $1 AND tenant_id = $2`, [lotId, req.tenantId]);
+      `SELECT l.*, ${lotDescriptionSql("l")} AS description
+         FROM lots l WHERE l.lot_id = $1 AND l.tenant_id = $2`, [lotId, req.tenantId]);
     if (!lot.rows.length) return res.status(404).json({ error: "Lot not found" });
 
     const f = await lotFigures(req.tenantId, lotId);
@@ -506,14 +508,16 @@ router.get("/lots/:id", verifyToken, async (req, res) => {
     }
     res.json({
       lot: fmtLot(row),
+      description: row.description || null,
       further,
       status: lotStatus(f),
       closeSuggestion: closeSuggestion(lot.rows[0], f, yieldFrom(f)),
       figures: {
         rawOnHand: f.raw_on_hand,
         processedOnHand: f.processed_on_hand,
-        processedCases: f.processed_cases,
-        inProcessing: f.in_processing,
+        rawCases: f.raw_cases,
+        inProcessingCases: f.run_open_cases,
+        processedCases: f.run_done_cases,
         weighedIn: f.weighed_in,
         boxesIn: f.boxes_in,
         weighedOut: f.weighed_out,
@@ -671,7 +675,8 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
 
       UNION ALL
       -- Weighing sessions, on the day they were weighed.
-      SELECT ${weighedAtSql("b")}, 'weighed',
+      -- A freezer trip is its own kind, so it never reads as weight out.
+      SELECT ${weighedAtSql("b")}, CASE WHEN b.further_processing THEN 'fp_sent' ELSE 'weighed' END,
              (CASE WHEN b.further_processing THEN 'Weighed to the AF freezer'
                    WHEN b.direction = 'outgoing' THEN 'Weighed out' ELSE 'Weighed in' END
               || CASE WHEN b.source = 'imported' THEN ' (tally sheet imported)' ELSE '' END),
@@ -679,7 +684,12 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
                         WHERE bi.batch_id = b.batch_id AND bi.voided_at IS NULL), 0)::text,
              (SELECT COUNT(*)::int FROM batch_items bi
                WHERE bi.batch_id = b.batch_id AND bi.voided_at IS NULL),
-             b.vendor, b.batch_id, b.direction
+             -- Outgoing: what was weighed out and who it went to.
+             CASE WHEN b.direction = 'outgoing'
+                  THEN NULLIF(CONCAT_WS(' · ', NULLIF(TRIM(b.item_description), ''),
+                                        'to ' || NULLIF(TRIM(b.ship_to), '')), '')
+                  ELSE b.vendor END,
+             b.batch_id, b.direction
         FROM box_batches b
        WHERE b.lot_id = $1 AND b.tenant_id = $2
 

@@ -243,6 +243,9 @@ const LotTimeline = ({
             {data.lot.status === "closed" && (
               <Badge colorScheme="gray">{t("Closed", { _as: "lot" })}</Badge>
             )}
+            {data.description && (
+              <Text fontSize="sm" fontWeight="600" color="gray.700">{data.description}</Text>
+            )}
             <Text fontSize="sm" color="gray.500">{data.lot.lotDate}</Text>
             {data.lot.notes && <Text fontSize="sm" color="gray.500">· {data.lot.notes}</Text>}
           </Flex>
@@ -258,12 +261,10 @@ const LotTimeline = ({
             <Figure label={t("Weighed out")} value={lb(f.weighedOut)} strong />
             <Figure label={t("Boxes out")} value={f.boxesOut || null} unit="" />
             <Divider orientation="vertical" height="40px" />
-            <Figure label={t("Raw on hand")} value={lb(f.rawOnHand)} />
-            <Figure label={t("In processing")} value={lb(f.inProcessing)} />
-            <Figure label={t("Processed")} value={lb(f.processedOnHand)} />
-            {f.processedCases > 0 && (
-              <Figure label={t("Cases out")} value={f.processedCases} unit="" />
-            )}
+            {/* Stock and processing are counted in cases. */}
+            <Figure label={t("Raw on hand")} value={f.rawCases || null} unit="cs" />
+            <Figure label={t("In processing")} value={f.inProcessingCases || null} unit="cs" />
+            <Figure label={t("Processed")} value={f.processedCases || null} unit="cs" />
           </Flex>
 
           <Box px={3} py={3} bg="green.50" borderRadius="md" border="1px solid"
