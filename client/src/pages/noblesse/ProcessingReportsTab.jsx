@@ -84,7 +84,10 @@ const withLotDefaults = (draft, lot, row) => {
     ...draft,
     lotId: lot ? lot.lotId : null,
     lotNumber: lot ? lot.lotNumber : "",
+    lotKind: lot ? lot.kind || "internal" : "internal",
   };
+  // An FP lot is already further processing.
+  if (next.lotKind === "further") next.furtherProcessing = false;
   if (!row) return next;
 
   const fill = (key, value, transform = upper) => {
@@ -1039,7 +1042,9 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {/* A flag only; how many went to the freezer is counted when the dock weighs them out. */}
               <SheetField label="Further processing" full plain>
                 <Box px={3} py={2}>
-                  <Checkbox isChecked={Boolean(draft.furtherProcessing)} isDisabled={draft.readOnly}
+                  <Checkbox isChecked={Boolean(draft.furtherProcessing) && draft.lotKind !== "further"}
+                    isDisabled={draft.readOnly || draft.lotKind === "further"}
+                    title={draft.lotKind === "further" ? "This is an FP lot, so it is already further processing" : undefined}
                     size="lg" colorScheme="blue"
                     sx={{ "& .chakra-checkbox__control:not([data-checked])": { borderColor: "gray.500", bg: "white" } }}
                     onChange={(e) => setDraft({ ...draft, furtherProcessing: e.target.checked })}>

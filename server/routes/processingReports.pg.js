@@ -316,13 +316,15 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
     // Resolved by id, never by parsing the number — an external lot has no
     // N{YY}{JJJ}-{NN} to parse.
     const lot = await client.query(
-      `SELECT lot_id FROM lots WHERE lot_id = $1 AND tenant_id = $2`,
+      `SELECT lot_id, kind FROM lots WHERE lot_id = $1 AND tenant_id = $2`,
       [lotId, req.tenantId]
     );
     if (!lot.rows.length) {
       await client.query("ROLLBACK");
       return res.status(400).json({ code: "NO_SUCH_LOT", error: "That lot is not in the registry" });
     }
+    // An FP lot is already further processing, so it never carries the flag.
+    const furtherProcessing = v.furtherProcessing && lot.rows[0].kind !== "further";
 
     const h = v.head;
     const inserted = await client.query(
@@ -340,7 +342,7 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
        // A run opened at the start is not a claim about what came off it.
        // Reception only ever sees it once it has been confirmed.
        body.inProgress === true ? "in_progress" : "submitted",
-       h.packDates, v.furtherProcessing]
+       h.packDates, furtherProcessing]
     );
     const reportId = inserted.rows[0].report_id;
     await writeChildren(client, reportId, v.cleanPulls, v.workers);
@@ -407,7 +409,11 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
               inedible_weight = $13, notes = $14,
               start_time = $17, end_time = $18,
               status = $19, pack_dates = $20::date[], reject_reason = NULL,
-              lot_id = COALESCE($21, lot_id), further_processing = $22,
+              lot_id = COALESCE($21, lot_id),
+              -- Never on an FP lot.
+              further_processing = $22 AND NOT EXISTS (
+                SELECT 1 FROM lots fl WHERE fl.lot_id = COALESCE($21, noblesse_processing_reports.lot_id)
+                  AND fl.kind = 'further'),
               -- An edited report is new information, so it goes back on the map.
               map_silenced_at = NULL, map_silenced_by = NULL
         WHERE report_id = $15 AND tenant_id = $16`,
