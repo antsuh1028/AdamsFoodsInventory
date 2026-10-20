@@ -32,6 +32,11 @@ const asTime = (v) => {
   return TIME_RE.test(t) ? t : undefined;   // undefined = supplied but invalid
 };
 
+// One name per entry; "IVAN,ROGELIO" typed at once is two people.
+const splitNames = (list) => [...new Set((Array.isArray(list) ? list : [])
+  .flatMap((w) => String(w ?? "").split(/[,;]/))
+  .map((n) => n.trim()).filter(Boolean))];
+
 const fmtReport = (r, pulls = [], workers = []) => ({
   reportId: r.report_id,
   lotId: r.lot_id,
@@ -77,7 +82,7 @@ const fmtReport = (r, pulls = [], workers = []) => ({
   pulls: pulls.map((p) => ({
     pullId: p.pull_id, position: p.position, cases: p.cases, notes: p.notes,
   })),
-  workers: workers.map((w) => w.name),
+  workers: splitNames(workers.map((w) => w.name)),
 });
 
 const loadReport = async (reportId, tenantId, client = pool) => {
@@ -161,7 +166,7 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
     res.json(result.rows.map((r) => ({
       ...fmtReport(r),
       pulls: r.pulls || [],
-      workers: r.workers || [],
+      workers: splitNames(r.workers),
     })));
   } catch (err) {
     console.error("list processing reports:", err);
@@ -174,10 +179,11 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
 router.get("/processing-reports/workers", verifyToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT UPPER(TRIM(w.name)) AS name, COUNT(*)::int AS runs, MAX(r.report_id) AS last
+      `SELECT UPPER(TRIM(n.name)) AS name, COUNT(*)::int AS runs, MAX(r.report_id) AS last
          FROM noblesse_processing_report_workers w
+         CROSS JOIN LATERAL regexp_split_to_table(w.name, '[,;]') AS n(name)
          JOIN noblesse_processing_reports r ON r.report_id = w.report_id
-        WHERE r.tenant_id = $1 AND TRIM(w.name) <> ''
+        WHERE r.tenant_id = $1 AND TRIM(n.name) <> ''
         GROUP BY 1
         ORDER BY runs DESC, last DESC, name
         LIMIT 200`,
@@ -233,8 +239,7 @@ const validateBody = (body, { staging = false } = {}) => {
   // A flag only: how much went to the freezer is counted at the dock.
   const furtherProcessing = body.furtherProcessing === true;
 
-  const workers = (Array.isArray(body.workers) ? body.workers : [])
-    .map((w) => String(w || "").trim()).filter(Boolean);
+  const workers = splitNames(body.workers);
 
   // asTime returns undefined for a value that was supplied but is not HH:MM.
   for (const [key, label] of [["startTime", "startTime"], ["endTime", "endTime"]]) {
@@ -667,7 +672,7 @@ router.patch("/processing-reports/:id/details", verifyToken, requireRole(...REPO
   }
   const packDates = [...new Set((Array.isArray(b.packDates) ? b.packDates : [])
     .map((d) => String(d ?? "").trim()).filter(isCalendarDay))].sort();
-  const workers = (Array.isArray(b.workers) ? b.workers : []).map((w) => String(w || "").trim()).filter(Boolean);
+  const workers = splitNames(b.workers);
   const text = (v) => (v == null || String(v).trim() === "" ? null : String(v));
 
   const client = await pool.connect();

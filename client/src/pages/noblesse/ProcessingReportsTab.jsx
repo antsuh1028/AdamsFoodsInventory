@@ -302,9 +302,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const canSubmit = canStage && inputCases > 0;
 
   const addWorker = () => {
-    const name = upper(workerInput.trim());
-    if (!name) return;
-    setDraft((d) => ({ ...d, workers: [...d.workers, name] }));
+    // "IVAN, ROGELIO" typed at once adds each name.
+    const names = upper(workerInput).split(/[,;]/).map((n) => n.trim()).filter(Boolean);
+    if (!names.length) return;
+    setDraft((d) => ({ ...d, workers: [...new Set([...d.workers, ...names])] }));
     setWorkerInput("");
   };
 
