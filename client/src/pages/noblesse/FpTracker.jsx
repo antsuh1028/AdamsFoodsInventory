@@ -3,6 +3,7 @@ import {
   Box, Flex, Text, Input, Button, Select, Badge, Spinner, Table, Thead, Tbody, Tr, Th, Td,
   useToast,
 } from "@chakra-ui/react";
+import { ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import FloatingWindow from "../../components/FloatingWindow";
 import LotPicker from "../../components/LotPicker";
 import axiosInstance from "../../utils/axiosInstance";
@@ -59,7 +60,8 @@ const FpTracker = ({ isOpen, onClose }) => {
   const [fpLots, setFpLots] = useState([]);
   const [returns, setReturns] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState("all");
+  const [status, setStatus] = useState("out");
+  const [openLots, setOpenLots] = useState(() => new Set());
   const [q, setQ] = useState("");
   const [draft, setDraft] = useState(EMPTY);
   const [busy, setBusy] = useState(null);
@@ -94,6 +96,35 @@ const FpTracker = ({ isOpen, onClose }) => {
 
   // Items typed before, so the same product is spelled the same way.
   const items = useMemo(() => [...new Set(rows.map((r) => r.item))].sort(), [rows]);
+
+  // One entry per lot, newest trip first; every trip carries the same lot figures.
+  const lots = useMemo(() => {
+    const byLot = new Map();
+    for (const r of rows) {
+      if (!byLot.has(r.lotId)) {
+        byLot.set(r.lotId, { lotId: r.lotId, lotNumber: r.lotNumber, fpLotNumber: r.fpLotNumber,
+          lastSent: r.sentOn, figures: r, trips: [] });
+      }
+      byLot.get(r.lotId).trips.push(r);
+    }
+    return [...byLot.values()];
+  }, [rows]);
+
+  // Returns per lot, newest first.
+  const returnsByLot = useMemo(() => {
+    const m = new Map();
+    for (const x of returns) {
+      if (!m.has(x.lotId)) m.set(x.lotId, []);
+      m.get(x.lotId).push(x);
+    }
+    return m;
+  }, [returns]);
+
+  const toggleLot = (lotId) => setOpenLots((prev) => {
+    const next = new Set(prev);
+    if (next.has(lotId)) next.delete(lotId); else next.add(lotId);
+    return next;
+  });
 
   const act = async (key, run, done) => {
     setBusy(key);
@@ -141,6 +172,91 @@ const FpTracker = ({ isOpen, onClose }) => {
 
   const ready = draft.lotId && draft.item.trim() && Number(draft.cases) > 0;
   const cellInput = { size: "xs", bg: "white" };
+
+  // One trip inside an open lot; a hand row edits in place.
+  const tripRow = (r) => (r.kind === "hand" && editing?.fpId === r.fpId ? (
+    <Tr key={r.key} bg="blue.50">
+      <Td><Input {...cellInput} type="date" max={today()} value={editing.sentOn}
+        onChange={(e) => setEditing({ ...editing, sentOn: e.target.value })} /></Td>
+      <Td><Input {...cellInput} list="fp-items" textTransform="uppercase" value={editing.item}
+        onChange={(e) => setEditing({ ...editing, item: e.target.value })} /></Td>
+      <Td isNumeric><Input {...cellInput} width="70px" inputMode="numeric" value={editing.cases}
+        onChange={(e) => setEditing({ ...editing, cases: e.target.value.replace(/\D/g, "") })} /></Td>
+      <Td isNumeric><Input {...cellInput} width="90px" inputMode="decimal" value={editing.rawWeight}
+        onChange={(e) => setEditing({ ...editing, rawWeight: e.target.value })} /></Td>
+      <Td>
+        <Flex gap={1} justify="flex-end">
+          <Button size="xs" colorScheme="blue" onClick={saveEdit} isLoading={busy === r.fpId}>{t("Save")}</Button>
+          <Button size="xs" variant="ghost" onClick={() => setEditing(null)}>{t("Cancel")}</Button>
+        </Flex>
+      </Td>
+    </Tr>
+  ) : (
+    <Tr key={r.key}>
+      <Td whiteSpace="nowrap">{fmtDate(r.sentOn)}</Td>
+      <Td>
+        {r.item || "—"}
+        <KindBadge r={r} t={t} />
+        {r.sourceReportId && (
+          <Badge ml={2} colorScheme="gray" fontSize="9px" title={t("Written when that processing report was accepted")}>
+            {t("report {id}", { id: r.sourceReportId })}
+          </Badge>
+        )}
+      </Td>
+      <Td isNumeric {...num}>{r.cases}</Td>
+      <Td isNumeric {...num}>{r.weight ? fmtWeight(r.weight) : "—"}</Td>
+      {/* A weighed trip is corrected in its weighing session, not here. */}
+      {canEdit && r.kind === "weighed" && <Td />}
+      {canEdit && r.kind === "hand" && (
+        <Td>
+          <Flex gap={1} justify="flex-end" wrap="wrap">
+            <Button size="xs" variant="ghost" colorScheme="blue"
+              onClick={() => setEditing({ fpId: r.fpId, item: r.item, cases: String(r.cases),
+                rawWeight: r.weight ? fmtWeight(r.weight) : "", sentOn: r.sentOn })}>
+              {t("Edit")}
+            </Button>
+            {/* Asked once: a voided row cannot be brought back from here. */}
+            {confirming === r.fpId ? (
+              <>
+                <Text fontSize="xs" color="red.600" alignSelf="center">{t("Void?")}</Text>
+                <Button size="xs" colorScheme="red" isLoading={busy === r.fpId}
+                  onClick={() => { setConfirming(null); voidRow(r); }}>{t("Yes")}</Button>
+                <Button size="xs" variant="ghost" onClick={() => setConfirming(null)}>{t("No")}</Button>
+              </>
+            ) : (
+              <Button size="xs" variant="ghost" colorScheme="red"
+                onClick={() => setConfirming(r.fpId)}>{t("Void")}</Button>
+            )}
+          </Flex>
+        </Td>
+      )}
+    </Tr>
+  ));
+
+  // One count back in, so a partial return can be traced and a mistaken one voided.
+  const returnRow = (x) => (
+    <Tr key={x.returnId}>
+      <Td whiteSpace="nowrap">{fmtDate(x.returnedOn)}</Td>
+      <Td isNumeric {...num}>{x.cases}</Td>
+      <Td>{x.notes || ""}</Td>
+      <Td fontSize="xs" color="gray.500">{x.createdBy || ""}</Td>
+      {canReturn && (
+        <Td>
+          {confirming === `r${x.returnId}` ? (
+            <Flex gap={1} justify="flex-end">
+              <Text fontSize="xs" color="red.600" alignSelf="center">{t("Void?")}</Text>
+              <Button size="xs" colorScheme="red" isLoading={busy === `r${x.returnId}`}
+                onClick={() => { setConfirming(null); voidReturn(x); }}>{t("Yes")}</Button>
+              <Button size="xs" variant="ghost" onClick={() => setConfirming(null)}>{t("No")}</Button>
+            </Flex>
+          ) : (
+            <Button size="xs" variant="ghost" colorScheme="red"
+              onClick={() => setConfirming(`r${x.returnId}`)}>{t("Void")}</Button>
+          )}
+        </Td>
+      )}
+    </Tr>
+  );
 
   return (
     <FloatingWindow isOpen={isOpen} onClose={onClose} title={t("F.P Tracker")} width={1150}
@@ -211,133 +327,87 @@ const FpTracker = ({ isOpen, onClose }) => {
       </Flex>
 
       <Box overflowX="auto" border="1px solid" borderColor="gray.200" borderRadius="md" bg="white">
-        <Table size="sm" minWidth="1000px">
+        <Table size="sm" minWidth="900px">
           <Thead>
             <Tr>
-              <Th>{t("Date sent out")}</Th><Th>{t("Lot #")}</Th><Th>{t("FP lot")}</Th><Th>{t("Item description")}</Th>
-              <Th isNumeric>{t("Qty (cases)")}</Th><Th isNumeric>{t("Weight (lb)")}</Th>
+              <Th w="28px" /><Th>{t("Lot #")}</Th><Th>{t("FP lot")}</Th>
+              <Th>{t("Last sent out")}</Th><Th>{t("Last back")}</Th>
+              <Th isNumeric title={t("Sent to the freezer, for the whole lot")}>{t("Sent")}</Th>
               <Th isNumeric title={t("Counted back in at the incoming dock, for the whole lot")}>{t("Back")}</Th>
               <Th isNumeric title={t("Sent and not yet back, for the whole lot")}>{t("In freezer")}</Th>
               <Th isNumeric title={t("Back and not yet used by an accepted run")}>{t("Ready")}</Th>
-              {canEdit && <Th />}
             </Tr>
           </Thead>
           <Tbody>
-            {loading && rows.length === 0 && (
-              <Tr><Td colSpan={10}><Flex justify="center" py={4}><Spinner size="sm" /></Flex></Td></Tr>
+            {loading && lots.length === 0 && (
+              <Tr><Td colSpan={9}><Flex justify="center" py={4}><Spinner size="sm" /></Flex></Td></Tr>
             )}
-            {!loading && rows.length === 0 && (
-              <Tr><Td colSpan={10}><Text fontSize="sm" color="gray.500" py={2}>{t("Nothing here yet.")}</Text></Td></Tr>
+            {!loading && lots.length === 0 && (
+              <Tr><Td colSpan={9}><Text fontSize="sm" color="gray.500" py={2}>{t("Nothing here yet.")}</Text></Td></Tr>
             )}
-            {rows.map((r) => (r.kind === "hand" && editing?.fpId === r.fpId ? (
-              <Tr key={r.key} bg="blue.50">
-                <Td><Input {...cellInput} type="date" max={today()} value={editing.sentOn}
-                  onChange={(e) => setEditing({ ...editing, sentOn: e.target.value })} /></Td>
-                <Td fontWeight="600">{r.lotNumber}</Td>
-                <Td>{r.fpLotNumber}</Td>
-                <Td><Input {...cellInput} list="fp-items" textTransform="uppercase" value={editing.item}
-                  onChange={(e) => setEditing({ ...editing, item: e.target.value })} /></Td>
-                <Td isNumeric><Input {...cellInput} width="70px" inputMode="numeric" value={editing.cases}
-                  onChange={(e) => setEditing({ ...editing, cases: e.target.value.replace(/\D/g, "") })} /></Td>
-                <Td isNumeric><Input {...cellInput} width="90px" inputMode="decimal" value={editing.rawWeight}
-                  onChange={(e) => setEditing({ ...editing, rawWeight: e.target.value })} /></Td>
-                <FreezerCells r={r} t={t} />
-                <Td>
-                  <Flex gap={1} justify="flex-end">
-                    <Button size="xs" colorScheme="blue" onClick={saveEdit} isLoading={busy === r.fpId}>{t("Save")}</Button>
-                    <Button size="xs" variant="ghost" onClick={() => setEditing(null)}>{t("Cancel")}</Button>
-                  </Flex>
-                </Td>
-              </Tr>
-            ) : (
-              <Tr key={r.key}>
-                <Td whiteSpace="nowrap">{fmtDate(r.sentOn)}</Td>
-                <Td fontWeight="600" color="blue.700">{r.lotNumber}</Td>
-                <Td whiteSpace="nowrap">{r.fpLotNumber || "—"}</Td>
-                <Td>
-                  {r.item || "—"}
-                  <KindBadge r={r} t={t} />
-                  {r.sourceReportId && (
-                    <Badge ml={2} colorScheme="gray" fontSize="9px" title={t("Written when that processing report was accepted")}>
-                      {t("report {id}", { id: r.sourceReportId })}
-                    </Badge>
+            {lots.map((lot) => {
+              const isOpen = openLots.has(lot.lotId);
+              const back = returnsByLot.get(lot.lotId) || [];
+              return (
+                <React.Fragment key={lot.lotId}>
+                  <Tr cursor="pointer" bg={isOpen ? "blue.50" : undefined} _hover={{ bg: "blue.50" }}
+                    onClick={() => toggleLot(lot.lotId)}>
+                    <Td px={2}>{isOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}</Td>
+                    <Td fontWeight="600" color="blue.700">{lot.lotNumber}</Td>
+                    <Td whiteSpace="nowrap">{lot.fpLotNumber || "—"}</Td>
+                    <Td whiteSpace="nowrap">{fmtDate(lot.lastSent)}</Td>
+                    <Td whiteSpace="nowrap">{back.length ? fmtDate(back[0].returnedOn) : "—"}</Td>
+                    <Td isNumeric {...num}>{lot.figures.sent}</Td>
+                    <FreezerCells r={lot.figures} t={t} />
+                  </Tr>
+                  {isOpen && (
+                    <Tr>
+                      <Td colSpan={9} bg="gray.50" p={3}>
+                        <Flex gap={4} wrap="wrap" align="flex-start">
+                          <Box flex="3 1 480px">
+                            <Text fontSize="xs" fontWeight="700" color="gray.600" textTransform="uppercase" mb={1}>
+                              {t("Sent out")}
+                            </Text>
+                            <Box border="1px solid" borderColor="gray.200" borderRadius="md" bg="white" overflowX="auto">
+                              <Table size="sm">
+                                <Thead>
+                                  <Tr>
+                                    <Th>{t("Date sent out")}</Th><Th>{t("Item description")}</Th>
+                                    <Th isNumeric>{t("Qty (cases)")}</Th><Th isNumeric>{t("Weight (lb)")}</Th>
+                                    {canEdit && <Th />}
+                                  </Tr>
+                                </Thead>
+                                <Tbody>{lot.trips.map(tripRow)}</Tbody>
+                              </Table>
+                            </Box>
+                          </Box>
+                          <Box flex="2 1 320px">
+                            <Text fontSize="xs" fontWeight="700" color="gray.600" textTransform="uppercase" mb={1}>
+                              {t("Came back")}
+                            </Text>
+                            <Box border="1px solid" borderColor="gray.200" borderRadius="md" bg="white" overflowX="auto">
+                              {back.length === 0 ? (
+                                <Text fontSize="sm" color="gray.500" p={3}>{t("Nothing counted back yet.")}</Text>
+                              ) : (
+                                <Table size="sm">
+                                  <Thead>
+                                    <Tr><Th>{t("Date back")}</Th><Th isNumeric>{t("Cases")}</Th><Th>{t("Note")}</Th><Th>{t("By")}</Th>{canReturn && <Th />}</Tr>
+                                  </Thead>
+                                  <Tbody>{back.map(returnRow)}</Tbody>
+                                </Table>
+                              )}
+                            </Box>
+                          </Box>
+                        </Flex>
+                      </Td>
+                    </Tr>
                   )}
-                </Td>
-                <Td isNumeric {...num}>{r.cases}</Td>
-                <Td isNumeric {...num}>{r.weight ? fmtWeight(r.weight) : "—"}</Td>
-                <FreezerCells r={r} t={t} />
-                {/* A weighed trip is corrected in its weighing session, not here. */}
-                {canEdit && r.kind === "weighed" && <Td />}
-                {canEdit && r.kind === "hand" && (
-                  <Td>
-                    <Flex gap={1} justify="flex-end" wrap="wrap">
-                      <Button size="xs" variant="ghost" colorScheme="blue"
-                        onClick={() => setEditing({ fpId: r.fpId, item: r.item, cases: String(r.cases),
-                          rawWeight: r.weight ? fmtWeight(r.weight) : "", sentOn: r.sentOn })}>
-                        {t("Edit")}
-                      </Button>
-                      {/* Asked once: a voided row cannot be brought back from here. */}
-                      {confirming === r.fpId ? (
-                        <>
-                          <Text fontSize="xs" color="red.600" alignSelf="center">{t("Void?")}</Text>
-                          <Button size="xs" colorScheme="red" isLoading={busy === r.fpId}
-                            onClick={() => { setConfirming(null); voidRow(r); }}>{t("Yes")}</Button>
-                          <Button size="xs" variant="ghost" onClick={() => setConfirming(null)}>{t("No")}</Button>
-                        </>
-                      ) : (
-                        <Button size="xs" variant="ghost" colorScheme="red"
-                          onClick={() => setConfirming(r.fpId)}>{t("Void")}</Button>
-                      )}
-                    </Flex>
-                  </Td>
-                )}
-              </Tr>
-            )))}
+                </React.Fragment>
+              );
+            })}
           </Tbody>
         </Table>
       </Box>
-
-      {/* Each count back in, so a partial return can be traced and a mistaken one voided. */}
-      {returns.length > 0 && (
-        <Box mt={4}>
-          <Text fontSize="xs" fontWeight="700" color="gray.600" textTransform="uppercase" mb={1}>
-            {t("Returns counted")}
-          </Text>
-          <Box overflowX="auto" border="1px solid" borderColor="gray.200" borderRadius="md" bg="white">
-            <Table size="sm" minWidth="600px">
-              <Thead>
-                <Tr><Th>{t("Date back")}</Th><Th>{t("Lot #")}</Th><Th isNumeric>{t("Cases")}</Th><Th>{t("Note")}</Th><Th>{t("By")}</Th>{canReturn && <Th />}</Tr>
-              </Thead>
-              <Tbody>
-                {returns.map((x) => (
-                  <Tr key={x.returnId}>
-                    <Td whiteSpace="nowrap">{fmtDate(x.returnedOn)}</Td>
-                    <Td fontWeight="600" color="blue.700">{x.lotNumber}</Td>
-                    <Td isNumeric {...num}>{x.cases}</Td>
-                    <Td>{x.notes || ""}</Td>
-                    <Td fontSize="xs" color="gray.500">{x.createdBy || ""}</Td>
-                    {canReturn && (
-                      <Td>
-                        {confirming === `r${x.returnId}` ? (
-                          <Flex gap={1} justify="flex-end">
-                            <Text fontSize="xs" color="red.600" alignSelf="center">{t("Void?")}</Text>
-                            <Button size="xs" colorScheme="red" isLoading={busy === `r${x.returnId}`}
-                              onClick={() => { setConfirming(null); voidReturn(x); }}>{t("Yes")}</Button>
-                            <Button size="xs" variant="ghost" onClick={() => setConfirming(null)}>{t("No")}</Button>
-                          </Flex>
-                        ) : (
-                          <Button size="xs" variant="ghost" colorScheme="red"
-                            onClick={() => setConfirming(`r${x.returnId}`)}>{t("Void")}</Button>
-                        )}
-                      </Td>
-                    )}
-                  </Tr>
-                ))}
-              </Tbody>
-            </Table>
-          </Box>
-        </Box>
-      )}
     </FloatingWindow>
   );
 };
