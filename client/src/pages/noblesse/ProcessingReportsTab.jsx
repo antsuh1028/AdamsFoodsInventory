@@ -559,6 +559,11 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
             onDoubleClick={() => openReport(r)}>
             <Flex align="baseline" gap={3} wrap="wrap">
               <LotMenu lotNumber={r.lotNumber} lotId={r.lotId} />
+              {(r.description || r.lotDescription) && (
+                <Text fontSize="sm" fontWeight="600" color="gray.700">
+                  {r.description || r.lotDescription}
+                </Text>
+              )}
               {r.lotKind === "further" && (
                 <Badge colorScheme="blue" variant="outline" fontSize="9px"
                   title={`Back from the freezer. Goes on ${r.parentLotNumber}'s form.`}>
@@ -594,7 +599,6 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                   off the map
                 </Badge>
               )}
-              {r.description && <Text fontSize="xs" color="gray.600">{r.description}</Text>}
               {r.status === "in_progress" && r.startTime && !r.autoFinishedAt && (
                 <Text fontSize="xs" color="green.700" fontWeight="600"
                   style={{ fontVariantNumeric: "tabular-nums" }}>
