@@ -5,12 +5,10 @@ const { toPounds } = require("../../../utils/weight");
 
 const UNITS = new Set(["LB", "KG"]);
 
-const DECIMAL_RE = /^\d{1,5}(\.\d{1,3})?$/;
+const DECIMAL_RE = /^\d{1,5}(\.\d{1,3})?$/; // fits NUMERIC(8,3)
 
- // fits NUMERIC(8,3)
-const MAX_WEIGHT_THOUSANDTHS = 2000n * 1000n;
+const MAX_WEIGHT_THOUSANDTHS = 2000n * 1000n; // 2000 lb/kg per box is already absurd
 
- // 2000 lb/kg per box is already absurd
 // Matches the column's CHECK.
 const ENTRY_METHODS = new Set(["scanned", "scale", "keyed"]);
 
