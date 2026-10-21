@@ -227,9 +227,13 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 No float ever enters the path. Comparisons and running totals use **integer
 thousandths**. `"76.20"` and `"76.2"` must compare equal.
 
-**The client is not trusted.** `validateItem` in `server/routes/boxes.pg.js`
+**The client is not trusted.** `validateItem` in `server/routes/boxes/helpers/validate.js`
 re-parses `rawBarcode` server-side and rejects `WEIGHT_MISMATCH` / `UNIT_MISMATCH`.
 Everything persisted comes from the server's own parse.
+
+**Box routes are split by part** under `server/routes/boxes/` (sessions/, helpers/,
+manifests, formLinks, removals, tallyImport). `boxes.pg.js` only mounts them, in an
+order that keeps literal paths ahead of `:id`. Tests that discover routes walk nested routers.
 
 **`server/utils/gs1.js` and `client/src/utils/gs1.js` are byte-identical.**
 `server/tests/gs1.test.js` fails if they drift. Edit both.
