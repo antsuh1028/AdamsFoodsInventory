@@ -37,7 +37,7 @@ import { IncomingRecordsTab } from "./noblesse/IncomingRecordsTab";
 import ProcessingReportsTab from "./noblesse/ProcessingReportsTab";
 import { RegistrationFormTab } from "./noblesse/RegistrationFormTab";
 import { OutgoingTab } from "./noblesse/OutgoingTab";
-import { WeightManifestTab } from "./noblesse/WeightManifestTab";
+import { WeightManifestTab } from "./noblesse/weightManifest/WeightManifestTab";
 import { lotNumberForDate, fmtLongDate } from "./noblesse/shared";
 import ScannerDiagnostic from "../components/navbar/scannerDiagnostic";
 import ScaleDiagnostic from "../components/navbar/scaleDiagnostic";
