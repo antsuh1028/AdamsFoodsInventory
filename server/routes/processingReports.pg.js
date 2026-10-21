@@ -7,6 +7,7 @@ const { searchTerm, searchClause } = require("../utils/search");
 const { isCalendarDay } = require("../utils/weighedAt");
 const { fpCounts, lockLot, findFpChild } = require("../utils/fpLot");
 const { manualCasesSql } = require("../utils/formManualCases");
+const { lotDescriptionSql } = require("../utils/lotDescription");
 
 // The shop-floor record of one processing run: which lot, which line, who ran
 // it, how many cases went through.
@@ -150,6 +151,7 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
     const result = await pool.query(
       `SELECT r.*, l.lot_number, l.kind AS lot_kind,
               (SELECT p.lot_number FROM lots p WHERE p.lot_id = l.parent_lot_id) AS parent_lot_number,
+              ${lotDescriptionSql("l")} AS lot_description,
               (SELECT COALESCE(json_agg(json_build_object(
                         'pullId', p.pull_id, 'position', p.position,
                         'cases', p.cases, 'notes', p.notes) ORDER BY p.position, p.pull_id), '[]'::json)
@@ -167,6 +169,8 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
       ...fmtReport(r),
       pulls: r.pulls || [],
       workers: splitNames(r.workers),
+      // What the lot is, for a report filed without a description.
+      lotDescription: r.lot_description || null,
     })));
   } catch (err) {
     console.error("list processing reports:", err);
