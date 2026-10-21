@@ -1,0 +1,562 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Box, Flex, Text, Button, Badge, Input, Spinner, Alert, AlertIcon,
+  Table, Thead, Tbody, Tr, Th, Td, Tooltip, IconButton,
+  Menu, MenuButton, MenuList, MenuItem,
+} from "@chakra-ui/react";
+import {
+  RepeatIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon,
+} from "@chakra-ui/icons";
+import FloatingWindow from "../../components/FloatingWindow";
+import LotTimeline from "../lots/LotTimeline";
+import { LotFormWindow, LotManifestWindow } from "../lots/LotEntries";
+import axiosInstance from "../../utils/axiosInstance";
+import { today, fmtWeight, fmtLongDate } from "../common/shared";
+
+// The day, for whoever has to answer for it.
+//
+// Opened from the drawer rather than living as a tab: it is something you go
+// and look at, not somewhere work happens. It therefore does not watch
+// refreshSignal — nothing else on the screen moves it — so it stamps what it
+// fetched and offers a refresh instead.
+
+const num = (n) => Number(n || 0).toLocaleString("en-US");
+
+// A day, shifted. Built from the string so no local timezone can move it.
+const shiftDay = (day, by) => {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + by);
+  return d.toISOString().slice(0, 10);
+};
+
+// What each exception is called, and how loud it is. No orange, no purple.
+const KINDS = {
+  form_overdue:      { label: "Forms past due",            tone: "red" },
+  shipped_unweighed: { label: "Shipped without weighing",  tone: "red" },
+  unregistered:      { label: "Weighed, not registered",   tone: "yellow" },
+  report_waiting:    { label: "Processing reports waiting", tone: "yellow" },
+  session_open:      { label: "Sessions left open",        tone: "yellow" },
+  draft_stale:       { label: "Drafts not shipped",        tone: "yellow" },
+  lot_idle:          { label: "Lots gone quiet",           tone: "blue" },
+  voided:            { label: "Boxes voided",              tone: "gray" },
+};
+
+// Loudest first, and within a kind the report already sorted by age.
+const KIND_ORDER = Object.keys(KINDS);
+
+// A weight, or nothing at all — never "0.00 lb" for a figure that was simply
+// never recorded. The two read identically on a page and mean opposite things.
+const lb = (v) => (v == null || v === "" ? null : `${fmtWeight(v)} lb`);
+
+// One line of detail per kind. The shapes differ because the things do.
+const detailOf = (item) => {
+  const d = item.detail || {};
+  const parts = (...xs) => xs.filter(Boolean).join(" · ");
+  switch (item.kind) {
+    case "unregistered":
+      return parts(`${num(d.boxes)} boxes`, lb(d.lb));
+    case "report_waiting":
+      return parts(d.type, `${num(d.casesIn)} cases in`,
+                   lb(d.outputLb) && `${lb(d.outputLb)} out`,
+                   lb(d.inedibleLb) && `${lb(d.inedibleLb)} inedible`);
+    case "session_open":
+      return parts(`${num(d.boxes)} boxes`, lb(d.lb),
+                   d.direction === "outgoing" ? "outgoing" : "incoming");
+    case "draft_stale":
+      return parts(`${num(d.lines)} line${d.lines === 1 ? "" : "s"}`,
+                   Number(d.lb) > 0 ? lb(d.lb) : null,
+                   `to ship ${d.shipDate || "—"}`);
+    case "lot_idle":
+      return parts(`${lb(d.inLb)} in`, `${lb(d.outLb)} out`,
+                   `${num(d.boxesIn)} → ${num(d.boxesOut)} boxes`);
+    case "form_overdue":
+      return parts(d.vendor, lb(d.originalWeight), `due ${d.dueDate || "—"}`);
+    case "shipped_unweighed":
+      return parts(d.destination, lb(d.lb));
+    case "voided":
+      return parts(`${num(d.boxes)} box${d.boxes === 1 ? "" : "es"}`, lb(d.lb));
+    default:
+      return "";
+  }
+};
+
+const Figure = ({ label, value, unit, sub, tone = "gray" }) => (
+  <Box
+    flex="1 1 150px"
+    minW="150px"
+    bg="white"
+    border="1px solid"
+    borderColor={`${tone}.200`}
+    borderRadius="md"
+    px={3}
+    py={2}
+  >
+    <Text fontSize="xs" color="gray.600" fontWeight="600" textTransform="uppercase">
+      {label}
+    </Text>
+    <Flex align="baseline" gap={1}>
+      <Text
+        fontSize={{ base: "xl", md: "2xl" }}
+        fontWeight="700"
+        lineHeight="1.2"
+        style={{ fontVariantNumeric: "tabular-nums" }}
+      >
+        {value}
+      </Text>
+      {unit && <Text fontSize="xs" color="gray.500">{unit}</Text>}
+    </Flex>
+    {sub && <Text fontSize="xs" color="gray.500">{sub}</Text>}
+  </Box>
+);
+
+// The range's weight when it moved then, else the lot's running total in gray.
+const WeightCell = ({ dayBoxes, dayLb, totalLb }) => {
+  if (dayBoxes) return fmtWeight(dayLb);
+  if (totalLb == null) return "—";
+  return (
+    <Text as="span" color="gray.400" title="Lot total to date; none in this range">
+      {fmtWeight(totalLb)} <Text as="span" fontSize="2xs">total</Text>
+    </Text>
+  );
+};
+
+// Which side carried nominal weights, spelled out so the badge is actionable.
+const estimatedLabel = (y) => {
+  const parts = [];
+  // On a registered basis the denominator is typed anyway; only outgoing is news.
+  if (y.basis === "weighed" && y.estimatedIn > 0) parts.push(`${y.estimatedIn} incoming`);
+  if (y.estimatedOut > 0) parts.push(`${y.estimatedOut} outgoing`);
+  return `${parts.join(" and ")} boxes carry a nominal weight typed off the label, not a bench reading`;
+};
+
+// A lot nothing has left yet is NOT 0% — it has not been measured. Rendering a
+// zero there would be a claim the figures cannot defend.
+const YieldCell = ({ y }) => {
+  if (!y || !y.measured) {
+    return <Text fontSize="xs" color="gray.400">not weighed out</Text>;
+  }
+  if (y.percent == null) {
+    return <Text fontSize="xs" color="gray.400">no weight in</Text>;
+  }
+  return (
+    <Flex align="center" gap={2}>
+      <Text fontSize="sm" fontWeight="600" style={{ fontVariantNumeric: "tabular-nums" }}>
+        {y.percent.toFixed(1)}%
+      </Text>
+      {/* A yield computed off a typed Original Weight is not the same claim as
+          one off bench weights, so it never passes silently as one. */}
+      {y.basis === "registered" && (
+        <Tooltip label="Against the form's typed Original Weight, not a bench weight">
+          <Badge colorScheme="yellow" fontSize="9px">registered</Badge>
+        </Tooltip>
+      )}
+      {/* Same reason: some of these pounds were typed off a label, not weighed. */}
+      {y.estimated && (
+        <Tooltip label={estimatedLabel(y)}>
+          <Badge colorScheme="yellow" fontSize="9px">estimated</Badge>
+        </Tooltip>
+      )}
+    </Flex>
+  );
+};
+
+const AttentionGroup = ({ kind, items }) => {
+  const [open, setOpen] = useState(items.length <= 5);
+  const meta = KINDS[kind] || { label: kind, tone: "gray" };
+  const shown = open ? items : items.slice(0, 3);
+  // A backlog that returns tomorrow, or something that happened on this day
+  // and will not. They look identical on the page otherwise.
+  const ongoing = items[0]?.scope !== "range";
+  return (
+    <Box mb={3}>
+      <Flex align="center" gap={2} mb={1}>
+        <Badge colorScheme={meta.tone}>{items.length}</Badge>
+        <Text fontSize="sm" fontWeight="700">{meta.label}</Text>
+        <Tooltip
+          label={ongoing
+            ? "Outstanding right now. It stays on the report until someone deals with it."
+            : "Happened on this day. It will not be on tomorrow's report."}
+        >
+          <Badge variant="outline" colorScheme="gray" fontSize="9px" textTransform="none">
+            {ongoing ? "ongoing" : "on this day"}
+          </Badge>
+        </Tooltip>
+        {items.length > 3 && (
+          <Button size="xs" variant="ghost" onClick={() => setOpen((v) => !v)}>
+            {open ? "show less" : `show all ${items.length}`}
+          </Button>
+        )}
+      </Flex>
+      <Box borderLeft="3px solid" borderColor={`${meta.tone}.300`} pl={3}>
+        {shown.map((item) => (
+          <Flex
+            key={`${item.kind}-${item.refId}`}
+            align="baseline"
+            gap={2}
+            wrap="wrap"
+            py={0.5}
+          >
+            <Text fontSize="sm" fontWeight="600" minW="110px">
+              {item.label || <Text as="span" color="gray.400">no lot</Text>}
+            </Text>
+            <Text fontSize="xs" color="gray.600" flex="1 1 auto">
+              {detailOf(item)}
+            </Text>
+            {item.who && (
+              <Text fontSize="xs" color="gray.500">{item.who}</Text>
+            )}
+            <Text fontSize="xs" color={item.ageDays >= 7 ? "red.600" : "gray.500"} minW="60px" textAlign="right">
+              {item.ageDays === 0 ? "today" : `${item.ageDays}d`}
+            </Text>
+          </Flex>
+        ))}
+      </Box>
+    </Box>
+  );
+};
+
+// The backlog, folded away. The day's own figures are what this page is for;
+// this is the standing list beside them, so it opens shut and the bar carries
+// enough for someone to decide whether to look.
+const AttentionSection = ({ grouped, truncated, isToday }) => {
+  const [open, setOpen] = useState(false);
+  const total = grouped.reduce((n, [, list]) => n + list.length, 0);
+  const Chevron = open ? ChevronDownIcon : ChevronRightIcon;
+  // Red kinds are the ones nobody should have to open the section to notice.
+  const urgent = grouped
+    .filter(([kind]) => KINDS[kind]?.tone === "red")
+    .reduce((n, [, list]) => n + list.length, 0);
+
+  if (total === 0) {
+    return (
+      <Flex align="center" gap={2} bg="gray.50" borderRadius="md" px={3} py={2} mt={4}>
+        <Text fontSize="sm" fontWeight="700">Needs attention</Text>
+        <Text fontSize="sm" color="gray.500">Nothing waiting.</Text>
+      </Flex>
+    );
+  }
+
+  return (
+    <Box mt={4}>
+      <Flex
+        align="center" gap={2} wrap="wrap"
+        bg="gray.100" borderRadius="md" px={3} py={2}
+        cursor="pointer"
+        onClick={() => setOpen((v) => !v)}
+        title={open ? "Hide the list" : "Show the list"}
+      >
+        <Chevron boxSize={4} color="gray.700" />
+        <Text fontSize="sm" fontWeight="700">Needs attention</Text>
+        <Badge colorScheme={urgent > 0 ? "red" : "yellow"}>{total}</Badge>
+        {truncated && <Badge colorScheme="red">list capped</Badge>}
+        {/* Shut, the bar still says what is under it. */}
+        {!open && (
+          <Text fontSize="xs" color="gray.600" noOfLines={1} minW={0}>
+            {grouped.map(([kind, list]) =>
+              `${list.length} ${(KINDS[kind]?.label || kind).toLowerCase()}`).join(" · ")}
+          </Text>
+        )}
+      </Flex>
+
+      {open && (
+        <Box pt={3}>
+          {!isToday && grouped.some(([, l]) => l[0]?.scope !== "range") && (
+            <Text fontSize="xs" color="gray.600" mb={2}>
+              Items marked <b>ongoing</b> are outstanding <b>now</b>, not as they
+              stood on this day.
+            </Text>
+          )}
+          {grouped.map(([kind, list]) => (
+            <AttentionGroup key={kind} kind={kind} items={list} />
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+};
+
+const DailyReport = ({ isOpen, onClose }) => {
+  const [day, setDay] = useState(() => today());
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  // Three independent windows, so any combination can be open at once.
+  const [formLot, setFormLot] = useState(null);
+  const [manifestLot, setManifestLot] = useState(null);
+  const [timelineLot, setTimelineLot] = useState(null);
+  // Survives a re-render mid-flight so a slow day cannot overwrite a newer one.
+  const wanted = useRef(day);
+
+  const load = useCallback(async (d) => {
+    wanted.current = d;
+    setLoading(true);
+    setError("");
+    try {
+      const { data: body } = await axiosInstance.get("/noblesse-report", {
+        params: { from: d, to: d },
+      });
+      if (wanted.current !== d) return;
+      setData(body);
+    } catch (e) {
+      if (wanted.current !== d) return;
+      setError(e?.response?.data?.error || "Could not build the report.");
+      setData(null);
+    } finally {
+      if (wanted.current === d) setLoading(false);
+    }
+  }, []);
+
+  // Fetches on open, and whenever the day changes while open.
+  useEffect(() => {
+    if (!isOpen) return;
+    load(day);
+  }, [isOpen, day, load]);
+
+  const m = data?.movement;
+  const items = data?.attention?.items || [];
+  const grouped = KIND_ORDER
+    .map((kind) => [kind, items.filter((i) => i.kind === kind)])
+    .filter(([, list]) => list.length > 0);
+
+  const isToday = day === today();
+
+  // Stepping moves through the table as it is displayed, so "next" means the
+  // next row the person can see rather than the next lot by id.
+  const lotList = data?.lots || [];
+  const lotIndex = timelineLot
+    ? lotList.findIndex((l) => l.lotId === timelineLot.lotId) : -1;
+
+  return (
+    <>
+    <FloatingWindow
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Daily Report"
+      width="78%"
+      headerActions={
+        <Flex align="center" gap={1}>
+          <IconButton
+            aria-label="Previous day"
+            icon={<ChevronLeftIcon />}
+            size="xs"
+            onClick={() => setDay((d) => shiftDay(d, -1))}
+          />
+          <Input
+            type="date"
+            size="xs"
+            value={day}
+            max={today()}
+            width="140px"
+            bg="white"
+            onChange={(e) => e.target.value && setDay(e.target.value)}
+          />
+          <IconButton
+            aria-label="Next day"
+            icon={<ChevronRightIcon />}
+            size="xs"
+            isDisabled={isToday}
+            onClick={() => setDay((d) => shiftDay(d, 1))}
+          />
+          <IconButton
+            aria-label="Refresh"
+            icon={<RepeatIcon />}
+            size="xs"
+            isLoading={loading}
+            onClick={() => load(day)}
+          />
+        </Flex>
+      }
+    >
+      <Box px={1} pb={2}>
+        <Flex align="baseline" gap={3} wrap="wrap" mb={3}>
+          <Text fontSize="lg" fontWeight="700">
+            {fmtLongDate(new Date(`${day}T12:00:00Z`))}
+          </Text>
+          {isToday && <Badge colorScheme="green">still filling</Badge>}
+          {data?.meta?.generatedAt && (
+            <Text fontSize="xs" color="gray.500">
+              as of {new Date(data.meta.generatedAt).toLocaleTimeString("en-US")}
+            </Text>
+          )}
+        </Flex>
+
+        {error && (
+          <Alert status="error" borderRadius="md" mb={3}>
+            <AlertIcon />
+            {error}
+          </Alert>
+        )}
+
+        {loading && !data && (
+          <Flex justify="center" py={10}><Spinner /></Flex>
+        )}
+
+        {m && (
+          <>
+            <Flex gap={2} wrap="wrap" mb={2}>
+              <Figure
+                label="Weighed in" tone="blue"
+                value={fmtWeight(m.weighedIn.lb)} unit="lb"
+                sub={`${num(m.weighedIn.boxes)} boxes · ${num(m.weighedIn.lots)} lots`}
+              />
+              <Figure
+                label="Weighed out" tone="teal"
+                value={fmtWeight(m.weighedOut.lb)} unit="lb"
+                sub={`${num(m.weighedOut.boxes)} boxes · ${num(m.weighedOut.lots)} lots`}
+              />
+              <Figure
+                label="Shipped" tone="green"
+                value={fmtWeight(m.shipped.lb)} unit="lb"
+                sub={`${num(m.shipped.loads)} load${m.shipped.loads === 1 ? "" : "s"} · ${num(m.shipped.destinations)} destination${m.shipped.destinations === 1 ? "" : "s"}`}
+              />
+              {/* Cases lead because cases are what an accepted report moves;
+                  the pounds are recorded off the floor and create no stock. */}
+              <Figure
+                label="Processed" tone="gray"
+                value={num(m.processed.casesOut)} unit="cases out"
+                sub={[
+                  `${num(m.processed.casesIn)} in`,
+                  Number(m.processed.outputLb) > 0 && `${fmtWeight(m.processed.outputLb)} lb out`,
+                  Number(m.processed.inedibleLb) > 0 && `${fmtWeight(m.processed.inedibleLb)} lb inedible`,
+                ].filter(Boolean).join(" · ")}
+              />
+              <Figure
+                label="Lots issued" tone="gray"
+                value={num(m.lotsIssued)}
+                sub={`${num(m.forms.received)} forms received · ${num(m.forms.open)} open`}
+              />
+            </Flex>
+
+            {/* Late entry, stated rather than silently absent. */}
+            {data.backdated?.sessions > 0 && (
+              <Alert status="info" borderRadius="md" mb={3} fontSize="sm" py={2}>
+                <AlertIcon />
+                <Text>
+                  {num(data.backdated.sessions)} session
+                  {data.backdated.sessions === 1 ? "" : "s"} entered today for an
+                  earlier day — counted on {data.backdated.days.join(", ")}.
+                </Text>
+              </Alert>
+            )}
+
+            <Text fontSize="sm" fontWeight="700" mt={5} mb={2}>
+              Lots touched
+            </Text>
+            {data.lots.length === 0 ? (
+              <Text fontSize="sm" color="gray.500">No lot moved on this day.</Text>
+            ) : (
+              <Box overflowX="auto">
+                <Table size="sm" minWidth="720px">
+                  <Thead>
+                    <Tr>
+                      <Th>Lot</Th>
+                      <Th isNumeric>In</Th>
+                      <Th isNumeric>Out</Th>
+                      <Th isNumeric>Shipped</Th>
+                      <Th isNumeric>Cases</Th>
+                      <Th>Yield to date</Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {data.lots.map((lot) => (
+                      <Tr key={lot.lotId}>
+                        {/* The lot number is the way into the paper behind the
+                            figure. Each entry is its own window, so a form and
+                            its manifest can sit open side by side. */}
+                        <Td fontWeight="600">
+                          <Menu isLazy placement="bottom-start">
+                            <MenuButton
+                              as={Button}
+                              variant="link"
+                              size="sm"
+                              fontWeight="600"
+                              color="blue.600"
+                            >
+                              {lot.lotNumber}
+                            </MenuButton>
+                            <MenuList fontSize="sm" minW="200px">
+                              <MenuItem onClick={() => setFormLot(lot.lotNumber)}>
+                                Registration form
+                              </MenuItem>
+                              <MenuItem onClick={() => setManifestLot(lot.lotNumber)}>
+                                Weight manifests
+                              </MenuItem>
+                              <MenuItem onClick={() => setTimelineLot(lot)}>
+                                Lot timeline
+                              </MenuItem>
+                            </MenuList>
+                          </Menu>
+                          {lot.description && (
+                            <Text as="span" ml={2} fontSize="xs" fontWeight="normal" color="gray.600"
+                              title={lot.description}>
+                              {lot.description}
+                            </Text>
+                          )}
+                          {lot.status === "closed" && (
+                            <Badge ml={2} colorScheme="gray" fontSize="9px">closed</Badge>
+                          )}
+                        </Td>
+                        <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>
+                          <WeightCell dayBoxes={lot.day.boxesIn} dayLb={lot.day.lbIn}
+                            totalLb={lot.yield?.inLb} />
+                        </Td>
+                        <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>
+                          <WeightCell dayBoxes={lot.day.boxesOut} dayLb={lot.day.lbOut}
+                            totalLb={lot.yield?.measured ? lot.yield.outLb : null} />
+                        </Td>
+                        <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>
+                          {lot.day.loads ? `${fmtWeight(lot.day.shippedLb)}` : "—"}
+                        </Td>
+                        <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>
+                          {lot.day.reports ? `${num(lot.day.casesIn)} → ${num(lot.day.casesOut)}` : "—"}
+                        </Td>
+                        <Td><YieldCell y={lot.yield} /></Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
+              </Box>
+            )}
+
+            {/* Last, and shut: the day above is what this page is for. The
+                backlog is standing work that happens to be listed beside it. */}
+            <AttentionSection
+              grouped={grouped}
+              truncated={data.attention?.truncated}
+              isToday={isToday}
+            />
+          </>
+        )}
+      </Box>
+    </FloatingWindow>
+
+    {/* Companions, not children: each isOpen is ANDed with the report's own so
+        none can be left floating over an unrelated screen once it closes —
+        the same rule the scanning keypad follows. */}
+    <LotFormWindow
+      lotNumber={formLot}
+      isOpen={isOpen && Boolean(formLot)}
+      onClose={() => setFormLot(null)}
+    />
+    <LotManifestWindow
+      lotNumber={manifestLot}
+      isOpen={isOpen && Boolean(manifestLot)}
+      onClose={() => setManifestLot(null)}
+    />
+    <LotTimeline
+      lotId={timelineLot?.lotId ?? null}
+      lotNumber={timelineLot?.lotNumber ?? ""}
+      isOpen={isOpen && Boolean(timelineLot)}
+      onClose={() => setTimelineLot(null)}
+      onStep={(d) => {
+        const next = lotList[lotIndex + d];
+        if (next) setTimelineLot(next);
+      }}
+      stepPosition={lotIndex >= 0
+        ? { index: lotIndex, total: lotList.length } : null}
+    />
+    </>
+  );
+};
+
+export default DailyReport;

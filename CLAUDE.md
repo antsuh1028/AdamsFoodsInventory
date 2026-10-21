@@ -123,9 +123,15 @@
 
 | | Adams Foods | Noblesse Trading |
 |---|---|---|
-| Entry | `client/src/pages/HomeScreen.jsx` + navbar | `client/src/pages/NoblesseScreen.jsx` |
+| Entry | `client/src/adams/Homescreen.jsx` + navbar | `client/src/noblesse/NoblesseScreen.jsx` |
 | Login | `/login` | `/noblesse-login` |
 | Nav | top navbar | hamburger **drawer** (`useDisclosure`) |
+
+The client is grouped by app, then feature: `src/adams/` (inventory, locations,
+history, exports, scanning, files, production, help) and `src/noblesse/` (weighing,
+weightManifest, outgoing, processing, registration, incoming, lots, fpTracker,
+reports, common). `src/components/` is UI both apps share. `src/utils/` stays put:
+server tests load the scan/scale/weight utilities and the byte-identical mirrors from there.
 
 Noblesse is tabbed: Incoming Records · Registration Forms · **Weight Manifests**.
 Box weighing lives under Noblesse (it is a Noblesse business process), not in the
