@@ -320,6 +320,18 @@ seen-set depend on — so neither is overwritten by the other.
   the wire. Both guard the same scar: a DATE becomes midnight server-local in
   pg, which a Pacific reader shows as the day before (§8, 8/17 → 8/16).
 
+### Adams Foods scanning (`routes/afScan.pg.js`, `client/src/adams/boxScan/`)
+
+Boxes live on `inventory.boxes`; a scanned box carries `weight` (LB, exact) plus
+its barcode fields and a server-made `scanId`. Old weight-only boxes still work
+everywhere, but cannot be found by scan.
+- The server re-reads every barcode; a KG label is stored in pounds via `toPounds`.
+- A packer box (GTIN + serial) can be in stock once. NTI's own labels have no
+  serial, so identical ones are interchangeable and matched by code, weight and pack date.
+- Pull-out is a list, then one transaction: rows locked in id order, refused whole
+  if any box has gone, empty rows deleted (AF's rule), and "Sent to NTI" writes a
+  real `production_orders` row so returns attach to it as before.
+
 ---
 
 ## 5. Postgres notes

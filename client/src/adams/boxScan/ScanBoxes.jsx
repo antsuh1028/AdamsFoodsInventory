@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Button, ButtonGroup, Stack, Text } from "@chakra-ui/react";
+import { Box, Button, ButtonGroup, Stack } from "@chakra-ui/react";
 import FloatingWindow from "../../components/FloatingWindow";
 import ReceiveSetup from "./ReceiveSetup";
 import ReceiveSession from "./ReceiveSession";
+import PullOut from "./PullOut";
 
 // Scanning box labels at Adams Foods: in to a freezer location, or out.
 
@@ -30,9 +31,10 @@ const ScanBoxes = ({ isOpen, onClose }) => {
           ? <ReceiveSession key={row._id} row={row} active={isOpen} onDone={() => setRow(null)} />
           : <ReceiveSetup onStart={setRow} />)}
 
-        {mode === "pull" && (
-          <Text fontSize="sm" color="gray.500">Pulling boxes out by scan is coming next.</Text>
-        )}
+        {/* Kept mounted so switching modes never loses an unfinished pull list. */}
+        <Box hidden={mode !== "pull"}>
+          <PullOut active={isOpen && mode === "pull"} />
+        </Box>
       </Stack>
     </FloatingWindow>
   );
