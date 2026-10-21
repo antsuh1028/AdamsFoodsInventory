@@ -595,8 +595,9 @@ const MemberSessions = ({ rows }) => (
   </Box>
 );
 
-// `company` sets the name printed at the top of the tally.
-export const WeightManifestTab = ({ refreshSignal = 0, company }) => {
+// `company` sets the name printed at the top of the tally; `shipTo` lists one
+// customer's outgoing sessions instead of the incoming ones.
+export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
   // An open session can be corrected by whoever is running it; a closed one is
   // an admin act. The server enforces both — this only decides what to draw.
   const isAdmin = getRole() === "admin";
@@ -681,8 +682,9 @@ export const WeightManifestTab = ({ refreshSignal = 0, company }) => {
   const fetchBatches = useCallback(async () => {
     const mine = ++batchSeq.current;
     try {
-      const { data } = await axiosInstance.get("/box-batches",
-        { params: { direction: "incoming", q: q || undefined } });
+      const { data } = await axiosInstance.get("/box-batches", { params: shipTo
+        ? { direction: "outgoing", shipTo, q: q || undefined }
+        : { direction: "incoming", q: q || undefined } });
       if (mine !== batchSeq.current) return;
       setBatches(data || []);
       setError(null);
@@ -692,12 +694,14 @@ export const WeightManifestTab = ({ refreshSignal = 0, company }) => {
     } finally {
       if (mine === batchSeq.current) { setLoading(false); setSearching(false); }
     }
-  }, [q]);
+  }, [q, shipTo]);
 
   // Searched too, and by its sessions as well as its own heading: the table
   // shows a manifest in place of its sessions, so the two must be found together.
   const fetchGroups = useCallback(async () => {
     const mine = ++groupSeq.current;
+    // Merged manifests are built from incoming sessions only.
+    if (shipTo) return;
     const params = { params: { q: q || undefined } };
     // Each on its own: a merged listing failing must not blank the sessions,
     // and a failed form listing just leaves those sessions as their own rows.
@@ -708,7 +712,7 @@ export const WeightManifestTab = ({ refreshSignal = 0, company }) => {
     if (mine !== groupSeq.current) return;
     if (stored) setGroups(stored.data || []);
     setFormGroups(byForm ? byForm.data || [] : []);
-  }, [q]);
+  }, [q, shipTo]);
 
   useEffect(() => { fetchBatches(); fetchGroups(); }, [fetchBatches, fetchGroups]);
 
@@ -1222,14 +1226,17 @@ export const WeightManifestTab = ({ refreshSignal = 0, company }) => {
               Pick one more to combine
             </Text>
           )}
-          {canReturnFp && (
+          {canReturnFp && !shipTo && (
             <Button size="xs" variant="outline" colorScheme="teal" onClick={() => setReturnsOpen(true)}>
               Back from freezer
             </Button>
           )}
-          <Button size="xs" colorScheme="teal" onClick={() => setScannerOpen(true)}>
-            + New Box Weighing Session
-          </Button>
+          {/* Weighing starts incoming sessions, so not from a customer's list. */}
+          {!shipTo && (
+            <Button size="xs" colorScheme="teal" onClick={() => setScannerOpen(true)}>
+              + New Box Weighing Session
+            </Button>
+          )}
         </Flex>
       </Flex>
 

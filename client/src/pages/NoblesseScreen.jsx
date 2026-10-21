@@ -600,8 +600,8 @@ const NoblesseScreen = () => {
                 <Divider />
                 {drawerBtn("Scanner Diagnostic", () => setScanDiagOpen(true))}
                 {drawerBtn("Scale Diagnostic", () => setScaleDiagOpen(true))}
-                {/* Preview: the same manifests, printed as Adams Foods. */}
-                {drawerBtn("Manifests (Adams Foods)", () => setAfManifestOpen(true))}
+                {/* Preview: Shabuya's outgoing manifests, printed as Adams Foods. */}
+                {drawerBtn("Shabuya Manifests (AF)", () => setAfManifestOpen(true))}
                 <Divider />
                 {drawerBtn("← Adams Foods", () => navigate("/home"))}
               </>
@@ -645,8 +645,10 @@ const NoblesseScreen = () => {
       {isAdmin && (
         <>
           <FloatingWindow isOpen={afManifestOpen} onClose={() => setAfManifestOpen(false)}
-            title="Weight Manifests (Adams Foods)" width={1150}>
-            {afManifestOpen && <WeightManifestTab refreshSignal={refreshSignal} company="Adams Foods" />}
+            title="Shabuya Manifests (Adams Foods)" width={1150}>
+            {afManifestOpen && (
+              <WeightManifestTab refreshSignal={refreshSignal} company="Adams Foods" shipTo="SHABUYA" />
+            )}
           </FloatingWindow>
           <ScannerDiagnostic
             isOpen={scanDiagOpen}

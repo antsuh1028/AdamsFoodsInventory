@@ -1078,9 +1078,11 @@ const batchSearchColumns = (a) => [
 
 router.get("/box-batches", verifyToken, async (req, res) => {
   const term = searchTerm(req.query.q);
+  // One customer's sessions, matched on ship-to.
+  const shipTo = String(req.query.shipTo ?? "").trim();
   // A search reaches back past the page a plain listing shows, so it takes the
   // full cap by default rather than the newest 50.
-  const limit = Math.min(Number(req.query.limit) || (term ? 200 : 50), 200);
+  const limit = Math.min(Number(req.query.limit) || (term || shipTo ? 200 : 50), 200);
 
   // Which end of the process to list.
   const raw = req.query.direction;
@@ -1095,6 +1097,10 @@ router.get("/box-batches", verifyToken, async (req, res) => {
   if (direction) {
     params.push(direction);
     dirFilter = ` AND b.direction = $${params.length}`;
+  }
+  if (shipTo) {
+    params.push(shipTo);
+    dirFilter += ` AND UPPER(TRIM(b.ship_to)) = UPPER($${params.length})`;
   }
   if (term) {
     params.push(term);
