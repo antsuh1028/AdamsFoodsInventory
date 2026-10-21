@@ -44,6 +44,7 @@ import ScaleDiagnostic from "../components/navbar/scaleDiagnostic";
 import DailyReport from "./noblesse/DailyReport";
 import ItemListManager, { CUSTOMER_LIST } from "./noblesse/ItemListManager";
 import FpTracker from "./noblesse/FpTracker";
+import FloatingWindow from "../components/FloatingWindow";
 import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -69,6 +70,7 @@ const NoblesseScreen = () => {
   const [customerListOpen, setCustomerListOpen] = useState(false);
   const manageItems = canManageItems();
   const [fpOpen, setFpOpen] = useState(false);
+  const [afManifestOpen, setAfManifestOpen] = useState(false);
   const {
     isOpen: drawerOpen,
     onOpen: openDrawer,
@@ -598,6 +600,8 @@ const NoblesseScreen = () => {
                 <Divider />
                 {drawerBtn("Scanner Diagnostic", () => setScanDiagOpen(true))}
                 {drawerBtn("Scale Diagnostic", () => setScaleDiagOpen(true))}
+                {/* Preview: Shabuya's outgoing manifests, printed as Adams Foods. */}
+                {drawerBtn("Shabuya Manifests (AF)", () => setAfManifestOpen(true))}
                 <Divider />
                 {drawerBtn("← Adams Foods", () => navigate("/home"))}
               </>
@@ -640,6 +644,12 @@ const NoblesseScreen = () => {
 
       {isAdmin && (
         <>
+          <FloatingWindow isOpen={afManifestOpen} onClose={() => setAfManifestOpen(false)}
+            title="Shabuya Manifests (Adams Foods)" width={1150}>
+            {afManifestOpen && (
+              <WeightManifestTab refreshSignal={refreshSignal} company="Adams Foods" shipTo="SHABUYA" />
+            )}
+          </FloatingWindow>
           <ScannerDiagnostic
             isOpen={scanDiagOpen}
             onClose={() => setScanDiagOpen(false)}

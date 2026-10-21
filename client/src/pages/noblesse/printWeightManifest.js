@@ -16,6 +16,7 @@ const show = (n) => fromHundredths(n);
 const printWeightManifest = ({
   lotNumber, date, vendor, shipTo, billOfLading, itemDescription,
   scans = [], assembledBy = "", checkedBy = "", memo = "",
+  company = "Noblesse Trading",
 } = {}) => {
   // A rejected scan was never recorded, a duplicate is one box scanned twice, and a
   // voided one was taken off the tally on purpose.
@@ -123,7 +124,7 @@ const printWeightManifest = ({
       </head>
       <body>
         <div class="sheet">
-          <h1>Noblesse Trading</h1>
+          <h1>${esc(company)}</h1>
 
           <table class="head">
             <tr>
