@@ -595,7 +595,8 @@ const MemberSessions = ({ rows }) => (
   </Box>
 );
 
-export const WeightManifestTab = ({ refreshSignal = 0 }) => {
+// `company` sets the name printed at the top of the tally.
+export const WeightManifestTab = ({ refreshSignal = 0, company }) => {
   // An open session can be corrected by whoever is running it; a closed one is
   // an admin act. The server enforces both — this only decides what to draw.
   const isAdmin = getRole() === "admin";
@@ -795,6 +796,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
       // The form already carries a MEMO line — the session's remarks are what
       // it was always there for.
       memo: full.remarks,
+      company,
     });
   };
 
@@ -939,6 +941,7 @@ export const WeightManifestTab = ({ refreshSignal = 0 }) => {
           ? today(new Date(group.first_opened)) : today(new Date(data.created_at))),
         scans: data.items,
         memo: data.remarks,
+        company,
       });
     } catch (err) {
       toast({
