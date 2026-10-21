@@ -234,6 +234,8 @@ Everything persisted comes from the server's own parse.
 **Box routes are split by part** under `server/routes/boxes/` (sessions/, helpers/,
 manifests, formLinks, removals, tallyImport). `boxes.pg.js` only mounts them, in an
 order that keeps literal paths ahead of `:id`. Tests that discover routes walk nested routers.
+`noblesse.pg.js` is split the same way under `server/routes/noblesse/` (receipts,
+ntiInventory, procOrders, registrationForms, helpers/shared).
 
 **`server/utils/gs1.js` and `client/src/utils/gs1.js` are byte-identical.**
 `server/tests/gs1.test.js` fails if they drift. Edit both.
