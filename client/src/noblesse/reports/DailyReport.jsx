@@ -2,14 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Box, Flex, Text, Button, Badge, Input, Spinner, Alert, AlertIcon,
   Table, Thead, Tbody, Tr, Th, Td, Tooltip, IconButton,
-  Menu, MenuButton, MenuList, MenuItem,
 } from "@chakra-ui/react";
 import {
   RepeatIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon,
 } from "@chakra-ui/icons";
 import FloatingWindow from "../../components/FloatingWindow";
 import LotTimeline from "../lots/LotTimeline";
-import { LotFormWindow, LotManifestWindow } from "../lots/LotEntries";
+import LotMenu from "../lots/LotMenu";
 import axiosInstance from "../../utils/axiosInstance";
 import { today, fmtWeight, fmtLongDate } from "../common/shared";
 
@@ -280,9 +279,7 @@ const DailyReport = ({ isOpen, onClose }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  // Three independent windows, so any combination can be open at once.
-  const [formLot, setFormLot] = useState(null);
-  const [manifestLot, setManifestLot] = useState(null);
+  // The lot menu opens the form and manifests itself; the timeline steps through this report's lots.
   const [timelineLot, setTimelineLot] = useState(null);
   // Survives a re-render mid-flight so a slow day cannot overwrite a newer one.
   const wanted = useRef(day);
@@ -464,28 +461,8 @@ const DailyReport = ({ isOpen, onClose }) => {
                             figure. Each entry is its own window, so a form and
                             its manifest can sit open side by side. */}
                         <Td fontWeight="600">
-                          <Menu isLazy placement="bottom-start">
-                            <MenuButton
-                              as={Button}
-                              variant="link"
-                              size="sm"
-                              fontWeight="600"
-                              color="blue.600"
-                            >
-                              {lot.lotNumber}
-                            </MenuButton>
-                            <MenuList fontSize="sm" minW="200px">
-                              <MenuItem onClick={() => setFormLot(lot.lotNumber)}>
-                                Registration form
-                              </MenuItem>
-                              <MenuItem onClick={() => setManifestLot(lot.lotNumber)}>
-                                Weight manifests
-                              </MenuItem>
-                              <MenuItem onClick={() => setTimelineLot(lot)}>
-                                Lot timeline
-                              </MenuItem>
-                            </MenuList>
-                          </Menu>
+                          <LotMenu lotNumber={lot.lotNumber} lotId={lot.lotId} color="blue.600"
+                            onTimeline={() => setTimelineLot(lot)} />
                           {lot.description && (
                             <Text as="span" ml={2} fontSize="xs" fontWeight="normal" color="gray.600"
                               title={lot.description}>
@@ -530,19 +507,8 @@ const DailyReport = ({ isOpen, onClose }) => {
       </Box>
     </FloatingWindow>
 
-    {/* Companions, not children: each isOpen is ANDed with the report's own so
-        none can be left floating over an unrelated screen once it closes —
-        the same rule the scanning keypad follows. */}
-    <LotFormWindow
-      lotNumber={formLot}
-      isOpen={isOpen && Boolean(formLot)}
-      onClose={() => setFormLot(null)}
-    />
-    <LotManifestWindow
-      lotNumber={manifestLot}
-      isOpen={isOpen && Boolean(manifestLot)}
-      onClose={() => setManifestLot(null)}
-    />
+    {/* A companion, not a child: its isOpen is ANDed with the report's own so it
+        cannot be left floating over an unrelated screen once the report closes. */}
     <LotTimeline
       lotId={timelineLot?.lotId ?? null}
       lotNumber={timelineLot?.lotNumber ?? ""}

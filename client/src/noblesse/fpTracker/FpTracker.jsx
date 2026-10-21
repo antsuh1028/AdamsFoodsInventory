@@ -12,6 +12,7 @@ import { fmtDate, today, fmtWeight } from "../common/shared";
 import useLang from "../../hooks/useLang";
 import LangToggle from "../../components/LangToggle";
 import FpReturnForm from "./FpReturnForm";
+import LotMenu from "../lots/LotMenu";
 
 // The F.P Tracker: trips to the AF freezer that come back for another run.
 // A trip is a pallet weighed out at the dock, or a row entered by hand for one
@@ -353,7 +354,7 @@ const FpTracker = ({ isOpen, onClose }) => {
                   <Tr cursor="pointer" bg={isOpen ? "blue.50" : undefined} _hover={{ bg: "blue.50" }}
                     onClick={() => toggleLot(lot.lotId)}>
                     <Td px={2}>{isOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}</Td>
-                    <Td fontWeight="600" color="blue.700">{lot.lotNumber}</Td>
+                    <Td><LotMenu lotNumber={lot.lotNumber} lotId={lot.lotId} t={t} /></Td>
                     <Td whiteSpace="nowrap">{lot.fpLotNumber || "—"}</Td>
                     <Td whiteSpace="nowrap">{fmtDate(lot.lastSent)}</Td>
                     <Td whiteSpace="nowrap">{back.length ? fmtDate(back[0].returnedOn) : "—"}</Td>

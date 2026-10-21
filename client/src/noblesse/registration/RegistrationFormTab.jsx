@@ -13,6 +13,7 @@ import ProcessingReportLink from "../processing/ProcessingReportLink";
 import LotPicker from "../lots/LotPicker";
 import VendorInput from "../../components/inputs/VendorInput";
 import LotTimeline from "../lots/LotTimeline";
+import LotMenu from "../lots/LotMenu";
 import ntiLogo from "../../assets/nti.jpg";
 import FloatingWindow from "../../components/FloatingWindow";
 import AllFormsTable from "./AllFormsTable";
@@ -1108,22 +1109,10 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                     borderLeft={isToday ? "4px solid" : undefined}
                     borderLeftColor={isToday ? "green.500" : undefined}>
                     <Flex align="center" gap={2}>
-                      {f.lotId ? (
-                        <Text
-                          as="span"
-                          color="blue.600"
-                          fontWeight="600"
-                          textDecoration="underline"
-                          cursor="pointer"
-                          title="Show this lot's history"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setTimelineLot({ lotId: f.lotId, lotNumber: f.lotNumber });
-                          }}
-                          onDoubleClick={(e) => e.stopPropagation()}
-                        >
-                          {f.lotNumber}
-                        </Text>
+                      {f.lotNumber ? (
+                        <LotMenu lotNumber={f.lotNumber} lotId={f.lotId} color="blue.600"
+                          onTimeline={f.lotId
+                            ? () => setTimelineLot({ lotId: f.lotId, lotNumber: f.lotNumber }) : undefined} />
                       ) : (
                         <Text as="span">{f.lotNumber || "—"}</Text>
                       )}

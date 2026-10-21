@@ -1,12 +1,17 @@
 import React, { useState } from "react";
 import {
   Menu, MenuButton, MenuList, MenuItem, MenuGroup, MenuDivider, Button, Box, Text, Spinner,
-  Portal, useToast,
+  useToast,
 } from "@chakra-ui/react";
 import axiosInstance from "../../utils/axiosInstance";
 import LotTimeline from "./LotTimeline";
 import { LotFormWindow, LotManifestWindow } from "./LotEntries";
 import { fmtDate, fmtWeight, weighedDay } from "../common/shared";
+import { isOutgoingOnly } from "../../utils/getRole";
+import { translator } from "../../utils/i18n";
+
+// English unless a screen passes its own translator, as Outgoing does.
+const ENGLISH = translator("en");
 
 // A lot number that opens what stands behind it: the form, its manifests, its
 // timeline. Sits inside clickable rows, so none of its clicks reach the row.
@@ -14,7 +19,8 @@ import { fmtDate, fmtWeight, weighedDay } from "../common/shared";
 const stop = (e) => e.stopPropagation();
 const totalOf = (b) => (b.totals || []).find((t) => t.unit === "LB")?.total || "0";
 
-const LotMenu = ({ lotNumber, lotId = null, size = "sm", color = "blue.700" }) => {
+// `onTimeline` lets a screen open its own timeline (one that steps through its list).
+const LotMenu = ({ lotNumber, lotId = null, size = "sm", color = "blue.700", onTimeline, t = ENGLISH }) => {
   const toast = useToast();
   const [sessions, setSessions] = useState(null);   // null until the menu first opens
   const [loading, setLoading] = useState(false);
@@ -53,34 +59,37 @@ const LotMenu = ({ lotNumber, lotId = null, size = "sm", color = "blue.700" }) =
   };
 
   const label = (b) =>
-    `${b.direction === "outgoing" ? "Out" : "In"} · ${fmtDate(weighedDay(b))} · `
-    + `${b.box_count} box${Number(b.box_count) === 1 ? "" : "es"} · ${fmtWeight(totalOf(b))} lb`;
+    `${t(b.direction === "outgoing" ? "Out" : "In")} · ${fmtDate(weighedDay(b))} · `
+    + `${t(Number(b.box_count) === 1 ? "{n} box" : "{n} boxes", { n: b.box_count })} · ${fmtWeight(totalOf(b))} lb`;
 
   return (
     <Box as="span" display="inline-block" onClick={stop} onDoubleClick={stop}>
-      <Menu isLazy placement="bottom-start" onOpen={loadSessions}>
+      {/* Fixed, not portalled: never clipped by a scrolling table, never changes the
+          page's height (which made the page jump), and hides with its tab. */}
+      <Menu isLazy placement="bottom-start" strategy="fixed" onOpen={loadSessions}>
         <MenuButton as={Button} variant="link" size={size} fontWeight="700" color={color}
-          onClick={stop} title="Open the form, manifests or timeline">
+          onClick={stop} title={t("Open the form, manifests or timeline")}>
           {lotNumber}
         </MenuButton>
-        {/* Portalled: these tables scroll sideways and would clip the list. */}
-        <Portal>
         <MenuList fontSize="sm" minW="240px" zIndex={1500} onClick={stop}>
-          <MenuItem onClick={() => setFormOpen(true)}>Registration form</MenuItem>
+          {/* The dock's account is fenced away from registration forms. */}
+          {!isOutgoingOnly() && (
+            <MenuItem onClick={() => setFormOpen(true)}>{t("Registration form")}</MenuItem>
+          )}
 
           {loading || sessions === null ? (
-            <MenuItem isDisabled><Spinner size="xs" mr={2} />Weight manifests</MenuItem>
+            <MenuItem isDisabled><Spinner size="xs" mr={2} />{t("Weight manifests")}</MenuItem>
           ) : sessions.length === 0 ? (
-            <MenuItem isDisabled>No weight manifests</MenuItem>
+            <MenuItem isDisabled>{t("No weight manifests")}</MenuItem>
           ) : sessions.length === 1 ? (
             <MenuItem onClick={() => setManifest({ batchId: sessions[0].batch_id })}>
-              Weight manifest
+              {t("Weight manifest")}
             </MenuItem>
           ) : (
             <>
               <MenuDivider />
-              <MenuGroup title={`Weight manifests (${sessions.length})`} fontSize="xs" color="gray.500">
-                <MenuItem onClick={() => setManifest({ batchId: null })}>All together</MenuItem>
+              <MenuGroup title={t("Weight manifests ({n})", { n: sessions.length })} fontSize="xs" color="gray.500">
+                <MenuItem onClick={() => setManifest({ batchId: null })}>{t("All together")}</MenuItem>
                 {sessions.map((b) => (
                   <MenuItem key={b.batch_id} pl={6} onClick={() => setManifest({ batchId: b.batch_id })}
                     style={{ fontVariantNumeric: "tabular-nums" }}>
@@ -92,9 +101,8 @@ const LotMenu = ({ lotNumber, lotId = null, size = "sm", color = "blue.700" }) =
             </>
           )}
 
-          <MenuItem onClick={openTimeline}>Lot timeline</MenuItem>
+          <MenuItem onClick={onTimeline || openTimeline}>{t("Lot timeline")}</MenuItem>
         </MenuList>
-        </Portal>
       </Menu>
 
       <LotFormWindow lotNumber={lotNumber} isOpen={formOpen} onClose={() => setFormOpen(false)} />

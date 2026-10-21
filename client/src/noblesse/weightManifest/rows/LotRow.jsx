@@ -2,6 +2,7 @@
 
 import { Badge, Box, Button, Flex, IconButton, Text } from "@chakra-ui/react";
 import { ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
+import LotMenu from "../../lots/LotMenu";
 
 const LotRow = ({ i, openFormId, printGroup, row, rowUnseen, toggleFormGroup }) => {
   const g = row.group;
@@ -28,7 +29,9 @@ const LotRow = ({ i, openFormId, printGroup, row, rowUnseen, toggleFormGroup }) 
             <Box as="span" width="7px" height="7px" borderRadius="full"
               bg="blue.500" flexShrink={0} title="Not opened on this device yet" />
           )}
-          <Text as="span">{g.lot_number || `Form ${g.form_id}`}</Text>
+          {g.lot_number
+            ? <LotMenu lotNumber={g.lot_number} lotId={g.lot_id ?? null} color="teal.800" />
+            : <Text as="span">{`Form ${g.form_id}`}</Text>}
           {fNew && (
             <Badge colorScheme="blue" fontSize="9px" px={1.5} borderRadius="full">NEW</Badge>
           )}

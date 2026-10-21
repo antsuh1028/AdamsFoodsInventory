@@ -14,6 +14,7 @@ import { fmtDate, fmtDateTime, fmtLongDate, today, upper, weighedDay } from "../
 import { groupOutgoing, milsToLb, clockOf } from "./outgoingGroups";
 import getRole, { canReceive } from "../../utils/getRole";
 import LotTimeline from "../lots/LotTimeline";
+import LotMenu from "../lots/LotMenu";
 import ItemDescriptionInput from "../../components/inputs/ItemDescriptionInput";
 import CustomerInput from "../../components/inputs/CustomerInput";
 import printPackingList from "./printPackingList";
@@ -596,16 +597,10 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
         : openBatch === b.batch_id ? "blue.300" : "gray.200"}
       cursor="pointer" title={t("Double-click to see the boxes")}
       onDoubleClick={() => toggleBatch(b.batch_id)}>
-      {reception && b.lot_id ? (
-        <Button variant="link" size="sm" fontWeight="600" colorScheme="blue"
-          onClick={(e) => {
-            e.stopPropagation();
-            setTimelineLot({ lotId: b.lot_id, lotNumber: b.lot_number });
-          }}
-          onDoubleClick={(e) => e.stopPropagation()}
-          title={t("Open this lot — its figures, and whether it is finished")}>
-          {b.lot_number}
-        </Button>
+      {b.lot_number ? (
+        <LotMenu lotNumber={b.lot_number} lotId={b.lot_id ?? null} t={t}
+          onTimeline={b.lot_id
+            ? () => setTimelineLot({ lotId: b.lot_id, lotNumber: b.lot_number }) : undefined} />
       ) : (
         <Text fontSize="sm" fontWeight="600" color="blue.700">
           {b.lot_number || t("Batch {id}", { id: b.batch_id })}
@@ -838,7 +833,7 @@ export const OutgoingTab = ({ refreshSignal = 0 }) => {
                     {detail.items.map((it, i) => (
                       <Flex key={it.itemId} px={3} py={2} gap={3} align="baseline" wrap="wrap"
                         bg={i % 2 ? "gray.50" : "white"}>
-                        <Text fontSize="sm" fontWeight="600" color="blue.700">{it.lotNumber}</Text>
+                        <LotMenu lotNumber={it.lotNumber} lotId={it.lotId ?? null} t={t} />
                         {it.stage === "raw" && (
                           <Badge colorScheme="yellow" fontSize="9px">{t("Raw")}</Badge>
                         )}

@@ -9,6 +9,7 @@ import { ManifestEditor } from "../editor/ManifestEditor";
 import ScanSheet from "../../weighing/ScanSheet";
 import axiosInstance from "../../../utils/axiosInstance";
 import { fmtDate, fmtDateTime } from "../../common/shared";
+import LotMenu from "../../lots/LotMenu";
 
 const SessionRow = ({ details, expandedId, fetchBatches, handlersFor, i, isAdmin, isToday, isUnseen, loadingId, print, row, rowBusy, selected, setConfirmDeleteBatch, setDetails, setScannerAdopt, setScannerOpen, toggleExpand, toggleSelected }) => {
   const b = row.batch;
@@ -60,7 +61,9 @@ const SessionRow = ({ details, expandedId, fetchBatches, handlersFor, i, isAdmin
               <Box as="span" width="7px" height="7px" borderRadius="full"
                 bg="blue.500" flexShrink={0} title="Not opened on this device yet" />
             )}
-            <Text as="span">{b.lot_number || `Batch ${b.batch_id}`}</Text>
+            {b.lot_number
+              ? <LotMenu lotNumber={b.lot_number} lotId={b.lot_id ?? null} />
+              : <Text as="span">{`Batch ${b.batch_id}`}</Text>}
             {isNew && (
               <Badge colorScheme="blue" fontSize="9px" px={1.5} borderRadius="full">
                 NEW
