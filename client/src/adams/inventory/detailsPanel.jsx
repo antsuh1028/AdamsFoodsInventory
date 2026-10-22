@@ -227,7 +227,7 @@ const DetailsPanel = ({
   const handleRemoveBox = async (index) => {
     setBoxLoading(index);
     try {
-      const removedWeight = item.boxes[index].weight;
+      const removedBox = item.boxes[index];
       const res = await authPatch(
         `${API_BASE_URL}/inventory/${item._id}/box/remove`,
         { index },
@@ -235,7 +235,7 @@ const DetailsPanel = ({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
       onItemUpdate(data);
-      setLastRemovedBoxes({ boxes: [{ weight: removedWeight }] });
+      setLastRemovedBoxes({ boxes: [removedBox] });
     } catch (err) {
       toast({
         title: "Failed to remove box",
@@ -290,25 +290,14 @@ const DetailsPanel = ({
     if (!lastRemovedBoxes || !lastRemovedBoxes.boxes || lastRemovedBoxes.boxes.length === 0) return;
     setBoxLoading("undo");
     try {
-      const boxes = lastRemovedBoxes.boxes;
-
-      if (boxes.length === 1) {
-        const res = await authPatch(
-          `${API_BASE_URL}/inventory/${item._id}/box/add`,
-          { weight: boxes[0].weight },
-        );
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed");
-        onItemUpdate(data);
-      } else {
-        const res = await authPatch(
-          `${API_BASE_URL}/inventory/${item._id}/box/bulk-add`,
-          { count: boxes.length, weight: boxes[0].weight },
-        );
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed");
-        onItemUpdate(data);
-      }
+      // The exact boxes back, each with its own weight and any barcode data.
+      const res = await authPatch(
+        `${API_BASE_URL}/inventory/${item._id}/box/restore`,
+        { boxes: lastRemovedBoxes.boxes },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      onItemUpdate(data);
       setLastRemovedBoxes(null);
     } catch (err) {
       toast({

@@ -4,12 +4,14 @@ import FloatingWindow from "../../components/FloatingWindow";
 import ReceiveSetup from "./ReceiveSetup";
 import ReceiveSession from "./ReceiveSession";
 import PullOut from "./PullOut";
+import useWakeLock from "./useWakeLock";
 
 // Scanning box labels at Adams Foods: in to a freezer location, or out.
 
 const ScanBoxes = ({ isOpen, onClose }) => {
   const [mode, setMode] = useState("receive");
   const [row, setRow] = useState(null); // the row being scanned onto
+  useWakeLock(isOpen);
 
   const close = () => { setRow(null); onClose(); };
 

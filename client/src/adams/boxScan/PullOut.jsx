@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert, AlertIcon, Badge, Box, Button, Flex, Input, Radio, RadioGroup, Stack, Text, useToast,
   AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay,
@@ -55,6 +55,14 @@ const PullOut = ({ active }) => {
       setProblem(`Not read: ${result.reason || result.code}`);
     }
   });
+
+  // Leaving the page with boxes on the list asks first; nothing has come off stock yet.
+  useEffect(() => {
+    if (!list.length) return undefined;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [list.length]);
 
   const drop = (scanId) => setList((l) => l.filter((x) => x.box.scanId !== scanId));
 
