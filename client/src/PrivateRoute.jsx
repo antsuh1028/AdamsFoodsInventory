@@ -231,9 +231,12 @@ const PrivateRoute = ({ children, allowedRoles }) => {
     return <Navigate to={target} />;
   }
 
+  // No idle logout for an admin on the dev server; production builds always have it.
+  const devAdmin = process.env.NODE_ENV === "development" && payload.role === "admin";
+
   return (
     <>
-      {NOBLESSE_SIDE.includes(payload.role) ? <NoblesseWatcher /> : <IdleWatcher />}
+      {devAdmin ? null : NOBLESSE_SIDE.includes(payload.role) ? <NoblesseWatcher /> : <IdleWatcher />}
       {children}
     </>
   );
