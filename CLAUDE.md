@@ -123,9 +123,15 @@
 
 | | Adams Foods | Noblesse Trading |
 |---|---|---|
-| Entry | `client/src/pages/HomeScreen.jsx` + navbar | `client/src/pages/NoblesseScreen.jsx` |
+| Entry | `client/src/adams/Homescreen.jsx` + navbar | `client/src/noblesse/NoblesseScreen.jsx` |
 | Login | `/login` | `/noblesse-login` |
 | Nav | top navbar | hamburger **drawer** (`useDisclosure`) |
+
+The client is grouped by app, then feature: `src/adams/` (inventory, locations,
+history, exports, scanning, files, production, help) and `src/noblesse/` (weighing,
+weightManifest, outgoing, processing, registration, incoming, lots, fpTracker,
+reports, common). `src/components/` is UI both apps share. `src/utils/` stays put:
+server tests load the scan/scale/weight utilities and the byte-identical mirrors from there.
 
 Noblesse is tabbed: Incoming Records · Registration Forms · **Weight Manifests**.
 Box weighing lives under Noblesse (it is a Noblesse business process), not in the
@@ -227,9 +233,15 @@ fetches on mount looks live but is frozen at page load — this bug shipped once
 No float ever enters the path. Comparisons and running totals use **integer
 thousandths**. `"76.20"` and `"76.2"` must compare equal.
 
-**The client is not trusted.** `validateItem` in `server/routes/boxes.pg.js`
+**The client is not trusted.** `validateItem` in `server/routes/boxes/helpers/validate.js`
 re-parses `rawBarcode` server-side and rejects `WEIGHT_MISMATCH` / `UNIT_MISMATCH`.
 Everything persisted comes from the server's own parse.
+
+**Box routes are split by part** under `server/routes/boxes/` (sessions/, helpers/,
+manifests, formLinks, removals, tallyImport). `boxes.pg.js` only mounts them, in an
+order that keeps literal paths ahead of `:id`. Tests that discover routes walk nested routers.
+`noblesse.pg.js` is split the same way under `server/routes/noblesse/` (receipts,
+ntiInventory, procOrders, registrationForms, helpers/shared).
 
 **`server/utils/gs1.js` and `client/src/utils/gs1.js` are byte-identical.**
 `server/tests/gs1.test.js` fails if they drift. Edit both.
@@ -307,6 +319,18 @@ seen-set depend on — so neither is overwritten by the other.
 - A date is carried as **noon Pacific** in SQL and as `weighed_on::text` over
   the wire. Both guard the same scar: a DATE becomes midnight server-local in
   pg, which a Pacific reader shows as the day before (§8, 8/17 → 8/16).
+
+### Adams Foods scanning (`routes/afScan.pg.js`, `client/src/adams/boxScan/`)
+
+Boxes live on `inventory.boxes`; a scanned box carries `weight` (LB, exact) plus
+its barcode fields and a server-made `scanId`. Old weight-only boxes still work
+everywhere, but cannot be found by scan.
+- The server re-reads every barcode; a KG label is stored in pounds via `toPounds`.
+- A packer box (GTIN + serial) can be in stock once. NTI's own labels have no
+  serial, so identical ones are interchangeable and matched by code, weight and pack date.
+- Pull-out is a list, then one transaction: rows locked in id order, refused whole
+  if any box has gone, empty rows deleted (AF's rule), and "Sent to NTI" writes a
+  real `production_orders` row so returns attach to it as before.
 
 ---
 

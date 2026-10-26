@@ -7,6 +7,7 @@ const { searchTerm, searchClause } = require("../utils/search");
 const { isCalendarDay } = require("../utils/weighedAt");
 const { fpCounts, lockLot, findFpChild } = require("../utils/fpLot");
 const { manualCasesSql } = require("../utils/formManualCases");
+const { lotDescriptionSql } = require("../utils/lotDescription");
 
 // The shop-floor record of one processing run: which lot, which line, who ran
 // it, how many cases went through.
@@ -150,6 +151,7 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
     const result = await pool.query(
       `SELECT r.*, l.lot_number, l.kind AS lot_kind,
               (SELECT p.lot_number FROM lots p WHERE p.lot_id = l.parent_lot_id) AS parent_lot_number,
+              ${lotDescriptionSql("l")} AS lot_description,
               (SELECT COALESCE(json_agg(json_build_object(
                         'pullId', p.pull_id, 'position', p.position,
                         'cases', p.cases, 'notes', p.notes) ORDER BY p.position, p.pull_id), '[]'::json)
@@ -167,6 +169,8 @@ router.get("/processing-reports", verifyToken, async (req, res) => {
       ...fmtReport(r),
       pulls: r.pulls || [],
       workers: splitNames(r.workers),
+      // What the lot is, for a report filed without a description.
+      lotDescription: r.lot_description || null,
     })));
   } catch (err) {
     console.error("list processing reports:", err);
@@ -675,17 +679,94 @@ router.patch("/processing-reports/:id/details", verifyToken, requireRole(...REPO
   const workers = splitNames(b.workers);
   const text = (v) => (v == null || String(v).trim() === "" ? null : String(v));
 
+  // Optional: the cases processed, corrected. Omitted leaves them as accepted.
+  let pulls = null;
+  if (Array.isArray(b.pulls)) {
+    pulls = b.pulls.map((p) => ({ cases: asCases(p && p.cases), notes: (p && p.notes) || null }));
+    if (!pulls.length || pulls.some((p) => p.cases === null)) {
+      return res.status(400).json({ error: "Each row of cases needs a whole number above zero" });
+    }
+  }
+
   const client = await pool.connect();
+  let moved = null;
   try {
     await client.query("BEGIN");
     const cur = await client.query(
-      `SELECT status FROM noblesse_processing_reports WHERE report_id = $1 AND tenant_id = $2 FOR UPDATE`,
+      `SELECT r.status, r.input_cases, r.lot_id, r.applied_form_id,
+              l.lot_number, l.kind AS lot_kind, l.parent_lot_id
+         FROM noblesse_processing_reports r
+         JOIN lots l ON l.lot_id = r.lot_id
+        WHERE r.report_id = $1 AND r.tenant_id = $2
+          FOR UPDATE OF r`,
       [id, req.tenantId]);
     if (!cur.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Report not found" }); }
-    if (cur.rows[0].status !== "accepted") {
+    const report = cur.rows[0];
+    if (report.status !== "accepted") {
       await client.query("ROLLBACK");
       return res.status(409).json({ code: "NOT_ACCEPTED",
         error: "Only an accepted report is corrected this way. Edit the report itself instead." });
+    }
+
+    if (pulls) {
+      const total = pulls.reduce((sum, p) => sum + p.cases, 0);
+      const delta = total - report.input_cases;   // > 0 takes more off the lot, < 0 puts some back
+      let rawId = null;
+      if (delta !== 0) {
+        if (report.lot_kind === "further") {
+          // An FP run's count is read from its accepted reports, so only an increase needs checking.
+          await lockLot(client, req.tenantId, report.parent_lot_id);
+          const waiting = (await fpCounts(client, req.tenantId, report.lot_id)).waiting;
+          if (delta > waiting) {
+            await client.query("ROLLBACK");
+            return res.status(409).json({ code: "INSUFFICIENT_STOCK",
+              error: `Only ${Math.max(waiting, 0)} more cases are waiting on ${report.lot_number}.` });
+          }
+        } else {
+          const stock = await client.query(
+            `SELECT s.id, s.qty_cases, ${manualCasesSql("s")} AS manual_cases
+               FROM nti_inventory s
+              WHERE s.tenant_id = $2 AND s.stage = 'raw'
+                AND (s.lot_id = $1 OR (s.lot_id IS NULL AND s.lot = $3))
+                FOR UPDATE OF s`,
+            [report.lot_id, req.tenantId, report.lot_number]);
+          if (!stock.rows.length) {
+            await client.query("ROLLBACK");
+            return res.status(409).json({ code: "NO_RAW_STOCK", error: "There is no raw stock on this lot to move cases on." });
+          }
+          const raw = stock.rows[0];
+          const onHand = (Number(raw.qty_cases) || 0) - (Number(raw.manual_cases) || 0);
+          if (delta > onHand) {
+            await client.query("ROLLBACK");
+            return res.status(409).json({ code: "INSUFFICIENT_STOCK",
+              error: `That is ${delta} more cases, but only ${Math.max(onHand, 0)} are left on ${report.lot_number}.` });
+          }
+          rawId = raw.id;
+          await client.query(
+            `UPDATE nti_inventory SET qty_cases = COALESCE(qty_cases, 0) - $1 WHERE id = $2 AND tenant_id = $3`,
+            [delta, raw.id, req.tenantId]);
+        }
+        // This report's line on the form, in place.
+        if (report.applied_form_id) {
+          await client.query(
+            `UPDATE noblesse_registration_forms
+                SET processing_dates = (
+                  SELECT jsonb_agg(CASE WHEN COALESCE((e->>'reportId')::int, -1) = $1
+                                        THEN jsonb_set(e, '{cases}', to_jsonb($2::text)) ELSE e END ORDER BY o)
+                    FROM jsonb_array_elements(processing_dates) WITH ORDINALITY AS t(e, o))
+              WHERE id = $3 AND tenant_id = $4 AND jsonb_array_length(processing_dates) > 0`,
+            [id, String(total), report.applied_form_id, req.tenantId]);
+        }
+        await client.query(
+          `UPDATE noblesse_processing_reports SET input_cases = $1 WHERE report_id = $2 AND tenant_id = $3`,
+          [total, id, req.tenantId]);
+        moved = { rawId, lot: report.lot_number, from: report.input_cases, to: total };
+      }
+      await client.query(`DELETE FROM noblesse_processing_report_pulls WHERE report_id = $1`, [id]);
+      await client.query(
+        `INSERT INTO noblesse_processing_report_pulls (report_id, position, cases, notes)
+         SELECT $1, p, c, n FROM UNNEST($2::int[], $3::int[], $4::text[]) AS t(p, c, n)`,
+        [id, pulls.map((_, i) => i), pulls.map((p) => p.cases), pulls.map((p) => p.notes)]);
     }
     await client.query(
       `UPDATE noblesse_processing_reports
@@ -705,6 +786,15 @@ router.patch("/processing-reports/:id/details", verifyToken, requireRole(...REPO
         [id, workers.map((_, i) => i), workers]);
     }
     await client.query("COMMIT");
+    // After the commit: a history write must never fail a correction that has happened.
+    if (moved) {
+      pool.query(
+        `INSERT INTO nti_inventory_history (tenant_id, action, item_id, lot, snapshot, performed_by)
+         VALUES ($1, 'processed_corrected', $2, $3, $4, $5)`,
+        [req.tenantId, moved.rawId, moved.lot,
+         JSON.stringify({ reportId: id, casesBefore: moved.from, casesAfter: moved.to }), req.username]
+      ).catch((err) => console.error("nti history log error:", err.message));
+    }
     res.json(await loadReport(id, req.tenantId));
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

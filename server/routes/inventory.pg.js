@@ -3,58 +3,13 @@ const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const validLocations = require("../utils/locations");
-
-// Ends any transaction a handler returned from early, so the pool never hands one on.
-const release = async (client) => {
-  try { await client.query("ROLLBACK"); } catch { /* nothing was open */ }
-  client.release();
-};
+const { release, fmt, toNum, historyEntry, boxesTotal } = require("../utils/afInventory");
+const { boxFromBarcode, findSameBox } = require("../utils/afBox");
 
 const EDITABLE_FIELDS = ["lot", "vendor", "brand", "species", "description", "grade", "packdate", "date_recvd", "est", "price", "type"];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const fmt = (row) => ({
-  _id:          row.id,
-  location:     row.location      || "",
-  lot:          row.lot           || "",
-  vendor:       row.vendor        || "",
-  brand:        row.brand         || "",
-  species:      row.species       || "",
-  description:  row.description   || "",
-  grade:        row.grade         || "",
-  quantity:     row.quantity      || "",
-  weight:       row.weight        != null ? String(row.weight) : "",
-  packdate:     row.packdate      || "",
-  date_recvd:   row.date_recvd    || "",
-  est:          row.est           || "",
-  price:        row.price         != null ? String(row.price) : "",
-  scanImageKey: row.scan_image_key || null,
-  type:         row.type          || null,
-  source_id:    row.source_id     || null,
-  boxes:        Array.isArray(row.boxes) ? row.boxes : [],
-});
-
-const toNum = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
-
 const boxesWeight = (boxes) =>
   boxes.map((b) => parseFloat(b.weight)).filter((w) => !isNaN(w)).reduce((s, w) => s + w, 0).toFixed(2);
-
-const historyEntry = async (client, tenantId, item, change, username, oldData = null) => {
-  await client.query(
-    `INSERT INTO history (tenant_id, time, change, changed_by, location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, old_data, scan_image_key)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-    [
-      tenantId, new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" }), change, username || "",
-      item.location || "", item.lot || "", item.vendor || "", item.brand || "",
-      item.species || "", item.description || "", item.grade || "",
-      item.quantity || "", item.weight != null ? String(item.weight) : "",
-      item.packdate || "", item.date_recvd || "", item.est || "",
-      oldData ? JSON.stringify(oldData) : null,
-      item.scan_image_key || null,
-    ]
-  );
-};
 
 // ── Add ───────────────────────────────────────────────────────────────────────
 router.post("/inventoryAdd", verifyToken, async (req, res) => {
@@ -156,7 +111,7 @@ router.post("/inventoryUpdate", verifyToken, async (req, res) => {
   try {
     await client.query("BEGIN");
     const before = await client.query(
-      `SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`,
+      `SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
       [currentItem._id, req.tenantId]
     );
     if (before.rows.length === 0) return res.status(404).json({ error: "No Items Found" });
@@ -219,7 +174,7 @@ router.post("/inventoryMove", verifyToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const before = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`, [itemId, req.tenantId]);
+    const before = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [itemId, req.tenantId]);
     if (before.rows.length === 0) return res.status(404).json({ error: "Item not found." });
     const fromLoc = before.rows[0].location;
     const dest = destLocation.toUpperCase();
@@ -248,7 +203,7 @@ router.post("/inventoryOrderRemove", verifyToken, async (req, res) => {
     await client.query("BEGIN");
     const results = [];
     for (const { id, quantityToRemove } of removals) {
-      const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`, [id, req.tenantId]);
+      const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [id, req.tenantId]);
       if (itemRes.rows.length === 0) { results.push({ id, status: "not_found" }); continue; }
       const item = itemRes.rows[0];
       const boxes = Array.isArray(item.boxes) ? item.boxes : [];
@@ -318,7 +273,7 @@ router.patch("/inventory/:id/field", verifyToken, async (req, res) => {
   try {
     await client.query("BEGIN");
     const before = await client.query(
-      `SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`,
+      `SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
       [req.params.id, req.tenantId]
     );
     if (before.rows.length === 0) return res.status(404).json({ error: "Item not found" });
@@ -346,7 +301,7 @@ router.patch("/inventory/:id/box/remove", verifyToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+    const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [req.params.id, req.tenantId]);
     if (itemRes.rows.length === 0) return res.status(404).json({ error: "Item not found" });
     const boxes = Array.isArray(itemRes.rows[0].boxes) ? itemRes.rows[0].boxes : [];
     if (index < 0 || index >= boxes.length) return res.status(400).json({ error: "Invalid index" });
@@ -386,7 +341,7 @@ router.patch("/inventory/:id/box/bulk-remove", verifyToken, async (req, res) => 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+    const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [req.params.id, req.tenantId]);
     if (itemRes.rows.length === 0) return res.status(404).json({ error: "Item not found" });
 
     const boxes = Array.isArray(itemRes.rows[0].boxes) ? itemRes.rows[0].boxes : [];
@@ -431,6 +386,57 @@ router.patch("/inventory/:id/box/bulk-remove", verifyToken, async (req, res) => 
   }
 });
 
+// ── Box Restore (undo a removal) ──────────────────────────────────────────────
+// Puts back exactly the boxes that were removed, each with its own weight and any barcode data.
+router.patch("/inventory/:id/box/restore", verifyToken, async (req, res) => {
+  const given = Array.isArray(req.body && req.body.boxes) ? req.body.boxes : [];
+  if (!given.length || given.length > 500) return res.status(400).json({ error: "boxes must list 1 to 500 boxes" });
+
+  // A scanned box is re-read from its barcode; a plain one is a weight and nothing else.
+  const restored = [];
+  for (const b of given) {
+    const weight = String(b && b.weight != null ? b.weight : "").trim();
+    if (!/^\d{1,7}(\.\d{1,3})?$/.test(weight)) return res.status(400).json({ error: `Not a box weight: "${weight}"` });
+    if (b && b.raw) {
+      const { box, error } = boxFromBarcode(b.raw, b.scannedBy);
+      if (error || box.weight !== weight) return res.status(400).json({ error: "A scanned box no longer matches its barcode." });
+      restored.push({ ...box, scanId: String(b.scanId || box.scanId), scannedAt: b.scannedAt || box.scannedAt });
+    } else {
+      restored.push({ weight });
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [req.params.id, req.tenantId]);
+    if (itemRes.rows.length === 0) return res.status(404).json({ error: "Item not found" });
+    for (const box of restored.filter((x) => x.scanId)) {
+      const same = await findSameBox(client, req.tenantId, box);
+      const sameId = await client.query(
+        `SELECT 1 FROM inventory WHERE tenant_id = $1 AND boxes @> $2::jsonb LIMIT 1`,
+        [req.tenantId, JSON.stringify([{ scanId: box.scanId }])]);
+      if (same || sameId.rows.length) return res.status(409).json({ error: "One of those boxes is already back in stock." });
+    }
+    const boxes = Array.isArray(itemRes.rows[0].boxes) ? itemRes.rows[0].boxes : [];
+    const next = [...boxes, ...restored];
+    const total = boxesTotal(next);
+    const upd = await client.query(
+      `UPDATE inventory SET boxes = $1::jsonb, weight = $2, quantity = $3 WHERE id = $4 AND tenant_id = $5 RETURNING *`,
+      [JSON.stringify(next), total, String(next.length), req.params.id, req.tenantId]
+    );
+    await historyEntry(client, req.tenantId, upd.rows[0],
+      `${restored.length} box(es) restored (${boxesTotal(restored)} lb) — ${next.length} box(es) total, ${total} lb total`, req.username);
+    await client.query("COMMIT");
+    res.json(fmt(upd.rows[0]));
+  } catch (err) {
+    console.error("box restore:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    await release(client);
+  }
+});
+
 // ── Box Add ───────────────────────────────────────────────────────────────────
 router.patch("/inventory/:id/box/add", verifyToken, async (req, res) => {
   const { weight } = req.body;
@@ -438,7 +444,7 @@ router.patch("/inventory/:id/box/add", verifyToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+    const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [req.params.id, req.tenantId]);
     if (itemRes.rows.length === 0) return res.status(404).json({ error: "Item not found" });
     const boxes = Array.isArray(itemRes.rows[0].boxes) ? itemRes.rows[0].boxes : [];
     const newBoxes = [...boxes, { weight: String(weight) }];
@@ -471,7 +477,7 @@ router.patch("/inventory/:id/box/bulk-add", verifyToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+    const itemRes = await client.query(`SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [req.params.id, req.tenantId]);
     if (itemRes.rows.length === 0) return res.status(404).json({ error: "Item not found" });
     const existing = Array.isArray(itemRes.rows[0].boxes) ? itemRes.rows[0].boxes : [];
     const newBoxes = [...existing, ...Array.from({ length: n }, () => ({ weight: String(w) }))];

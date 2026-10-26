@@ -1,10 +1,10 @@
 import { Route, Routes } from "react-router-dom";
 import { ChakraProvider, extendTheme, theme as base } from "@chakra-ui/react";
-import Homescreen from "./pages/Homescreen";
-import NoblesseScreen from "./pages/NoblesseScreen";
-import Login from "./pages/Login";
-import NoblesseLogin from "./pages/NoblesseLogin";
-import Loading from "./pages/Loading";
+import Homescreen from "./adams/Homescreen";
+import NoblesseScreen from "./noblesse/NoblesseScreen";
+import Login from "./adams/Login";
+import NoblesseLogin from "./noblesse/NoblesseLogin";
+import Loading from "./components/Loading";
 import PrivateRoute from "./PrivateRoute";
 import { NOBLESSE_SIDE } from "./utils/getRole";
 

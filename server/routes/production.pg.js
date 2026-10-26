@@ -118,7 +118,7 @@ router.post("/production-orders", verifyToken, async (req, res) => {
 
       // Verify the inventory item belongs to this tenant and has enough weight
       const invRes = await client.query(
-        `SELECT id, weight, boxes, location, lot, species, description, brand FROM inventory WHERE id = $1 AND tenant_id = $2`,
+        `SELECT id, weight, boxes, location, lot, species, description, brand FROM inventory WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
         [inventoryId, req.tenantId]
       );
       if (!invRes.rows.length)

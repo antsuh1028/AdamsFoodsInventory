@@ -216,6 +216,18 @@ const ES = {
     "Pesado y etiquetado para el congelador. Regresa para otro proceso, así que no cuenta como enviado. Se pueden usar pesos nominales por lote.",
   "for further processing": "para otro proceso",
 
+  // ── The lot menu: a lot number's form, manifests and timeline ─────────────
+  "Registration form": "Formulario de registro",
+  "Weight manifests": "Manifiestos de peso",
+  "Weight manifest": "Manifiesto de peso",
+  "No weight manifests": "Sin manifiestos de peso",
+  "Weight manifests ({n})": "Manifiestos de peso ({n})",
+  "All together": "Todos juntos",
+  "Lot timeline": "Historial del lote",
+  "Open the form, manifests or timeline": "Abrir el formulario, los manifiestos o el historial",
+  "Out": "Salida",
+  "In": "Entrada",
+
   // ── F.P Tracker: to the AF freezer and back ───────────────────────────────
   "F.P Tracker": "Control de congelador (F.P)",
   "Product sent to the AF freezer that comes back for another run. The first row for a lot creates its FP lot (N26237-04 becomes FP26237-04). What comes back is counted at the incoming dock below; a run on it picks the FP lot on the Processing tab.":

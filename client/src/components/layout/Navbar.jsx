@@ -23,17 +23,18 @@ import { ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import { HamburgerIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 
-import ShowHistory from "../navbar/historyTable.jsx";
-import UploadFile from "../navbar/uploadFile.jsx";
-import ShowMap from "../navbar/locationMap.jsx";
-import OpenHelp from "../navbar/openHelp.jsx";
-import IncomingOrders from "../navbar/incomingOrders.jsx";
-import ExportInventory from "../navbar/exportInventory.jsx";
-import ExportByType from "../navbar/exportByType.jsx";
-import InventoryReport from "../navbar/inventoryReport.jsx";
-import FormScanner from "../navbar/formScanner.jsx";
-import OrderScanner from "../navbar/orderScanner.jsx";
-import ProductionOrders from "../navbar/productionOrders.jsx";
+import ShowHistory from "../../adams/history/historyTable.jsx";
+import UploadFile from "../../adams/files/uploadFile.jsx";
+import ShowMap from "../../adams/locations/locationMap.jsx";
+import OpenHelp from "../../adams/help/openHelp.jsx";
+import IncomingOrders from "../../adams/production/incomingOrders.jsx";
+import ExportInventory from "../../adams/exports/exportInventory.jsx";
+import ExportByType from "../../adams/exports/exportByType.jsx";
+import InventoryReport from "../../adams/exports/inventoryReport.jsx";
+import FormScanner from "../../adams/scanning/formScanner.jsx";
+import OrderScanner from "../../adams/scanning/orderScanner.jsx";
+import ProductionOrders from "../../adams/production/productionOrders.jsx";
+import ScanBoxes from "../../adams/boxScan/ScanBoxes.jsx";
 
 const ShowDrawer = ({
   isOpen,
@@ -49,6 +50,7 @@ const ShowDrawer = ({
   onScanOpen,
   onOrderScanOpen,
   onProductionOpen,
+  onBoxScanOpen,
 }) => {
   const navigate = useNavigate();
   const [otherOpen, setOtherOpen] = useState(false);
@@ -84,6 +86,7 @@ const ShowDrawer = ({
       <DrawerContent>
         <DrawerHeader borderBottomWidth="1px">Menu</DrawerHeader>
         <Stack direction="column" spacing={3} p={4}>
+          {navBtn("Scan Boxes", onBoxScanOpen)}
           {navBtn("Freezer Map", onMapOpen)}
           {navBtn("Scan Pallet Form", onScanOpen)}
           {navBtn("Scan Order Sheet", onOrderScanOpen)}
@@ -181,6 +184,11 @@ const Navbar = () => {
     onOpen: onProductionOpen,
     onClose: onProductionClose,
   } = useDisclosure();
+  const {
+    isOpen: isBoxScanOpen,
+    onOpen: onBoxScanOpen,
+    onClose: onBoxScanClose,
+  } = useDisclosure();
 
   return (
     <>
@@ -259,6 +267,7 @@ const Navbar = () => {
         onScanOpen={onScanOpen}
         onOrderScanOpen={onOrderScanOpen}
         onProductionOpen={onProductionOpen}
+        onBoxScanOpen={onBoxScanOpen}
       />
       <UploadFile isOpen={isUploadOpen} onClose={onUploadClose} />
       <IncomingOrders isOpen={isIPROpen} onClose={onIPRClose} />
@@ -272,6 +281,7 @@ const Navbar = () => {
       <FormScanner isOpen={isScanOpen} onClose={onScanClose} />
       <OrderScanner isOpen={isOrderScanOpen} onClose={onOrderScanClose} />
       <ProductionOrders isOpen={isProductionOpen} onClose={onProductionClose} />
+      <ScanBoxes isOpen={isBoxScanOpen} onClose={onBoxScanClose} />
     </>
   );
 };
