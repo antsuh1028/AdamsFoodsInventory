@@ -31,11 +31,12 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Every session must belong to this tenant.
+    // Every session must belong to this tenant. Locked so two merges cannot both claim it.
     const owned = await client.query(
       `SELECT batch_id, lot_number, vendor, ship_to, bill_of_lading, item_description,
               lot_id, direction
-         FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2`,
+         FROM box_batches WHERE batch_id = ANY($1::int[]) AND tenant_id = $2
+          FOR UPDATE`,
       [ids, req.tenantId]
     );
     if (owned.rows.length !== ids.length) {
@@ -70,6 +71,26 @@ router.post("/manifest-groups", verifyToken, scanLimiter, async (req, res) => {
         error: `These sessions are not all the same lot (${names.join(", ")}). ` +
                `A manifest covers one lot.`,
         lots: names,
+      });
+    }
+
+    // A session prints on one merged manifest only.
+    const taken = await client.query(
+      `SELECT m.batch_id, m.group_id
+         FROM manifest_group_batches m
+         JOIN manifest_groups g ON g.group_id = m.group_id
+        WHERE m.batch_id = ANY($1::int[]) AND g.tenant_id = $2
+        ORDER BY m.group_id`,
+      [ids, req.tenantId]
+    );
+    if (taken.rows.length) {
+      await client.query("ROLLBACK");
+      const groupIds = [...new Set(taken.rows.map((r) => r.group_id))];
+      return res.status(409).json({
+        code: "ALREADY_MERGED",
+        error: `${taken.rows.length === 1 ? "A session is" : "Some sessions are"} already on ` +
+               `merged manifest ${groupIds.map((g) => `#${g}`).join(", ")}. Remove that manifest first.`,
+        groupIds,
       });
     }
 
@@ -154,13 +175,25 @@ router.get("/manifest-groups", verifyToken, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || (term ? 200 : 50), 200);
   const params = [req.tenantId, limit];
   let where = "";
+  // Which end of the process, and optionally one customer's: a group's sessions share both.
+  const direction = ["incoming", "outgoing"].includes(req.query.direction) ? req.query.direction : null;
+  const shipTo = String(req.query.shipTo ?? "").trim();
+  if (direction || shipTo) {
+    const conds = [];
+    if (direction) { params.push(direction); conds.push(`sb.direction = $${params.length}`); }
+    if (shipTo) { params.push(shipTo); conds.push(`UPPER(TRIM(sb.ship_to)) = UPPER($${params.length})`); }
+    where += ` AND EXISTS (
+      SELECT 1 FROM manifest_group_batches sm
+        JOIN box_batches sb ON sb.batch_id = sm.batch_id
+       WHERE sm.group_id = g.group_id AND sb.tenant_id = $1 AND ${conds.join(" AND ")})`;
+  }
   if (term) {
     params.push(term);
     const n = params.length;
     // Its own heading, OR any session in it: the list shows a manifest in place
     // of its sessions, so a matching session must bring its manifest with it —
     // otherwise that session would surface on its own, which a merge forbids.
-    where = ` AND (${searchClause([
+    where += ` AND (${searchClause([
       "g.name", "g.lot_number", "g.vendor", "g.ship_to", "g.bill_of_lading",
       "g.item_description", "g.group_id::text",
     ], n)} OR EXISTS (

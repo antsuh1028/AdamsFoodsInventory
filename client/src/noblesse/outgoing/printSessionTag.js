@@ -3,7 +3,8 @@ import printOutgoingTag from "./printOutgoingTag";
 import { fmtDate, fmtDateOnly } from "../common/shared";
 
 // The pallet tag for a weighed session, from its detail as GET /box-batches/:id returns it.
-export const tagFromDetail = (detail, win = null) => printOutgoingTag({
+// `extra` overrides any field, e.g. the company or a pallet number.
+export const tagFromDetail = (detail, win = null, extra = {}) => printOutgoingTag({
   lotNumber: detail.lot_number,
   date: detail.weighed_on
     ? fmtDate(detail.weighed_on)
@@ -17,6 +18,7 @@ export const tagFromDetail = (detail, win = null) => printOutgoingTag({
   memo: detail.remarks || "",
   furtherProcessing: Boolean(detail.further_processing),
   win,
+  ...extra,
 });
 
 /**

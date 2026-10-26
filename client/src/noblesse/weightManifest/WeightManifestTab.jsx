@@ -5,6 +5,8 @@ import axiosInstance from "../../utils/axiosInstance";
 import DeleteBatchDialog from "../common/DeleteBatchDialog";
 import BoxScanner from "../weighing/boxScanner";
 import printWeightManifest from "./printWeightManifest";
+import printOutgoingTag from "../outgoing/printOutgoingTag";
+import { tagFromDetail } from "../outgoing/printSessionTag";
 import FpReturnWindow from "../fpTracker/FpReturnWindow";
 import { fmtDate, today, weighedDay } from "../common/shared";
 import getRole from "../../utils/getRole";
@@ -15,6 +17,8 @@ import LotRow from "./rows/LotRow";
 import MergedRow from "./rows/MergedRow";
 import SessionRow from "./rows/SessionRow";
 import MergeDialog from "./dialogs/MergeDialog";
+import PalletNumberDialog from "./dialogs/PalletNumberDialog";
+import PalletScan from "./PalletScan";
 import UnmergeDialog from "./dialogs/UnmergeDialog";
 import RemovalsWindow from "./removals/RemovalsWindow";
 
@@ -49,6 +53,7 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
   const [formGroups, setFormGroups] = useState([]);
   const [openFormId, setOpenFormId] = useState(null);
   const [confirmMerge, setConfirmMerge] = useState(false);
+  const [palletScanOpen, setPalletScanOpen] = useState(false);
   // The heading the merged manifest will carry. Pre-filled from the sessions
   // and editable, because merging used to take the first session's values
   // silently — so a vendor or BOL that disagreed between sessions vanished
@@ -127,14 +132,15 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
   // shows a manifest in place of its sessions, so the two must be found together.
   const fetchGroups = useCallback(async () => {
     const mine = ++groupSeq.current;
-    // Merged manifests are built from incoming sessions only.
-    if (shipTo) return;
-    const params = { params: { q: q || undefined } };
+    // Merged manifests from the same end of the process as the sessions listed.
+    const scope = shipTo ? { direction: "outgoing", shipTo } : { direction: "incoming" };
     // Each on its own: a merged listing failing must not blank the sessions,
     // and a failed form listing just leaves those sessions as their own rows.
+    // Registration forms tie incoming sessions only.
     const [stored, byForm] = await Promise.all([
-      axiosInstance.get("/manifest-groups", params).catch(() => null),
-      axiosInstance.get("/form-manifests", params).catch(() => null),
+      axiosInstance.get("/manifest-groups", { params: { q: q || undefined, ...scope } }).catch(() => null),
+      shipTo ? null
+        : axiosInstance.get("/form-manifests", { params: { q: q || undefined } }).catch(() => null),
     ]);
     if (mine !== groupSeq.current) return;
     if (stored) setGroups(stored.data || []);
@@ -204,7 +210,7 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
     }
   };
 
-  const print = async (batch) => {
+  const print = async (batch, palletNo) => {
     let full = details[batch.batch_id];
     if (!full) {
       try {
@@ -228,6 +234,7 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
       // it was always there for.
       memo: full.remarks,
       company,
+      palletNo,
     });
   };
 
@@ -341,9 +348,10 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
       return data;
     } catch (err) {
       toast({
-        title: err.response?.data?.code === "LOT_MISMATCH"
-          ? "Those sessions are different lots"
-          : "Could not merge those sessions",
+        title: {
+          LOT_MISMATCH: "Those sessions are different lots",
+          ALREADY_MERGED: "Already on a merged manifest",
+        }[err.response?.data?.code] || "Could not merge those sessions",
         description: err.response?.data?.error || err.message,
         status: "error", duration: 8000, position: "top", isClosable: true,
       });
@@ -356,7 +364,7 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
 
   // Pulled fresh every time rather than cached: the group references its
   // sessions, so a weight corrected since the last print has to appear.
-  const printGroup = async (group) => {
+  const printGroup = async (group, palletNo) => {
     try {
       const { data } = await axiosInstance.get(group.kind === "form"
         ? `/form-manifests/${group.form_id}`
@@ -373,6 +381,7 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
         scans: data.items,
         memo: data.remarks,
         company,
+        palletNo,
       });
     } catch (err) {
       toast({
@@ -382,6 +391,55 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
       });
     }
   };
+
+  // The pallet tag, for outgoing sessions. The window opens on the click so it is not blocked.
+  const printTagFrom = async (load) => {
+    const win = window.open("", "_blank");
+    if (!win) {
+      toast({ title: "Allow pop-ups to print", status: "error", duration: 4000, position: "top" });
+      return;
+    }
+    win.document.write("<p style=\"font-family:sans-serif\">Loading the tag…</p>");
+    try {
+      await load(win);
+    } catch (err) {
+      win.close();
+      toast({
+        title: "Could not print the tag",
+        description: err.response?.data?.error || err.message,
+        status: "error", duration: 4000, position: "top",
+      });
+    }
+  };
+
+  const printTag = (batch, palletNo) => printTagFrom(async (win) => {
+    const { data } = await axiosInstance.get(`/box-batches/${batch.batch_id}`);
+    tagFromDetail(data, win, { company, palletNo });
+  });
+
+  // One tag for the whole merged pallet, every box across its sessions.
+  const printGroupTag = (group, palletNo) => printTagFrom(async (win) => {
+    const { data } = await axiosInstance.get(`/manifest-groups/${group.group_id}`);
+    printOutgoingTag({
+      lotNumber: data.lot_number,
+      date: fmtDate(group.first_opened
+        ? today(new Date(group.first_opened)) : today(new Date(data.created_at))),
+      shipTo: data.ship_to,
+      itemDescription: data.item_description,
+      billOfLading: data.bill_of_lading,
+      boxes: data.items,
+      weighedBy: data.vendor || "",
+      win,
+      company,
+      palletNo,
+    });
+  });
+
+  // Outgoing lists ask for the pallet # first; `run` is the printer to call with it.
+  const [palletAsk, setPalletAsk] = useState(null);
+  const askPallet = (kind, run) => (target) => setPalletAsk({
+    kind, lotNumber: target.lot_number, run: (palletNo) => run(target, palletNo),
+  });
 
   const loadRemovals = useCallback(async () => {
     try {
@@ -658,6 +716,11 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
               Back from freezer
             </Button>
           )}
+          {shipTo && (
+            <Button size="xs" colorScheme="teal" onClick={() => setPalletScanOpen(true)}>
+              Scan a pallet
+            </Button>
+          )}
           {/* Weighing starts incoming sessions, so not from a customer's list. */}
           {!shipTo && (
             <Button size="xs" colorScheme="teal" onClick={() => setScannerOpen(true)}>
@@ -748,10 +811,10 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
                 }
 
                 if (row.kind === "group") {
-                  return <MergedRow key={row.key} expandedGroupId={expandedGroupId} groupDetails={groupDetails} i={i} isAdmin={isAdmin} isUnseen={isUnseen} printGroup={printGroup} row={row} setConfirmDeleteGroup={setConfirmDeleteGroup} toggleGroup={toggleGroup} />;
+                  return <MergedRow key={row.key} expandedGroupId={expandedGroupId} groupDetails={groupDetails} i={i} isAdmin={isAdmin} isUnseen={isUnseen} printGroup={shipTo ? askPallet("manifest", printGroup) : printGroup} printTag={shipTo ? askPallet("tag", printGroupTag) : null} row={row} setConfirmDeleteGroup={setConfirmDeleteGroup} toggleGroup={toggleGroup} />;
                 }
 
-                return <SessionRow key={row.key} details={details} expandedId={expandedId} fetchBatches={fetchBatches} handlersFor={handlersFor} i={i} isAdmin={isAdmin} isToday={isToday} isUnseen={isUnseen} loadingId={loadingId} print={print} row={row} rowBusy={rowBusy} selected={selected} setConfirmDeleteBatch={setConfirmDeleteBatch} setDetails={setDetails} setScannerAdopt={setScannerAdopt} setScannerOpen={setScannerOpen} toggleExpand={toggleExpand} toggleSelected={toggleSelected} />;
+                return <SessionRow key={row.key} details={details} expandedId={expandedId} fetchBatches={fetchBatches} handlersFor={handlersFor} i={i} isAdmin={isAdmin} isToday={isToday} isUnseen={isUnseen} loadingId={loadingId} print={shipTo ? askPallet("manifest", print) : print} printTag={shipTo ? askPallet("tag", printTag) : null} row={row} rowBusy={rowBusy} selected={selected} setConfirmDeleteBatch={setConfirmDeleteBatch} setDetails={setDetails} setScannerAdopt={setScannerAdopt} setScannerOpen={setScannerOpen} toggleExpand={toggleExpand} toggleSelected={toggleSelected} />;
               })}
             </Box>
           </Box>
@@ -761,6 +824,13 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
         </Box>
       )}
 
+      {shipTo && (
+        <PalletScan isOpen={palletScanOpen} onClose={() => setPalletScanOpen(false)}
+          company={company} shipTo={shipTo} groups={groups}
+          sessions={batches.filter((b) => !mergedBatchIds.has(b.batch_id))} />
+      )}
+      <PalletNumberDialog ask={palletAsk} onClose={() => setPalletAsk(null)}
+        onPrint={(palletNo) => { const ask = palletAsk; setPalletAsk(null); ask.run(palletNo); }} />
       <MergeDialog cancelMergeRef={cancelMergeRef} confirmMerge={confirmMerge} createGroup={createGroup} mergeHeader={mergeHeader} merging={merging} selected={selected} setConfirmMerge={setConfirmMerge} setMergeHeader={setMergeHeader} visible={visible} />
 
       {/* Deleting a whole session destroys every weight in it, so the dialog

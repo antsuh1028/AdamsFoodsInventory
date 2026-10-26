@@ -11,7 +11,7 @@ import axiosInstance from "../../../utils/axiosInstance";
 import { fmtDate, fmtDateTime } from "../../common/shared";
 import LotMenu from "../../lots/LotMenu";
 
-const SessionRow = ({ details, expandedId, fetchBatches, handlersFor, i, isAdmin, isToday, isUnseen, loadingId, print, row, rowBusy, selected, setConfirmDeleteBatch, setDetails, setScannerAdopt, setScannerOpen, toggleExpand, toggleSelected }) => {
+const SessionRow = ({ details, expandedId, fetchBatches, handlersFor, i, isAdmin, isToday, isUnseen, loadingId, print, printTag, row, rowBusy, selected, setConfirmDeleteBatch, setDetails, setScannerAdopt, setScannerOpen, toggleExpand, toggleSelected }) => {
   const b = row.batch;
   const open = expandedId === b.batch_id;
   const detail = details[b.batch_id];
@@ -106,8 +106,16 @@ const SessionRow = ({ details, expandedId, fetchBatches, handlersFor, i, isAdmin
             <Button size="xs" variant="outline" colorScheme="blue"
               isDisabled={!b.box_count}
               onClick={(e) => { e.stopPropagation(); print(b); }}>
-              Print
+              {printTag ? "Manifest" : "Print"}
             </Button>
+            {/* Outgoing lists only. */}
+            {printTag && (
+              <Button size="xs" variant="outline" colorScheme="blue"
+                isDisabled={!b.box_count}
+                onClick={(e) => { e.stopPropagation(); printTag(b); }}>
+                Pallet tag
+              </Button>
+            )}
             {/* Anyone may raise it — the person who noticed is
                 usually the one who weighed it, and they cannot
                 delete. Clearing is open for the same reason. */}

@@ -6,7 +6,7 @@ import { COLUMNS } from "../constants";
 import { ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
 import ScanSheet from "../../weighing/ScanSheet";
 
-const MergedRow = ({ expandedGroupId, groupDetails, i, isAdmin, isUnseen, printGroup, row, setConfirmDeleteGroup, toggleGroup }) => {
+const MergedRow = ({ expandedGroupId, groupDetails, i, isAdmin, isUnseen, printGroup, printTag, row, setConfirmDeleteGroup, toggleGroup }) => {
   const g = row.group;
   const gOpen = expandedGroupId === g.group_id;
   const gDetail = groupDetails[g.group_id];
@@ -65,8 +65,15 @@ const MergedRow = ({ expandedGroupId, groupDetails, i, isAdmin, isUnseen, printG
           <Flex gap={2} justify="flex-end">
             <Button size="xs" variant="outline" colorScheme="blue"
               onClick={(e) => { e.stopPropagation(); printGroup(g); }}>
-              Print
+              {printTag ? "Manifest" : "Print"}
             </Button>
+            {/* Outgoing lists only: one tag for the whole merged pallet. */}
+            {printTag && (
+              <Button size="xs" variant="outline" colorScheme="blue"
+                onClick={(e) => { e.stopPropagation(); printTag(g); }}>
+                Pallet tag
+              </Button>
+            )}
             {isAdmin && (
               <Button size="xs" variant="ghost" colorScheme="red"
                 title="Unmerge — the sessions come back as their own rows"

@@ -17,6 +17,8 @@ const printWeightManifest = ({
   lotNumber, date, vendor, shipTo, billOfLading, itemDescription,
   scans = [], assembledBy = "", checkedBy = "", memo = "",
   company = "Noblesse Trading",
+  // Given for outgoing pallets: printed where Vendor goes.
+  palletNo = null,
 } = {}) => {
   // A rejected scan was never recorded, a duplicate is one box scanned twice, and a
   // voided one was taken off the tally on purpose.
@@ -128,8 +130,8 @@ const printWeightManifest = ({
 
           <table class="head">
             <tr>
-              <td class="lbl">Vendor</td>
-              <td class="val">${esc(vendor || "")}</td>
+              <td class="lbl">${palletNo !== null ? "Pallet #" : "Vendor"}</td>
+              <td class="val">${esc((palletNo !== null ? palletNo : vendor) || "")}</td>
               <td class="lbl" style="width:50px">Date</td>
               <td class="val-r">${esc(date || "")}</td>
             </tr>
