@@ -391,9 +391,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     }
   };
 
-  // Reception may correct an accepted report's details; its cases, lot and date stay as accepted.
+  // Reception may correct an accepted report's details and cases; its lot and date stay as accepted.
   const canFixAccepted = Boolean(draft && draft.readOnly && draft.status === "accepted" && canAccept);
   const infoLocked = Boolean(draft && draft.readOnly && !canFixAccepted);
+  const casesLocked = infoLocked;
   const saveDetails = async () => {
     setSaving(true);
     try {
@@ -403,12 +404,18 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
         packDates: draft.packDates, startTime: draft.startTime, endTime: draft.endTime,
         inedibleWeight: draft.inedibleWeight, outputWeight: draft.outputWeight, notes: draft.notes,
         workers: draft.workers,
+        // A change in cases moves only the difference on the lot.
+        pulls: draft.pulls.filter((p) => String(p.cases).trim() !== ""),
       });
+      const before = draft.inputCases;
       setDraft(null);
       await fetchReports();
       fetchWorkers();
-      toast({ status: "success", position: "top", duration: 4000, title: "Report corrected",
-        description: "The cases on it did not change." });
+      toast({ status: "success", position: "top", duration: 5000, title: "Report corrected",
+        description: inputCases === before
+          ? "The cases on it did not change."
+          : `Cases processed ${before} → ${inputCases}. `
+            + (inputCases < before ? `${before - inputCases} went back on the lot.` : `${inputCases - before} more came off the lot.`) });
     } catch (err) {
       toast({ status: "error", position: "top", duration: 7000, isClosable: true,
         title: "Could not save the correction", description: err.response?.data?.error || err.message });
@@ -843,7 +850,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {draft.readOnly
                 ? `Accepted by ${draft.acceptedBy || "reception"} — ${draft.inputCases} cases are off the lot.`
                   + (canFixAccepted
-                    ? " You can correct the details; the cases, lot and date stay as accepted. Un-accept from the list to change those."
+                    ? " You can correct the details and the cases processed; only the difference moves on the lot. Un-accept from the list to change the lot or date."
                     : " Reception can correct it or un-accept it from the list.")
                 : reviewing
                   ? "Waiting for your check. Accepting takes the cases off the lot; sending it back returns it to the floor."
@@ -995,7 +1002,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 <SheetField key={idx} label={`(${idx + 1}) Cases`} full>
                   <Flex gap={3} align="center" px={3} py={1.5}>
                     <Input
-                      {...sheetInputProps} isReadOnly={draft.readOnly}
+                      {...sheetInputProps} isReadOnly={casesLocked}
                       bg="white" flex="0 0 130px" type="number" placeholder="cases"
                       value={p.cases}
                       onChange={(e) => {
@@ -1005,7 +1012,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                       }}
                     />
                     <Button size="xs" variant="ghost" colorScheme="red" px={1} minW="auto"
-                      isDisabled={draft.readOnly || draft.pulls.length <= 1}
+                      isDisabled={casesLocked || draft.pulls.length <= 1}
                       title={draft.pulls.length <= 1 ? "Cannot delete last row" : "Delete this row"}
                       onClick={() => setDraft({
                         ...draft, pulls: draft.pulls.filter((_, i) => i !== idx),
@@ -1014,7 +1021,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                     </Button>
                     {idx === draft.pulls.length - 1 && (
                       <Button size="xs" variant="outline" colorScheme="blue" px={2} minW="auto"
-                        isDisabled={draft.readOnly}
+                        isDisabled={casesLocked}
                         title="Add another batch"
                         onClick={() => setDraft({ ...draft, pulls: [...draft.pulls, { cases: "" }] })}>
                         +
