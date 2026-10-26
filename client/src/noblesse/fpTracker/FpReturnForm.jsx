@@ -7,7 +7,8 @@ import useLang from "../../hooks/useLang";
 // Counting product back in from the AF freezer: cases, not weighed. A partial
 // return is just one of several. `fpLots` is the /fp-lots list; `onRecorded` reloads it.
 
-const EMPTY = () => ({ lotId: "", cases: "", returnedOn: today(), notes: "" });
+// returnedOn stays null until someone picks a day; then the server dates it the day it is saved.
+const EMPTY = () => ({ lotId: "", cases: "", returnedOn: null, notes: "" });
 
 const FpReturnForm = ({ fpLots = [], onRecorded }) => {
   const toast = useToast();
@@ -25,7 +26,7 @@ const FpReturnForm = ({ fpLots = [], onRecorded }) => {
     setBusy(true);
     try {
       const { data } = await axiosInstance.post("/fp-returns", {
-        lotId: Number(ret.lotId), cases: ret.cases, returnedOn: ret.returnedOn, notes: ret.notes,
+        lotId: Number(ret.lotId), cases: ret.cases, returnedOn: ret.returnedOn || undefined, notes: ret.notes,
       });
       toast({ title: t("{n} cases back on {lot}", { n: ret.cases, lot: data.fpLotNumber }), status: "success",
         duration: 5000, position: "top",
@@ -51,7 +52,7 @@ const FpReturnForm = ({ fpLots = [], onRecorded }) => {
       <Box>
         <Text fontSize="xs" color="gray.500" mb={1}>{t("Date back")}</Text>
         <Input {...cellInput} type="date" max={today()} width="150px"
-          value={ret.returnedOn} onChange={(e) => setRet({ ...ret, returnedOn: e.target.value })} />
+          value={ret.returnedOn || today()} onChange={(e) => setRet({ ...ret, returnedOn: e.target.value })} />
       </Box>
       <Box minW="260px">
         <Text fontSize="xs" color="gray.500" mb={1}>{t("Lot")}</Text>
