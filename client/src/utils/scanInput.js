@@ -25,6 +25,15 @@ const DEFAULT_MIN_LENGTH = 8;
 
 const GS = String.fromCharCode(29);
 
+// The key a keydown stands for in a scan, or null to ignore it. Honeywell types GS
+// as F8 by default, or Ctrl+] in Control + ASCII mode; other shortcuts are left alone.
+const scanKey = (e) => {
+  if (e.key === "F8" && !e.ctrlKey && !e.metaKey && !e.altKey) return GS;
+  if (e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "]" || e.code === "BracketRight")) return GS;
+  if (e.metaKey || e.ctrlKey || e.altKey) return null;
+  return e.key;
+};
+
 const createScanAssembler = ({
   parse,
   terminators = DEFAULT_TERMINATORS,
@@ -108,4 +117,5 @@ module.exports = {
   DEFAULT_STALE_MS,
   DEFAULT_MIN_LENGTH,
   GS,
+  scanKey,
 };

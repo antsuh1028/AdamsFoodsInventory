@@ -13,7 +13,11 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.set("trust proxy", TRUST_PROXY);
 
 const allowedOrigins = [process.env.ALLOWED_ORIGIN, "http://localhost:3000"].filter(Boolean);
-const corsOptions = { origin: allowedOrigins };
+// Dev only, opted into in the local .env: the client opened from a tablet on the same network.
+const LAN_CLIENT = /^http:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}):3000$/;
+const corsOptions = {
+  origin: process.env.DEV_LAN_ORIGINS === "1" ? [...allowedOrigins, LAN_CLIENT] : allowedOrigins,
+};
 
 // The default 100 KB refused the full-inventory export snapshot (~600 KB).
 app.use(express.json({ limit: "5mb" }));
@@ -41,6 +45,7 @@ const boot = async () => {
   app.use("/", require("./routes/auth.pg"));
   app.use("/", require("./routes/inventory.pg"));
   app.use("/", require("./routes/afScan.pg"));
+  app.use("/", require("./routes/afLots.pg"));
   app.use("/", require("./routes/history.pg"));
   app.use("/", require("./routes/scanner.pg"));
   app.use("/", require("./routes/snapshots.pg"));

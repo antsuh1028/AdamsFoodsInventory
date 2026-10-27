@@ -25,6 +25,12 @@ const printOutgoingTag = ({
   furtherProcessing = false,
   // A window opened on the click, when the boxes had to be loaded first.
   win = null,
+  // The name printed at the top of the tag.
+  company = "Noblesse Trading",
+  // Shown as its own row when given, even blank, so it can be written in.
+  palletNo = null,
+  // 2 prints the keep-and-travel pair with a cut line; 1 prints a single tag.
+  copies = 2,
 } = {}) => {
   // A voided box was taken off the tally on purpose; a duplicate is one box
   // counted twice. Neither travels on the tag.
@@ -68,7 +74,7 @@ const printOutgoingTag = ({
   // nothing to keep in step between them.
   const tag = `
         <div class="tag">
-          <h1>Noblesse Trading</h1>
+          <h1>${esc(company)}</h1>
           <div class="kind">${furtherProcessing
             ? "FOR FURTHER PROCESSING &mdash; TO THE AF FREEZER"
             : "OUTGOING &mdash; WEIGHED BOXES"}</div>
@@ -86,6 +92,10 @@ const printOutgoingTag = ({
               <td class="lbl-lot">Lot#</td>
               <td class="val-lot">${esc(lotNumber || "")}</td>
             </tr>
+            ${palletNo !== null ? `<tr>
+              <td class="lbl">Pallet #</td>
+              <td class="val" colspan="3">${esc(palletNo)}</td>
+            </tr>` : ""}
             ${driver ? `<tr>
               <td class="lbl">Driver</td>
               <td class="val" colspan="3">${esc(driver)}</td>
@@ -237,8 +247,8 @@ const printOutgoingTag = ({
       </head>
       <body>
         ${tag}
-        <div class="cutline">CUT HERE</div>
-        ${tag}
+        ${copies > 1 ? `<div class="cutline">CUT HERE</div>
+        ${tag}` : ""}
 
         <div class="no-print">
           <button onclick="window.print()" style="padding:8px 18px;font-size:14px;cursor:pointer;">

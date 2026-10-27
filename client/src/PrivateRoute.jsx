@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { NOBLESSE_SIDE, landingFor } from "./utils/getRole";
+import { idleHeld } from "./utils/idleHold";
 import {
   Modal,
   ModalOverlay,
@@ -134,6 +135,8 @@ const IdleWatcher = () => {
     setCountdown(30);
 
     warningTimer.current = setTimeout(() => {
+      // An open scan station keeps the session; start the wait over instead of warning.
+      if (idleHeld()) { resetTimers(); return; }
       setShowWarning(true);
       setCountdown(30);
       countdownInterval.current = setInterval(() => {
@@ -148,6 +151,7 @@ const IdleWatcher = () => {
     }, IDLE_TIMEOUT_MS - WARNING_BEFORE_MS);
 
     logoutTimer.current = setTimeout(() => {
+      if (idleHeld()) { resetTimers(); return; }
       logout();
     }, IDLE_TIMEOUT_MS);
   };

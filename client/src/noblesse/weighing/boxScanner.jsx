@@ -11,7 +11,7 @@ import {
 } from "@chakra-ui/react";
 import FloatingWindow from "../../components/FloatingWindow";
 import useScanSession from "../../hooks/useScanSession";
-import { createScanAssembler } from "../../utils/scanInput";
+import { createScanAssembler, scanKey } from "../../utils/scanInput";
 import { parseGs1 } from "../../utils/gs1";
 import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import ScanSheet from "./ScanSheet";
@@ -460,12 +460,13 @@ const BoxScanner = ({ isOpen, onClose, adoptBatchId = null, direction = "incomin
   useEffect(() => {
     if (!isOpen || !session) return undefined;
     const onKeyDown = (e) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const key = scanKey(e);
+      if (key === null) return;
       const target = e.target;
       // Do not swallow keystrokes meant for the manual-entry inputs.
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      if (e.key === "Enter" || e.key === "Tab") e.preventDefault();
-      const result = assemblerRef.current.handleKey(e);
+      if (e.key === "Enter" || e.key === "Tab" || key !== e.key) e.preventDefault();
+      const result = assemblerRef.current.handleKey({ key, timeStamp: e.timeStamp });
       if (result) handleScanResult(result);
     };
     window.addEventListener("keydown", onKeyDown, true);

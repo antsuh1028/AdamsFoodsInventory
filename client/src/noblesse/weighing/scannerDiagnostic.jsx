@@ -5,6 +5,7 @@ import {
 } from "@chakra-ui/react";
 import FloatingWindow from "../../components/FloatingWindow";
 import { parseGs1 } from "../../utils/gs1";
+import { scanKey } from "../../utils/scanInput";
 import ITEM_CODES from "../../utils/itemCodes";
 
 // Answers the one question that cannot be answered without the hardware in hand:
@@ -100,17 +101,19 @@ const ScannerDiagnostic = ({ isOpen, onClose }) => {
     if (!isOpen || !listening) return undefined;
 
     const onKeyDown = (e) => {
-      // Let the operator still use the close button and copy shortcuts.
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Let the operator still use the close button and copy shortcuts; Ctrl+] is GS.
+      const key = scanKey(e);
+      if (key === null) return;
 
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
         finalize(e.key);
         return;
       }
+      if (key !== e.key) e.preventDefault();
       const entry = {
         i: bufferRef.current.length,
-        key: e.key,
+        key,
         code: e.code,
         timeStamp: e.timeStamp || performance.now(),
       };
