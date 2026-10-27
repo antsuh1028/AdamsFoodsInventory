@@ -121,6 +121,8 @@ const LotScan = ({ lot: start, active, onBack }) => {
   const [problem, setProblem] = useState(null);
   const [pending, setPending] = useState(0);
   const chain = useRef(Promise.resolve());
+  // The latest scan, shown large: { ok: true, box } or { ok: false, text }.
+  const [lastScan, setLastScan] = useState(null);
 
   // The pallet new scans go onto; a ref so a scan uses the pallet selected when it was read.
   const [pallet, setPallet] = useState(1);
@@ -170,7 +172,7 @@ const LotScan = ({ lot: start, active, onBack }) => {
     const itemId = itemRef.current;
     if (!itemId) {
       beepError();
-      setProblem("Add an item before scanning.");
+      setLastScan({ ok: false, text: "Add an item before scanning." });
       return;
     }
     setPending((n) => n + 1);
@@ -179,11 +181,12 @@ const LotScan = ({ lot: start, active, onBack }) => {
       try {
         const { data } = await axiosInstance.post(`/af-lots/${start.id}/boxes`, { ...entry, palletNo, itemId });
         setBoxes((list) => [...(list || []), data]);
+        setLastScan({ ok: true, box: data });
         setProblem(null);
         beepSuccess();
       } catch (err) {
         beepError();
-        setProblem(errText(err));
+        setLastScan({ ok: false, text: errText(err) });
       } finally {
         setPending((n) => n - 1);
       }
@@ -192,7 +195,7 @@ const LotScan = ({ lot: start, active, onBack }) => {
 
   useBarcodeKeys(active, (result) => {
     if (result.type === "scan") send({ rawBarcode: result.raw });
-    else { beepError(); setProblem(`Not read: ${result.reason || result.code}`); }
+    else { beepError(); setLastScan({ ok: false, text: `Not read: ${result.reason || result.code}` }); }
   });
 
   // Turns the scan station on for this lot, or off.
@@ -230,7 +233,7 @@ const LotScan = ({ lot: start, active, onBack }) => {
     };
   }, [stationId]);
 
-  // Picks up what the station received, about every second.
+  // Picks up what the station received, twice a second.
   useEffect(() => {
     if (!stationId) return undefined;
     let busy = false;
@@ -250,13 +253,14 @@ const LotScan = ({ lot: start, active, onBack }) => {
         }
         lastEvent.current = data.lastEventId;
         for (const ev of data.events) {
-          if (ev.lotId !== start.id) continue;
+          if (ev.lotId && ev.lotId !== start.id) continue;
           if (ev.ok && ev.box) {
             setBoxes((list) => ((list || []).some((b) => b.id === ev.box.id) ? list : [...(list || []), ev.box]));
+            setLastScan({ ok: true, box: ev.box });
             setProblem(null);
             beepSuccess();
           } else {
-            setProblem(`Station: ${ev.message || "scan not saved"}`);
+            setLastScan({ ok: false, text: `Station: ${ev.message || "scan not saved"}` });
             beepError();
           }
         }
@@ -265,7 +269,7 @@ const LotScan = ({ lot: start, active, onBack }) => {
       } finally {
         busy = false;
       }
-    }, 1000);
+    }, 500);
     return () => clearInterval(t);
   }, [stationId, start.id]);
 
@@ -340,6 +344,9 @@ const LotScan = ({ lot: start, active, onBack }) => {
   const rows = palletNos.flatMap((n) => [...onPallet(n)].reverse());
 
   const itemName = (id) => items.find((i) => i.id === id)?.description || "No item";
+  // What a box's label said: code, product and pack date.
+  const labelOf = (b) => [b.itemCode || b.customerPart, ITEM_CODES[b.itemCode]?.description,
+    b.packDate && `packed ${b.packDate}`].filter(Boolean).join(" · ");
   // Dollar value of the given boxes, item by item.
   const valueOf = (list) => items.reduce((sum, i) => {
     const mine = ofItem(list, i.id);
@@ -407,6 +414,31 @@ const LotScan = ({ lot: start, active, onBack }) => {
           {pending > 0 && <Badge colorScheme="yellow" mt={1}>saving {pending}</Badge>}
         </Box>
       </Flex>
+
+      {/* The latest scan, large enough to read at arm's length. */}
+      <Box p={4} borderRadius="lg" border="2px solid" textAlign="center" style={{ fontVariantNumeric: "tabular-nums" }}
+        bg={!lastScan ? "gray.50" : lastScan.ok ? "green.50" : "red.50"}
+        borderColor={!lastScan ? "gray.200" : lastScan.ok ? "green.300" : "red.300"}>
+        {!lastScan ? (
+          <Text fontSize="md" color="gray.500">Waiting for a scan. Each box's weight shows here.</Text>
+        ) : lastScan.ok ? (
+          <>
+            <Text fontSize={{ base: "4xl", md: "5xl" }} fontWeight="800" lineHeight="1.1" color="green.700">
+              {lastScan.box.weight} lb
+              {lastScan.box.scannedUnit === "KG" && (
+                <Text as="span" fontSize="lg" fontWeight="600" color="gray.600"> ({lastScan.box.scannedWeight} kg)</Text>
+              )}
+            </Text>
+            <Text mt={1} fontSize="md" fontWeight="600">
+              {itemName(lastScan.box.itemId)} · Pallet {lastScan.box.palletNo || 1}
+              {lastScan.box.entryMethod === "typed" ? " · typed" : ""}
+            </Text>
+            {labelOf(lastScan.box) && <Text fontSize="sm" color="gray.600">{labelOf(lastScan.box)}</Text>}
+          </>
+        ) : (
+          <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="700" color="red.700">{lastScan.text}</Text>
+        )}
+      </Box>
 
       {/* Items of this lot; new scans go onto the selected one. */}
       <Flex gap={2} wrap="wrap" align="center">
@@ -516,7 +548,8 @@ const LotScan = ({ lot: start, active, onBack }) => {
             </Tr></Thead>
             <Tbody>
               {rows.map((b) => (
-                <Tr key={b.id} style={{ fontVariantNumeric: "tabular-nums" }}>
+                <Tr key={b.id} style={{ fontVariantNumeric: "tabular-nums" }}
+                  bg={lastScan?.ok && lastScan.box.id === b.id ? "green.50" : undefined}>
                   <Td>
                     {/* Moves a box placed on the wrong pallet; blurs so scans are not swallowed. */}
                     <Select size="xs" w="64px" value={b.palletNo || 1} tabIndex={-1}

@@ -472,11 +472,14 @@ router.post("/af-stations/:id/scan", verifyToken, async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid station" });
   const raw = req.body && req.body.rawBarcode;
+  const notRead = req.body && req.body.notRead;
   try {
     const station = await readStation(id, req.tenantId);
     if (!station) return res.status(404).json({ error: "Station not found" });
     let out;
-    if (!station.lotId) out = { status: 409, body: { error: "No lot picked on the tablet." } };
+    // A label the station could not read: logged so the tablet hears about it too.
+    if (notRead) out = { status: 422, body: { error: `Not read: ${String(notRead).slice(0, 200)}` } };
+    else if (!station.lotId) out = { status: 409, body: { error: "No lot picked on the tablet." } };
     else if (!liveHolder(id)) out = { status: 409, body: { error: "Tablet not connected. Turn on Use scan station on the tablet." } };
     else if (!station.itemId) out = { status: 409, body: { error: "No item picked on the tablet yet." } };
     else {

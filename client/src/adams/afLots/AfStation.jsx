@@ -51,13 +51,13 @@ const AfStation = ({ isOpen, onClose }) => {
     return () => { window.removeEventListener("focus", on); window.removeEventListener("blur", off); };
   }, [isOpen]);
 
-  // One request at a time, in scan order.
-  const send = useCallback((raw) => {
+  // One request at a time, in scan order. notRead reports a label that could not be read.
+  const send = useCallback((raw, notRead) => {
     if (!station) return;
     setPending((n) => n + 1);
     chain.current = chain.current.then(async () => {
       try {
-        const { data } = await axiosInstance.post(`/af-stations/${station.id}/scan`, { rawBarcode: raw });
+        const { data } = await axiosInstance.post(`/af-stations/${station.id}/scan`, { rawBarcode: raw, notRead });
         if (data.station) setStation(data.station);
         setLast({ ok: true, text: `${data.weight} lb`, detail: `${data.station?.itemDescription || ""} · Pallet ${data.palletNo}` });
         setCount((n) => n + 1);
@@ -74,7 +74,10 @@ const AfStation = ({ isOpen, onClose }) => {
 
   useBarcodeKeys(isOpen, (result) => {
     if (result.type === "scan") send(result.raw);
-    else { beepError(); setLast({ ok: false, text: `Not read: ${result.reason || result.code}`, detail: "" }); }
+    else {
+      setLast({ ok: false, text: `Not read: ${result.reason || result.code}`, detail: "" });
+      send(result.raw || "", result.reason || result.code);
+    }
   });
 
   // Live only while a tablet holds the station and has checked in within 30 s.
