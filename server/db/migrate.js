@@ -857,6 +857,72 @@ const steps = async () => {
   `);
   await run("fp_returns lot index",
     `CREATE INDEX IF NOT EXISTS fp_returns_lot_idx ON fp_returns (tenant_id, lot_id)`);
+
+  // Adams Foods lot registration: its own lots and scanned boxes, apart from the inventory table.
+  await run("af_lots", `
+    CREATE TABLE IF NOT EXISTS af_lots (
+      af_lot_id     SERIAL PRIMARY KEY,
+      tenant_id     UUID NOT NULL REFERENCES tenants(id),
+      lot_number    TEXT NOT NULL,
+      vendor        TEXT,
+      description   TEXT,
+      price_per_lb  NUMERIC(10,4),
+      created_by    UUID,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (tenant_id, lot_number)
+    )
+  `);
+  // One row per scanned box, holding everything its barcode carried. Weight is in pounds.
+  await run("af_lot_boxes", `
+    CREATE TABLE IF NOT EXISTS af_lot_boxes (
+      box_id         SERIAL PRIMARY KEY,
+      tenant_id      UUID NOT NULL REFERENCES tenants(id),
+      af_lot_id      INT  NOT NULL REFERENCES af_lots(af_lot_id) ON DELETE CASCADE,
+      weight         NUMERIC(8,3) NOT NULL,
+      scanned_weight TEXT,
+      scanned_unit   TEXT,
+      gtin           TEXT,
+      serial         TEXT,
+      label_lot      TEXT,
+      item_code      TEXT,
+      customer_part  TEXT,
+      pack_date      DATE,
+      raw            TEXT,
+      scanned_by     TEXT,
+      scanned_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await run("af_lot_boxes lot index",
+    `CREATE INDEX IF NOT EXISTS af_lot_boxes_lot_idx ON af_lot_boxes (tenant_id, af_lot_id)`);
+  // Which pallet of the lot a box sits on; boxes scanned before pallets existed are pallet 1.
+  await run("af_lot_boxes pallet_no",
+    `ALTER TABLE af_lot_boxes ADD COLUMN IF NOT EXISTS pallet_no INT NOT NULL DEFAULT 1 CHECK (pallet_no > 0)`);
+  // Items of a lot, each with its own description and price; a box belongs to one.
+  await run("af_lot_items", `
+    CREATE TABLE IF NOT EXISTS af_lot_items (
+      item_id      SERIAL PRIMARY KEY,
+      tenant_id    UUID NOT NULL REFERENCES tenants(id),
+      af_lot_id    INT  NOT NULL REFERENCES af_lots(af_lot_id) ON DELETE CASCADE,
+      description  TEXT NOT NULL,
+      price_per_lb NUMERIC(10,4),
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (af_lot_id, description)
+    )
+  `);
+  await run("af_lot_boxes item_id",
+    `ALTER TABLE af_lot_boxes ADD COLUMN IF NOT EXISTS item_id INT REFERENCES af_lot_items(item_id)`);
+  // Lots registered before items: their description becomes the first item, holding their boxes.
+  await run("af_lot_items backfill", `
+    WITH made AS (
+      INSERT INTO af_lot_items (tenant_id, af_lot_id, description, price_per_lb)
+      SELECT l.tenant_id, l.af_lot_id, l.description, l.price_per_lb FROM af_lots l
+       WHERE l.description IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM af_lot_items i WHERE i.af_lot_id = l.af_lot_id)
+      RETURNING item_id, af_lot_id
+    )
+    UPDATE af_lot_boxes b SET item_id = m.item_id FROM made m
+     WHERE b.af_lot_id = m.af_lot_id AND b.item_id IS NULL
+  `);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection
