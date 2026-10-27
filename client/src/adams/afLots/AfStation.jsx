@@ -89,6 +89,9 @@ const AfStation = ({ isOpen, onClose }) => {
   return (
     <FloatingWindow isOpen={isOpen} onClose={onClose} title={station ? `Scan Station · ${station.name}` : "Scan Station"} width={720}>
       <Stack spacing={4} onClick={() => primeAudio()}>
+        <Text fontSize="sm" color="gray.600">
+          Leave this open on the computer the scanner base is plugged into. Pick the lot on the tablet.
+        </Text>
         {!focused && (
           <Alert status="error" borderRadius="md" fontWeight="700">
             <AlertIcon />Click here. This window must stay in front or scans will not land.

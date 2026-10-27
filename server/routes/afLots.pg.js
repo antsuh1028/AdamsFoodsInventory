@@ -5,7 +5,7 @@ const router = require("express").Router();
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const { boxFromBarcode } = require("../utils/afBox");
-const { pacificToday, dayOfYearFromDate } = require("../utils/lot");
+const { pacificToday, dayOfYearFromDate, dateFromDayOfYear, daysInYear } = require("../utils/lot");
 const { toPounds, toThousandths } = require("../utils/weight");
 const validLocations = require("../utils/locations");
 
@@ -40,6 +40,31 @@ const insertNextLot = async (client, tenantId, vendor, userId) => {
     if (rows.length) return rows[0];
   }
   return null;
+};
+
+// A lot number typed at registration: AF's shape for a real day, today or earlier.
+const TYPED_LOT_RE = /^(\d{2})(\d{3})-(\d{1,2})$/;
+const readTypedLot = (text) => {
+  const m = TYPED_LOT_RE.exec(String(text).replace(/\s+/g, ""));
+  if (!m) return { error: "Lot # must look like 26298-03." };
+  const year = 2000 + Number(m[1]);
+  const dayOfYear = Number(m[2]);
+  const seq = Number(m[3]);
+  if (dayOfYear < 1 || dayOfYear > daysInYear(year)) return { error: `${m[2]} is not a day of ${year}.` };
+  if (seq < 1) return { error: "The number after the dash starts at 01." };
+  const day = dateFromDayOfYear(year, dayOfYear);
+  if (day > pacificToday()) return { error: "That lot # is for a day that has not come yet." };
+  return { lotNumber: `${m[1]}${m[2]}-${String(seq).padStart(2, "0")}`, day, seq };
+};
+
+// Registers a lot under a typed number; null when that number is already registered.
+const insertTypedLot = async (client, tenantId, typed, vendor, userId) => {
+  const { rows } = await client.query(
+    `INSERT INTO af_lots (tenant_id, lot_number, vendor, created_by, lot_date, seq)
+     VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING
+     RETURNING af_lot_id, lot_number, vendor, created_at`,
+    [tenantId, typed.lotNumber, vendor, userId, typed.day, typed.seq]);
+  return rows[0] || null;
 };
 
 const fmtLot = (r) => ({
@@ -78,6 +103,8 @@ const fmtBox = (b) => ({
   itemId: b.item_id,
   entryMethod: b.entry_method,
   status: b.status,
+  removedAt: b.removed_at,
+  removedBy: b.removed_by,
 });
 
 const fmtPallet = (p) => ({
@@ -104,22 +131,25 @@ const readItem = (body) => {
 
 const BOX_COLS = `box_id, weight::text AS weight, scanned_weight, scanned_unit, gtin, serial, label_lot,
               item_code, customer_part, pack_date::text AS pack_date, raw, scanned_by, scanned_at, pallet_no, item_id,
-              entry_method, status`;
+              entry_method, status, removed_at, removed_by`;
 const ITEM_COLS = `item_id, description, price_per_lb::text AS price_per_lb`;
 
-// Lots with their items, box count, total and value, newest first.
+// Lots with their items, box count, total and value, newest first. Removed boxes do not count.
 router.get("/af-lots", verifyToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT l.af_lot_id, l.lot_number, l.vendor, l.created_at,
               (SELECT COALESCE(string_agg(i.description, ', ' ORDER BY i.item_id), '')
                  FROM af_lot_items i WHERE i.af_lot_id = l.af_lot_id) AS items,
-              (SELECT COUNT(*)::int FROM af_lot_boxes b WHERE b.af_lot_id = l.af_lot_id) AS box_count,
-              (SELECT COUNT(DISTINCT b.pallet_no)::int FROM af_lot_boxes b WHERE b.af_lot_id = l.af_lot_id) AS pallets,
-              (SELECT COALESCE(SUM(b.weight), 0)::text FROM af_lot_boxes b WHERE b.af_lot_id = l.af_lot_id) AS total_lb,
+              (SELECT COUNT(*)::int FROM af_lot_boxes b
+                WHERE b.af_lot_id = l.af_lot_id AND b.removed_at IS NULL) AS box_count,
+              (SELECT COUNT(DISTINCT b.pallet_no)::int FROM af_lot_boxes b
+                WHERE b.af_lot_id = l.af_lot_id AND b.removed_at IS NULL) AS pallets,
+              (SELECT COALESCE(SUM(b.weight), 0)::text FROM af_lot_boxes b
+                WHERE b.af_lot_id = l.af_lot_id AND b.removed_at IS NULL) AS total_lb,
               (SELECT SUM(b.weight * i.price_per_lb)::numeric(14,2)::text
                  FROM af_lot_boxes b JOIN af_lot_items i ON i.item_id = b.item_id
-                WHERE b.af_lot_id = l.af_lot_id) AS value
+                WHERE b.af_lot_id = l.af_lot_id AND b.removed_at IS NULL) AS value
          FROM af_lots l
         WHERE l.tenant_id = $1
         ORDER BY l.created_at DESC
@@ -133,19 +163,25 @@ router.get("/af-lots", verifyToken, async (req, res) => {
   }
 });
 
-// Register a lot with its first item. AF issues the number.
+// Register a lot with its first item. AF issues the number unless one is typed.
 router.post("/af-lots", verifyToken, async (req, res) => {
   const b = req.body || {};
   const item = readItem(b);
   if (item.error) return res.status(400).json({ error: item.error });
+  const typed = String(b.lotNumber ?? "").trim() ? readTypedLot(b.lotNumber) : null;
+  if (typed && typed.error) return res.status(400).json({ error: typed.error });
   const vendor = String(b.vendor ?? "").trim().toUpperCase() || null;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const lot = await insertNextLot(client, req.tenantId, vendor, req.userId || null);
+    const lot = typed
+      ? await insertTypedLot(client, req.tenantId, typed, vendor, req.userId || null)
+      : await insertNextLot(client, req.tenantId, vendor, req.userId || null);
     if (!lot) {
       await client.query("ROLLBACK");
-      return res.status(409).json({ error: "All 99 lot numbers for today are used." });
+      return res.status(409).json({
+        error: typed ? `Lot ${typed.lotNumber} is already registered.` : "All 99 lot numbers for today are used.",
+      });
     }
     const first = await client.query(
       `INSERT INTO af_lot_items (tenant_id, af_lot_id, description, price_per_lb)
@@ -264,12 +300,21 @@ const addBox = async ({ tenantId, lotId, itemId, palletNo: rawPallet, entry, use
   if (!palletNo) return { status: 400, body: { error: "Pallet must be a whole number from 1 to 999." } };
   if (!Number.isInteger(itemId)) return { status: 400, body: { error: "Pick an item before scanning." } };
   if (!(await itemOnLot(itemId, lotId, tenantId))) return { status: 404, body: { error: "That item is not on this lot." } };
-  // A box with a serial is one of a kind on its lot.
+  // A box with a serial is one of a kind on its lot; scanning a removed one brings it back here.
   if (box.serial) {
     const dup = await pool.query(
-      `SELECT 1 FROM af_lot_boxes WHERE af_lot_id = $1 AND tenant_id = $2 AND serial = $3
+      `SELECT box_id, removed_at FROM af_lot_boxes WHERE af_lot_id = $1 AND tenant_id = $2 AND serial = $3
           AND COALESCE(gtin, '') = COALESCE($4, '')`, [lotId, tenantId, box.serial, box.gtin]);
-    if (dup.rows.length) return { status: 409, body: { code: "DUPLICATE", error: "That box is already on this lot." } };
+    if (dup.rows.length && !dup.rows[0].removed_at) {
+      return { status: 409, body: { code: "DUPLICATE", error: "That box is already on this lot." } };
+    }
+    if (dup.rows.length) {
+      const { rows } = await pool.query(
+        `UPDATE af_lot_boxes SET removed_at = NULL, removed_by = NULL, item_id = $1, pallet_no = $2
+          WHERE box_id = $3 AND tenant_id = $4 RETURNING ${BOX_COLS}`,
+        [itemId, palletNo, dup.rows[0].box_id, tenantId]);
+      return { status: 201, body: { ...fmtBox(rows[0]), restored: true } };
+    }
   }
   const { rows } = await pool.query(
     `INSERT INTO af_lot_boxes (tenant_id, af_lot_id, weight, scanned_weight, scanned_unit, gtin, serial,
@@ -347,19 +392,40 @@ router.put("/af-lots/:id/pallets/:palletNo", verifyToken, async (req, res) => {
   }
 });
 
-// Take a mis-scanned box off its lot.
+// Take a mis-scanned box off its lot. Kept and marked, so it can be restored.
 router.delete("/af-lots/:id/boxes/:boxId", verifyToken, async (req, res) => {
   const id = Number(req.params.id);
   const boxId = Number(req.params.boxId);
   if (!Number.isInteger(id) || !Number.isInteger(boxId)) return res.status(400).json({ error: "Invalid id" });
   try {
-    const { rowCount } = await pool.query(
-      `DELETE FROM af_lot_boxes WHERE box_id = $1 AND af_lot_id = $2 AND tenant_id = $3`,
-      [boxId, id, req.tenantId]);
-    if (!rowCount) return res.status(404).json({ error: "That box is not on this lot." });
-    res.json({ ok: true });
+    const { rows } = await pool.query(
+      `UPDATE af_lot_boxes SET removed_at = now(), removed_by = $4
+        WHERE box_id = $1 AND af_lot_id = $2 AND tenant_id = $3 AND removed_at IS NULL
+       RETURNING ${BOX_COLS}`,
+      [boxId, id, req.tenantId, req.username || null]);
+    if (!rows.length) return res.status(404).json({ error: "That box is not on this lot, or was already removed." });
+    res.json(fmtBox(rows[0]));
   } catch (err) {
     console.error("remove af lot box:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Put a removed box back on its lot.
+router.post("/af-lots/:id/boxes/:boxId/restore", verifyToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const boxId = Number(req.params.boxId);
+  if (!Number.isInteger(id) || !Number.isInteger(boxId)) return res.status(400).json({ error: "Invalid id" });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE af_lot_boxes SET removed_at = NULL, removed_by = NULL
+        WHERE box_id = $1 AND af_lot_id = $2 AND tenant_id = $3 AND removed_at IS NOT NULL
+       RETURNING ${BOX_COLS}`,
+      [boxId, id, req.tenantId]);
+    if (!rows.length) return res.status(404).json({ error: "That box is not on this lot, or is not removed." });
+    res.json(fmtBox(rows[0]));
+  } catch (err) {
+    console.error("restore af lot box:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -490,7 +556,8 @@ router.post("/af-stations/:id/scan", verifyToken, async (req, res) => {
     const ev = await pool.query(
       `INSERT INTO af_scan_events (tenant_id, station_id, af_lot_id, box_id, ok, message, raw)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING event_id, created_at`,
-      [req.tenantId, id, station.lotId, ok ? out.body.id : null, ok, ok ? null : out.body.error, raw || null]);
+      [req.tenantId, id, station.lotId, ok ? out.body.id : null, ok,
+       ok ? (out.body.restored ? "Restored" : null) : out.body.error, raw || null]);
     res.status(out.status).json({ ...out.body, eventId: Number(ev.rows[0].event_id), station: withLive(station) });
   } catch (err) {
     console.error("station scan:", err);

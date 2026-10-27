@@ -17,7 +17,7 @@ import { fmtDateOnly } from "../../noblesse/common/shared";
 // Adams Foods lot registration: register a lot, add its items, scan its boxes, put its pallets away.
 // Kept apart from inventory.
 
-const EMPTY = { vendor: "", description: "", pricePerLb: "" };
+const EMPTY = { lotNumber: "", vendor: "", description: "", pricePerLb: "" };
 const NO_ITEM = { description: "", pricePerLb: "" };
 
 const dollars = (n) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -29,6 +29,14 @@ const LotList = ({ onOpen }) => {
   const [form, setForm] = useState(EMPTY);
   const [problem, setProblem] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState("");
+  // Typing the lot # instead of having one issued.
+  const [typing, setTyping] = useState(false);
+
+  // Lots whose number, vendor or items contain what was typed.
+  const term = search.trim().toUpperCase();
+  const shown = (lots || []).filter((l) => !term
+    || [l.lotNumber, l.vendor, l.items].join(" ").toUpperCase().includes(term));
 
   const load = useCallback(async () => {
     try {
@@ -40,13 +48,14 @@ const LotList = ({ onOpen }) => {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const ready = form.description.trim();
+  const ready = form.description.trim() && (!typing || form.lotNumber.trim());
 
   const register = async () => {
     setBusy(true);
     try {
-      const { data } = await axiosInstance.post("/af-lots", form);
+      const { data } = await axiosInstance.post("/af-lots", { ...form, lotNumber: typing ? form.lotNumber : "" });
       setForm(EMPTY);
+      setTyping(false);
       setProblem(null);
       onOpen(data);
     } catch (err) {
@@ -69,7 +78,8 @@ const LotList = ({ onOpen }) => {
     <Stack spacing={4}>
       <Box p={3} border="1px solid" borderColor="teal.200" borderRadius="md" bg="teal.50">
         <Text fontSize="sm" fontWeight="600" mb={2}>Register a lot</Text>
-        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
+        <SimpleGrid columns={{ base: 1, md: typing ? 4 : 3 }} spacing={3}>
+          {typing && field("lotNumber", "Lot # (e.g. 26298-03)")}
           {field("vendor", "Vendor")}
           {field("description", "First item")}
           {field("pricePerLb", "Price / lb", false)}
@@ -78,11 +88,22 @@ const LotList = ({ onOpen }) => {
           <Button size="sm" colorScheme="teal" onClick={register} isLoading={busy} isDisabled={!ready}>
             Register and scan
           </Button>
-          <Text fontSize="xs" color="gray.500">The lot number is issued for today.</Text>
+          <Text fontSize="xs" color="gray.500">
+            {typing ? "Today or an earlier day; a number already registered is refused." : "The lot number is issued for today."}
+          </Text>
+          <Button size="xs" variant="link" colorScheme="teal"
+            onClick={() => { setTyping((t) => !t); setForm((f) => ({ ...f, lotNumber: "" })); }}>
+            {typing ? "Issue the number instead" : "Type lot # instead"}
+          </Button>
         </Flex>
       </Box>
 
       {problem && <Alert status="error" borderRadius="md" py={2}><AlertIcon />{problem}</Alert>}
+
+      {lots && lots.length > 0 && (
+        <Input size="sm" maxW={{ base: "100%", md: "320px" }} placeholder="Search lot #, vendor or item"
+          value={search} onChange={(e) => setSearch(e.target.value)} />
+      )}
 
       {!lots ? <Spinner size="sm" /> : (
         <Box overflowX="auto">
@@ -92,10 +113,12 @@ const LotList = ({ onOpen }) => {
               <Th isNumeric>Pallets</Th><Th isNumeric>Boxes</Th><Th isNumeric>Lb</Th><Th isNumeric>Value</Th>
             </Tr></Thead>
             <Tbody>
-              {lots.length === 0 && (
-                <Tr><Td colSpan={7}><Text fontSize="sm" color="gray.500">No lots registered yet.</Text></Td></Tr>
+              {shown.length === 0 && (
+                <Tr><Td colSpan={7}><Text fontSize="sm" color="gray.500">
+                  {lots.length === 0 ? "No lots registered yet." : `No lots match "${search.trim()}".`}
+                </Text></Td></Tr>
               )}
-              {lots.map((l) => (
+              {shown.map((l) => (
                 <Tr key={l.id} cursor="pointer" _hover={{ bg: "gray.50" }} onClick={() => onOpen(l)}>
                   <Td fontWeight="600">{l.lotNumber}</Td>
                   <Td>{l.vendor}</Td>
@@ -114,7 +137,7 @@ const LotList = ({ onOpen }) => {
   );
 };
 
-const LotScan = ({ lot: start, active, onBack }) => {
+const LotScan = ({ lot: start, active, stationHere, onBack }) => {
   const [lot, setLot] = useState(start);
   const [items, setItems] = useState([]);
   const [boxes, setBoxes] = useState(null);
@@ -123,6 +146,11 @@ const LotScan = ({ lot: start, active, onBack }) => {
   const chain = useRef(Promise.resolve());
   // The latest scan, shown large: { ok: true, box } or { ok: false, text }.
   const [lastScan, setLastScan] = useState(null);
+  // Adds a box, or replaces it when it is already listed (removed, restored, moved).
+  const upsertBox = (box) => setBoxes((list) => {
+    const l = list || [];
+    return l.some((b) => b.id === box.id) ? l.map((b) => (b.id === box.id ? box : b)) : [...l, box];
+  });
 
   // The pallet new scans go onto; a ref so a scan uses the pallet selected when it was read.
   const [pallet, setPallet] = useState(1);
@@ -159,8 +187,9 @@ const LotScan = ({ lot: start, active, onBack }) => {
         setItems(data.items || []);
         setBoxes(data.boxes || []);
         setLocations(Object.fromEntries((data.pallets || []).map((p) => [p.palletNo, p.location])));
-        pickPallet(Math.max(1, ...(data.boxes || []).map((b) => b.palletNo || 1)));
-        const last = (data.boxes || []).filter((b) => b.itemId).pop();
+        const kept = (data.boxes || []).filter((b) => !b.removedAt);
+        pickPallet(Math.max(1, ...kept.map((b) => b.palletNo || 1)));
+        const last = kept.filter((b) => b.itemId).pop();
         pickItem(last ? last.itemId : data.items?.[0]?.id ?? null);
         if (!data.items?.length) setItemForm({ ...NO_ITEM });
       })
@@ -180,7 +209,7 @@ const LotScan = ({ lot: start, active, onBack }) => {
     chain.current = chain.current.then(async () => {
       try {
         const { data } = await axiosInstance.post(`/af-lots/${start.id}/boxes`, { ...entry, palletNo, itemId });
-        setBoxes((list) => [...(list || []), data]);
+        upsertBox(data);
         setLastScan({ ok: true, box: data });
         setProblem(null);
         beepSuccess();
@@ -193,7 +222,8 @@ const LotScan = ({ lot: start, active, onBack }) => {
     });
   }, [start.id]);
 
-  useBarcodeKeys(active, (result) => {
+  // Off while this device is the scan station, or every scan would be sent twice.
+  useBarcodeKeys(active && !stationHere, (result) => {
     if (result.type === "scan") send({ rawBarcode: result.raw });
     else { beepError(); setLastScan({ ok: false, text: `Not read: ${result.reason || result.code}` }); }
   });
@@ -255,8 +285,8 @@ const LotScan = ({ lot: start, active, onBack }) => {
         for (const ev of data.events) {
           if (ev.lotId && ev.lotId !== start.id) continue;
           if (ev.ok && ev.box) {
-            setBoxes((list) => ((list || []).some((b) => b.id === ev.box.id) ? list : [...(list || []), ev.box]));
-            setLastScan({ ok: true, box: ev.box });
+            upsertBox(ev.box);
+            setLastScan({ ok: true, box: ev.message === "Restored" ? { ...ev.box, restored: true } : ev.box });
             setProblem(null);
             beepSuccess();
           } else {
@@ -313,10 +343,19 @@ const LotScan = ({ lot: start, active, onBack }) => {
     }
   };
 
+  // Removing keeps the box, struck through; restoring puts it back.
   const remove = async (box) => {
     try {
-      await axiosInstance.delete(`/af-lots/${start.id}/boxes/${box.id}`);
-      setBoxes((list) => list.filter((b) => b.id !== box.id));
+      const { data } = await axiosInstance.delete(`/af-lots/${start.id}/boxes/${box.id}`);
+      upsertBox(data);
+    } catch (err) {
+      setProblem(errText(err));
+    }
+  };
+  const restore = async (box) => {
+    try {
+      const { data } = await axiosInstance.post(`/af-lots/${start.id}/boxes/${box.id}/restore`);
+      upsertBox(data);
     } catch (err) {
       setProblem(errText(err));
     }
@@ -333,15 +372,19 @@ const LotScan = ({ lot: start, active, onBack }) => {
   };
 
   const lbOf = (list) => (list.length ? toDisplay(sumWeights(list.map((b) => b.weight))) : "0.00");
-  const all = boxes || [];
+  // Removed boxes stay listed but count nowhere.
+  const listed = boxes || [];
+  const all = listed.filter((b) => !b.removedAt);
   const total = lbOf(all);
 
+  const palletOf = (b) => b.palletNo || 1;
   // Every pallet with boxes, plus the selected one even while it is still empty.
-  const palletNos = [...new Set([...all.map((b) => b.palletNo || 1), pallet])].sort((a, b) => a - b);
-  const onPallet = (n) => all.filter((b) => (b.palletNo || 1) === n);
+  const palletNos = [...new Set([...all.map(palletOf), pallet])].sort((a, b) => a - b);
+  const onPallet = (n) => all.filter((b) => palletOf(b) === n);
   const ofItem = (list, id) => list.filter((b) => b.itemId === id);
-  // Pallet by pallet, newest scan first within each.
-  const rows = palletNos.flatMap((n) => [...onPallet(n)].reverse());
+  // Pallet by pallet, newest scan first within each, removed boxes included.
+  const rows = [...new Set([...listed.map(palletOf), pallet])].sort((a, b) => a - b)
+    .flatMap((n) => listed.filter((b) => palletOf(b) === n).reverse());
 
   const itemName = (id) => items.find((i) => i.id === id)?.description || "No item";
   // What a box's label said: code, product and pack date.
@@ -409,7 +452,7 @@ const LotScan = ({ lot: start, active, onBack }) => {
           </Text>
         </Box>
         <Box textAlign="right" style={{ fontVariantNumeric: "tabular-nums" }}>
-          <Text fontSize="3xl" fontWeight="800" lineHeight="1">{boxes ? boxes.length : "…"}</Text>
+          <Text fontSize="3xl" fontWeight="800" lineHeight="1">{boxes ? all.length : "…"}</Text>
           <Text fontSize="xs" color="gray.600">boxes · {total} lb{value ? ` · ${dollars(value)}` : ""}</Text>
           {pending > 0 && <Badge colorScheme="yellow" mt={1}>saving {pending}</Badge>}
         </Box>
@@ -432,6 +475,7 @@ const LotScan = ({ lot: start, active, onBack }) => {
             <Text mt={1} fontSize="md" fontWeight="600">
               {itemName(lastScan.box.itemId)} · Pallet {lastScan.box.palletNo || 1}
               {lastScan.box.entryMethod === "typed" ? " · typed" : ""}
+              {lastScan.box.restored ? " · restored" : ""}
             </Text>
             {labelOf(lastScan.box) && <Text fontSize="sm" color="gray.600">{labelOf(lastScan.box)}</Text>}
           </>
@@ -519,7 +563,7 @@ const LotScan = ({ lot: start, active, onBack }) => {
           {locations[pallet] ? "Move pallet" : "Put away"}
         </Button>
         <Button size="sm" ml="auto" {...quiet} colorScheme="teal" variant={station ? "solid" : "outline"}
-          onClick={toggleStation}>
+          onClick={toggleStation} isDisabled={stationHere && !station}>
           {station ? `Scan station on · ${station.name}` : "Use scan station"}
         </Button>
         <Button size="sm" variant="ghost" {...quiet} onClick={() => setPadOpen((o) => !o)}>
@@ -533,9 +577,14 @@ const LotScan = ({ lot: start, active, onBack }) => {
         </Box>
       )}
 
+      {stationHere && (
+        <Alert status="info" borderRadius="md" py={2}>
+          <AlertIcon />This computer is the scan station. Use Lot Registration on the tablet.
+        </Alert>
+      )}
       {problem
         ? <Alert status="error" borderRadius="md" py={2}><AlertIcon />{problem}</Alert>
-        : <Text fontSize="sm" color="gray.500">
+        : !stationHere && <Text fontSize="sm" color="gray.500">
             Click an empty spot, then scan each box label. Boxes go onto {item ? itemName(item) : "the selected item"}, Pallet {pallet}, and are saved as they are scanned.
           </Text>}
 
@@ -549,22 +598,33 @@ const LotScan = ({ lot: start, active, onBack }) => {
             <Tbody>
               {rows.map((b) => (
                 <Tr key={b.id} style={{ fontVariantNumeric: "tabular-nums" }}
-                  bg={lastScan?.ok && lastScan.box.id === b.id ? "green.50" : undefined}>
-                  <Td>
-                    {/* Moves a box placed on the wrong pallet; blurs so scans are not swallowed. */}
-                    <Select size="xs" w="64px" value={b.palletNo || 1} tabIndex={-1}
-                      onChange={(e) => { e.target.blur(); move(b, { palletNo: Number(e.target.value) }); }}>
-                      {palletNos.map((n) => <option key={n} value={n}>{n}</option>)}
-                    </Select>
-                  </Td>
-                  <Td>
-                    {/* Moves a box onto the right item; blurs the same way. */}
-                    <Select size="xs" w="140px" value={b.itemId || ""} tabIndex={-1}
-                      onChange={(e) => { e.target.blur(); if (e.target.value) move(b, { itemId: Number(e.target.value) }); }}>
-                      {!b.itemId && <option value="">No item</option>}
-                      {items.map((i) => <option key={i.id} value={i.id}>{i.description}</option>)}
-                    </Select>
-                  </Td>
+                  bg={lastScan?.ok && lastScan.box.id === b.id ? "green.50" : undefined}
+                  color={b.removedAt ? "gray.400" : undefined}
+                  sx={b.removedAt ? { "& td:not(:last-child)": { textDecoration: "line-through" } } : undefined}>
+                  {b.removedAt ? (
+                    <>
+                      <Td>{palletOf(b)}</Td>
+                      <Td>{itemName(b.itemId)}</Td>
+                    </>
+                  ) : (
+                    <>
+                      <Td>
+                        {/* Moves a box placed on the wrong pallet; blurs so scans are not swallowed. */}
+                        <Select size="xs" w="64px" value={b.palletNo || 1} tabIndex={-1}
+                          onChange={(e) => { e.target.blur(); move(b, { palletNo: Number(e.target.value) }); }}>
+                          {palletNos.map((n) => <option key={n} value={n}>{n}</option>)}
+                        </Select>
+                      </Td>
+                      <Td>
+                        {/* Moves a box onto the right item; blurs the same way. */}
+                        <Select size="xs" w="140px" value={b.itemId || ""} tabIndex={-1}
+                          onChange={(e) => { e.target.blur(); if (e.target.value) move(b, { itemId: Number(e.target.value) }); }}>
+                          {!b.itemId && <option value="">No item</option>}
+                          {items.map((i) => <option key={i.id} value={i.id}>{i.description}</option>)}
+                        </Select>
+                      </Td>
+                    </>
+                  )}
                   <Td isNumeric fontWeight="600">
                     {b.weight}
                     {b.scannedUnit === "KG" && <Text as="span" fontSize="xs" color="gray.500"> ({b.scannedWeight} kg)</Text>}
@@ -581,9 +641,12 @@ const LotScan = ({ lot: start, active, onBack }) => {
                   <Td fontSize="xs">{[b.gtin, b.serial].filter(Boolean).join(" / ")}</Td>
                   <Td fontSize="xs" color="gray.500">
                     {b.scannedBy || ""}<br />{b.scannedAt ? new Date(b.scannedAt).toLocaleString() : ""}
+                    {b.removedAt && <><br />Removed by {b.removedBy || "?"} {new Date(b.removedAt).toLocaleString()}</>}
                   </Td>
                   <Td>
-                    <Button size="xs" variant="ghost" colorScheme="red" tabIndex={-1} onClick={() => remove(b)}>Remove</Button>
+                    {b.removedAt
+                      ? <Button size="xs" variant="ghost" colorScheme="green" tabIndex={-1} onClick={() => restore(b)}>Restore</Button>
+                      : <Button size="xs" variant="ghost" colorScheme="red" tabIndex={-1} onClick={() => remove(b)}>Remove</Button>}
                   </Td>
                 </Tr>
               ))}
@@ -599,13 +662,14 @@ const LotScan = ({ lot: start, active, onBack }) => {
   );
 };
 
-const AfLots = ({ isOpen, onClose }) => {
+// stationHere: the Scan Station window is open on this same device.
+const AfLots = ({ isOpen, onClose, stationHere = false }) => {
   const [open, setOpen] = useState(null); // the lot being scanned onto
   const close = () => { setOpen(null); onClose(); };
   return (
     <FloatingWindow isOpen={isOpen} onClose={close} title="Lot Registration" width={960}>
       {open
-        ? <LotScan key={open.id} lot={open} active={isOpen} onBack={() => setOpen(null)} />
+        ? <LotScan key={open.id} lot={open} active={isOpen} stationHere={stationHere} onBack={() => setOpen(null)} />
         : <LotList onOpen={setOpen} />}
     </FloatingWindow>
   );
