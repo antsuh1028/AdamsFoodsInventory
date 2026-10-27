@@ -939,6 +939,10 @@ const steps = async () => {
   await run("af_lot_boxes status",
     `ALTER TABLE af_lot_boxes ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'in_stock'
        CHECK (status IN ('in_stock', 'out'))`);
+  // A box taken off its lot: kept, struck through, restorable.
+  await run("af_lot_boxes removed",
+    `ALTER TABLE af_lot_boxes ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ,
+       ADD COLUMN IF NOT EXISTS removed_by TEXT`);
   // Where each pallet of a lot was put away; its boxes take the location.
   await run("af_lot_pallets", `
     CREATE TABLE IF NOT EXISTS af_lot_pallets (

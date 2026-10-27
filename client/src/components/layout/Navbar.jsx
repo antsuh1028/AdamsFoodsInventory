@@ -92,7 +92,7 @@ const ShowDrawer = ({
         <Stack direction="column" spacing={3} p={4}>
           {navBtn("Scan Boxes", onBoxScanOpen)}
           {navBtn("Lot Registration", onLotsOpen)}
-          {navBtn("Scan Station", onStationOpen)}
+          {navBtn("Scan Station (scanner computer)", onStationOpen)}
           {navBtn("Freezer Map", onMapOpen)}
           {navBtn("Scan Pallet Form", onScanOpen)}
           {navBtn("Scan Order Sheet", onOrderScanOpen)}
@@ -300,7 +300,7 @@ const Navbar = () => {
       <OrderScanner isOpen={isOrderScanOpen} onClose={onOrderScanClose} />
       <ProductionOrders isOpen={isProductionOpen} onClose={onProductionClose} />
       <ScanBoxes isOpen={isBoxScanOpen} onClose={onBoxScanClose} />
-      <AfLots isOpen={isLotsOpen} onClose={onLotsClose} />
+      <AfLots isOpen={isLotsOpen} onClose={onLotsClose} stationHere={isStationOpen} />
       <AfStation isOpen={isStationOpen} onClose={onStationClose} />
     </>
   );
