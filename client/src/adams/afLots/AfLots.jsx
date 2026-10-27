@@ -10,11 +10,14 @@ import { sumWeights, toDisplay } from "../../utils/weight";
 import upperInput from "../../utils/upperInput";
 import ITEM_CODES from "../../utils/itemCodes";
 import printOutgoingTag from "../../noblesse/outgoing/printOutgoingTag";
+import printWeightManifest from "../../noblesse/weightManifest/printWeightManifest";
+import NumericKeypad from "../../noblesse/weighing/NumericKeypad";
 import { fmtDateOnly } from "../../noblesse/common/shared";
 
-// Adams Foods lot registration: register a lot, add its items, then scan its boxes. Kept apart from inventory.
+// Adams Foods lot registration: register a lot, add its items, scan its boxes, put its pallets away.
+// Kept apart from inventory.
 
-const EMPTY = { lotNumber: "", vendor: "", description: "", pricePerLb: "" };
+const EMPTY = { vendor: "", description: "", pricePerLb: "" };
 const NO_ITEM = { description: "", pricePerLb: "" };
 
 const dollars = (n) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -37,7 +40,7 @@ const LotList = ({ onOpen }) => {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const ready = form.lotNumber.trim() && form.description.trim();
+  const ready = form.description.trim();
 
   const register = async () => {
     setBusy(true);
@@ -66,15 +69,17 @@ const LotList = ({ onOpen }) => {
     <Stack spacing={4}>
       <Box p={3} border="1px solid" borderColor="teal.200" borderRadius="md" bg="teal.50">
         <Text fontSize="sm" fontWeight="600" mb={2}>Register a lot</Text>
-        <SimpleGrid columns={{ base: 1, md: 4 }} spacing={3}>
-          {field("lotNumber", "Lot #")}
+        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
           {field("vendor", "Vendor")}
           {field("description", "First item")}
           {field("pricePerLb", "Price / lb", false)}
         </SimpleGrid>
-        <Button mt={3} size="sm" colorScheme="teal" onClick={register} isLoading={busy} isDisabled={!ready}>
-          Register and scan
-        </Button>
+        <Flex mt={3} align="center" gap={3} wrap="wrap">
+          <Button size="sm" colorScheme="teal" onClick={register} isLoading={busy} isDisabled={!ready}>
+            Register and scan
+          </Button>
+          <Text fontSize="xs" color="gray.500">The lot number is issued for today.</Text>
+        </Flex>
       </Box>
 
       {problem && <Alert status="error" borderRadius="md" py={2}><AlertIcon />{problem}</Alert>}
@@ -130,12 +135,28 @@ const LotScan = ({ lot: start, active, onBack }) => {
   // The add / edit item form; null while closed.
   const [itemForm, setItemForm] = useState(null);
 
+  // Where each pallet was put away, by pallet number.
+  const [locations, setLocations] = useState({});
+  const [locationInput, setLocationInput] = useState("");
+
+  // The scan station: the base's computer receives the scans; this screen points it here and watches.
+  const [station, setStation] = useState(null);
+  const lastEvent = useRef(0);
+  // This tablet's claim on the station; another tablet taking it over sees a different id.
+  const sessionId = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+  // Keypad for boxes whose label has no weight barcode.
+  const [padOpen, setPadOpen] = useState(false);
+  const [padValue, setPadValue] = useState("");
+  const [padUnit, setPadUnit] = useState("LB");
+
   useEffect(() => {
     axiosInstance.get(`/af-lots/${start.id}`)
       .then(({ data }) => {
         setLot(data);
         setItems(data.items || []);
         setBoxes(data.boxes || []);
+        setLocations(Object.fromEntries((data.pallets || []).map((p) => [p.palletNo, p.location])));
         pickPallet(Math.max(1, ...(data.boxes || []).map((b) => b.palletNo || 1)));
         const last = (data.boxes || []).filter((b) => b.itemId).pop();
         pickItem(last ? last.itemId : data.items?.[0]?.id ?? null);
@@ -144,8 +165,8 @@ const LotScan = ({ lot: start, active, onBack }) => {
       .catch((err) => setProblem(errText(err)));
   }, [start.id]);
 
-  // One request at a time, in the order the boxes were scanned.
-  const send = useCallback((raw) => {
+  // One request at a time, in the order the boxes were scanned or typed.
+  const send = useCallback((entry) => {
     const itemId = itemRef.current;
     if (!itemId) {
       beepError();
@@ -156,7 +177,7 @@ const LotScan = ({ lot: start, active, onBack }) => {
     const palletNo = palletRef.current;
     chain.current = chain.current.then(async () => {
       try {
-        const { data } = await axiosInstance.post(`/af-lots/${start.id}/boxes`, { rawBarcode: raw, palletNo, itemId });
+        const { data } = await axiosInstance.post(`/af-lots/${start.id}/boxes`, { ...entry, palletNo, itemId });
         setBoxes((list) => [...(list || []), data]);
         setProblem(null);
         beepSuccess();
@@ -170,9 +191,103 @@ const LotScan = ({ lot: start, active, onBack }) => {
   }, [start.id]);
 
   useBarcodeKeys(active, (result) => {
-    if (result.type === "scan") send(result.raw);
+    if (result.type === "scan") send({ rawBarcode: result.raw });
     else { beepError(); setProblem(`Not read: ${result.reason || result.code}`); }
   });
+
+  // Turns the scan station on for this lot, or off.
+  const toggleStation = async () => {
+    if (station) { setStation(null); return; }
+    try {
+      const { data } = await axiosInstance.get("/af-stations");
+      if (!data[0]) { setProblem("No scan station is set up."); return; }
+      const feed = await axiosInstance.get(`/af-stations/${data[0].id}/feed`);
+      lastEvent.current = feed.data.lastEventId;
+      setStation(data[0]);
+      setProblem(null);
+    } catch (err) {
+      setProblem(errText(err));
+    }
+  };
+
+  // Points the station at this lot and whichever item and pallet are selected.
+  const stationId = station && station.id;
+  useEffect(() => {
+    if (!stationId) return;
+    axiosInstance.put(`/af-stations/${stationId}/target`,
+      { lotId: start.id, itemId: item, palletNo: pallet, sessionId: sessionId.current })
+      .then(({ data }) => setStation(data))
+      .catch((err) => setProblem(errText(err)));
+  }, [stationId, item, pallet, start.id]);
+
+  // Turning the station off, leaving the lot or closing the window clears its target,
+  // so later scans at the base are refused rather than saved onto this lot.
+  useEffect(() => {
+    if (!stationId) return undefined;
+    const mine = sessionId.current;
+    return () => {
+      axiosInstance.post(`/af-stations/${stationId}/release`, { sessionId: mine }).catch(() => {});
+    };
+  }, [stationId]);
+
+  // Picks up what the station received, about every second.
+  useEffect(() => {
+    if (!stationId) return undefined;
+    let busy = false;
+    const t = setInterval(async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const { data } = await axiosInstance.get(`/af-stations/${stationId}/feed`,
+          { params: { since: lastEvent.current, sessionId: sessionId.current } });
+        // Another tablet took the station; stop here without clearing their target.
+        if (data.taken) {
+          sessionId.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          setStation(null);
+          setProblem(`The scan station was taken by ${data.by}.`);
+          beepError();
+          return;
+        }
+        lastEvent.current = data.lastEventId;
+        for (const ev of data.events) {
+          if (ev.lotId !== start.id) continue;
+          if (ev.ok && ev.box) {
+            setBoxes((list) => ((list || []).some((b) => b.id === ev.box.id) ? list : [...(list || []), ev.box]));
+            setProblem(null);
+            beepSuccess();
+          } else {
+            setProblem(`Station: ${ev.message || "scan not saved"}`);
+            beepError();
+          }
+        }
+      } catch (err) {
+        setProblem(errText(err));
+      } finally {
+        busy = false;
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [stationId, start.id]);
+
+  // A box typed on the keypad.
+  const addTyped = () => {
+    if (!padValue) return;
+    send({ weight: padValue, unit: padUnit });
+    setPadValue("");
+  };
+
+  // Puts the selected pallet away; its boxes take the location.
+  const putAway = async () => {
+    try {
+      const { data } = await axiosInstance.put(`/af-lots/${start.id}/pallets/${pallet}`, { location: locationInput });
+      setLocations((m) => ({ ...m, [data.palletNo]: data.location }));
+      setLocationInput("");
+      setProblem(null);
+      if (document.activeElement) document.activeElement.blur();
+    } catch (err) {
+      setProblem(errText(err));
+    }
+  };
 
   const saveItem = async () => {
     try {
@@ -254,6 +369,26 @@ const LotScan = ({ lot: start, active, onBack }) => {
     if (!ok) setProblem("Allow pop-ups to print the tag.");
   };
 
+  // The receiving tally for one item: every box of it on this lot, with each pallet's count on the memo.
+  const printTally = (id) => {
+    const list = ofItem(all, id);
+    const codes = [...new Set(list.map((b) => b.itemCode).filter(Boolean))];
+    const vendorLots = [...new Set(list.map((b) => b.labelLot).filter(Boolean))];
+    const pals = palletNos.filter((n) => ofItem(onPallet(n), id).length);
+    printWeightManifest({
+      company: "Adams Foods",
+      lotNumber: lot.lotNumber,
+      date: fmtDateOnly(list[0]?.scannedAt || lot.createdAt),
+      vendor: lot.vendor,
+      billOfLading: vendorLots.join("; "),
+      itemDescription: [codes.join(", "), itemName(id)].filter(Boolean).join(" "),
+      scans: list.map((b) => ({ weight: b.weight, weightUnit: "LB" })),
+      memo: pals.length > 1
+        ? pals.map((n) => `Pallet ${n}${locations[n] ? ` (${locations[n]})` : ""}: ${ofItem(onPallet(n), id).length} BX ${lbOf(ofItem(onPallet(n), id))} LB`).join("; ")
+        : "",
+    });
+  };
+
   const quiet = { tabIndex: -1, onMouseDown: (e) => e.preventDefault() };
 
   return (
@@ -291,6 +426,12 @@ const LotScan = ({ lot: start, active, onBack }) => {
             Edit item
           </Button>
         )}
+        {item && (
+          <Button size="sm" ml="auto" variant="outline" {...quiet}
+            onClick={() => printTally(item)} isDisabled={pending > 0 || ofItem(all, item).length === 0}>
+            Print {itemName(item)} tally
+          </Button>
+        )}
       </Flex>
 
       {itemForm && (
@@ -320,7 +461,7 @@ const LotScan = ({ lot: start, active, onBack }) => {
           <Button key={n} size="sm" {...quiet}
             colorScheme={n === pallet ? "blue" : "gray"} variant={n === pallet ? "solid" : "outline"}
             onClick={() => pickPallet(n)} style={{ fontVariantNumeric: "tabular-nums" }}>
-            Pallet {n} · {onPallet(n).length} · {lbOf(onPallet(n))} lb
+            Pallet {n}{locations[n] ? ` @ ${locations[n]}` : ""} · {onPallet(n).length} · {lbOf(onPallet(n))} lb
           </Button>
         ))}
         <Button size="sm" variant="ghost" colorScheme="teal" {...quiet}
@@ -333,6 +474,32 @@ const LotScan = ({ lot: start, active, onBack }) => {
           Print Pallet {pallet} tag
         </Button>
       </Flex>
+
+      {/* Put-away for the selected pallet, and the keypad for labels without a weight barcode. */}
+      <Flex gap={2} wrap="wrap" align="center">
+        <Text fontSize="sm" color="gray.600">
+          Pallet {pallet} {locations[pallet] ? `is at ${locations[pallet]}.` : "is not put away yet."}
+        </Text>
+        <Input size="sm" w="120px" bg="white" placeholder="A101" value={locationInput}
+          onChange={(e) => setLocationInput(upperInput(e))}
+          onKeyDown={(e) => { if (e.key === "Enter" && locationInput.trim()) putAway(); }} />
+        <Button size="sm" colorScheme="blue" variant="outline" onClick={putAway} isDisabled={!locationInput.trim()}>
+          {locations[pallet] ? "Move pallet" : "Put away"}
+        </Button>
+        <Button size="sm" ml="auto" {...quiet} colorScheme="teal" variant={station ? "solid" : "outline"}
+          onClick={toggleStation}>
+          {station ? `Scan station on · ${station.name}` : "Use scan station"}
+        </Button>
+        <Button size="sm" variant="ghost" {...quiet} onClick={() => setPadOpen((o) => !o)}>
+          {padOpen ? "Hide keypad" : "Keypad"}
+        </Button>
+      </Flex>
+      {padOpen && (
+        <Box maxW="280px">
+          <NumericKeypad value={padValue} onChange={setPadValue} onSubmit={addTyped}
+            unit={padUnit} onUnitChange={setPadUnit} submitLabel="Add box" isDisabled={!item} />
+        </Box>
+      )}
 
       {problem
         ? <Alert status="error" borderRadius="md" py={2}><AlertIcon />{problem}</Alert>
@@ -368,6 +535,7 @@ const LotScan = ({ lot: start, active, onBack }) => {
                   <Td isNumeric fontWeight="600">
                     {b.weight}
                     {b.scannedUnit === "KG" && <Text as="span" fontSize="xs" color="gray.500"> ({b.scannedWeight} kg)</Text>}
+                    {b.entryMethod === "typed" && <Badge ml={1} fontSize="9px" colorScheme="yellow">typed</Badge>}
                   </Td>
                   <Td>{b.packDate || ""}</Td>
                   <Td>

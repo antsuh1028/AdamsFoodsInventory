@@ -36,6 +36,7 @@ import OrderScanner from "../../adams/scanning/orderScanner.jsx";
 import ProductionOrders from "../../adams/production/productionOrders.jsx";
 import ScanBoxes from "../../adams/boxScan/ScanBoxes.jsx";
 import AfLots from "../../adams/afLots/AfLots.jsx";
+import AfStation from "../../adams/afLots/AfStation.jsx";
 
 const ShowDrawer = ({
   isOpen,
@@ -53,6 +54,7 @@ const ShowDrawer = ({
   onProductionOpen,
   onBoxScanOpen,
   onLotsOpen,
+  onStationOpen,
 }) => {
   const navigate = useNavigate();
   const [otherOpen, setOtherOpen] = useState(false);
@@ -90,6 +92,7 @@ const ShowDrawer = ({
         <Stack direction="column" spacing={3} p={4}>
           {navBtn("Scan Boxes", onBoxScanOpen)}
           {navBtn("Lot Registration", onLotsOpen)}
+          {navBtn("Scan Station", onStationOpen)}
           {navBtn("Freezer Map", onMapOpen)}
           {navBtn("Scan Pallet Form", onScanOpen)}
           {navBtn("Scan Order Sheet", onOrderScanOpen)}
@@ -197,6 +200,11 @@ const Navbar = () => {
     onOpen: onLotsOpen,
     onClose: onLotsClose,
   } = useDisclosure();
+  const {
+    isOpen: isStationOpen,
+    onOpen: onStationOpen,
+    onClose: onStationClose,
+  } = useDisclosure();
 
   return (
     <>
@@ -277,6 +285,7 @@ const Navbar = () => {
         onProductionOpen={onProductionOpen}
         onBoxScanOpen={onBoxScanOpen}
         onLotsOpen={onLotsOpen}
+        onStationOpen={onStationOpen}
       />
       <UploadFile isOpen={isUploadOpen} onClose={onUploadClose} />
       <IncomingOrders isOpen={isIPROpen} onClose={onIPRClose} />
@@ -292,6 +301,7 @@ const Navbar = () => {
       <ProductionOrders isOpen={isProductionOpen} onClose={onProductionClose} />
       <ScanBoxes isOpen={isBoxScanOpen} onClose={onBoxScanClose} />
       <AfLots isOpen={isLotsOpen} onClose={onLotsClose} />
+      <AfStation isOpen={isStationOpen} onClose={onStationClose} />
     </>
   );
 };

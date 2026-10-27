@@ -923,6 +923,64 @@ const steps = async () => {
     UPDATE af_lot_boxes b SET item_id = m.item_id FROM made m
      WHERE b.af_lot_id = m.af_lot_id AND b.item_id IS NULL
   `);
+  // AF-issued lot numbers: the day and sequence a number encodes. Typed lots from before keep NULL.
+  await run("af_lots lot_date",
+    `ALTER TABLE af_lots ADD COLUMN IF NOT EXISTS lot_date DATE`);
+  await run("af_lots seq",
+    `ALTER TABLE af_lots ADD COLUMN IF NOT EXISTS seq SMALLINT`);
+  await run("af_lots day sequence unique",
+    `CREATE UNIQUE INDEX IF NOT EXISTS af_lots_day_seq_idx ON af_lots (tenant_id, lot_date, seq)
+       WHERE lot_date IS NOT NULL`);
+  // How a box's weight got in: read from its barcode, or typed on the keypad.
+  await run("af_lot_boxes entry_method",
+    `ALTER TABLE af_lot_boxes ADD COLUMN IF NOT EXISTS entry_method TEXT NOT NULL DEFAULT 'scan'
+       CHECK (entry_method IN ('scan', 'typed'))`);
+  // Whether a box is still here; phase 3 marks boxes out.
+  await run("af_lot_boxes status",
+    `ALTER TABLE af_lot_boxes ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'in_stock'
+       CHECK (status IN ('in_stock', 'out'))`);
+  // Where each pallet of a lot was put away; its boxes take the location.
+  await run("af_lot_pallets", `
+    CREATE TABLE IF NOT EXISTS af_lot_pallets (
+      tenant_id   UUID NOT NULL REFERENCES tenants(id),
+      af_lot_id   INT  NOT NULL REFERENCES af_lots(af_lot_id) ON DELETE CASCADE,
+      pallet_no   INT  NOT NULL CHECK (pallet_no > 0),
+      location    TEXT NOT NULL,
+      located_by  TEXT,
+      located_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (af_lot_id, pallet_no)
+    )
+  `);
+  // A scan station: the computer a corded scanner base types into. The tablet sets its target.
+  await run("af_scan_stations", `
+    CREATE TABLE IF NOT EXISTS af_scan_stations (
+      station_id  SERIAL PRIMARY KEY,
+      tenant_id   UUID NOT NULL REFERENCES tenants(id),
+      name        TEXT NOT NULL,
+      af_lot_id   INT REFERENCES af_lots(af_lot_id) ON DELETE SET NULL,
+      item_id     INT REFERENCES af_lot_items(item_id) ON DELETE SET NULL,
+      pallet_no   INT NOT NULL DEFAULT 1 CHECK (pallet_no > 0),
+      updated_by  TEXT,
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (tenant_id, name)
+    )
+  `);
+  // Every scan a station received and what came of it, so the tablet can show errors too.
+  await run("af_scan_events", `
+    CREATE TABLE IF NOT EXISTS af_scan_events (
+      event_id    BIGSERIAL PRIMARY KEY,
+      tenant_id   UUID NOT NULL REFERENCES tenants(id),
+      station_id  INT  NOT NULL REFERENCES af_scan_stations(station_id) ON DELETE CASCADE,
+      af_lot_id   INT,
+      box_id      INT,
+      ok          BOOLEAN NOT NULL,
+      message     TEXT,
+      raw         TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await run("af_scan_events station index",
+    `CREATE INDEX IF NOT EXISTS af_scan_events_station_idx ON af_scan_events (station_id, event_id)`);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection

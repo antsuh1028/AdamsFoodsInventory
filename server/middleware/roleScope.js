@@ -30,6 +30,8 @@ const OUTGOING = [
 // Adams Foods: the inventory app.
 const ADAMS = [
   [/^\/inventory/, null],
+  [/^\/af-lots(\/|$)/, null],
+  [/^\/af-stations(\/|$)/, null],
   [/^\/verifyLocation$/, null],
   [/^\/(add|get)History(\/|$)/, null],
   [/^\/production-orders(\/|$)/, null],
