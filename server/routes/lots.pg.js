@@ -7,7 +7,7 @@ const { parseLot, parseFpLot, formatLot, pacificToday, dayOfYearFromDate } = req
 const { fpCounts, findFpChild, sentSql, takenSql, returnedSql } = require("../utils/fpLot");
 // Shared with routes/boxes.pg.js so a lot's totals and a manifest agree.
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
-const { weighedSql, boxesSql, estimatedSql, formWeightSql, yieldFrom } = require("../utils/lotYield");
+const { weighedSql, boxesSql, estimatedSql, formWeightSql, yieldFrom, yieldFor } = require("../utils/lotYield");
 const { weighedAtSql } = require("../utils/weighedAt");
 const { lotDescriptionSql } = require("../utils/lotDescription");
 
@@ -59,7 +59,7 @@ const fmtLot = (row) => ({
   closedBy: row.closed_by ?? null,
   // The figures AS THEY STOOD at close. A later correction moves the live
   // numbers; these stay put, because somebody has already reported them.
-  closedYield: row.closed_yield != null ? Number(row.closed_yield) : null,
+  // The frozen yield itself is admin-only and added by GET /lots/:id.
   closedInLb: row.closed_in_lb ?? null,
   closedOutLb: row.closed_out_lb ?? null,
 });
@@ -506,12 +506,15 @@ router.get("/lots/:id", verifyToken, async (req, res) => {
           ...(await fpCounts(pool, req.tenantId, child.lot_id)) };
       }
     }
+    const y = yieldFor(req.role, yieldFrom(f));
     res.json({
-      lot: fmtLot(row),
+      lot: req.role === "admin"
+        ? { ...fmtLot(row), closedYield: row.closed_yield != null ? Number(row.closed_yield) : null }
+        : fmtLot(row),
       description: row.description || null,
       further,
       status: lotStatus(f),
-      closeSuggestion: closeSuggestion(lot.rows[0], f, yieldFrom(f)),
+      closeSuggestion: closeSuggestion(lot.rows[0], f, y),
       figures: {
         rawOnHand: f.raw_on_hand,
         processedOnHand: f.processed_on_hand,
@@ -524,7 +527,7 @@ router.get("/lots/:id", verifyToken, async (req, res) => {
         boxesOut: f.boxes_out,
         weightUnit: "LB",
       },
-      yield: yieldFrom(f),
+      yield: y,
     });
   } catch (err) {
     console.error("read lot:", err);
@@ -596,7 +599,7 @@ router.post("/lots/:id/close", verifyToken, requireRole(...RECEPTION_ROLES), asy
     );
 
     await client.query("COMMIT");
-    res.json({ lot: fmtLot(upd.rows[0]), yield: y });
+    res.json({ lot: fmtLot(upd.rows[0]), yield: yieldFor(req.role, y) });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     console.error("close lot:", err);

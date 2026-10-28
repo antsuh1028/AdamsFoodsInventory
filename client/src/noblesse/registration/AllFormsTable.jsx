@@ -8,6 +8,7 @@ import {
 } from "@chakra-ui/icons";
 import { fmtDate, today, fmtWeight } from "../common/shared";
 import LotMenu from "../lots/LotMenu";
+import getRole from "../../utils/getRole";
 
 // Sortable, filterable view of every registration form.
 //
@@ -16,8 +17,8 @@ import LotMenu from "../lots/LotMenu";
 
 const DAYS_PER_PAGE = 7;
 
-const COLUMNS = [
-  { key: "lotNumber",          label: "Lot #",           filter: "text",   width: "110px" },
+const ALL_COLUMNS = [
+  { key: "lotNumber",         label: "Lot #",           filter: "text",   width: "110px" },
   { key: "dateReceived",       label: "Date Received",   filter: "text",   width: "150px", kind: "date" },
   { key: "vendor",             label: "Vendor",          filter: "select", width: "130px" },
   { key: "productDescription", label: "Product",         filter: "text",   width: "180px" },
@@ -59,6 +60,9 @@ const compare = (a, b, col, dir) => {
 };
 
 const AllFormsTable = ({ forms = [], onEdit }) => {
+  // Yield is admin-only.
+  const COLUMNS = useMemo(
+    () => (getRole() === "admin" ? ALL_COLUMNS : ALL_COLUMNS.filter((c) => c.key !== "actualYield")), []);
   const [sort, setSort] = useState({ key: "dateReceived", dir: "desc" });
   const [filters, setFilters] = useState({});
   const [page, setPage] = useState(0);
@@ -102,7 +106,7 @@ const AllFormsTable = ({ forms = [], onEdit }) => {
       out[col.key] = [...new Set(forms.map((f) => f[col.key]).filter(Boolean))].sort();
     }
     return out;
-  }, [forms]);
+  }, [forms, COLUMNS]);
 
   const filtered = useMemo(() => {
     const active = Object.entries(filters).filter(([, v]) => v);
@@ -116,7 +120,7 @@ const AllFormsTable = ({ forms = [], onEdit }) => {
           : cell.toLowerCase().includes(value.toLowerCase());
       })
     );
-  }, [forms, filters]);
+  }, [forms, filters, COLUMNS]);
 
   // Pagination is always by received date, independent of the sort column, so
   // changing the sort reorders rows within a page instead of reshuffling pages.

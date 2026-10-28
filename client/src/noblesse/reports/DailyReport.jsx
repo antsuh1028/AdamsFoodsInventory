@@ -10,6 +10,7 @@ import FloatingWindow from "../../components/FloatingWindow";
 import LotTimeline from "../lots/LotTimeline";
 import LotMenu from "../lots/LotMenu";
 import axiosInstance from "../../utils/axiosInstance";
+import getRole from "../../utils/getRole";
 import { today, fmtWeight, fmtLongDate } from "../common/shared";
 
 // The day, for whoever has to answer for it.
@@ -275,6 +276,8 @@ const AttentionSection = ({ grouped, truncated, isToday }) => {
 };
 
 const DailyReport = ({ isOpen, onClose }) => {
+  // Yield is admin-only; the server leaves it out for everyone else too.
+  const isAdmin = getRole() === "admin";
   const [day, setDay] = useState(() => today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -451,7 +454,7 @@ const DailyReport = ({ isOpen, onClose }) => {
                       <Th isNumeric>Out</Th>
                       <Th isNumeric>Shipped</Th>
                       <Th isNumeric>Cases</Th>
-                      <Th>Yield to date</Th>
+                      {isAdmin && <Th>Yield to date</Th>}
                     </Tr>
                   </Thead>
                   <Tbody>
@@ -487,7 +490,7 @@ const DailyReport = ({ isOpen, onClose }) => {
                         <Td isNumeric style={{ fontVariantNumeric: "tabular-nums" }}>
                           {lot.day.reports ? `${num(lot.day.casesIn)} → ${num(lot.day.casesOut)}` : "—"}
                         </Td>
-                        <Td><YieldCell y={lot.yield} /></Td>
+                        {isAdmin && <Td><YieldCell y={lot.yield} /></Td>}
                       </Tr>
                     ))}
                   </Tbody>

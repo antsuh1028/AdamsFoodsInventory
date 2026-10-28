@@ -6,7 +6,7 @@ const verifyToken = require("../../middleware/verifyToken.pg");
 const requireRole = require("../../middleware/requireRole");
 const { lotColumns } = require("../../utils/lotRegistry");
 const { syncRegistrationStock } = require("../../utils/registrationStock");
-const { yieldLateralSql, yieldFrom } = require("../../utils/lotYield");
+const { yieldLateralSql, yieldFrom, yieldFor } = require("../../utils/lotYield");
 const { searchTerm, searchClause } = require("../../utils/search");
 const { fmtDate } = require("./helpers/shared");
 
@@ -83,6 +83,30 @@ const fmtRegistrationForm = (row) => {
     status:                 row.status,
     createdAt:              row.created_at,
     updatedAt:              row.updated_at,
+  };
+};
+
+// A form as this role may see it: Actual Yield and the measured yield are admin-only.
+const formFor = (form, role) =>
+  (role === "admin" ? form : { ...form, actualYield: null, yield: yieldFor(role, form.yield) });
+
+// History entries carry whole forms, so the same fields come out of them.
+const historyFor = (entry, role) => {
+  if (role === "admin") return entry;
+  const strip = (v) => {
+    if (!v || typeof v !== "object") return v;
+    const out = { ...v };
+    if ("actualYield" in out) out.actualYield = null;
+    if (out.yield) out.yield = yieldFor(role, out.yield);
+    return out;
+  };
+  return {
+    ...entry,
+    changedFields: Array.isArray(entry.changedFields)
+      ? entry.changedFields.filter((f) => f !== "actualYield" && f !== "yield")
+      : entry.changedFields,
+    oldValues: strip(entry.oldValues),
+    newValues: strip(entry.newValues),
   };
 };
 
@@ -221,7 +245,7 @@ router.get("/noblesse-registration-forms", verifyToken, async (req, res) => {
         WHERE f.tenant_id = $1${where} ORDER BY f.created_at DESC LIMIT ${term ? 500 : 200}`,
       params
     );
-    res.json(result.rows.map(fmtRegistrationForm));
+    res.json(result.rows.map((r) => formFor(fmtRegistrationForm(r), req.role)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -245,7 +269,7 @@ router.get("/noblesse-registration-forms/all/history", verifyToken, async (req, 
       performedBy: row.performed_by,
       createdAt: row.created_at,
     }));
-    res.json(history);
+    res.json(history.map((h) => historyFor(h, req.role)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -263,7 +287,7 @@ router.get("/noblesse-registration-forms/:id", verifyToken, async (req, res) => 
       [req.params.id, req.tenantId]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });
-    res.json(fmtRegistrationForm(result.rows[0]));
+    res.json(formFor(fmtRegistrationForm(result.rows[0]), req.role));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -291,7 +315,7 @@ router.post("/noblesse-registration-forms", verifyToken, async (req, res) => {
 
     const stock = await syncStock(req.tenantId, form.id);
 
-    res.json({ ...fmtRegistrationForm(form), stock });
+    res.json({ ...formFor(fmtRegistrationForm(form), req.role), stock });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -312,6 +336,9 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
     const asked = String(req.body.status || "").trim().toLowerCase();
     const status = ["in_progress", "completed"].includes(asked) ? asked : (oldRes.rows[0].status || "in_progress");
     const lot = await lotColumns(req.tenantId, req.userId, req.body.lotNumber, pool, req.body.lotId);
+    const values = regFormValues(req.body, lot);
+    // Actual Yield never reaches a non-admin, so their save keeps what is stored.
+    if (req.role !== "admin") values[19] = oldRes.rows[0].actual_yield;
     const result = await pool.query(
       `UPDATE noblesse_registration_forms
        SET lot_number = $1, form_date = $2, date_received = $3, time_received = $4, vendor_lot = $5, vendor = $6,
@@ -321,7 +348,7 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
            checked_by = $23, status = $24, lot_id = $25, updated_at = NOW()
        WHERE id = $26 AND tenant_id = $27
        RETURNING *`,
-      [...regFormValues(req.body, lot), status, lot.lotId, req.params.id, req.tenantId]
+      [...values, status, lot.lotId, req.params.id, req.tenantId]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Not found" });
 
@@ -337,7 +364,7 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
     // description and case count all land on the stock row too.
     const stock = await syncStock(req.tenantId, req.params.id);
 
-    res.json({ ...newForm, stock });
+    res.json({ ...formFor(newForm, req.role), stock });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -369,7 +396,7 @@ router.patch("/noblesse-registration-forms/:id/status", verifyToken, async (req,
         ["status"], { status: oldForm.status }, { status: newForm.status }, req.username);
     }
 
-    res.json(newForm);
+    res.json(formFor(newForm, req.role));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -434,7 +461,7 @@ router.get("/noblesse-registration-forms/:id/history", verifyToken, async (req, 
       performedBy: row.performed_by,
       createdAt: row.created_at,
     }));
-    res.json(history);
+    res.json(history.map((h) => historyFor(h, req.role)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
