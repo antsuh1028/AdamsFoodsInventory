@@ -135,4 +135,7 @@ const yieldFrom = (f) => {
   };
 };
 
-module.exports = { weighedSql, boxesSql, estimatedSql, formWeightSql, yieldLateralSql, yieldFrom };
+// The yield for this role: admins see it whole, everyone else gets the weights without the percent or the loss.
+const yieldFor = (role, y) => (role === "admin" || !y ? y : { ...y, percent: null, unaccountedLb: null, hidden: true });
+
+module.exports = { weighedSql, boxesSql, estimatedSql, formWeightSql, yieldLateralSql, yieldFrom, yieldFor };

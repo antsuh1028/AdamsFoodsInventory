@@ -267,6 +267,16 @@ const LotTimeline = ({
             <Figure label={t("Processed")} value={f.processedCases || null} unit="cs" />
           </Flex>
 
+          {/* Yield is admin-only; everyone else still sees who closed the lot and when. */}
+          {!isAdmin && data.lot.status === "closed" && (
+            <Text fontSize="xs" color="gray.600" mb={4}>
+              {t("Closed", { _as: "lot" })}
+              {data.lot.closedBy ? t(" by {who}", { who: data.lot.closedBy }) : ""}
+              {data.lot.closedAt
+                ? t(" on {date}", { date: String(data.lot.closedAt).slice(0, 10) }) : ""}
+            </Text>
+          )}
+          {isAdmin && (
           <Box px={3} py={3} bg="green.50" borderRadius="md" border="1px solid"
             borderColor="green.200" mb={4}>
             <Text fontSize="xs" color="gray.500" textTransform="uppercase"
@@ -293,6 +303,7 @@ const LotTimeline = ({
               </Text>
             )}
           </Box>
+          )}
 
           {/* Offered, never applied. The app cannot tell "finished, with a 28%
               loss" from "more going out tomorrow". */}
@@ -303,6 +314,7 @@ const LotTimeline = ({
                 <Text fontSize="sm" fontWeight="bold">
                   {t("Nothing has left this lot in {n} days.", { n: data.closeSuggestion.idleDays })}
                 </Text>
+                {isAdmin && (
                 <Text fontSize="sm" mt={1} style={{ fontVariantNumeric: "tabular-nums" }}>
                   {t("{in} lb in, {out} lb out, {unaccounted} unaccounted", {
                     in: lb(data.closeSuggestion.inLb),
@@ -312,6 +324,7 @@ const LotTimeline = ({
                   {data.closeSuggestion.percent != null
                     && ` (${(100 - data.closeSuggestion.percent).toFixed(1)}%)`}.
                 </Text>
+                )}
                 <Button size="sm" colorScheme="blue" mt={3} isLoading={busy}
                   onClick={() => lifecycle("close")}>
                   {t("Close lot")}

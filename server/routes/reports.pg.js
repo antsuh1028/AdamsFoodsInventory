@@ -2,7 +2,7 @@ const router = require("express").Router();
 const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
-const { yieldFrom } = require("../utils/lotYield");
+const { yieldFrom, yieldFor } = require("../utils/lotYield");
 const R = require("../utils/reportRange");
 
 // The daily report. One range endpoint — the monthly view is the same figures
@@ -16,7 +16,7 @@ const fmtWeighing = (rows, direction) => {
   return { sessions: r.sessions, boxes: r.boxes, lb: r.lb, lots: r.lots };
 };
 
-const fmtLot = (r) => ({
+const fmtLot = (r, role) => ({
   lotId: r.lot_id,
   lotNumber: r.lot_number,
   description: r.description ?? null,
@@ -34,7 +34,7 @@ const fmtLot = (r) => ({
   },
   // Running totals for the lot's whole life, not just the range — what the
   // range did is above, and the two answer different questions.
-  yield: yieldFrom(r),
+  yield: yieldFor(role, yieldFrom(r)),
 });
 
 const fmtAttention = (r) => ({
@@ -114,7 +114,7 @@ router.get("/noblesse-report", verifyToken, requireRole("admin", "ntimanager"), 
           idleLotDays: R.IDLE_LOT_DAYS,
         },
       },
-      lots: touched.rows.map(fmtLot),
+      lots: touched.rows.map((r) => fmtLot(r, req.role)),
     });
   } catch (err) {
     console.error("Report error:", err);
