@@ -44,6 +44,7 @@ import ScaleDiagnostic from "./weighing/scaleDiagnostic";
 import DailyReport from "./reports/DailyReport";
 import ItemListManager, { CUSTOMER_LIST } from "./common/ItemListManager";
 import FpTracker from "./fpTracker/FpTracker";
+import SupportWindow from "./support/SupportWindow";
 import ntiLogo from "../assets/nti.jpg";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -69,6 +70,16 @@ const NoblesseScreen = () => {
   const [customerListOpen, setCustomerListOpen] = useState(false);
   const manageItems = canManageItems();
   const [fpOpen, setFpOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportUnread, setSupportUnread] = useState(0);
+  const fetchSupportUnread = useCallback(async () => {
+    try {
+      const { data } = await axiosInstance.get("/support-tickets/unread");
+      setSupportUnread(data?.count || 0);
+    } catch {
+      // A badge only; never blocks the screen.
+    }
+  }, []);
   const {
     isOpen: drawerOpen,
     onOpen: openDrawer,
@@ -151,6 +162,8 @@ const NoblesseScreen = () => {
           setWaitingReports((reportsRes.data || []).length);
       }
 
+      fetchSupportUnread();
+
       // Tabs that load their own data watch this and re-fetch. Without it the
       // timestamp below ticks while their contents stay frozen at page load.
       setRefreshSignal((n) => n + 1);
@@ -169,7 +182,7 @@ const NoblesseScreen = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [outgoingOnly]);
+  }, [outgoingOnly, fetchSupportUnread]);
 
   fetchDataRef.current = fetchData;
 
@@ -195,6 +208,10 @@ const NoblesseScreen = () => {
   // case anyway — their counts come from fetches this role does not make.
   const REGISTRATION_TAB = outgoingOnly ? -1 : 0;
   const PROCESSING_TAB = outgoingOnly ? -1 : 2;
+  // The tab a problem report was sent from.
+  const TAB_NAMES = outgoingOnly
+    ? ["Outgoing"]
+    : ["Registration Forms", "Weight Manifests", "Processing", "Outgoing"];
 
   if (loading) {
     return (
@@ -219,14 +236,21 @@ const NoblesseScreen = () => {
               its content width, which is what pushed the date off the screen
               instead of letting it give way. */}
           <Flex align="center" gap={{ base: 2, md: 3 }} minW={0}>
-            <IconButton
-              icon={<HamburgerIcon />}
-              size="sm"
-              variant="ghost"
-              colorScheme="gray"
-              aria-label="Menu"
-              onClick={openDrawer}
-            />
+            <Box position="relative" flexShrink={0}>
+              <IconButton
+                icon={<HamburgerIcon />}
+                size="sm"
+                variant="ghost"
+                colorScheme="gray"
+                aria-label="Menu"
+                onClick={openDrawer}
+              />
+              {/* An unanswered problem report or a new reply. */}
+              {supportUnread > 0 && (
+                <Box position="absolute" top="2px" right="2px" w="8px" h="8px"
+                  bg="red.500" borderRadius="full" pointerEvents="none" />
+              )}
+            </Box>
             <Image
               src={ntiLogo}
               alt="Noblesse Trading Inc"
@@ -593,6 +617,17 @@ const NoblesseScreen = () => {
             {/* The dock's account is fenced to Outgoing and would be refused. */}
             {!outgoingOnly && drawerBtn("F.P Tracker", () => setFpOpen(true))}
 
+            <Divider />
+            {drawerBtn(
+              <Flex align="center" gap={2}>
+                {isAdmin ? "Problem Reports" : "Report a Problem"}
+                {supportUnread > 0 && (
+                  <Badge colorScheme="red" borderRadius="full">{supportUnread}</Badge>
+                )}
+              </Flex>,
+              () => setSupportOpen(true),
+            )}
+
             {isAdmin && (
               <>
                 <Divider />
@@ -637,6 +672,13 @@ const NoblesseScreen = () => {
           isOpen={customerListOpen} onClose={() => setCustomerListOpen(false)} />
       )}
       {!outgoingOnly && <FpTracker isOpen={fpOpen} onClose={() => setFpOpen(false)} />}
+      <SupportWindow
+        isOpen={supportOpen}
+        onClose={() => { setSupportOpen(false); fetchSupportUnread(); }}
+        screen={TAB_NAMES[tabIndex]}
+        refreshSignal={refreshSignal}
+        onChanged={fetchSupportUnread}
+      />
 
       {isAdmin && (
         <>
