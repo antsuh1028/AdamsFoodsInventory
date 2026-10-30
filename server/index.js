@@ -46,6 +46,7 @@ const boot = async () => {
   app.use("/", require("./routes/inventory.pg"));
   app.use("/", require("./routes/afScan.pg"));
   app.use("/", require("./routes/afLots.pg"));
+  app.use("/", require("./routes/afStock.pg"));
   app.use("/", require("./routes/history.pg"));
   app.use("/", require("./routes/scanner.pg"));
   app.use("/", require("./routes/snapshots.pg"));
@@ -73,9 +74,6 @@ const boot = async () => {
   app.use("/", require("./routes/fpTracker.pg"));
 
   app.listen(3001, () => console.log("Server running on port 3001 [postgres]"));
-
-  // Runs left on the line past 2:00 PM are finished; safe to run on every instance.
-  require("./utils/autoFinish").startAutoFinish(require("./utils/pg"));
 };
 
 boot().catch((err) => {

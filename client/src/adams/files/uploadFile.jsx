@@ -10,6 +10,7 @@ import {
   Tooltip,
 } from "@chakra-ui/react";
 import readXlsxFile from "read-excel-file";
+import { isLocation } from "../../utils/freezerLayout";
 import axiosInstance from "../../utils/axiosInstance";
 import FloatingWindow from "../../components/FloatingWindow";
 
@@ -118,17 +119,21 @@ function UploadFile({ isOpen, onClose }) {
         }
       }
 
-      const validationPromises = finalRows.map((row) =>
-        axiosInstance.post("/verifyLocation", { location: row[0] })
-      );
+      // Every location is checked before anything is added, so a bad file adds nothing.
+      const bad = finalRows.map((row) => String(row[0]).trim().toUpperCase()).filter((loc) => !isLocation(loc));
+      if (bad.length) {
+        setError(`Not freezer locations: ${[...new Set(bad)].join(", ")}. Fix them in the file and upload again.`);
+        setUploading(false);
+        return;
+      }
 
-      Promise.all(validationPromises)
+      Promise.resolve()
         .then(() => {
           const addPromises = finalRows.map((row) => {
             const [location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est] = row;
             return axiosInstance
               .post("/inventoryAdd", {
-                inputs: { location: String(location).toUpperCase(), lot, vendor, brand, species: species ? String(species).toUpperCase() : species, description, grade, quantity, weight, packdate, date_recvd, est },
+                inputs: { location: String(location).trim().toUpperCase(), lot, vendor, brand, species: species ? String(species).toUpperCase() : species, description, grade, quantity, weight, packdate, date_recvd, est },
                 force: true,
               })
               .catch((err) => console.error("Error adding row:", err));
@@ -150,7 +155,7 @@ function UploadFile({ isOpen, onClose }) {
         .catch(() => {
           toast({
             title: "Upload Failed",
-            description: "Could not validate locations. Please check the file.",
+            description: "Could not add the rows. Please check the file.",
             position: "top",
             status: "error",
             duration: 3000,

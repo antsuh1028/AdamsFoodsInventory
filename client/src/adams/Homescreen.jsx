@@ -3,11 +3,12 @@ import {
   Flex, Box, useToast, Text, Grid, GridItem, Divider, Collapse,
   AlertDialog, AlertDialogOverlay, AlertDialogContent,
   AlertDialogBody, AlertDialogFooter,
-  Button,
+  Button, IconButton, Tooltip,
 } from "@chakra-ui/react";
 import Navbar from "../components/layout/Navbar";
 import ShowMap from "./locations/locationMap";
 import axiosInstance from "../utils/axiosInstance";
+import { isLocation, couldBeLocation } from "../utils/freezerLayout";
 
 import { FormContext } from "../utils/homescreen/formContext";
 
@@ -20,6 +21,9 @@ import getDistinct from "../utils/homescreen/getDistinct";
 import InventoryTabs from "./inventory/inventoryTabs";
 import InventoryForm from "./inventory/inventoryForm";
 import ActionButtons from "./inventory/actionButton";
+import FindBar from "./inventory/findBar";
+import FloatingWindow from "../components/FloatingWindow";
+import PopInIcon from "../components/PopInIcon";
 import DetailsPanel from "./inventory/detailsPanel";
 
 const REQUIRED_FIELDS = ["location", "species"];
@@ -80,6 +84,10 @@ const Homescreen = () => {
   const [flashLocation, setFlashLocation] = useState(null);
   const [validationErrors, setValidationErrors] = useState({});
   const [suggestions, setSuggestions] = useState({ vendors: [], brands: [] });
+  // The full form, folded under the find bar until it is needed.
+  const [formOpen, setFormOpen] = useState(false);
+  // The find bar and form moved into their own window.
+  const [formPopped, setFormPopped] = useState(false);
 
   const refreshSuggestions = useCallback(() => {
     getDistinct().then(setSuggestions).catch(() => {});
@@ -318,6 +326,10 @@ const Homescreen = () => {
     setTimeout(() => setFlashLocation(null), 2500);
   }, []);
 
+  useEffect(() => {
+    if (currentItem) setFormOpen(true);
+  }, [currentItem]);
+
   const handleTabClick = useCallback(() => {
     setShowDetails(false);
   }, []);
@@ -327,27 +339,22 @@ const Homescreen = () => {
       setBadgeState(null);
       return;
     }
+    // Checked here against the layout; the server is asked only whether a real location is occupied.
+    if (!isLocation(formData.location)) {
+      setBadgeState(couldBeLocation(formData.location) ? null : "error");
+      return;
+    }
 
     const controller = new AbortController();
 
     const timer = setTimeout(async () => {
       try {
-        const verifyResult = await axiosInstance.post(
-          "/verifyLocation",
-          { location: formData.location },
+        const inventoryResult = await axiosInstance.post(
+          "/inventoryFind",
+          { inputs: { location: formData.location } },
           { signal: controller.signal }
         );
-
-        if (verifyResult.data === "OK") {
-          const inventoryResult = await axiosInstance.post(
-            "/inventoryFind",
-            { inputs: { location: formData.location } },
-            { signal: controller.signal }
-          );
-          setBadgeState(inventoryResult.data === "INVALID" ? "out" : "in");
-        } else {
-          setBadgeState("error");
-        }
+        setBadgeState(inventoryResult.data === "INVALID" ? "out" : "in");
       } catch (err) {
         if (err.name !== "CanceledError") {
           setBadgeState("error");
@@ -380,53 +387,83 @@ const Homescreen = () => {
           width="100vw"
           height={{ base: "auto", lg: "100vh" }}
           minHeight={{ base: "100vh", lg: "unset" }}
-          alignItems={{ base: "stretch", lg: "center" }}
-          justifyContent="space-between"
           bg="gray.50"
           pt={{ base: "60px", md: "140px", lg: "80px", }}
           gap={3}
           px={3}
           pb={3}
-          direction={{ base: "column", lg: "row" }}
+          direction="column"
         >
-          <Flex
-            bg="white"
-            width={{ base: "100%", lg: "60%" }}
-            height={{ base: "auto", lg: "90%" }}
-            borderRadius="lg"
-            boxShadow="md"
-            direction="column"
-            justifyContent="flex-start"
-            alignItems="center"
-            overflowY={{ base: "visible", lg: "auto" }}
-            p={4}
-          >
-            <InventoryForm
+          {/* Find bar, with the full form folded underneath for Add, Update and Remove. */}
+          {formPopped ? null : (
+          <Box bg="white" borderRadius="lg" boxShadow="md" p={3} flexShrink={0}>
+            <FindBar
               formData={formData}
               onInputChange={handleInputChange}
-              badgeState={badgeState}
-              validationErrors={validationErrors}
-              suggestions={suggestions}
+              onFind={handleFind}
+              onClear={handleClear}
+              formOpen={formOpen}
+              onToggleForm={() => setFormOpen((o) => !o)}
+              onPopOut={() => setFormPopped(true)}
             />
+            <Collapse in={formOpen} animateOpacity>
+              <Box mt={3} pt={3} borderTop="1px solid" borderColor="gray.100"
+                maxH={{ lg: "45vh" }} overflowY={{ lg: "auto" }}>
+                <InventoryForm
+                  formData={formData}
+                  onInputChange={handleInputChange}
+                  badgeState={badgeState}
+                  validationErrors={validationErrors}
+                  suggestions={suggestions}
+                />
+                <ActionButtons
+                  onAdd={handleAdd}
+                  onUpdate={handleUpdate}
+                  onRemove={handleRemove}
+                  formData={formData}
+                  selectedItem={selectedItem}
+                />
+              </Box>
+            </Collapse>
+          </Box>
+          )}
 
-            <Flex width="100%" direction="column" alignItems="center" mt="5%">
+          {/* The popped-out find bar and form; closing the window puts them back. */}
+          <FloatingWindow isOpen={formPopped} onClose={() => setFormPopped(false)} title="Find and form" width={960}
+            headerActions={
+              <Tooltip label="Bring them back here">
+                <IconButton size="xs" variant="ghost" aria-label="Bring them back here" icon={<PopInIcon />} onClick={() => setFormPopped(false)} />
+              </Tooltip>
+            }>
+            <FindBar
+              formData={formData}
+              onInputChange={handleInputChange}
+              onFind={handleFind}
+              onClear={handleClear}
+            />
+            <Box mt={3} pt={3} borderTop="1px solid" borderColor="gray.100">
+              <InventoryForm
+                formData={formData}
+                onInputChange={handleInputChange}
+                badgeState={badgeState}
+                validationErrors={validationErrors}
+                suggestions={suggestions}
+              />
               <ActionButtons
                 onAdd={handleAdd}
-                onFind={handleFind}
                 onUpdate={handleUpdate}
                 onRemove={handleRemove}
-                onClear={handleClear}
                 formData={formData}
                 selectedItem={selectedItem}
               />
-            </Flex>
-          </Flex>
+            </Box>
+          </FloatingWindow>
 
           <Flex
             bg="white"
-            width={{ base: "100%", lg: "40%" }}
-            height={{ base: "auto", lg: "90%" }}
-            minH={{ base: "400px", lg: "unset" }}
+            width="100%"
+            flex={{ lg: 1 }}
+            minH={{ base: "500px", lg: 0 }}
             borderRadius="lg"
             boxShadow="md"
             direction="column"

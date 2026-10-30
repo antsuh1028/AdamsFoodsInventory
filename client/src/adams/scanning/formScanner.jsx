@@ -9,6 +9,7 @@ import {
 import { WarningTwoIcon } from "@chakra-ui/icons";
 import { API_BASE_URL } from "../../config/api";
 import { FormContext } from "../../utils/homescreen/formContext";
+import { isLocation, couldBeLocation } from "../../utils/freezerLayout";
 import { AutocompleteInput } from "../inventory/formFields";
 import FloatingWindow from "../../components/FloatingWindow";
 
@@ -60,17 +61,10 @@ const FormScanner = ({ isOpen, onClose }) => {
   useEffect(() => {
     const loc = fields.location;
     if (!loc) { setBadgeState(null); return; }
+    if (!isLocation(loc)) { setBadgeState(couldBeLocation(loc) ? null : "error"); return; }
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const verifyRes = await fetch(`${API_BASE_URL}/verifyLocation`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: token || "" },
-          body: JSON.stringify({ location: loc }),
-          signal: controller.signal,
-        });
-        const verifyData = await verifyRes.text();
-        if (verifyData !== "OK") { setBadgeState("error"); return; }
         const findRes = await fetch(`${API_BASE_URL}/inventoryFind`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: token || "" },

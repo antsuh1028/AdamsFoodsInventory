@@ -8,6 +8,7 @@ const { boxFromBarcode } = require("../utils/afBox");
 const { pacificToday, dayOfYearFromDate, dateFromDayOfYear, daysInYear } = require("../utils/lot");
 const { toPounds, toThousandths } = require("../utils/weight");
 const validLocations = require("../utils/locations");
+const { seesValue } = require("../utils/afValue");
 
 const PRICE_RE = /^\d{1,6}(\.\d{1,4})?$/;
 const MAX_BOX_THOUSANDTHS = 2000n * 1000n;
@@ -85,6 +86,10 @@ const fmtItem = (i) => ({
   pricePerLb: i.price_per_lb,
 });
 
+// Prices and values left out for roles that do not see them.
+const lotFor = (role, lot) => (seesValue(role) ? lot : { ...lot, value: undefined });
+const itemFor = (role, item) => (seesValue(role) ? item : { ...item, pricePerLb: undefined });
+
 const fmtBox = (b) => ({
   id: b.box_id,
   weight: b.weight,
@@ -156,7 +161,7 @@ router.get("/af-lots", verifyToken, async (req, res) => {
         LIMIT 300`,
       [req.tenantId]
     );
-    res.json(rows.map(fmtLot));
+    res.json(rows.map((r) => lotFor(req.role, fmtLot(r))));
   } catch (err) {
     console.error("list af lots:", err);
     res.status(500).json({ error: "Internal Server Error" });
@@ -168,6 +173,7 @@ router.post("/af-lots", verifyToken, async (req, res) => {
   const b = req.body || {};
   const item = readItem(b);
   if (item.error) return res.status(400).json({ error: item.error });
+  if (!seesValue(req.role)) item.price = null;
   const typed = String(b.lotNumber ?? "").trim() ? readTypedLot(b.lotNumber) : null;
   if (typed && typed.error) return res.status(400).json({ error: typed.error });
   const vendor = String(b.vendor ?? "").trim().toUpperCase() || null;
@@ -189,7 +195,7 @@ router.post("/af-lots", verifyToken, async (req, res) => {
       [req.tenantId, lot.af_lot_id, item.description, item.price]
     );
     await client.query("COMMIT");
-    res.status(201).json({ ...fmtLot(lot), items: [fmtItem(first.rows[0])], boxCount: 0, totalLb: "0" });
+    res.status(201).json({ ...lotFor(req.role, fmtLot(lot)), items: [itemFor(req.role, fmtItem(first.rows[0]))], boxCount: 0, totalLb: "0" });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     console.error("create af lot:", err);
@@ -217,7 +223,7 @@ router.get("/af-lots/:id", verifyToken, async (req, res) => {
     const pallets = await pool.query(
       `SELECT pallet_no, location, located_by, located_at FROM af_lot_pallets
         WHERE af_lot_id = $1 AND tenant_id = $2 ORDER BY pallet_no`, [id, req.tenantId]);
-    res.json({ ...fmtLot(lot.rows[0]), items: items.rows.map(fmtItem), boxes: boxes.rows.map(fmtBox),
+    res.json({ ...lotFor(req.role, fmtLot(lot.rows[0])), items: items.rows.map((i) => itemFor(req.role, fmtItem(i))), boxes: boxes.rows.map(fmtBox),
       pallets: pallets.rows.map(fmtPallet) });
   } catch (err) {
     console.error("read af lot:", err);
@@ -231,6 +237,7 @@ router.post("/af-lots/:id/items", verifyToken, async (req, res) => {
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid lot id" });
   const item = readItem(req.body || {});
   if (item.error) return res.status(400).json({ error: item.error });
+  if (!seesValue(req.role)) item.price = null;
   try {
     const { rows } = await pool.query(
       `INSERT INTO af_lot_items (tenant_id, af_lot_id, description, price_per_lb)
@@ -238,7 +245,7 @@ router.post("/af-lots/:id/items", verifyToken, async (req, res) => {
        RETURNING ${ITEM_COLS}`,
       [req.tenantId, id, item.description, item.price]);
     if (!rows.length) return res.status(404).json({ error: "Lot not found" });
-    res.status(201).json(fmtItem(rows[0]));
+    res.status(201).json(itemFor(req.role, fmtItem(rows[0])));
   } catch (err) {
     if (err.code === "23505") return res.status(409).json({ error: `${item.description} is already an item on this lot.` });
     console.error("add af lot item:", err);
@@ -255,11 +262,11 @@ router.patch("/af-lots/:id/items/:itemId", verifyToken, async (req, res) => {
   if (item.error) return res.status(400).json({ error: item.error });
   try {
     const { rows } = await pool.query(
-      `UPDATE af_lot_items SET description = $1, price_per_lb = $2
+      `UPDATE af_lot_items SET description = $1, price_per_lb = CASE WHEN $6 THEN $2::numeric ELSE price_per_lb END
         WHERE item_id = $3 AND af_lot_id = $4 AND tenant_id = $5 RETURNING ${ITEM_COLS}`,
-      [item.description, item.price, itemId, id, req.tenantId]);
+      [item.description, item.price, itemId, id, req.tenantId, seesValue(req.role)]);
     if (!rows.length) return res.status(404).json({ error: "That item is not on this lot." });
-    res.json(fmtItem(rows[0]));
+    res.json(itemFor(req.role, fmtItem(rows[0])));
   } catch (err) {
     if (err.code === "23505") return res.status(409).json({ error: `${item.description} is already an item on this lot.` });
     console.error("edit af lot item:", err);
@@ -375,7 +382,7 @@ router.put("/af-lots/:id/pallets/:palletNo", verifyToken, async (req, res) => {
   const palletNo = asPallet(req.params.palletNo);
   if (!Number.isInteger(id) || !palletNo) return res.status(400).json({ error: "Invalid lot or pallet" });
   const location = String((req.body && req.body.location) ?? "").trim().toUpperCase().replace(/[\s-]/g, "");
-  if (!validLocations.includes(location)) return res.status(400).json({ error: `${location || "That"} is not a freezer location.` });
+  if (!validLocations.has(location)) return res.status(400).json({ error: `${location || "That"} is not a freezer location.` });
   try {
     const { rows } = await pool.query(
       `INSERT INTO af_lot_pallets (tenant_id, af_lot_id, pallet_no, location, located_by)
@@ -476,7 +483,7 @@ const clearTarget = (id, tenantId) => pool.query(
 router.get("/af-stations", verifyToken, async (req, res) => {
   try {
     await pool.query(
-      `INSERT INTO af_scan_stations (tenant_id, name) SELECT $1, 'STATION 1'
+      `INSERT INTO af_scan_stations (tenant_id, name) SELECT $1, 'Dock 1'
         WHERE NOT EXISTS (SELECT 1 FROM af_scan_stations WHERE tenant_id = $1)`, [req.tenantId]);
     const { rows } = await pool.query(`${STATION_SELECT} WHERE s.tenant_id = $1 ORDER BY s.station_id`, [req.tenantId]);
     res.json(rows.map((r) => withLive(fmtStation(r))));
@@ -546,7 +553,7 @@ router.post("/af-stations/:id/scan", verifyToken, async (req, res) => {
     // A label the station could not read: logged so the tablet hears about it too.
     if (notRead) out = { status: 422, body: { error: `Not read: ${String(notRead).slice(0, 200)}` } };
     else if (!station.lotId) out = { status: 409, body: { error: "No lot picked on the tablet." } };
-    else if (!liveHolder(id)) out = { status: 409, body: { error: "Tablet not connected. Turn on Use scan station on the tablet." } };
+    else if (!liveHolder(id)) out = { status: 409, body: { error: "Tablet not connected. Choose Connect to receiving station on the tablet." } };
     else if (!station.itemId) out = { status: 409, body: { error: "No item picked on the tablet yet." } };
     else {
       out = await addBox({ tenantId: req.tenantId, lotId: station.lotId, itemId: station.itemId,

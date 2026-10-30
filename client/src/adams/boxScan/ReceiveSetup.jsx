@@ -4,6 +4,7 @@ import {
 } from "@chakra-ui/react";
 import axiosInstance from "../../utils/axiosInstance";
 import upperInput from "../../utils/upperInput";
+import { isLocation } from "../../utils/freezerLayout";
 import { today } from "../../noblesse/common/shared";
 
 // Where scanned boxes go: a location, then a row already there or a new one.
@@ -27,8 +28,7 @@ const ReceiveSetup = ({ onStart }) => {
     if (!loc) return;
     setBusy(true);
     try {
-      const { data: valid } = await axiosInstance.post("/verifyLocation", { location: loc });
-      if (valid !== "OK") {
+      if (!isLocation(loc)) {
         toast({ title: `${loc} is not a location`, status: "warning", duration: 4000, position: "top" });
         setChecked(null);
         return;

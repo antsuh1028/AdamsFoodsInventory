@@ -92,7 +92,7 @@ const ShowDrawer = ({
         <Stack direction="column" spacing={3} p={4}>
           {navBtn("Scan Boxes", onBoxScanOpen)}
           {navBtn("Lot Registration", onLotsOpen)}
-          {navBtn("Scan Station (scanner computer)", onStationOpen)}
+          {navBtn("Receiving Station", onStationOpen)}
           {navBtn("Freezer Map", onMapOpen)}
           {navBtn("Scan Pallet Form", onScanOpen)}
           {navBtn("Scan Order Sheet", onOrderScanOpen)}

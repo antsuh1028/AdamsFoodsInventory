@@ -8,13 +8,12 @@ import {
   InputGroup,
   InputLeftElement,
   VStack,
-  useBreakpointValue,
 } from "@chakra-ui/react";
 import { FormField, SPECIES_OPTIONS, GRADE_OPTIONS, TYPE_OPTIONS } from "./formFields";
 import LocationInput from "../locations/locationInput";
 
 const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErrors = {}, suggestions = {} }) => {
-  const inputSize = useBreakpointValue({ base: "sm", md: "lg" });
+  const inputSize = "sm";
   const {
     location,
     lot,
@@ -33,15 +32,14 @@ const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErr
   } = formData;
 
   return (
-    <FormControl width="90%">
+    <FormControl width="100%">
       <Grid
-        templateColumns={{ base: "repeat(2, 1fr)", xl: "repeat(3, 1fr)" }}
+        templateColumns={{ base: "repeat(2, 1fr)", md: "repeat(4, 1fr)", xl: "repeat(6, 1fr)" }}
         gap={2}
         width="100%"
         alignItems="start"
       >
-        {/* Location — 2/3 on xl, full width on mobile */}
-        <GridItem colSpan={{ base: 2, xl: 2 }}>
+        <GridItem colSpan={2}>
           <LocationInput
             value={location}
             onChange={(value) => onInputChange("location", value)}
@@ -97,15 +95,8 @@ const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErr
           />
         </GridItem>
 
-        {/* Description — full width on both */}
         <GridItem colSpan={{ base: 2, xl: 3 }}>
-          <FormLabel
-            marginTop="5px"
-            marginBottom="5px"
-            textAlign="center"
-            fontSize={{ base: "sm", md: "md" }}
-            color={validationErrors.description ? "red.500" : undefined}
-          >
+          <FormLabel m={0} mb={0.5} fontSize="xs" color={validationErrors.description ? "red.500" : "gray.600"}>
             Description
           </FormLabel>
           <Input
@@ -201,13 +192,9 @@ const InventoryForm = memo(({ formData, onInputChange, badgeState, validationErr
           />
         </GridItem>
 
-        {/* Price — centered (middle column) on xl, full width on mobile */}
-        <GridItem
-          colSpan={{ base: 2, xl: 1 }}
-          colStart={{ base: 1, xl: 2 }}
-        >
-          <VStack spacing={1} width="100%">
-            <FormLabel marginTop="5px" marginBottom="5px" fontSize={{ base: "sm", md: "md" }}>
+        <GridItem colSpan={1}>
+          <VStack spacing={0.5} width="100%" align="stretch">
+            <FormLabel m={0} fontSize="xs" color="gray.600">
               Price / lb
             </FormLabel>
             <InputGroup size={inputSize} width="100%">

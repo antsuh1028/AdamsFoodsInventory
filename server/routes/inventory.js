@@ -44,7 +44,7 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
   const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, date_recvd, est, price, type, scanImageKey, boxes } = inputs || {};
 
   if (!location || location.trim() === "") return res.status(400).json({ error: "Location field cannot be blank." });
-  if (!validLocations.includes(location)) return res.status(400).json({ error: "Location Does Not Exist" });
+  if (!validLocations.has(location)) return res.status(400).json({ error: "Location Does Not Exist" });
 
   const locationUpper = location.toUpperCase();
 
@@ -276,7 +276,7 @@ router.patch("/inventory/:id/box/add", verifyToken, async (req, res) => {
 // ----------------- Verify Location -----------------
 router.post("/verifyLocation", verifyToken, (req, res) => {
   const { location } = req.body;
-  res.send(validLocations.includes(location) ? "OK" : "INVALID");
+  res.send(validLocations.has(location) ? "OK" : "INVALID");
 });
 
 // ----------------- Stats -----------------
@@ -317,7 +317,7 @@ router.get("/inventoryStats", verifyToken, requireRole("admin"), async (req, res
       totalWeight: totalWeight[0]?.total ?? 0,
       totalValue: totalWeight[0]?.value ?? 0,
       occupiedLocations: occupiedLocations.length,
-      totalLocations: validLocations.length,
+      totalLocations: validLocations.size,
       bySpecies, byGrade, byVendor, oldestPallets,
     });
   } catch (err) {

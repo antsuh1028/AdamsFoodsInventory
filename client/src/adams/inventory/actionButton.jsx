@@ -1,5 +1,5 @@
 import React from "react";
-import { Button, Spinner, Flex, useBreakpointValue } from "@chakra-ui/react";
+import { Button, Spinner, Flex } from "@chakra-ui/react";
 
 const ActionButtons = ({
   onAdd,
@@ -11,7 +11,7 @@ const ActionButtons = ({
   formData = {},
   selectedItem,
 }) => {
-  const buttonSize = useBreakpointValue({ base: "sm", md: "md" });
+  const buttonSize = "sm";
 
   const hasRequired = !!(
     formData.location?.trim() &&
@@ -32,6 +32,8 @@ const ActionButtons = ({
         >
           {loading ? <Spinner /> : "Add"}
         </Button>
+        {/* Find and Clear show only where they are passed; the find bar has its own. */}
+        {onFind && (
         <Button
           colorScheme="blue"
           variant="outline"
@@ -41,6 +43,7 @@ const ActionButtons = ({
         >
           Find
         </Button>
+        )}
         <Button
           colorScheme="teal"
           variant="outline"
@@ -62,6 +65,7 @@ const ActionButtons = ({
         >
           Remove
         </Button>
+        {onClear && (
         <Button
           colorScheme="red"
           onClick={onClear}
@@ -70,6 +74,7 @@ const ActionButtons = ({
         >
           Clear
         </Button>
+        )}
       </Flex>
     </Flex>
   );

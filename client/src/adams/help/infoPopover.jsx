@@ -21,6 +21,8 @@ const InfoPopover = ({
   if (!info || !info.length) return null;
 
   const isEmpty = info[0]?.description === "Empty Location";
+  // A pallet from Lot Registration: shown, but Set and Print are for old rows.
+  const pickedNew = Boolean((selectedPrint || info[0])?.isNew);
 
   const handleSet = (item) => {
     setFormData({
@@ -108,6 +110,7 @@ const InfoPopover = ({
               <HStack justify="space-between" mb={0.5}>
                 <Text fontSize="xs" fontWeight="semibold" color="gray.600">
                   {item.location}
+                  {item.isNew && <Text as="span" ml={1} px={1} borderRadius="sm" bg="teal.100" color="teal.700" fontSize="9px">NEW</Text>}
                 </Text>
                 <Text fontSize="xs" color="gray.500">
                   Qty: {item.quantity}
@@ -209,6 +212,7 @@ const InfoPopover = ({
           size="xs"
           colorScheme="blue"
           flex={1}
+          isDisabled={pickedNew}
           onClick={() => handleSet(selectedPrint || info[0])}
         >
           Set
@@ -232,7 +236,7 @@ const InfoPopover = ({
           variant="outline"
           flex={1}
           onClick={() => printDetails(selectedPrint || info[0])}
-          isDisabled={isEmpty}
+          isDisabled={isEmpty || pickedNew}
         >
           Print
         </Button>
