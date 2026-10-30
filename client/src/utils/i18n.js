@@ -597,6 +597,31 @@ const ES = {
   "Did you mean {name}?": "¿Quiso decir {name}?",
   "Use it": "Usar",
   "Not on the item list": "No está en la lista de productos",
+
+  // ── Problem reports ───────────────────────────────────────────────────────
+  "Report a problem": "Reportar un problema",
+  "My reports": "Mis reportes",
+  "Report": "Reporte",
+  "No reports yet. If something is wrong, tell us here instead of calling.":
+    "Aún no hay reportes. Si algo está mal, avísenos aquí en lugar de llamar.",
+  "Say what you were doing and what went wrong. A photo or screenshot helps.":
+    "Diga qué estaba haciendo y qué salió mal. Una foto o captura de pantalla ayuda.",
+  "Your name": "Su nombre",
+  "What happened?": "¿Qué pasó?",
+  "Write a reply": "Escriba una respuesta",
+  "Send": "Enviar",
+  "Add photo": "Agregar foto",
+  "Change photo": "Cambiar foto",
+  "Back@nav": "Atrás",
+  "Open@report": "Abierto",
+  "Fixed": "Resuelto",
+  "New": "Nuevo",
+  "Admin": "Administrador",
+  "(photo)": "(foto)",
+  "Sent. You will see the answer here.": "Enviado. Verá la respuesta aquí.",
+  "Could not load reports": "No se pudieron cargar los reportes",
+  "Could not open the report": "No se pudo abrir el reporte",
+  "Could not send": "No se pudo enviar",
 };
 
 export const LANGS = [["en", "English"], ["es", "Español"]];

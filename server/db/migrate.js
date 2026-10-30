@@ -985,6 +985,38 @@ const steps = async () => {
   `);
   await run("af_scan_events station index",
     `CREATE INDEX IF NOT EXISTS af_scan_events_station_idx ON af_scan_events (station_id, event_id)`);
+
+  // Problem reports from NTI staff to admin, each a thread of messages.
+  await run("support_tickets", `
+    CREATE TABLE IF NOT EXISTS support_tickets (
+      ticket_id      SERIAL PRIMARY KEY,
+      tenant_id      UUID NOT NULL REFERENCES tenants(id),
+      created_by     TEXT NOT NULL,
+      created_role   TEXT,
+      reporter_name  TEXT,
+      screen         TEXT,
+      status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'fixed')),
+      last_staff_at  TIMESTAMPTZ,
+      last_admin_at  TIMESTAMPTZ,
+      admin_seen_at  TIMESTAMPTZ,
+      author_seen_at TIMESTAMPTZ,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await run("support_messages", `
+    CREATE TABLE IF NOT EXISTS support_messages (
+      message_id  SERIAL PRIMARY KEY,
+      ticket_id   INT NOT NULL REFERENCES support_tickets(ticket_id) ON DELETE CASCADE,
+      author      TEXT NOT NULL,
+      from_admin  BOOLEAN NOT NULL,
+      body        TEXT,
+      image_key   TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await run("support_messages ticket index",
+    `CREATE INDEX IF NOT EXISTS support_messages_ticket_idx ON support_messages (ticket_id, message_id)`);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection

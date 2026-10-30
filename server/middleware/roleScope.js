@@ -25,6 +25,8 @@ const OUTGOING = [
   // The dock picks an item from the list; managing the list is not its job.
   [/^\/item-descriptions$/, ["GET"]],
   [/^\/customers$/, ["GET"]],
+  // Reporting a problem to admin.
+  [/^\/support-tickets(\/|$)/, null],
 ];
 
 // Adams Foods: the inventory app.
@@ -57,6 +59,7 @@ const NOBLESSE = [
   [/^\/item-descriptions(\/|$)/, null],
   [/^\/customers(\/|$)/, null],
   [/^\/fp-(lots|returns|tracker)(\/|$)/, null],
+  [/^\/support-tickets(\/|$)/, null],
 ];
 
 // Every role is listed; null is unrestricted. A role not listed reaches nothing.
