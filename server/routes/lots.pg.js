@@ -319,6 +319,8 @@ router.post("/lots/resolve", verifyToken, async (req, res) => {
 router.get("/lots", verifyToken, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 100, 500);
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  // Matched literally: a typed % or _ is not a wildcard.
+  const like = q.replace(/[\\%_]/g, "\\$&");
   // FP lots are offered only where a run can take from them; everywhere else they are not a choice.
   const further = req.query.further === "1";
 
@@ -332,14 +334,20 @@ router.get("/lots", verifyToken, async (req, res) => {
       // under DESC in Postgres, so left in the same ordering they would sit
       // above today's work and push the lot someone actually wants off the top
       // of the list. The client renders the two blocks as separate groups.
-      `SELECT l.*, d.description, d.registered,
+      // The limit applies to each block separately, so ours can never crowd EHWA's off the list.
+      `SELECT * FROM (
+       SELECT l.*, d.description, d.registered,
               (SELECT p.lot_number FROM lots p WHERE p.lot_id = l.parent_lot_id) AS parent_lot_number,
               mm.mix_lot_id, (SELECT x.lot_number FROM lots x WHERE x.lot_id = mm.mix_lot_id) AS mix_lot_number,
               CASE WHEN l.kind = 'mixed' THEN (SELECT COUNT(*)::int FROM lot_mix_members s
                                                 WHERE s.mix_lot_id = l.lot_id) END AS source_count,
               CASE WHEN l.kind = 'further' THEN ${sentSql("l")} - ${takenSql("l")} END AS fp_waiting,
               -- Counted back from the freezer and not yet run: what a run is shown.
-              CASE WHEN l.kind = 'further' THEN ${returnedSql("l")} - ${takenSql("l")} END AS fp_ready
+              CASE WHEN l.kind = 'further' THEN ${returnedSql("l")} - ${takenSql("l")} END AS fp_ready,
+              ROW_NUMBER() OVER (
+                PARTITION BY (l.kind = 'external')
+                ORDER BY l.lot_date DESC NULLS LAST, l.seq DESC NULLS LAST, l.created_at DESC
+              ) AS block_rank
          FROM lots l
          LEFT JOIN lot_mix_members mm ON mm.lot_id = l.lot_id
          -- The registration form is what says what a lot is; the incoming
@@ -353,14 +361,16 @@ router.get("/lots", verifyToken, async (req, res) => {
            ) AS registered
          ) d ON TRUE
         WHERE l.tenant_id = $1
-          AND ($2 = '' OR l.lot_number ILIKE '%' || $2 || '%')
+          -- The number or what the lot is: "307-01" and "short rib" both find it.
+          AND ($2 = '' OR l.lot_number ILIKE '%' || $2 || '%' OR d.description ILIKE '%' || $2 || '%')
           AND ($4 OR l.kind <> 'further')
+       ) l
+        WHERE l.block_rank <= $3
         ORDER BY (l.kind = 'external'),
                  l.lot_date DESC NULLS LAST,
                  l.seq DESC NULLS LAST,
-                 l.created_at DESC
-        LIMIT $3`,
-      [req.tenantId, q, limit, further]
+                 l.created_at DESC`,
+      [req.tenantId, like, limit, further]
     );
     res.json(result.rows.map(fmtLot));
   } catch (err) {

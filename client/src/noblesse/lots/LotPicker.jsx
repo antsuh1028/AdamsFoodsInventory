@@ -41,6 +41,15 @@ const optionLabel = (l) => {
   return `${num} \u2014 ${short}`;
 };
 
+// Case- and space-blind, so "short rib" finds "BEEF SHORT RIB ".
+const fold = (s) => String(s || "").toUpperCase().replace(/\s+/g, " ").trim();
+export const lotMatches = (lot, search) => {
+  const needle = fold(search);
+  if (!needle) return true;
+  return fold(lot.lotNumber).includes(needle) || fold(lot.description).includes(needle)
+    || fold(lot.parentLotNumber).includes(needle);
+};
+
 // The plain lot number when a typed one has a name or a dot attached: "26285-05 EHWA" -> "26285-05".
 export const tidyLot = (raw) => {
   const s = String(raw || "").trim().toUpperCase();
@@ -65,8 +74,13 @@ const LotPicker = ({
   hideRegistered = false,
   // Also offer FP lots. Only a processing run can take from one.
   includeFurther = false,
+  // A search box beside the list: narrows it by lot number or product.
+  searchable = false,
 }) => {
   const [lots, setLots] = useState([]);
+  const [search, setSearch] = useState("");
+  // Lots the server found for the search that the loaded page does not hold.
+  const [found, setFound] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [nextLot, setNextLot] = useState(null);
@@ -101,9 +115,30 @@ const LotPicker = ({
 
   useEffect(() => { load(); }, [load]);
 
+  // Older lots are past the loaded page, so a search also asks the server.
+  useEffect(() => {
+    const text = search.trim();
+    if (!searchable || text.length < 2) { setFound([]); return undefined; }
+    let live = true;
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await axiosInstance.get("/lots", {
+          params: { q: text, limit: 50, ...(includeFurther ? { further: 1 } : {}) },
+        });
+        if (live) setFound(data || []);
+      } catch { /* the loaded page still filters */ }
+    }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [search, searchable, includeFurther]);
+
+  const known = useMemo(
+    () => [...lots, ...found.filter((f) => !lots.some((l) => l.lotId === f.lotId))],
+    [lots, found]
+  );
+
   const selected = useMemo(
-    () => lots.find((l) => l.lotId === value) || null,
-    [lots, value]
+    () => known.find((l) => l.lotId === value) || null,
+    [known, value]
   );
 
   // A lot that was picked but is not in the loaded page (an older one, or one
@@ -113,12 +148,16 @@ const LotPicker = ({
     () => (hideRegistered
       // The one already on this form is registered by definition; dropping it
       // would leave the select bound to a value it has no option for.
-      ? lots.filter((l) => !l.registered || l.lotId === value)
-      : lots),
-    [lots, hideRegistered, value]
+      ? known.filter((l) => !l.registered || l.lotId === value)
+      : known),
+    [known, hideRegistered, value]
   );
 
-  const options = visible;
+  // The chosen lot stays an option while searching, so the select keeps showing it.
+  const options = useMemo(
+    () => visible.filter((l) => l.lotId === value || lotMatches(l, search)),
+    [visible, search, value]
+  );
 
   // The server already returns ours first and outside numbers after; splitting
   // here only puts a heading between them. Kept as a filter rather than a slice
@@ -150,8 +189,20 @@ const LotPicker = ({
 
   const pick = (lotId) => {
     if (!lotId) { onChange(null); return; }
-    const lot = lots.find((l) => String(l.lotId) === String(lotId));
+    const lot = known.find((l) => String(l.lotId) === String(lotId));
     onChange(lot || null);
+  };
+
+  // The matches in the order the list shows them, for Enter and the count.
+  const matches = useMemo(
+    () => [...further, ...ours, ...outside].filter((l) => lotMatches(l, search)),
+    [further, ours, outside, search]
+  );
+  const searching = searchable && search.trim() !== "";
+  const pickFirst = () => {
+    if (!matches.length) return;
+    onChange(matches[0]);
+    setSearch("");
   };
 
   const adopt = (lot, created) => {
@@ -252,6 +303,26 @@ const LotPicker = ({
   return (
     <Box>
       <Flex gap={2} align="center" wrap="wrap">
+        {searchable && (
+          <Input
+            size={size}
+            bg="white"
+            flex="1 1 150px"
+            minW="140px"
+            type="search"
+            placeholder="Search lot or product…"
+            value={search}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            isDisabled={isDisabled}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); pickFirst(); }
+              if (e.key === "Escape") setSearch("");
+            }}
+          />
+        )}
         <Select
           size={size}
           bg="white"
@@ -292,6 +363,16 @@ const LotPicker = ({
         </Select>
 
         {loading && <Spinner size="xs" color="blue.500" />}
+
+        {searching && (
+          <Text fontSize="xs" color={matches.length ? "gray.500" : "red.600"} flexBasis="100%" mt={-1}>
+            {matches.length === 0
+              ? `No lot matches "${search.trim()}".`
+              : matches.length === 1
+                ? `1 match: ${matches[0].lotNumber}. Press Enter to pick it.`
+                : `${matches.length} matches. Open the list, or press Enter for ${matches[0].lotNumber}.`}
+          </Text>
+        )}
 
         {/* A free-form lot has no lotId, so the Select above cannot show it and
             the field would read as empty — someone would type a lot, confirm
