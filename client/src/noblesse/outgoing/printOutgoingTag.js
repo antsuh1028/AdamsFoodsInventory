@@ -37,7 +37,7 @@ const printOutgoingTag = ({
   // A pallet received at Adams Foods: Pallet # and Vendor take the Ship To and BOL rows.
   received = false,
   vendor = "",
-  // Code 128 text for the pallet (AFP-<lot>-P<nn>); printed on the top copy only.
+  // Code 128 text for the pallet (P<lot>-<nn>); printed on the top copy only.
   barcode = null,
 } = {}) => {
   // A voided box was taken off the tally on purpose; a duplicate is one box
@@ -85,7 +85,7 @@ const printOutgoingTag = ({
   // Built once and printed twice — the two copies are the same tag, so there is
   // nothing to keep in step between them.
   const tagFor = (withCode) => `
-        <div class="tag${withCode && barcode ? " with-code" : ""}">${withCode ? codeBlock : ""}
+        <div class="tag">${withCode ? codeBlock : ""}
           <h1>${esc(company)}</h1>
           <div class="kind">${heading ? esc(heading) : furtherProcessing
             ? "FOR FURTHER PROCESSING &mdash; TO THE AF FREEZER"
@@ -254,12 +254,10 @@ const printOutgoingTag = ({
           table.sign td { padding: 15px 4px 2px; font-size: 12px; border-bottom: 1px solid #000; }
           table.sign td.gap { border-bottom: none; width: 30px; }
           .note { margin-top: 5px; font-size: 10px; }
-          /* Top-left corner, clear of the centred title: 2.3in keeps each bar near 0.25mm, which scanners read. */
+          /* Top-left corner, clear of the centred title; each bar stays near 0.25mm, which scanners read. */
           .code { position: absolute; top: 10px; left: 24px; display: flex; flex-direction: column; align-items: center; }
-          .code svg { width: 2.3in; height: 0.4in; display: block; }
+          .code svg { width: 1.85in; height: 0.4in; display: block; }
           .code span { font-family: Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 0.06em; }
-          /* The title centres in the space beside the barcode rather than running into it. */
-          .tag.with-code h1, .tag.with-code .kind { margin-left: 2.45in; }
           .no-print { text-align: center; margin: 14px 0; }
           @media print { .no-print { display: none; } }
         </style>

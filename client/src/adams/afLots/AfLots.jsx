@@ -447,7 +447,8 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
       date: fmtDateOnly(list[0]?.scannedAt || lot.createdAt),
       received: true,
       vendor: lot.vendor || "",
-      barcode: `AFP-${lot.lotNumber}-P${String(n).padStart(2, "0")}`,
+      // P for pallet, then lot and pallet number: short enough to sit beside the centred title.
+      barcode: `P${lot.lotNumber}-${String(n).padStart(2, "0")}`,
       itemDescription: here.map(itemName).join(", "),
       boxes: sorted.map((b) => ({ weight: b.weight })),
       weighedBy: [...new Set(list.map((b) => b.scannedBy).filter(Boolean))].join(", "),
