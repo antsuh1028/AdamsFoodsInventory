@@ -943,6 +943,11 @@ const steps = async () => {
   await run("af_lot_boxes removed",
     `ALTER TABLE af_lot_boxes ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ,
        ADD COLUMN IF NOT EXISTS removed_by TEXT`);
+  // A labelled box is in stock on one lot at a time; a box that went out and came back is a new row.
+  await run("af_lot_boxes one in stock",
+    `CREATE UNIQUE INDEX IF NOT EXISTS af_lot_boxes_one_in_stock_idx
+       ON af_lot_boxes (tenant_id, COALESCE(gtin, ''), serial)
+       WHERE serial IS NOT NULL AND removed_at IS NULL AND status = 'in_stock'`);
   // Where each pallet of a lot was put away; its boxes take the location.
   await run("af_lot_pallets", `
     CREATE TABLE IF NOT EXISTS af_lot_pallets (

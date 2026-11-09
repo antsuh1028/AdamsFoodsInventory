@@ -295,6 +295,26 @@ const typedBox = (weight, unit) => {
   }
 };
 
+// The lot a labelled box is in stock on, other than `exceptLotId`; null when none.
+const inStockElsewhere = async (tenantId, gtin, serial, exceptLotId) => {
+  const { rows } = await pool.query(
+    `SELECT b.af_lot_id, l.lot_number, b.pallet_no FROM af_lot_boxes b JOIN af_lots l ON l.af_lot_id = b.af_lot_id
+      WHERE b.tenant_id = $1 AND b.serial = $2 AND COALESCE(b.gtin, '') = COALESCE($3, '')
+        AND b.removed_at IS NULL AND b.status = 'in_stock' AND b.af_lot_id <> $4
+      LIMIT 1`, [tenantId, serial, gtin || null, exceptLotId]);
+  return rows[0] || null;
+};
+
+const onAnotherLot = (held) => ({
+  status: 409,
+  body: { code: "ON_ANOTHER_LOT", lotNumber: held.lot_number,
+    error: `That box is already on lot ${held.lot_number}, pallet ${held.pallet_no}.` },
+});
+
+// The one-box-one-lot index refused a write that raced past the check.
+const isOneLotViolation = (err) => err && err.code === "23505"
+  && /af_lot_boxes_one_in_stock_idx/.test(err.constraint || err.message || "");
+
 // Saves one box, scanned or typed, onto an item and pallet of a lot.
 // Returns { status, body }; the tablet's own scans and the scan station both come through here.
 const addBox = async ({ tenantId, lotId, itemId, palletNo: rawPallet, entry, username }) => {
@@ -308,31 +328,44 @@ const addBox = async ({ tenantId, lotId, itemId, palletNo: rawPallet, entry, use
   if (!Number.isInteger(itemId)) return { status: 400, body: { error: "Pick an item before scanning." } };
   if (!(await itemOnLot(itemId, lotId, tenantId))) return { status: 404, body: { error: "That item is not on this lot." } };
   // A box with a serial is one of a kind on its lot; scanning a removed one brings it back here.
+  let dup = { rows: [] };
   if (box.serial) {
-    const dup = await pool.query(
+    dup = await pool.query(
       `SELECT box_id, removed_at FROM af_lot_boxes WHERE af_lot_id = $1 AND tenant_id = $2 AND serial = $3
           AND COALESCE(gtin, '') = COALESCE($4, '')`, [lotId, tenantId, box.serial, box.gtin]);
-    if (dup.rows.length && !dup.rows[0].removed_at) {
+    if (dup.rows.some((r) => !r.removed_at)) {
       return { status: 409, body: { code: "DUPLICATE", error: "That box is already on this lot." } };
     }
-    if (dup.rows.length) {
+    // One box, one lot: in stock anywhere else refuses it here.
+    const held = await inStockElsewhere(tenantId, box.gtin, box.serial, lotId);
+    if (held) return onAnotherLot(held);
+  }
+  try {
+    if (box.serial && dup.rows.length) {
       const { rows } = await pool.query(
         `UPDATE af_lot_boxes SET removed_at = NULL, removed_by = NULL, item_id = $1, pallet_no = $2
           WHERE box_id = $3 AND tenant_id = $4 RETURNING ${BOX_COLS}`,
         [itemId, palletNo, dup.rows[0].box_id, tenantId]);
       return { status: 201, body: { ...fmtBox(rows[0]), restored: true } };
     }
+    const { rows } = await pool.query(
+      `INSERT INTO af_lot_boxes (tenant_id, af_lot_id, weight, scanned_weight, scanned_unit, gtin, serial,
+              label_lot, item_code, customer_part, pack_date, raw, scanned_by, pallet_no, item_id, entry_method)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+       RETURNING ${BOX_COLS}`,
+      [tenantId, lotId, box.weight, box.scannedWeight, box.scannedUnit, box.gtin || null, box.serial || null,
+       box.lot || null, box.itemCode || null, box.customerPart || null, box.packDate || null, box.raw || null,
+       username || null, palletNo, itemId, typed ? "typed" : "scan"]
+    );
+    return { status: 201, body: fmtBox(rows[0]) };
+  } catch (err) {
+    if (!isOneLotViolation(err)) throw err;
+    // Two scans of one box at once: the database let one through. Say where it went.
+    const held = await inStockElsewhere(tenantId, box.gtin, box.serial, -1);
+    return held && held.af_lot_id !== lotId
+      ? onAnotherLot(held)
+      : { status: 409, body: { code: "DUPLICATE", error: "That box is already on this lot." } };
   }
-  const { rows } = await pool.query(
-    `INSERT INTO af_lot_boxes (tenant_id, af_lot_id, weight, scanned_weight, scanned_unit, gtin, serial,
-            label_lot, item_code, customer_part, pack_date, raw, scanned_by, pallet_no, item_id, entry_method)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-     RETURNING ${BOX_COLS}`,
-    [tenantId, lotId, box.weight, box.scannedWeight, box.scannedUnit, box.gtin || null, box.serial || null,
-     box.lot || null, box.itemCode || null, box.customerPart || null, box.packDate || null, box.raw || null,
-     username || null, palletNo, itemId, typed ? "typed" : "scan"]
-  );
-  return { status: 201, body: fmtBox(rows[0]) };
 };
 
 // One box onto an item of a lot: scanned from its barcode, or typed on the keypad.
@@ -424,6 +457,16 @@ router.post("/af-lots/:id/boxes/:boxId/restore", verifyToken, async (req, res) =
   const boxId = Number(req.params.boxId);
   if (!Number.isInteger(id) || !Number.isInteger(boxId)) return res.status(400).json({ error: "Invalid id" });
   try {
+    // A removed box rescanned onto another lot since cannot come back here too.
+    const { rows: [removed] } = await pool.query(
+      `SELECT gtin, serial FROM af_lot_boxes
+        WHERE box_id = $1 AND af_lot_id = $2 AND tenant_id = $3 AND removed_at IS NOT NULL`,
+      [boxId, id, req.tenantId]);
+    if (!removed) return res.status(404).json({ error: "That box is not on this lot, or is not removed." });
+    if (removed.serial) {
+      const held = await inStockElsewhere(req.tenantId, removed.gtin, removed.serial, id);
+      if (held) { const out = onAnotherLot(held); return res.status(out.status).json(out.body); }
+    }
     const { rows } = await pool.query(
       `UPDATE af_lot_boxes SET removed_at = NULL, removed_by = NULL
         WHERE box_id = $1 AND af_lot_id = $2 AND tenant_id = $3 AND removed_at IS NOT NULL
@@ -432,6 +475,9 @@ router.post("/af-lots/:id/boxes/:boxId/restore", verifyToken, async (req, res) =
     if (!rows.length) return res.status(404).json({ error: "That box is not on this lot, or is not removed." });
     res.json(fmtBox(rows[0]));
   } catch (err) {
+    if (isOneLotViolation(err)) {
+      return res.status(409).json({ code: "ON_ANOTHER_LOT", error: "That box is already in stock on another lot." });
+    }
     console.error("restore af lot box:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
