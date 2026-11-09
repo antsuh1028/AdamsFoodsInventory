@@ -85,7 +85,7 @@ const printOutgoingTag = ({
   // Built once and printed twice — the two copies are the same tag, so there is
   // nothing to keep in step between them.
   const tagFor = (withCode) => `
-        <div class="tag">
+        <div class="tag${withCode && barcode ? " with-code" : ""}">${withCode ? codeBlock : ""}
           <h1>${esc(company)}</h1>
           <div class="kind">${heading ? esc(heading) : furtherProcessing
             ? "FOR FURTHER PROCESSING &mdash; TO THE AF FREEZER"
@@ -113,7 +113,6 @@ const printOutgoingTag = ({
               <td class="val" colspan="3">${esc(driver)}</td>
             </tr>` : ""}
           </table>
-          ${withCode ? codeBlock : ""}
 
           <div class="grid-wrap">
             <table class="grid">
@@ -182,7 +181,7 @@ const printOutgoingTag = ({
           .tag {
             height: 5in; box-sizing: border-box;
             padding: 16px 30px 18px; page-break-inside: avoid;
-            display: flex; flex-direction: column;
+            display: flex; flex-direction: column; position: relative;
           }
           /* The grid takes whatever height is left over and the table fills it,
              so the rows space themselves evenly rather than bunching at the top
@@ -255,10 +254,12 @@ const printOutgoingTag = ({
           table.sign td { padding: 15px 4px 2px; font-size: 12px; border-bottom: 1px solid #000; }
           table.sign td.gap { border-bottom: none; width: 30px; }
           .note { margin-top: 5px; font-size: 10px; }
-          /* About 3 x 0.45 in: wide bars read from a step back across the freezer. */
-          .code { display: flex; flex-direction: column; align-items: center; margin: 2px 0 6px; }
-          .code svg { width: 3.2in; height: 0.45in; }
-          .code span { font-family: Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.08em; }
+          /* Top-left corner, clear of the centred title: 2.3in keeps each bar near 0.25mm, which scanners read. */
+          .code { position: absolute; top: 10px; left: 24px; display: flex; flex-direction: column; align-items: center; }
+          .code svg { width: 2.3in; height: 0.4in; display: block; }
+          .code span { font-family: Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 0.06em; }
+          /* The title centres in the space beside the barcode rather than running into it. */
+          .tag.with-code h1, .tag.with-code .kind { margin-left: 2.45in; }
           .no-print { text-align: center; margin: 14px 0; }
           @media print { .no-print { display: none; } }
         </style>
