@@ -2,6 +2,7 @@ import {
   kgToLb, toDisplayHundredths, fromHundredths,
 } from "../../utils/weight";
 import { esc, printDocument } from "../common/printWindow";
+import { svg as code128svg } from "../../utils/code128";
 
 // The tag that goes out with weighed boxes — the incoming tally sheet at half
 // the size, printed TWICE on one letter sheet: one copy stays here, the other
@@ -36,6 +37,8 @@ const printOutgoingTag = ({
   // A pallet received at Adams Foods: Pallet # and Vendor take the Ship To and BOL rows.
   received = false,
   vendor = "",
+  // Code 128 text for the pallet (AFP-<lot>-P<nn>); printed on the top copy only.
+  barcode = null,
 } = {}) => {
   // A voided box was taken off the tally on purpose; a duplicate is one box
   // counted twice. Neither travels on the tag.
@@ -75,9 +78,13 @@ const printOutgoingTag = ({
     );
   }
 
+  // The pallet's barcode, on the copy that stays on the pallet only.
+  const codeBlock = barcode ? `
+          <div class="code">${code128svg(barcode, { height: 40 })}<span>${esc(barcode)}</span></div>` : "";
+
   // Built once and printed twice — the two copies are the same tag, so there is
   // nothing to keep in step between them.
-  const tag = `
+  const tagFor = (withCode) => `
         <div class="tag">
           <h1>${esc(company)}</h1>
           <div class="kind">${heading ? esc(heading) : furtherProcessing
@@ -106,6 +113,7 @@ const printOutgoingTag = ({
               <td class="val" colspan="3">${esc(driver)}</td>
             </tr>` : ""}
           </table>
+          ${withCode ? codeBlock : ""}
 
           <div class="grid-wrap">
             <table class="grid">
@@ -142,6 +150,7 @@ const printOutgoingTag = ({
 
           ${memo ? `<div class="note">MEMO:&nbsp;&nbsp;${esc(memo)}</div>` : ""}
         </div>`;
+  const tag = tagFor(false);
 
   // The tag is a fixed half page, so a long session tightens its rows rather
   // than running the pair onto a second sheet. Under this it stays roomy and
@@ -246,12 +255,16 @@ const printOutgoingTag = ({
           table.sign td { padding: 15px 4px 2px; font-size: 12px; border-bottom: 1px solid #000; }
           table.sign td.gap { border-bottom: none; width: 30px; }
           .note { margin-top: 5px; font-size: 10px; }
+          /* About 3 x 0.45 in: wide bars read from a step back across the freezer. */
+          .code { display: flex; flex-direction: column; align-items: center; margin: 2px 0 6px; }
+          .code svg { width: 3.2in; height: 0.45in; }
+          .code span { font-family: Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.08em; }
           .no-print { text-align: center; margin: 14px 0; }
           @media print { .no-print { display: none; } }
         </style>
       </head>
       <body>
-        ${tag}
+        ${tagFor(true)}
         ${copies > 1 ? `<div class="cutline">CUT HERE</div>
         ${tag}` : ""}
 
