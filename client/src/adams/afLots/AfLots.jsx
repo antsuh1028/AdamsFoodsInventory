@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert, AlertIcon, Badge, Box, Button, Flex, Input, Select, SimpleGrid, Spinner, Stack, Table, Tbody, Td, Text, Th, Thead, Tr,
+  AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter,
 } from "@chakra-ui/react";
+import { checkTypedBox, typedBarcode } from "./typedBoxCheck";
 import FloatingWindow from "../../components/FloatingWindow";
 import axiosInstance from "../../utils/axiosInstance";
 import useBarcodeKeys from "../boxScan/useBarcodeKeys";
@@ -183,6 +185,12 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
   const [padOpen, setPadOpen] = useState(false);
   const [padValue, setPadValue] = useState("");
   const [padUnit, setPadUnit] = useState("LB");
+  // A typed weight held back for a question; the entry is sent only if the answer is "add it".
+  const [typedQuery, setTypedQuery] = useState(null);
+  const safeRef = useRef(null);
+  // The numbers under a barcode that will not scan, typed so the box keeps its serial.
+  const [labelText, setLabelText] = useState("");
+  const [labelFocused, setLabelFocused] = useState(false);
 
   useEffect(() => {
     axiosInstance.get(`/af-lots/${start.id}`)
@@ -227,7 +235,8 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
   }, [start.id]);
 
   // Off while this device is the scan station, or every scan would be sent twice.
-  useBarcodeKeys(active && !stationHere, (result) => {
+  // Paused while a typed box is being asked about, so a scan cannot land behind the question.
+  useBarcodeKeys(active && !stationHere && !typedQuery, (result) => {
     if (result.type === "scan") send({ rawBarcode: result.raw });
     else { beepError(); setLastScan({ ok: false, text: `Not read: ${result.reason || result.code}` }); }
   });
@@ -310,8 +319,26 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
   // A box typed on the keypad.
   const addTyped = () => {
     if (!padValue) return;
-    send({ weight: padValue, unit: padUnit });
+    const entry = { weight: padValue, unit: padUnit };
+    const check = checkTypedBox({ ...entry, boxes: boxes || [], itemId: item });
+    if (check.ok) send(entry);
+    else { beepError(); setTypedQuery({ ...check, entry }); }
     setPadValue("");
+  };
+  const answerTyped = (add) => {
+    if (add) send(typedQuery.entry);
+    else if (typedQuery.kind === "outlier") setPadValue(typedQuery.entry.weight);
+    setTypedQuery(null);
+  };
+
+  // The label's printed numbers, sent as a scan would be; saved as typed.
+  const addLabelText = () => {
+    const raw = typedBarcode(labelText);
+    if (!raw) return;
+    send({ rawBarcode: raw, typedBarcode: true });
+    setLabelText("");
+    // Scans are ignored while a field has focus.
+    if (document.activeElement) document.activeElement.blur();
   };
 
   // Normalised as the server does; flagged only once it can no longer become a location.
@@ -582,11 +609,71 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
         </Button>
       </Flex>
       {padOpen && (
-        <Box maxW="280px">
-          <NumericKeypad value={padValue} onChange={setPadValue} onSubmit={addTyped}
-            unit={padUnit} onUnitChange={setPadUnit} submitLabel="Add box" isDisabled={!item} />
-        </Box>
+        <Flex gap={4} wrap="wrap" align="flex-start">
+          <Box maxW="280px">
+            <NumericKeypad value={padValue} onChange={setPadValue} onSubmit={addTyped}
+              unit={padUnit} onUnitChange={setPadUnit} submitLabel="Add box" isDisabled={!item} />
+          </Box>
+          {/* A label whose barcode will not scan: its printed numbers keep the box's serial. */}
+          <Box flex="1 1 260px" maxW="420px">
+            <Text fontSize="sm" color="gray.600" mb={1}>
+              Barcode will not scan? Type the numbers printed under it.
+            </Text>
+            <Flex gap={2}>
+              <Input size="sm" bg="white" fontFamily="mono" value={labelText}
+                placeholder="(01)00271820000014(3201)000412(21)…"
+                autoComplete="off" autoCorrect="off" autoCapitalize="characters" spellCheck={false}
+                isDisabled={!item}
+                onFocus={() => setLabelFocused(true)} onBlur={() => setLabelFocused(false)}
+                onChange={(e) => setLabelText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addLabelText(); }} />
+              <Button size="sm" colorScheme="blue" onClick={addLabelText} isDisabled={!item || !labelText.trim()}>
+                Add box
+              </Button>
+            </Flex>
+            {labelFocused && (
+              <Text fontSize="xs" color="orange.600" mt={1}>Scanning is paused while typing here.</Text>
+            )}
+          </Box>
+        </Flex>
       )}
+
+      {/* Focus sits on the safe answer: the scanner types Enter. */}
+      <AlertDialog isOpen={Boolean(typedQuery)} leastDestructiveRef={safeRef}
+        onClose={() => answerTyped(false)} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              {typedQuery?.kind === "reweigh" ? "Same weight as the last box" : "Is that weight right?"}
+            </AlertDialogHeader>
+            <AlertDialogBody fontSize="sm">
+              {typedQuery?.kind === "reweigh" ? (
+                <>
+                  The box before this one was also <b>{typedQuery.previous} lb</b>. If it is the same
+                  box, it is already on the lot and adding it again counts one box as two.
+                  Two different boxes can land on the same figure; if so, add it.
+                </>
+              ) : typedQuery ? (
+                <>
+                  <b>{typedQuery.lb} lb</b> is about {Math.round(
+                    typedQuery.direction === "high" ? typedQuery.ratio : 1 / typedQuery.ratio)}×{" "}
+                  {typedQuery.direction === "high" ? "heavier" : "lighter"} than the other boxes of this item,
+                  which are around {Number(typedQuery.median).toFixed(2)} lb. A misplaced decimal looks
+                  exactly like this.
+                </>
+              ) : null}
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              <Button ref={safeRef} onClick={() => answerTyped(false)}>
+                {typedQuery?.kind === "reweigh" ? "Same box, don't add" : "Let me retype"}
+              </Button>
+              <Button colorScheme="blue" onClick={() => answerTyped(true)}>
+                {typedQuery?.kind === "reweigh" ? "Different box, add it" : `Add ${typedQuery?.lb} lb`}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
 
       {stationHere && (
         <Alert status="info" borderRadius="md" py={2}>

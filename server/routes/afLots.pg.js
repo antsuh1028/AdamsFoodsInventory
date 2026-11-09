@@ -318,8 +318,10 @@ const isOneLotViolation = (err) => err && err.code === "23505"
 // Saves one box, scanned or typed, onto an item and pallet of a lot.
 // Returns { status, body }; the tablet's own scans and the scan station both come through here.
 const addBox = async ({ tenantId, lotId, itemId, palletNo: rawPallet, entry, username }) => {
-  const typed = entry && entry.rawBarcode == null && entry.weight != null;
-  const { box, error } = typed
+  const byWeight = entry && entry.rawBarcode == null && entry.weight != null;
+  // Read by hand off the label under the bars: kept as typed, though it carries a serial.
+  const typed = byWeight || Boolean(entry && entry.typedBarcode === true);
+  const { box, error } = byWeight
     ? typedBox(entry.weight, entry.unit)
     : boxFromBarcode(entry && entry.rawBarcode, username);
   if (error) return { status: 400, body: { code: error.code, error: error.message } };
