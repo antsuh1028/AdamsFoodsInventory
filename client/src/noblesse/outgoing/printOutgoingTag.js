@@ -31,6 +31,8 @@ const printOutgoingTag = ({
   palletNo = null,
   // 2 prints the keep-and-travel pair with a cut line; 1 prints a single tag.
   copies = 2,
+  // The line under the company name; left out, it says what an NTI outgoing tag says.
+  heading = null,
 } = {}) => {
   // A voided box was taken off the tally on purpose; a duplicate is one box
   // counted twice. Neither travels on the tag.
@@ -75,7 +77,7 @@ const printOutgoingTag = ({
   const tag = `
         <div class="tag">
           <h1>${esc(company)}</h1>
-          <div class="kind">${furtherProcessing
+          <div class="kind">${heading ? esc(heading) : furtherProcessing
             ? "FOR FURTHER PROCESSING &mdash; TO THE AF FREEZER"
             : "OUTGOING &mdash; WEIGHED BOXES"}</div>
 

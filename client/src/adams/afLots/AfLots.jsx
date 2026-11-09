@@ -442,6 +442,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
     const here = [...new Set(sorted.map((b) => b.itemId))];
     const ok = printOutgoingTag({
       company: "Adams Foods",
+      heading: "RECEIVED — FOR THE AF FREEZER",
       lotNumber: lot.lotNumber,
       date: fmtDateOnly(list[0]?.scannedAt || lot.createdAt),
       itemDescription: [lot.vendor, here.map(itemName).join(", ")].filter(Boolean).join(" "),
