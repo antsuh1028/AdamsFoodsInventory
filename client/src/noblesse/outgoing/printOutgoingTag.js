@@ -33,8 +33,9 @@ const printOutgoingTag = ({
   copies = 2,
   // The line under the company name; left out, it says what an NTI outgoing tag says.
   heading = null,
-  // A received pallet's vendor, shown in place of the BOL row.
-  vendor = null,
+  // A pallet received at Adams Foods: Pallet # and Vendor take the Ship To and BOL rows.
+  received = false,
+  vendor = "",
 } = {}) => {
   // A voided box was taken off the tally on purpose; a duplicate is one box
   // counted twice. Neither travels on the tag.
@@ -85,18 +86,18 @@ const printOutgoingTag = ({
 
           <table class="head">
             <tr>
-              <td class="lbl">Ship To</td>
-              <td class="val">${esc(shipTo || "")}</td>
+              <td class="lbl">${received ? "Pallet #" : "Ship To"}</td>
+              <td class="val">${esc((received ? palletNo : shipTo) || "")}</td>
               <td class="lbl" style="width:42px">Date</td>
               <td class="val-r">${esc(date || "")}</td>
             </tr>
             <tr>
-              <td class="lbl">${vendor !== null ? "Vendor" : "BOL #"}</td>
-              <td class="val">${esc((vendor !== null ? vendor : billOfLading) || "")}</td>
+              <td class="lbl">${received ? "Vendor" : "BOL #"}</td>
+              <td class="val">${esc((received ? vendor : billOfLading) || "")}</td>
               <td class="lbl-lot">Lot#</td>
               <td class="val-lot">${esc(lotNumber || "")}</td>
             </tr>
-            ${palletNo !== null ? `<tr>
+            ${palletNo !== null && !received ? `<tr>
               <td class="lbl">Pallet #</td>
               <td class="val" colspan="3">${esc(palletNo)}</td>
             </tr>` : ""}

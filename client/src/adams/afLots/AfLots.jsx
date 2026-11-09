@@ -445,6 +445,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
       heading: "RECEIVED — FOR THE AF FREEZER",
       lotNumber: lot.lotNumber,
       date: fmtDateOnly(list[0]?.scannedAt || lot.createdAt),
+      received: true,
       vendor: lot.vendor || "",
       itemDescription: here.map(itemName).join(", "),
       boxes: sorted.map((b) => ({ weight: b.weight })),
