@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import getRole from "../../utils/getRole";
 import adamsWings from "../../assets/AdamsWings.png";
 import {
@@ -14,11 +14,9 @@ import {
   DrawerHeader,
   DrawerFooter,
   Image,
-  Collapse,
   Text,
   Divider,
 } from "@chakra-ui/react";
-import { ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
 
 import { HamburgerIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
@@ -57,7 +55,6 @@ const ShowDrawer = ({
   onStationOpen,
 }) => {
   const navigate = useNavigate();
-  const [otherOpen, setOtherOpen] = useState(false);
   const role = getRole();
   const isAdmin = role === "admin";
   const isAdminOrManager = role === "admin" || role === "manager";
@@ -74,47 +71,54 @@ const ShowDrawer = ({
     </Button>
   );
 
-  const adminOnlyItems = isAdmin ? (
-    <Stack direction="column" spacing={2} pl={3}>
-      {/* {navBtn("Upload IPF File", onUploadOpen)} */}
-      {navBtn("All Scans", onIPROpen)}
-      {navBtn("Export Inventory", onExportOpen)}
-      {navBtn("Export by Type", onExportTypeOpen)}
-      {navBtn("Inventory Report", onReportOpen)}
-    </Stack>
-  ) : null;
+  // Menu sections; an item is null when the role cannot see it, and an empty section is not shown.
+  const sections = [
+    ["Receiving", [
+      navBtn("Lot Registration", onLotsOpen),
+      navBtn("Receiving Station", onStationOpen),
+      navBtn("Scan Boxes", onBoxScanOpen),
+      navBtn("Scan Pallet Form", onScanOpen),
+      isAdmin && navBtn("All Scans", onIPROpen),
+    ]],
+    ["Stock", [
+      navBtn("Freezer Map", onMapOpen),
+      isAdminOrManager && navBtn("History Log", onHistoryOpen),
+    ]],
+    ["Production", [
+      isAdminOrManager && navBtn("Production Orders", onProductionOpen),
+      navBtn("Scan Order Sheet", onOrderScanOpen),
+    ]],
+    ["Reports", [
+      isAdmin && navBtn("Export Inventory", onExportOpen),
+      isAdmin && navBtn("Export by Type", onExportTypeOpen),
+      isAdmin && navBtn("Inventory Report", onReportOpen),
+    ]],
+  ];
 
   return (
     <Drawer placement="left" onClose={onClose} isOpen={isOpen}>
       <DrawerOverlay />
       <DrawerContent>
         <DrawerHeader borderBottomWidth="1px">Menu</DrawerHeader>
-        <Stack direction="column" spacing={3} p={4}>
-          {navBtn("Scan Boxes", onBoxScanOpen)}
-          {navBtn("Lot Registration", onLotsOpen)}
-          {navBtn("Receiving Station", onStationOpen)}
-          {navBtn("Freezer Map", onMapOpen)}
-          {navBtn("Scan Pallet Form", onScanOpen)}
-          {navBtn("Scan Order Sheet", onOrderScanOpen)}
-          {isAdminOrManager && navBtn("History Log", onHistoryOpen)}
-          {isAdminOrManager && navBtn("Production Orders", onProductionOpen)}
+        <Stack direction="column" spacing={4} p={4} overflowY="auto">
+          {sections.map(([title, items]) => {
+            const shown = items.filter(Boolean);
+            if (!shown.length) return null;
+            return (
+              <Stack key={title} direction="column" spacing={1}>
+                <Text fontSize="xs" fontWeight="600" color="gray.500" textTransform="uppercase"
+                  letterSpacing="wider" px={4}>
+                  {title}
+                </Text>
+                {shown.map((btn, i) => <React.Fragment key={i}>{btn}</React.Fragment>)}
+              </Stack>
+            );
+          })}
 
           {isAdmin && (
             <>
               <Divider />
               {navBtn("Noblesse Portal →", () => navigate("/noblesse"))}
-              <Divider />
-              <Button
-                bg="white"
-                justifyContent="flex-start"
-                onClick={() => setOtherOpen((v) => !v)}
-                rightIcon={otherOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
-              >
-                <Text flex={1} textAlign="left">Other</Text>
-              </Button>
-              <Collapse in={otherOpen} animateOpacity>
-                {adminOnlyItems}
-              </Collapse>
             </>
           )}
         </Stack>
