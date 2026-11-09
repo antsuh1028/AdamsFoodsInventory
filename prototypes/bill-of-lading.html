@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bill of Lading to NTI</title>
+<style>
+/* Layout: the bill of lading on the left drawn like the paper form (lines of cases + item, a second line for EST / pack / lot),
+   a sticky rail on the right with what is being scanned into and the pallets in the freezer. One light look: it mirrors the app. */
+:root {
+  --bg: #f2f4f7;
+  --card: #ffffff;
+  --ink: #1a202c;
+  --ink-2: #4a5568;
+  --muted: #718096;
+  --rule: #e2e8f0;
+  --sheet: #2d3748;
+  --band: #eceff3;
+  --blue: #3182ce;
+  --blue-ink: #2b6cb0;
+  --blue-tint: #ebf8ff;
+  --teal: #2c7a7b;
+  --teal-tint: #e6fffa;
+  --green: #2f855a;
+  --green-tint: #f0fff4;
+  --amber: #b7791f;
+  --amber-tint: #fffaf0;
+  --red: #c53030;
+  --red-tint: #fff5f5;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.4;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 40px; }
+button { font: inherit; cursor: pointer; }
+input, select { font: inherit; color: var(--ink); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #90cdf4; outline-offset: 1px; }
+.wrap { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.top h1 { margin: 0; font-size: 22px; }
+.proto { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--amber); background: var(--amber-tint); border: 1px solid #f6e05e; border-radius: 4px; padding: 2px 7px; }
+.top .right { margin-left: auto; display: flex; gap: 8px; }
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.steps div { background: var(--card); border: 1px solid var(--rule); border-radius: 7px; padding: 8px 10px; font-size: 13px; color: var(--ink-2); min-width: 0; }
+.steps b { display: block; color: var(--ink); }
+@media (max-width: 760px) { .steps { grid-template-columns: 1fr 1fr; } }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; align-items: start; }
+@media (max-width: 1050px) { .layout { grid-template-columns: 1fr; } }
+.bols { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.rail { display: flex; flex-direction: column; gap: 12px; position: sticky; top: max(12px, env(safe-area-inset-top, 0px)); min-width: 0; }
+@media (max-width: 1050px) { .rail { position: static; order: -1; } }
+.panel { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.panel h2 { margin: 0; font-size: 14px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.empty { color: var(--muted); font-size: 13px; }
+.btn { border: 1px solid transparent; border-radius: 6px; padding: 7px 14px; font-weight: 600; background: var(--blue); color: #ffffff; }
+.btn:hover { background: var(--blue-ink); }
+.btn:disabled, .btn.teal:disabled { background: #cbd5e0; color: #4a5568; cursor: not-allowed; }
+.btn.outline { background: var(--card); color: var(--blue-ink); border-color: #90cdf4; }
+.btn.ghost { background: transparent; color: var(--ink-2); padding: 3px 8px; }
+.btn.sm { padding: 4px 10px; font-size: 13px; }
+.btn.teal { background: var(--teal); }
+.field { border: 1px solid #cbd5e0; border-radius: 6px; padding: 5px 8px; background: var(--card); min-width: 0; }
+
+/* The bill of lading on screen. */
+.bol { background: var(--card); border: 1.5px solid var(--sheet); border-radius: 4px; display: flex; flex-direction: column; min-width: 0; }
+.bol.sent { border-color: var(--teal); }
+.b-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; padding: 12px 14px 8px; flex-wrap: wrap; }
+.b-head img { height: 34px; width: auto; }
+.b-head .t { text-align: right; }
+.b-head .t b { font-size: 18px; letter-spacing: 0.02em; }
+.ref { color: var(--red); font-weight: 800; font-family: Georgia, serif; font-size: 18px; }
+.b-cust { margin: 0 14px; background: var(--band); border-radius: 4px; padding: 8px 12px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.b-cust .who { font-size: 18px; font-weight: 800; color: var(--teal); }
+.status { margin-left: auto; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; border-radius: 3px; padding: 2px 7px; }
+.status.loading { background: var(--amber-tint); color: var(--amber); }
+.status.road { background: var(--teal-tint); color: var(--teal); }
+.status.recv { background: var(--green-tint); color: var(--green); }
+.b-cols { display: grid; grid-template-columns: 110px 1fr; padding: 10px 14px 4px; border-bottom: 1.5px solid var(--sheet); margin: 0 14px; font-size: 12px; font-weight: 700; }
+.bline { margin: 0 14px; padding: 8px 6px; border-bottom: 1px solid var(--rule); display: grid; grid-template-columns: 110px 1fr auto; gap: 4px 10px; cursor: pointer; align-items: start; }
+.bline:hover { background: #f7fafc; }
+.bline.active { background: var(--blue-tint); box-shadow: inset 4px 0 0 var(--blue); }
+.bline.full { background: var(--green-tint); }
+.bline.active.full { background: var(--blue-tint); }
+.cases { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.cases small { display: block; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.item { min-width: 0; }
+.item .d { font-weight: 700; }
+.item .meta { font-size: 13px; color: var(--ink-2); display: flex; gap: 14px; flex-wrap: wrap; }
+.item .meta .lot { font-family: var(--mono); font-weight: 700; color: var(--ink); }
+.item .pals { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.palw { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.palw .pchip { align-self: flex-start; }
+.wgrid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); border: 1px solid #cbd5e0; border-radius: 3px; max-width: 560px; }
+.wgrid span { font-family: var(--mono); font-size: 11px; text-align: center; padding: 2px 0; border-right: 1px dotted #cbd5e0; border-bottom: 1px dotted #e2e8f0; }
+.wgrid span:nth-child(10n) { border-right: 0; }
+.prog small { display: block; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.pchip { font-size: 12px; border: 1px solid #90cdf4; background: var(--card); border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums; }
+.pchip.loose { border-color: #fbd38d; }
+.pchip button { border: 0; background: transparent; color: var(--red); padding: 0 0 0 4px; }
+.prog { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 13px; text-align: right; }
+.prog.ok { color: var(--green); } .prog.part { color: var(--amber); } .prog.none { color: var(--muted); }
+.tag-active { display: inline-block; font-size: 10.5px; font-weight: 800; color: #ffffff; background: var(--blue); border-radius: 3px; padding: 1px 6px; margin-top: 4px; }
+.b-foot { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
+.tot { display: flex; gap: 16px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.tot b { font-size: 17px; }
+.sign { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sign label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--muted); }
+.blockers { font-size: 12.5px; color: var(--red); margin: 0; padding-left: 18px; }
+.addline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 14px; padding: 8px 6px; font-size: 13px; }
+
+/* Rail. */
+.active-box { border-radius: 7px; padding: 10px 12px; background: var(--blue-tint); border: 1px solid #90cdf4; display: flex; flex-direction: column; gap: 2px; }
+.active-box.none { background: #f7fafc; border-color: var(--rule); color: var(--muted); }
+.active-box .w { font-weight: 800; font-size: 15px; color: var(--blue-ink); }
+.msg { border-radius: 7px; padding: 9px 12px; font-weight: 600; display: flex; flex-direction: column; gap: 2px; }
+.msg small { font-weight: 500; }
+.msg.ok { background: var(--green-tint); color: var(--green); border: 1px solid #9ae6b4; }
+.msg.warn { background: var(--amber-tint); color: var(--amber); border: 1px solid #fbd38d; }
+.msg.bad { background: var(--red-tint); color: var(--red); border: 1px solid #feb2b2; }
+.pal { border-top: 1px solid var(--rule); padding-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+.pal:first-of-type { border-top: 0; padding-top: 0; }
+.pal-h { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+.pal-h .where { font-family: var(--mono); background: #edf2f7; border-radius: 3px; padding: 0 5px; }
+.pal-h .lot { font-family: var(--mono); font-weight: 700; }
+.pal-h .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pal.gone { opacity: 0.5; }
+.chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.chip { font-family: var(--mono); font-size: 11px; border: 1px solid #cbd5e0; background: var(--card); border-radius: 4px; padding: 1px 5px; color: var(--ink-2); }
+.chip.used { background: #edf2f7; color: var(--muted); text-decoration: line-through; }
+.leave { border-radius: 7px; padding: 9px 12px; background: var(--amber-tint); border: 1px solid #fbd38d; color: var(--amber); display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.leave span { font-size: 12.5px; }
+.leave .btn { align-self: flex-start; }
+.chip.online { background: var(--blue-tint); border-color: var(--blue); color: var(--blue-ink); font-weight: 700; }
+.road { border-top: 1px solid var(--rule); padding-top: 6px; font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
+.road:first-of-type { border-top: 0; padding-top: 0; }
+.try { margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
+.try li { margin-bottom: 3px; }
+
+/* Print preview: the bill of lading as it prints. */
+.overlay { position: fixed; inset: 0; background: rgba(26, 32, 44, 0.55); z-index: 20; overflow-y: auto;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px)); }
+.pv-bar { max-width: 8.5in; margin: 0 auto 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: #ffffff; font-size: 12.5px; }
+.pv-bar .btn.outline { background: #ffffff; }
+.paper { background: #ffffff; color: #000000; max-width: 8.5in; min-height: 11in; margin: 0 auto; padding: 0.45in 0.5in; font-family: Arial, Helvetica, sans-serif; font-size: 13.5px; box-shadow: 0 6px 30px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; overflow-x: auto; }
+.pp-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; min-width: 620px; }
+.pp-top .co img { height: 0.8in; width: auto; display: block; }
+.pp-top .co div { font-size: 12px; font-weight: 700; line-height: 1.35; }
+.pp-top .co div span { font-weight: 400; }
+.pp-top .ttl { text-align: right; }
+.pp-top .ttl h1 { margin: 0 0 8px; font-size: 34px; font-weight: 900; font-style: italic; letter-spacing: 0.01em; }
+.pp-top .ttl .ln { font-size: 14px; font-weight: 700; display: flex; gap: 14px; justify-content: flex-end; align-items: baseline; }
+.pp-top .ttl .no { color: #c0392b; font-family: Georgia, serif; font-size: 22px; font-weight: 700; }
+.pp-boxes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; min-width: 620px; }
+.pp-boxes div { background: #e9ebee; min-height: 0.95in; padding: 8px 12px; font-size: 16px; }
+.pp-boxes b { text-decoration: underline; font-size: 13px; display: block; margin-bottom: 6px; }
+.pp-lines { margin-top: 14px; min-width: 620px; }
+.pp-lines .hd { display: grid; grid-template-columns: 90px 1fr; border-top: 2px solid #1f2a44; border-bottom: 2px solid #1f2a44; padding: 4px 0; font-weight: 700; font-size: 13px; }
+.pp-lines .hd span:last-child { font-size: 11px; align-self: end; }
+.pp-lines .r { display: grid; grid-template-columns: 90px 1fr; min-height: 26px; align-items: center; font-size: 15px; }
+.pp-lines .r:nth-child(odd) { background: #e9ebee; }
+.pp-lines .r .c { font-weight: 700; padding-left: 10px; }
+.pp-lines .r .d2 { display: flex; gap: 28px; padding-left: 50px; }
+.pp-lines .wr { display: grid; grid-template-columns: 90px repeat(10, minmax(0, 1fr)) 120px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.pp-lines .wr span { text-align: right; padding: 2px 5px; border-bottom: 1px dotted #9aa0a6; }
+.pp-lines .wr span + span { border-left: 1px dotted #9aa0a6; }
+.pp-lines .wr .pl { text-align: left; font-weight: 700; border-bottom: 0; }
+.pp-lines .wr .st { font-weight: 700; }
+.pp-lines .r.tot span:last-child { font-weight: 700; text-align: right; padding-right: 6px; }
+.pp-tq { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-top: 10px; background: #e9ebee; padding: 8px 12px; font-size: 15px; font-weight: 700; min-width: 620px; }
+.pp-tq .v { border-bottom: 1px solid #000000; font-weight: 400; padding: 0 10px; }
+.pp-tq > span:first-child { white-space: nowrap; }
+.pp-terms { font-size: 10px; margin-top: 8px; min-width: 620px; }
+.pp-imp { background: #e9ebee; text-align: center; padding: 8px; margin-top: 6px; font-size: 12px; min-width: 620px; }
+.pp-imp b { display: block; font-size: 13px; }
+/* The pallet tag: half a letter sheet, read from across the freezer. */
+.tag { background: #ffffff; color: #000000; max-width: 8.5in; min-height: 5.3in; margin: 0 auto; padding: 0.35in 0.45in; font-family: Arial, Helvetica, sans-serif; box-shadow: 0 6px 30px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; gap: 10px; overflow-x: auto; }
+.tag .t1 { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-width: 620px; }
+.tag .t1 img { height: 0.6in; width: auto; }
+.tag .t1 .kind { font-size: 15px; font-weight: 800; letter-spacing: 0.2em; }
+.tag .big { display: flex; justify-content: space-between; align-items: baseline; border-top: 3px solid #000000; border-bottom: 3px solid #000000; padding: 6px 0; min-width: 620px; }
+.tag .big .lot { font-size: 46px; font-weight: 900; letter-spacing: 0.02em; }
+.tag .big .pno { font-size: 30px; font-weight: 800; }
+.tag .prod { font-size: 20px; font-weight: 700; min-width: 620px; }
+.tag .facts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; min-width: 620px; }
+.tag .facts div { border: 1.5px solid #000000; padding: 4px 8px; }
+.tag .facts span { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.tag .facts b { font-size: 20px; }
+.tag .bc { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: auto; min-width: 620px; }
+.tag .bc canvas { max-width: 100%; height: auto; }
+.tag .bc .hri { font-family: ui-monospace, Menlo, monospace; font-size: 15px; letter-spacing: 0.08em; }
+.tag .asof { font-size: 10.5px; color: #444444; text-align: center; min-width: 620px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Bill of Lading · to NTI</h1>
+    <span class="proto">Prototype · sample stock · nothing is saved</span>
+    <div class="right">
+      <button class="btn outline sm" type="button" id="newbol">New BOL (build as you load)</button>
+      <button class="btn ghost sm" type="button" id="reset">Start over</button>
+    </div>
+  </div>
+  <div class="steps">
+    <div><b>1 · Open a BOL</b>From the office's request, or blank and built as the truck is loaded.</div>
+    <div><b>2 · Scan pallet tags</b>A pallet tag takes the whole pallet. Scan single boxes for a partial one.</div>
+    <div><b>3 · Load and send</b>Not short, and signed: loaded by and driver. Time is stamped.</div>
+    <div><b>4 · NTI receives</b>It shows on NTI's Incoming as on the way; they sign it in.</div>
+  </div>
+  <div class="layout">
+    <div class="bols" id="bols"></div>
+    <div class="rail">
+      <div class="panel"><h2>Scanning into</h2><div id="active"></div><div id="msg"></div></div>
+      <div class="panel">
+        <h2>Pallets in the freezer</h2>
+        <div class="empty" style="margin-top:-4px"><b>Pallet tag</b> takes every box left on the pallet. Open a pallet to scan single boxes.</div>
+        <div id="pallets"></div>
+      </div>
+      <div class="panel"><h2>Sent to NTI</h2><div id="road"></div></div>
+      <div class="panel">
+        <h2>Things to try</h2>
+        <ol class="try">
+          <li>BOL 30300 is your photo. Tap the short plate line and scan two of its pallet tags: it reads "30 + 30".</li>
+          <li>Scan the third short plate pallet into it: refused, the line wants 60.</li>
+          <li>Tap the brisket line and scan its pallet tag.</li>
+          <li>Pick Loaded by and Driver, then Send to NTI, then mark it received at NTI.</li>
+          <li>New BOL: with no line tapped, scanning a pallet tag adds a line for it.</li>
+          <li><b>All but two:</b> on BOL 30301 tap the chuck roll line (22 cases) and scan its pallet tag (24 boxes). Then tap 2 blue boxes to leave them behind, and Done.</li>
+          <li>After that, <b>See tag</b> on the chuck roll pallet: the reprint for the 2 boxes left.</li>
+          <li>Print either BOL: each pallet's box weights, ten to a row, with subtotals and the total lb.</li>
+          <li>Press <b>See tag</b> on a pallet: what the pallet tag and its barcode would look like. Scan it with a real scanner.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bwip-js@4.5.1/dist/bwip-js-min.js"></script>
+<script>
+(() => {
+  const LOGO = "data:image/png;base64,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3ldujmtWNfTzdLyirrn6vS1WKDr8Qp4OQqfwdmTnYOC97rrr7KtjICSPP/543+udAzedWzFIRCAQsE455ZS4eXAfXMOBtTAUwZVMyD/77LPbrGqew89YCYcddph15plnaksTyxqrDQuKgcf7DO+BlZdoLvapp54akgWcSn3FO5x7U02DKZQ1a9bYOe4PAyrz/4nSQrgg8E466STrvPPO03WJ9bfTTjtpQcS9CM14z/AyWkIeYc179j4LAcQce6KpBWeahHK67+dAaUBAJ4J+QQyFV0nASv/Tn/6UUEmgHpqamqwLLrhgwP3kH+UkUd7pu8TheJUE+typp55q1dfXx/W48GzqjTHAfa/7SCTkyde1117bL9/8/OUvfznhmMJz29vb04o92BEZc9H13b2WPLGpSVYGe+X0mhKZYX8vfT1R9psDEia03IbNYA6ozJejaiolP2dwy5LGOryW1a0BeaA2IKoqtkFc8CEVeXL0jCodORrt7pH7N7TIxlBEvrjbFCnKHd7lOETqEplOJLkfauDV0dGqU9pnYnn/6U9/KkqT1z/7wTIsIo+TRRSrjqmjsMkDy3ISwbIrIsaJ3CUCXAlOvcveHXfcIcqaipsXN0rIJ4yuJ0qapYTUC886+eSTddQu0cks01EWib6OfLOEiDL+7//+b9xNhIA6YOkh6flBxDArFuIto3OgPRA9z86D1K8TZa2snpTKDmqw1B9iIZKdMrESgTLE2x/BQQ3ucuutt8rpp59un+lDKU26zp544gn7TH945pIlS0QJJr3sUSlouv64jyh83p0S2jp6W1mg+lnJ8EbXA23ii1/84qCj63neiSeeqCP83SghJhdffLFe3UB+HZTCo1cnHHrooSk9680335Rzzz1Xl9OB+2iL9957b7++5YaVCfQLJQztM7FNqfjmvbJoU4oe571++9vf1t+VcLcRli3yPpViZJ/pz4oVK/Q7c7cL3iP94a9//au+PxkszeR9+H3wijLHi66nXyslWu655x77TPI+NK5RlTumiCrt7541tdp6fXZzn8bVpazUu9fGLHi3VXvpe3XWi8qS7RlmDX17s6U9YP1NWezusnJcocpb29E3n7Q1ELKufK/WuvydTVZwBIIRX3jhhYTWKPOLaMhe1IAedx6ZA8tUDVL21fFB81YDh28a7oNIb6wXggTd+eFnrCUlJAe4BP2O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";
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const mils = (s) => { const [w, f = ""] = String(s).split("."); return Number(w) * 1000 + Number((f + "000").slice(0, 3)); };
+  const lb = (m) => `${Math.floor(m / 1000).toLocaleString()}.${String(m % 1000).padStart(3, "0")}`.replace(/0$/, "");
+  const DOCK = ["IVAN", "ROGELIO", "DANY", "TONY", "STEVE"];
+  const DRIVERS = ["사장님 (Patron)", "JUAN", "MIGUEL"];
+
+  // Pallets as received at Adams Foods: lot, product, EST, pack date, location, and the boxes on each.
+  const PRODUCTS = {
+    brisket: { desc: "Beef Brisket Roll. Ang.", est: "51212", pack: "05/04/26" },
+    plate: { desc: "Beef Short Plate. CH Ang (Creekstone)", est: "27", pack: "10/29/26" },
+    chuck: { desc: "Beef Chuck Roll. CH Ang", est: "960A", pack: "10/22/26" },
+  };
+  const PALLETS = [
+    { id: "BR1", lot: "N26118-02", no: 1, where: "C204", prod: "brisket", n: 12, avg: 62 },
+    { id: "SP1", lot: "26313-01", no: 1, where: "A110", prod: "plate", n: 30, avg: 58 },
+    { id: "SP2", lot: "26313-01", no: 2, where: "A111", prod: "plate", n: 30, avg: 58 },
+    { id: "SP3", lot: "26313-01", no: 3, where: "A112", prod: "plate", n: 30, avg: 58 },
+    { id: "CR1", lot: "26310-02", no: 1, where: "B115", prod: "chuck", n: 24, avg: 71 },
+  ];
+
+  const seed = () => {
+    const boxes = [];
+    let k = 0;
+    for (const p of PALLETS) for (let i = 0; i < p.n; i++) {
+      k += 7;
+      const w = (p.avg + ((k % 23) - 11) * 0.15).toFixed(2);
+      boxes.push({ id: `${p.id}-${String(i + 1).padStart(2, "0")}`, pallet: p.id, mils: mils(w), status: "in_stock", on: null });
+    }
+    return {
+      boxes,
+      bols: [{
+        no: 30300, date: "11/09/26", status: "loading", loaded: "", driver: "",
+        // The office's request, as on the paper: the lot and how many cases.
+        lines: [
+          { lot: "N26118-02", prod: "brisket", want: 12, boxes: [] },
+          { lot: "26313-01", prod: "plate", want: 60, boxes: [] },
+        ],
+      }, {
+        no: 30301, date: "11/09/26", status: "loading", loaded: "", driver: "",
+        lines: [{ lot: "26310-02", prod: "chuck", want: 22, boxes: [] }],
+      }],
+      nextNo: 30302,
+    };
+  };
+  let S = seed(), active = null, msg = null, openPal = null, printing = null;
+  // After a pallet scan: box scans from that pallet take boxes back off the line, until Done.
+  let leaving = null; // { bol, line, pallet }
+
+  const pal = (id) => PALLETS.find((p) => p.id === id);
+  const box = (id) => S.boxes.find((b) => b.id === id);
+  const bolOf = (no) => S.bols.find((b) => b.no === no);
+  const lineCases = (l) => l.boxes.length;
+  // "30 + 30", from which pallets the line's boxes came off.
+  const breakdown = (l) => {
+    const by = new Map();
+    for (const bid of l.boxes) { const p = box(bid).pallet; if (!by.has(p)) by.set(p, []); by.get(p).push(bid); }
+    return [...by].map(([p, ids]) => ({ p, n: ids.length, ids, m: ids.reduce((a, id) => a + box(id).mils, 0), whole: ids.length === pal(p).n }));
+  };
+  const lineMils = (l) => l.boxes.reduce((a, id) => a + box(id).mils, 0);
+  // Box weights ten to a row, as on the tally.
+  const tens = (ids) => { const rows = []; for (let i = 0; i < ids.length; i += 10) rows.push(ids.slice(i, i + 10)); return rows; };
+  const free = (pid) => S.boxes.filter((b) => b.pallet === pid && b.status === "in_stock" && !b.on);
+
+  // ── Scanning ──────────────────────────────────────────────────────────────
+  const target = (p) => {
+    // The active line, or with none active on an open BOL, a line for this lot (made if missing).
+    if (active) return active;
+    const open = S.bols.find((b) => b.status === "loading" && b.build);
+    if (!open) return null;
+    let i = open.lines.findIndex((l) => l.lot === p.lot);
+    if (i < 0) { open.lines.push({ lot: p.lot, prod: p.prod, want: null, boxes: [] }); i = open.lines.length - 1; }
+    active = { bol: open.no, line: i };
+    return active;
+  };
+  const add = (ids, p, how) => {
+    const t = target(p);
+    if (!t) { msg = { kind: "warn", text: "Tap a line on a bill of lading first.", sub: "Or open a new BOL and scan straight onto it." }; return; }
+    const b = bolOf(t.bol), l = b.lines[t.line];
+    if (b.status !== "loading") { msg = { kind: "bad", text: `BOL ${b.no} already went out.` }; return; }
+    if (l.lot !== p.lot) { msg = { kind: "bad", text: `That pallet is lot ${p.lot}.`, sub: `This line is lot ${l.lot}. Tap the right line, or scan with no line tapped on a new BOL.` }; return; }
+    if (l.want != null && lineCases(l) + ids.length > l.want) {
+      const room = l.want - lineCases(l);
+      msg = { kind: "bad", text: `${how} has ${ids.length} cases; this line only needs ${room} more.`, sub: room > 0 ? "Scan single boxes to take part of a pallet." : "The line is full." };
+      return;
+    }
+    for (const id of ids) { box(id).on = { bol: b.no, line: t.line }; l.boxes.push(id); }
+    const m = ids.reduce((a, id) => a + box(id).mils, 0);
+    msg = { kind: "ok", text: `${how}: ${ids.length} case${ids.length === 1 ? "" : "s"} → BOL ${b.no}`, sub: `${PRODUCTS[l.prod].desc} · lot ${l.lot} · ${lb(m)} lb${l.want != null ? ` · ${lineCases(l)} of ${l.want}` : ""}` };
+  };
+  const scanPallet = (pid) => {
+    const p = pal(pid), left = free(pid).map((b) => b.id);
+    if (leaving) { msg = { kind: "warn", text: "Finish leaving boxes behind first.", sub: "Press Done, then scan the next pallet." }; return; }
+    if (!left.length) { msg = { kind: "warn", text: `Pallet ${p.where} has nothing left to take.` }; return; }
+    const t = target(p);
+    if (!t) { msg = { kind: "warn", text: "Tap a line on a bill of lading first.", sub: "Or open a new BOL and scan straight onto it." }; return; }
+    const b = bolOf(t.bol), l = b.lines[t.line];
+    if (b.status !== "loading") { msg = { kind: "bad", text: `BOL ${b.no} already went out.` }; return; }
+    if (l.lot !== p.lot) { msg = { kind: "bad", text: `That pallet is lot ${p.lot}.`, sub: `This line is lot ${l.lot}. Tap the right line, or scan with no line tapped on a new BOL.` }; return; }
+    if (l.want != null && lineCases(l) >= l.want) { msg = { kind: "bad", text: "This line is already full.", sub: "Tap another line." }; return; }
+    for (const id of left) { box(id).on = { bol: b.no, line: t.line }; l.boxes.push(id); }
+    leaving = { bol: b.no, line: t.line, pallet: pid };
+    openPal = pid;
+    const over = l.want != null ? lineCases(l) - l.want : 0;
+    const was = left.length < p.n ? ` (${p.n - left.length} already gone from it)` : "";
+    msg = over > 0
+      ? { kind: "warn", text: `Pallet ${p.where}: ${left.length} cases loaded${was}, ${over} more than this line needs.`, sub: `Scan the ${over} box${over === 1 ? "" : "es"} staying behind, then Done.` }
+      : { kind: "ok", text: `Pallet ${p.where}: ${left.length} cases → BOL ${b.no}${was}.`, sub: "Keeping any boxes back? Scan them now, then Done." };
+  };
+  // Leaving boxes behind is over: say what stays on the pallet.
+  const doneLeaving = () => {
+    const p = pal(leaving.pallet), stay = free(leaving.pallet);
+    const l = bolOf(leaving.bol).lines[leaving.line];
+    leaving = null; openPal = null;
+    msg = stay.length
+      ? { kind: "ok", text: `${stay.length} box${stay.length === 1 ? "" : "es"} stay on pallet ${p.where} · ${lb(stay.reduce((a, b) => a + b.mils, 0))} lb.`, sub: `Still in stock under lot ${p.lot}. Press See tag to reprint a tag for them.${l.want != null ? ` Line: ${lineCases(l)} of ${l.want}.` : ""}` }
+      : { kind: "ok", text: `Whole pallet ${p.where} is on the line.` };
+  };
+  const scanBox = (bid) => {
+    const b = box(bid);
+    if (leaving) {
+      if (b.pallet !== leaving.pallet) { msg = { kind: "warn", text: `${bid} is from another pallet.`, sub: "Press Done first, then scan it." }; return; }
+      if (!(b.on && b.on.bol === leaving.bol && b.on.line === leaving.line)) { msg = { kind: "warn", text: `${bid} is not on this line.` }; return; }
+      const l = bolOf(leaving.bol).lines[leaving.line];
+      l.boxes = l.boxes.filter((x) => x !== bid); b.on = null;
+      const over = l.want != null ? lineCases(l) - l.want : 0;
+      msg = { kind: "ok", text: `${bid} stays behind · ${lb(b.mils)} lb.`, sub: over > 0 ? `${over} more to take off.` : `${lineCases(l)}${l.want != null ? ` of ${l.want}` : ""} on the line. Press Done when finished.` };
+      return;
+    }
+    if (b.on) { msg = { kind: "bad", text: `${bid} is already on BOL ${b.on.bol}.` }; return; }
+    if (b.status !== "in_stock") { msg = { kind: "bad", text: `${bid} already went out.` }; return; }
+    add([bid], pal(b.pallet), `Box ${bid}`);
+  };
+  const takeOff = (no, li, pid) => {
+    const l = bolOf(no).lines[li];
+    l.boxes = l.boxes.filter((bid) => { if (box(bid).pallet !== pid) return true; box(bid).on = null; return false; });
+    msg = { kind: "warn", text: `Pallet ${pal(pid).where} taken off BOL ${no}.`, sub: "Its boxes are back in stock." };
+  };
+
+  // ── Sending and receiving ─────────────────────────────────────────────────
+  const blockers = (b) => {
+    const out = [];
+    if (!b.lines.some((l) => l.boxes.length)) out.push("Nothing is loaded yet");
+    b.lines.forEach((l, i) => {
+      if (l.want != null && lineCases(l) < l.want) out.push(`Line ${i + 1} (lot ${l.lot}): ${lineCases(l)} of ${l.want} cases`);
+      if (l.want != null && lineCases(l) > l.want) out.push(`Line ${i + 1} (lot ${l.lot}): ${lineCases(l) - l.want} too many, scan the boxes staying behind`);
+    });
+    if (leaving && leaving.bol === b.no) out.push("Leaving boxes behind: press Done");
+    if (!b.loaded) out.push("Loaded by is not filled in");
+    if (!b.driver) out.push("Driver is not filled in");
+    return out;
+  };
+  const send = (no) => {
+    const b = bolOf(no);
+    if (blockers(b).length) return;
+    b.lines = b.lines.filter((l) => l.boxes.length);
+    for (const l of b.lines) for (const bid of l.boxes) box(bid).status = "out";
+    b.status = "road"; b.time = "1:15 PM";
+    if (active && active.bol === no) active = null;
+    const cs = b.lines.reduce((a, l) => a + l.boxes.length, 0);
+    msg = { kind: "ok", text: `BOL ${no} sent to NTI: ${cs} cases, ${palletCount(b)} pallets.`, sub: "Those boxes are off Adams Foods stock. NTI sees the load as on the way." };
+  };
+  const palletCount = (b) => new Set(b.lines.flatMap((l) => l.boxes.map((bid) => box(bid).pallet))).size;
+
+  // ── Rendering ─────────────────────────────────────────────────────────────
+  const render = () => {
+    document.getElementById("bols").innerHTML = S.bols.filter((b) => b.status === "loading").map((b) => {
+      const rows = b.lines.map((l, i) => {
+        const isA = active && active.bol === b.no && active.line === i;
+        const n = lineCases(l), full = l.want != null ? n === l.want : n > 0;
+        const bd = breakdown(l);
+        const pr = PRODUCTS[l.prod];
+        const cls = n === 0 ? "none" : full ? "ok" : "part";
+        return `<div class="bline ${isA ? "active" : ""} ${full ? "full" : ""}" data-line="${b.no}|${i}" role="button" tabindex="0">
+          <div class="cases">${n || (l.want ?? "—")}${bd.length > 1 || (bd.length === 1 && !bd[0].whole) ? `<small>${bd.map((x) => x.n).join(" + ")}</small>` : ""}</div>
+          <div class="item"><div class="d">${esc(pr.desc)}</div>
+            <div class="meta"><span>EST ${esc(pr.est)}</span><span>${esc(pr.pack)}</span><span class="lot">#${esc(l.lot)}</span></div>
+            ${bd.map((x) => `<div class="palw">
+              <span class="pchip ${x.whole ? "" : "loose"}">${x.whole ? "Pallet" : "Part of"} ${esc(pal(x.p).where)} · ${x.n} cs · ${lb(x.m)} lb<button type="button" title="Take this pallet off" data-off="${b.no}|${i}|${x.p}">✕</button></span>
+              <div class="wgrid">${x.ids.map((id) => `<span>${lb(box(id).mils)}</span>`).join("")}</div></div>`).join("")}
+            ${isA ? '<span class="tag-active">SCANNING</span>' : ""}</div>
+          <div class="prog ${cls}">${l.want != null ? `${n}/${l.want}` : `${n} cs`}${full ? " ✓" : ""}${n ? `<small>${lb(lineMils(l))} lb</small>` : ""}</div>
+        </div>`;
+      }).join("");
+      const cs = b.lines.reduce((a, l) => a + lineCases(l), 0);
+      const m = b.lines.reduce((a, l) => a + l.boxes.reduce((x, bid) => x + box(bid).mils, 0), 0);
+      const bl = blockers(b);
+      const opt = (list, sel) => `<option value="">—</option>${list.map((x) => `<option ${x === sel ? "selected" : ""}>${esc(x)}</option>`).join("")}`;
+      return `<div class="bol">
+        <div class="b-head"><img src="${LOGO}" alt="AdamsFoods"><div class="t"><b>BILL OF LADING</b><br>Date ${esc(b.date)} · Reference <span class="ref">№ ${b.no}</span></div></div>
+        <div class="b-cust"><span class="label">Customer</span><span class="who">To NTI</span><span>Noblesse Trading</span><span class="status loading">Loading</span></div>
+        <div class="b-cols"><span>CASE</span><span>ITEM DESCRIPTION · EST · PACK DATE · LOT</span></div>
+        ${rows || `<div class="addline empty">No lines yet. Scan a pallet tag with no line tapped and it adds the line itself.</div>`}
+        <div class="b-foot">
+          <div class="tot"><span>Total QTY <b>${cs}</b></span><span><b>${palletCount(b)}</b> plts</span><span><b>${lb(m)}</b> lb</span></div>
+          <div class="sign">
+            <label>Loaded by<select class="field" data-sign="${b.no}|loaded">${opt(DOCK, b.loaded)}</select></label>
+            <label>Driver<select class="field" data-sign="${b.no}|driver">${opt(DRIVERS, b.driver)}</select></label>
+          </div>
+          ${bl.length ? `<ul class="blockers">${bl.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+          <div style="display:flex;gap:8px">
+            <button class="btn outline" type="button" data-print="${b.no}">Print</button>
+            <button class="btn teal" type="button" data-send="${b.no}" ${bl.length ? "disabled" : ""} style="flex:1">Send to NTI · take boxes out</button>
+          </div>
+        </div>
+      </div>`;
+    }).join("") || `<div class="panel"><div class="empty">No BOL being loaded. Start a new one above.</div></div>`;
+
+    const act = document.getElementById("active");
+    if (active && bolOf(active.bol)) {
+      const b = bolOf(active.bol), l = b.lines[active.line];
+      act.innerHTML = `<div class="active-box"><span class="w">BOL ${b.no} · To NTI</span><span>Line ${active.line + 1}: ${esc(PRODUCTS[l.prod].desc)}</span>
+        <span>Lot <b>${esc(l.lot)}</b> · ${lineCases(l)}${l.want != null ? ` of ${l.want}` : ""} cases</span></div>`;
+    } else act.innerHTML = `<div class="active-box none">${S.bols.some((b) => b.status === "loading" && b.build) ? "No line tapped: a pallet tag scanned now goes on the new BOL as its own line." : "No line tapped. Tap a line on a BOL."}</div>`;
+    document.getElementById("msg").innerHTML = (msg ? `<div class="msg ${msg.kind}">${esc(msg.text)}${msg.sub ? `<small>${esc(msg.sub)}</small>` : ""}</div>` : "")
+      + (leaving ? `<div class="leave"><b>Leaving boxes behind · pallet ${esc(pal(leaving.pallet).where)}</b>
+          <span>Scan each box that stays, or tap it below. Boxes on the line are blue.</span>
+          <button class="btn sm" type="button" id="leavedone">Done</button></div>` : "");
+
+    document.getElementById("pallets").innerHTML = PALLETS.map((p) => {
+      const all = S.boxes.filter((b) => b.pallet === p.id && b.status === "in_stock");
+      const left = all.filter((b) => !b.on).length;
+      const pr = PRODUCTS[p.prod];
+      return `<div class="pal ${all.length ? "" : "gone"}"><div class="pal-h"><span class="lot">${esc(p.lot)}</span> P${p.no} <span class="where">${esc(p.where)}</span>
+          <span class="n">${all.length ? `${left} of ${p.n} left` : "gone to NTI"}</span></div>
+        <div style="font-size:12.5px;color:var(--ink-2)">${esc(pr.desc)}</div>
+        ${all.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" type="button" data-pallet="${p.id}" ${left ? "" : "disabled"}>Scan pallet tag</button>
+          <button class="btn outline sm" type="button" data-tag="${p.id}">See tag</button>
+          <button class="btn ghost sm" type="button" data-open="${p.id}">${openPal === p.id ? "Hide boxes" : "Single boxes…"}</button></div>` : ""}
+        ${openPal === p.id ? `<div class="chips">${all.map((b) => {
+          const onLeaving = leaving && b.on && b.on.bol === leaving.bol && b.on.line === leaving.line;
+          return `<button class="chip ${onLeaving ? "online" : b.on ? "used" : ""}" type="button" data-box="${b.id}" title="${onLeaving ? "On the line: tap to leave it behind" : b.on ? "On BOL " + b.on.bol : "Scan this box"}">${b.id.split("-")[1]} ${lb(b.mils)}</button>`; }).join("")}</div>` : ""}
+      </div>`;
+    }).join("");
+
+    document.getElementById("road").innerHTML = S.bols.filter((b) => b.status !== "loading").map((b) => {
+      const cs = b.lines.reduce((a, l) => a + lineCases(l), 0);
+      return `<div class="road"><span><b>BOL ${b.no}</b> · ${cs} cs · ${palletCount(b)} plts · ${esc(b.driver)} ${esc(b.time)}
+        <span class="status ${b.status === "recv" ? "recv" : "road"}" style="margin-left:6px">${b.status === "recv" ? "Received at NTI" : "On the way"}</span></span>
+        ${b.lines.map((l) => `<span class="empty">${lineCases(l)} cs ${esc(PRODUCTS[l.prod].desc)} · #${esc(l.lot)}</span>`).join("")}
+        <div style="display:flex;gap:6px;margin-top:2px"><button class="btn outline sm" type="button" data-print="${b.no}">Print</button>
+        ${b.status === "road" ? `<button class="btn ghost sm" type="button" data-recv="${b.no}">NTI received it (their screen)</button>` : `<span class="empty">Received by ${esc(b.recvBy)}</span>`}</div></div>`;
+    }).join("") || `<div class="empty">Nothing sent yet.</div>`;
+    renderPrint();
+  };
+
+  // ── Print: the bill of lading form, filled in ─────────────────────────────
+  const renderPrint = () => {
+    let ov = document.getElementById("overlay");
+    if (!printing) { if (ov) ov.remove(); return; }
+    const b = bolOf(printing);
+    if (!ov) { ov = document.createElement("div"); ov.id = "overlay"; ov.className = "overlay"; document.body.append(ov); }
+    const lines = b.lines.filter((l) => l.boxes.length || l.want != null);
+    let rows = "";
+    for (const l of lines) {
+      const pr = PRODUCTS[l.prod], bd = breakdown(l);
+      const cases = bd.length > 1 ? bd.map((x) => x.n).join(" + ") : String(lineCases(l) || l.want || "");
+      rows += `<div class="r"><span class="c">${esc(cases)}</span><span>${esc(pr.desc)}</span></div>
+        <div class="r"><span></span><span class="d2"><span>${esc(pr.est)}</span><span>${esc(pr.pack)}</span><span>#${esc(l.lot)}</span></span></div>`;
+      for (const x of bd) {
+        tens(x.ids).forEach((row, ri, all) => {
+          rows += `<div class="wr"><span class="pl">${ri === 0 ? `Plt ${esc(pal(x.p).where)}` : ""}</span>${Array.from({ length: 10 }, (_, k) =>
+            `<span>${row[k] ? lb(box(row[k]).mils) : ""}</span>`).join("")}<span class="st">${ri === all.length - 1 ? `${x.n} cs · ${lb(x.m)}` : ""}</span></div>`;
+        });
+      }
+      rows += bd.length ? `<div class="r tot"><span></span><span>Line total: ${lineCases(l)} cs · ${lb(lineMils(l))} lb</span></div>` : `<div class="r"><span></span><span></span></div>`;
+    }
+    for (let i = 0; i < 40; i++) rows += `<div class="r fill"><span></span><span></span></div>`;
+    const cs = b.lines.reduce((a, l) => a + lineCases(l), 0);
+    ov.innerHTML = `<div class="pv-bar"><button class="btn outline sm" type="button" id="pvclose">Close</button>
+      <span>In the app this opens the print window, letter size. The pre-printed form's number becomes the BOL's number.</span></div>
+      <div class="paper">
+        <div class="pp-top">
+          <div class="co"><img src="${LOGO}" alt="AdamsFoods"><div>1805 E. Industrial Street, CA 90021<br><span>T. 323.889.9275 &nbsp;E. admin@adamsfoods.us</span></div></div>
+          <div class="ttl"><h1>BILL OF LADING</h1><div class="ln"><span>Date: ${esc(b.date)}</span><span>Reference: <span class="no">№ ${b.no}</span></span></div></div>
+        </div>
+        <div class="pp-boxes"><div><b>CUSTOMER:</b>To NTI · Noblesse Trading</div><div></div></div>
+        <div class="pp-lines"><div class="hd"><span>&nbsp;CASE</span><span>ITEM DESCRIPTION</span></div>${rows}</div>
+        <div class="pp-tq"><span>Total QTY: <span class="v">${cs || ""}</span> &nbsp; ${palletCount(b) || ""} plts &nbsp; ${cs ? `${lb(b.lines.reduce((a, l) => a + lineMils(l), 0))} lb` : ""} &nbsp; ${esc(b.driver)} ${esc(b.time || "")}</span><span>Received by: <span class="v" style="display:inline-block;min-width:1.9in">${esc(b.recvBy || "")}</span></span></div>
+        <div class="pp-terms"><b>TERMS &amp; CONDITIONS:</b> BY SIGNING THIS BILL OF LADING, I CERTIFY THAT I HAVE RECEIVED THE ABOVE PRODUCTS IN GOOD CONDITION AND AT THE PROPER TEMPERATURE. I ALSO ACKNOWLEDGE THAT THE INVOICE WILL BE ISSUED ACCORDINGLY BASED ON THE SIGNED BILL(S) OF LADING(S) AND THAT ANY SHORTAGES MUST BE NOTED AT THE TIME OF DELIVERY OR ANY CLAIMS MUST BE MADE WITHIN 24 HOURS OF RECEIPT OF THE PRODUCTS.</div>
+        <div class="pp-imp"><b>**IMPORTANT: THIS IS PERISHABLE PRODUCT MAINTAIN PROPER TEMPERATURE**</b>We appreciate your business and look forward to providing you with quality products and excellent customer service.</div>
+      </div>`;
+    const paper = ov.querySelector(".paper");
+    const fills = paper.querySelectorAll(".fill");
+    for (let i = fills.length - 1; i >= 0 && paper.getBoundingClientRect().height > 11 * 96 + 0.5; i--) fills[i].remove();
+  };
+
+  // ── Pallet tag: the barcode names the pallet; the scan reads what is on it now ──
+  // P<lot>-<nn>: never a box label (those start 01), so the scanner screen knows a pallet was scanned.
+  const tagCode = (p) => `P${p.lot}-${String(p.no).padStart(2, "0")}`;
+  let showTag = null;
+  const renderTag = () => {
+    let ov = document.getElementById("tagov");
+    if (!showTag) { if (ov) ov.remove(); return; }
+    const p = pal(showTag), pr = PRODUCTS[p.prod];
+    const inStock = S.boxes.filter((b) => b.pallet === p.id && b.status === "in_stock");
+    const all = free(p.id).length && free(p.id).length < inStock.length ? free(p.id) : inStock;
+    const m = all.reduce((a, b) => a + b.mils, 0);
+    if (!ov) { ov = document.createElement("div"); ov.id = "tagov"; ov.className = "overlay"; document.body.append(ov); }
+    ov.innerHTML = `<div class="pv-bar"><button class="btn outline sm" type="button" id="tagclose">Close</button>
+      <span>Printed when the pallet is put away. The barcode holds only <b>${tagCode(p)}</b>; cases and weight are text for people. A real scanner can scan it from this screen: it takes the pallet onto the tapped line.</span></div>
+      <div class="tag">
+        <div class="t1"><img src="${LOGO}" alt="AdamsFoods"><span class="kind">PALLET TAG</span></div>
+        <div class="big"><span class="lot">${esc(p.lot)}</span><span class="pno">PALLET ${p.no}</span></div>
+        <div class="prod">${esc(pr.desc)}</div>
+        <div class="facts">
+          <div><span>Cases</span><b>${all.length}</b></div>
+          <div><span>Net weight</span><b>${lb(m)} lb</b></div>
+          <div><span>Pack date</span><b>${esc(pr.pack)}</b></div>
+          <div><span>EST</span><b>${esc(pr.est)}</b></div>
+          <div><span>Location</span><b>${esc(p.where)}</b></div>
+        </div>
+        <div class="bc"><canvas id="tagbc"></canvas><span class="hri">${esc(tagCode(p))}</span></div>
+        <div class="asof">Cases and weight on the pallet now, 11/09/26. After a partial load, this is the reprint for the boxes left.</div>
+      </div>`;
+    try {
+      bwipjs.toCanvas(ov.querySelector("#tagbc"), { bcid: "code128", text: tagCode(p), scale: 3, height: 16, includetext: false });
+    } catch (err) {
+      ov.querySelector(".bc").insertAdjacentHTML("afterbegin", `<div style="color:#c53030">Barcode could not be drawn here: ${esc(err.message || err)}</div>`);
+    }
+  };
+
+  // A scanner types like a keyboard: a pallet tag code, then Enter.
+  let buf = "", last = 0;
+  window.addEventListener("keydown", (e) => {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    if (e.timeStamp - last > 800) buf = "";
+    last = e.timeStamp;
+    if (e.key === "Enter") {
+      const boxHit = S.boxes.find((b) => b.id === buf.trim().toUpperCase());
+      if (boxHit) { e.preventDefault(); scanBox(boxHit.id); render(); buf = ""; return; }
+      const m = /^P(.+)-(\d{2})$/i.exec(buf.trim());
+      if (m) {
+        e.preventDefault();
+        const p = PALLETS.find((x) => x.lot.toUpperCase() === m[1].toUpperCase() && x.no === Number(m[2]));
+        showTag = null; renderTag();
+        if (p) scanPallet(p.id); else msg = { kind: "bad", text: `No pallet ${buf.trim()} in the freezer.` };
+        render();
+      }
+      buf = ""; return;
+    }
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) buf += e.key;
+  });
+
+  // ── Events ────────────────────────────────────────────────────────────────
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("button, .bline");
+    if (!t) return;
+    if (t.dataset.tag) { showTag = t.dataset.tag; renderTag(); return; }
+    if (t.id === "leavedone") { doneLeaving(); render(); return; }
+    if (t.id === "tagclose") { showTag = null; renderTag(); return; }
+    if (t.dataset.print) { printing = Number(t.dataset.print); renderPrint(); return; }
+    if (t.id === "pvclose") { printing = null; renderPrint(); return; }
+    if (t.dataset.off) { const [no, i, p] = t.dataset.off.split("|"); takeOff(Number(no), Number(i), p); }
+    else if (t.dataset.line) { const [no, i] = t.dataset.line.split("|").map(Number);
+      // Tapping the active line again lets go of it.
+      if (active && active.bol === no && active.line === i) { active = null; msg = { kind: "ok", text: "No line tapped." }; }
+      else { active = { bol: no, line: i }; msg = { kind: "ok", text: `Scanning into BOL ${no}, line ${i + 1}.` }; } }
+    else if (t.dataset.pallet) scanPallet(t.dataset.pallet);
+    else if (t.dataset.box) scanBox(t.dataset.box);
+    else if (t.dataset.open) openPal = openPal === t.dataset.open ? null : t.dataset.open;
+    else if (t.dataset.send) send(Number(t.dataset.send));
+    else if (t.dataset.recv) { const b = bolOf(Number(t.dataset.recv)); b.status = "recv"; b.recvBy = "NTI · reception";
+      msg = { kind: "ok", text: `NTI signed BOL ${b.no} in.`, sub: "On the NTI side this becomes an Incoming record for each lot." }; }
+    else if (t.id === "newbol") { const no = S.nextNo++; S.bols.unshift({ no, date: "11/09/26", status: "loading", loaded: "", driver: "", build: true, lines: [] });
+      active = null; msg = { kind: "ok", text: `BOL ${no} started.`, sub: "Scan pallet tags with no line tapped: each lot becomes its own line." }; }
+    else if (t.id === "reset") { S = seed(); active = null; msg = null; openPal = null; printing = null; }
+    else return;
+    render();
+  });
+  document.addEventListener("change", (e) => {
+    if (!e.target.dataset.sign) return;
+    const [no, f] = e.target.dataset.sign.split("|");
+    bolOf(Number(no))[f] = e.target.value;
+    render();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.classList && e.target.classList.contains("bline") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.target.click(); }
+  });
+
+  render();
+})();
+</script>
+
+</body>
+</html>

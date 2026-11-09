@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salidas Dock Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">
+<style>
+/* Layout: one letter-size dock sign. Six numbered steps in a 2x3 grid, Spanish over English
+   in every block, drawn copies of the real buttons, then a legend and a rules strip. */
+:root {
+  --paper: #ffffff;
+  --desk: #e7ebf0;
+  --ink: #17202b;
+  --ink-2: #3d4856;
+  --muted: #6a7584;
+  --rule: #d5dbe3;
+  --tint: #f3f6f9;
+  /* The app's own button colours, so the sheet matches the screen. */
+  --blue: #3182ce;
+  --blue-ink: #2b6cb0;
+  --blue-tint: #ebf4fc;
+  --teal: #2c7a7b;
+  --teal-tint: #e6f5f4;
+  --red: #c53030;
+  --red-tint: #fdeeee;
+  --green: #2f855a;
+  --green-tint: #e5f4ec;
+  --amber: #a5660f;
+  --amber-tint: #fdf4e3;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body {
+  background: var(--desk); color: var(--ink); font-family: var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px;
+}
+.sheet {
+  background: var(--paper); max-width: 8.5in; margin: 0 auto;
+  padding: 0.3in 0.36in 0.24in; box-shadow: 0 2px 14px rgba(23, 32, 43, 0.14);
+  display: flex; flex-direction: column; gap: 0.075in;
+  font-size: 7.8pt; line-height: 1.22;
+}
+
+/* ── Header ───────────────────────────────────────────── */
+.head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px;
+  border-bottom: 3px solid var(--ink); padding-bottom: 5px; flex-wrap: wrap; }
+.head h1 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 27pt;
+  line-height: 0.9; letter-spacing: 0.01em; text-transform: uppercase; text-wrap: balance; }
+.head h1 .sep { color: var(--blue); padding: 0 0.12em; }
+.head .sub { font-family: var(--display); font-weight: 600; font-size: 11.5pt; margin-top: 3px; color: var(--ink-2); }
+.head .sub i { font-style: normal; color: var(--muted); }
+.head .meta { text-align: right; font-size: 7.6pt; color: var(--muted); line-height: 1.35; }
+.head .meta b { color: var(--ink); font-weight: 700; }
+
+/* ── Step cards ───────────────────────────────────────── */
+.steps { display: grid; grid-template-columns: 1fr 1fr; gap: 0.09in 0.12in; }
+.step { border: 1.25px solid var(--rule); border-radius: 7px; padding: 7px 9px 8px;
+  display: flex; flex-direction: column; gap: 5px; min-width: 0; break-inside: avoid; }
+/* A full-width step: heading, then visual | Spanish | English side by side. */
+.step.wide { display: grid; grid-template-columns: 2.7in minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "h es en" "v es en"; gap: 5px 12px; align-items: start; }
+.step.wide .step-h { grid-area: h; }
+.step.wide .visual { grid-area: v; }
+.step.wide .col.es { grid-area: es; }
+.step.wide .col.en { grid-area: en; }
+.step.wide.one { grid-template-areas: "hv es en"; align-items: center; }
+.step.wide.one .hv { grid-area: hv; display: flex; align-items: center; gap: 7px; }
+.step.wide.one .hv .step-h { margin-right: auto; }
+.step.wide.one .hv h2 { white-space: nowrap; }
+.step.wide .col { display: grid; grid-template-columns: 17px 1fr; gap: 5px; align-items: start; min-width: 0; }
+.step.wide .col p { margin: 0; }
+.step.wide .col.es p { color: var(--ink); font-weight: 500; }
+.step.wide .col.en p { color: var(--ink-2); }
+.step.wide .col b { font-weight: 700; color: var(--ink); }
+.step-h { display: flex; align-items: center; gap: 8px; }
+.num { flex: none; width: 23px; height: 23px; border-radius: 50%; background: var(--ink); color: var(--paper);
+  font-family: var(--display); font-weight: 800; font-size: 13pt; display: grid; place-items: center; line-height: 1; }
+.step-h h2 { margin: 0; font-family: var(--display); font-weight: 700; font-size: 13pt; line-height: 1; text-transform: uppercase; }
+.step-h h2 span { color: var(--muted); font-weight: 600; }
+.visual { background: var(--tint); border-radius: 5px; padding: 6px 7px; display: flex; flex-direction: column; gap: 4px; }
+.say { display: grid; grid-template-columns: 17px 1fr; gap: 2px 5px; align-items: start; }
+.say p { margin: 0; }
+.say .es { color: var(--ink); font-weight: 500; }
+.say .en { color: var(--ink-2); }
+.say b { font-weight: 700; color: var(--ink); }
+.lang { font-family: var(--display); font-weight: 700; font-size: 6.6pt; letter-spacing: 0.08em;
+  border-radius: 3px; text-align: center; padding: 1px 0; margin-top: 1px; }
+.lang.es { background: var(--ink); color: var(--paper); }
+.lang.en { border: 1px solid var(--ink-2); color: var(--ink-2); }
+.tip { border-top: 1px dashed var(--rule); padding-top: 5px; }
+
+/* ── Drawn copies of the app's controls ───────────────── */
+.row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  border-radius: 5px; padding: 3px 8px; font-weight: 600; font-size: 8pt; line-height: 1.12;
+  background: var(--blue); color: #ffffff; white-space: nowrap; }
+.btn small { font-weight: 500; font-size: 6.4pt; opacity: 0.85; }
+.btn.red { background: var(--red); }
+.btn.teal { background: var(--teal); }
+.btn.outline { background: var(--paper); color: var(--ink-2); border: 1px solid #b8c1cc; }
+.btn.outline.teal { color: var(--teal); border-color: var(--teal); background: var(--paper); }
+.btn.ghost { background: transparent; color: var(--blue-ink); padding: 3px 4px; }
+.btn.ghost.teal { color: var(--teal); }
+.btn.ghost.gray { color: var(--ink-2); }
+.btn.ghost.red { color: var(--red); }
+.btn.mini { font-size: 7pt; padding: 2px 5px; }
+.btn.toggle { background: transparent; color: var(--ink); font-family: var(--display); font-weight: 700;
+  letter-spacing: 0.06em; border: 1px dashed #9aa5b3; }
+.badge { display: inline-block; border-radius: 3px; padding: 1px 5px; font-size: 6.8pt; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+.badge.green { background: var(--green-tint); color: var(--green); }
+.badge.amber { background: var(--amber-tint); color: var(--amber); }
+.badge.blue { background: var(--blue-tint); color: var(--blue-ink); }
+.arrow { color: var(--muted); font-weight: 700; }
+.callout { font-size: 7.2pt; color: var(--muted); }
+
+.form { display: grid; grid-template-columns: auto 1fr; gap: 2px 7px; align-items: center; }
+.form .lbl { font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+.form .lbl em { font-style: normal; text-transform: none; }
+.field { background: var(--paper); border: 1px solid #c3ccd6; border-radius: 4px; padding: 2px 6px;
+  font-size: 7.4pt; color: var(--ink); min-height: 15px; padding-block: 1px; font-variant-numeric: tabular-nums; }
+.field.req { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue) inset; font-weight: 600; }
+.field.empty { color: #9aa5b3; }
+.check { grid-column: 1 / -1; display: flex; align-items: center; gap: 5px; font-size: 7.2pt; font-weight: 600;
+  border: 1px solid #c3ccd6; border-radius: 4px; padding: 2px 6px; background: var(--paper); }
+.box { width: 11px; height: 11px; border: 1.5px solid var(--ink-2); border-radius: 2px; flex: none; background: var(--paper);
+  display: grid; place-items: center; font-size: 8px; line-height: 1; color: #ffffff; }
+.box.on { background: var(--blue); border-color: var(--blue); }
+
+.scale { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; }
+.scale svg { width: 100%; height: auto; display: block; }
+.states { display: flex; flex-direction: column; gap: 3px; font-size: 7.4pt; }
+.states div { display: flex; gap: 5px; align-items: baseline; }
+.states .k { font-family: var(--display); font-weight: 700; color: var(--muted); width: 9px; }
+.st-wait { color: var(--ink-2); }
+.st-settle { color: var(--amber); font-weight: 600; }
+.st-done { color: var(--green); font-weight: 700; }
+.recorded { display: flex; gap: 3px; flex-wrap: wrap; }
+.recorded span { border-radius: 4px; padding: 1px 4px; font-size: 7pt; font-weight: 600; background: #e3e8ee; color: var(--ink-2);
+  font-variant-numeric: tabular-nums; }
+.recorded span.new { background: var(--green-tint); color: var(--green); }
+
+.held { border: 1px solid #e7c98f; background: var(--amber-tint); border-radius: 5px; padding: 5px 7px; display: flex; flex-direction: column; gap: 4px; }
+.held .t { font-weight: 700; color: var(--amber); font-size: 7.8pt; }
+
+.dialog { background: var(--paper); border: 1px solid #c3ccd6; border-radius: 5px; padding: 5px 7px; display: flex; flex-direction: column; gap: 4px; }
+.dialog .t { font-weight: 700; font-size: 7.8pt; }
+.choices { display: grid; grid-template-columns: auto 1fr; gap: 2px 6px; align-items: center; font-size: 7.2pt; color: var(--ink-2); }
+.choices .btn { justify-self: start; }
+.choices3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.choices3 div { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; font-size: 6.6pt; color: var(--ink-2); line-height: 1.15; }
+
+.tagwrap { display: grid; grid-template-columns: 74px 1fr; gap: 9px; align-items: center; }
+.tagwrap svg { width: 100%; height: auto; display: block; }
+
+/* ── Legend: the buttons on each pallet row afterwards ── */
+.later { border: 1.25px solid var(--rule); border-radius: 7px; padding: 6px 9px 7px; display: flex; flex-direction: column; gap: 5px; }
+.later h2 { margin: 0; font-family: var(--display); font-weight: 700; font-size: 12.5pt; text-transform: uppercase; line-height: 1; }
+.later h2 span { color: var(--muted); font-weight: 600; }
+.palletrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: var(--tint); border-radius: 5px; padding: 5px 7px;
+  font-size: 7.4pt; }
+.palletrow .lot { font-weight: 700; color: var(--blue-ink); }
+.palletrow .qty { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+.legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 12px; }
+.legend div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.legend .name { font-weight: 700; font-size: 7.6pt; }
+.legend .name span { color: var(--muted); font-weight: 600; }
+.legend .name .chip { font-size: 7.4pt; padding: 0 5px; margin-left: -5px; }
+.legend .name .chip.outline { margin-left: 0; color: var(--blue-ink); border-color: var(--blue); }
+.legend .name .chip.ghost.teal { color: var(--teal); } .legend .name .chip.ghost.red { color: var(--red); } .legend .name .chip.ghost.gray { color: var(--ink-2); } .legend .name .chip.ghost { color: var(--blue-ink); }
+.legend .es { font-size: 7.2pt; color: var(--ink); }
+.legend .en { font-size: 7.2pt; color: var(--ink-2); }
+
+/* ── Rules strip ──────────────────────────────────────── */
+.rules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border: 2px solid var(--ink); border-radius: 7px; overflow: hidden; }
+.rules div { padding: 5px 9px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rules div + div { border-left: 1px solid var(--rule); }
+.rules .h { font-family: var(--display); font-weight: 800; font-size: 10.5pt; text-transform: uppercase; line-height: 1.05; }
+.rules .es { font-size: 7.6pt; font-weight: 500; }
+.rules .en { font-size: 7.6pt; color: var(--ink-2); }
+.foot { display: flex; justify-content: space-between; gap: 10px; font-size: 6.8pt; color: var(--muted); flex-wrap: wrap; }
+
+/* Phone width: stack everything. */
+@media (max-width: 720px) {
+  .sheet { padding: 18px 14px; font-size: 10.5pt; }
+  .steps, .legend, .rules, .step.wide { grid-template-columns: 1fr; }
+  .step.wide { grid-template-areas: "h" "v" "es" "en"; }
+  .step.wide.one { grid-template-areas: "hv" "es" "en"; }
+  .step.wide.one .hv { flex-wrap: wrap; }
+  .rules div + div { border-left: 0; border-top: 1px solid var(--rule); }
+  .head h1 { font-size: 28pt; }
+  .head .meta { text-align: left; }
+}
+
+/* Print: exactly one US Letter page. */
+@page { size: letter portrait; margin: 0; }
+@media print {
+  body { background: var(--paper); padding: 0; }
+  .sheet { box-shadow: none; max-width: none; width: 8.5in; height: 11in; overflow: hidden; margin: 0; }
+}
+</style>
+</head>
+<body>
+<main class="sheet">
+  <header class="head">
+    <div>
+      <h1>Salidas<span class="sep">/</span>Outgoing</h1>
+      <div class="sub">Cómo pesar y etiquetar una tarima <i>· How to weigh and tag a pallet</i></div>
+    </div>
+    <div class="meta">
+      <b>Noblesse Trading</b> · Andén de salida / Outgoing dock<br>
+      Lote / Lot: <b>N26310-02</b> = año 26 · día 310 · núm. 02 · Nov 2026
+    </div>
+  </header>
+
+    <article class="step wide one">
+      <div class="hv">
+        <div class="step-h"><div class="num">1</div><h2>Abrir <span>/ Open</span></h2></div>
+        <span class="btn toggle mini">ES</span>
+        <span class="btn">Pesar cajas terminadas<small>Weigh finished boxes</small></span>
+      </div>
+      <div class="col es"><span class="lang es">ES</span><p>En Noblesse, abra la pestaña <b>Salidas</b>. <b>ES</b> cambia a español (<b>EN</b> regresa a inglés). Toque <b>Pesar cajas terminadas</b>.</p></div>
+      <div class="col en"><span class="lang en">EN</span><p>In Noblesse, open the <b>Outgoing</b> tab. <b>ES</b> switches to Spanish (<b>EN</b> switches back). Tap <b>Weigh finished boxes</b>.</p></div>
+    </article>
+
+  <section class="steps">
+    <article class="step">
+      <div class="step-h"><div class="num">2</div><h2>Datos <span>/ Pallet details</span></h2></div>
+      <div class="visual">
+        <div class="form">
+          <span class="lbl">Lote · Lot</span><span class="field req">N26310-02 ▾</span>
+          <span class="lbl">Producto <em>(opcional)</em></span><span class="field empty">—</span>
+          <span class="check"><span class="box"></span>Va al congelador de AF para otro proceso · <span style="font-weight:500;color:var(--muted)">AF freezer</span></span>
+          <span class="lbl">Destino <em>(opcional)</em></span><span class="field">ADAMS FOODS</span>
+          <span class="lbl">Cajas esperadas</span><span class="field" style="width:46px">80</span>
+        </div>
+        <div class="row"><span style="flex:1"></span><span class="btn">Empezar a pesar<small>Start weighing</small></span></div>
+      </div>
+      <div class="say">
+        <span class="lang es">ES</span>
+        <p class="es">Elija el <b>Lote</b> del que salieron las cajas (obligatorio). Producto, Destino y Cajas esperadas son opcionales. ¿Va al congelador de AF? Marque la casilla. Toque <b>Empezar a pesar</b>.</p>
+        <span class="lang en">EN</span>
+        <p class="en">Pick the <b>Lot</b> the boxes came out of (required). Item, Going to and Boxes expected are optional. Going to the AF freezer? Tick the box. Tap <b>Start weighing</b>.</p>
+      </div>
+    </article>
+    <article class="step">
+      <div class="step-h"><div class="num">3</div><h2>Pesar <span>/ Weigh</span></h2></div>
+      <div class="visual">
+        <div class="scale">
+          <svg viewBox="0 0 112 78" role="img" aria-label="Una caja en la báscula / A box on the scale">
+            <rect x="34" y="8" width="44" height="30" rx="2" fill="#c89a5b" stroke="#8a6531" stroke-width="1.2"/>
+            <path d="M34 18 H78" stroke="#8a6531" stroke-width="1" fill="none"/>
+            <rect x="46" y="22" width="20" height="10" rx="1" fill="#ffffff" stroke="#8a6531" stroke-width="0.8"/>
+            <rect x="12" y="38" width="88" height="7" rx="2" fill="#9aa5b3"/>
+            <rect x="52" y="45" width="8" height="10" fill="#6a7584"/>
+            <rect x="22" y="55" width="68" height="20" rx="3" fill="#17202b"/>
+            <text x="56" y="69.5" text-anchor="middle" font-family="Barlow, Arial, sans-serif" font-weight="700" font-size="11" fill="#7ee2a8">41.25 lb</text>
+          </svg>
+          <div class="states">
+            <div><span class="k">1</span><span class="st-wait">Ponga una caja en la báscula</span></div>
+            <div><span class="k">2</span><span class="st-settle">Estabilizando…</span></div>
+            <div><span class="k">3</span><span class="st-done">Registrada — retire la caja</span></div>
+            <div class="recorded"><span class="new">41.25</span><span>40.80</span><span>41.65</span><span>40.95</span></div>
+          </div>
+        </div>
+        <div class="row">
+          <span class="btn mini">Conectar báscula<small>Connect scale</small></span>
+          <span class="btn outline mini">Elegir puerto<small>Choose port</small></span>
+          <span style="flex:1"></span>
+          <span class="btn ghost mini">Escribir los pesos<small>Type weights instead</small></span>
+        </div>
+      </div>
+      <div class="say">
+        <span class="lang es">ES</span>
+        <p class="es">Toque <b>Conectar báscula</b> (si no conecta, <b>Elegir puerto</b>). Ponga <b>una caja a la vez</b>; cuando diga <b>Registrada — retire la caja</b>, quítela. ¿Sin báscula? <b>Escribir los pesos</b>: solo dígitos, <b>4061 = 40.61</b>, Enter.</p>
+        <span class="lang en">EN</span>
+        <p class="en">Tap <b>Connect scale</b> (won't connect? <b>Choose port</b>). Put on <b>one box at a time</b>; when it says <b>Recorded — take the box off</b>, lift it. No scale? <b>Type weights instead</b>: digits only, <b>4061 = 40.61</b>, Enter.</p>
+      </div>
+    </article>
+    <article class="step">
+      <div class="step-h"><div class="num">4</div><h2>Terminar <span>/ Finish the pallet</span></h2></div>
+      <div class="visual">
+        <div class="row">
+          <span class="badge green">todo guardado · all saved</span>
+          <span style="flex:1"></span>
+          <span class="btn red">Terminar sesión<small>Stop session</small></span>
+        </div>
+        <div class="dialog">
+          <div class="row" style="gap:5px"><span class="box on">✓</span><span style="font-size:7.4pt;font-weight:600">Imprimir la etiqueta de la tarima · Print the pallet tag</span></div>
+          <div class="choices3">
+            <div><span class="btn teal mini">Siguiente tarima<small>Next pallet</small></span><span>Mismo lote, otra tarima<br>Same lot, new pallet</span></div>
+            <div><span class="btn mini">Terminar sesión<small>Stop session</small></span><span>Listo<br>Done</span></div>
+            <div><span class="btn outline mini">Dejarla abierta<small>Leave it open</small></span><span>Regresa después<br>Coming back</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="say">
+        <span class="lang es">ES</span>
+        <p class="es">Tarima llena: espere <b>todo guardado</b> y toque <b>Terminar sesión</b> (rojo). Deje marcada <b>Imprimir la etiqueta</b>. Esto cierra la tarima, <b>no el lote</b>.</p>
+        <span class="lang en">EN</span>
+        <p class="en">Pallet full: wait for <b>all saved</b>, then tap <b>Stop session</b> (red). Keep <b>Print the pallet tag</b> ticked. This closes the pallet, <b>not the lot</b>.</p>
+      </div>
+    </article>
+    <article class="step">
+      <div class="step-h"><div class="num">5</div><h2>Etiqueta <span>/ Pallet tag</span></h2></div>
+      <div class="visual">
+        <div class="tagwrap">
+          <svg viewBox="0 0 92 118" role="img" aria-label="Dos etiquetas en una hoja, cortar en la línea / Two tags on one sheet, cut on the line">
+            <rect x="1" y="1" width="90" height="116" rx="2" fill="#ffffff" stroke="#9aa5b3" stroke-width="1"/>
+            <g fill="#17202b">
+              <rect x="22" y="7" width="48" height="4" rx="1"/>
+              <rect x="8" y="15" width="34" height="2.4" rx="1" fill="#6a7584"/>
+              <rect x="52" y="14" width="32" height="5" rx="1"/>
+            </g>
+            <g stroke="#9aa5b3" stroke-width="0.7" fill="none">
+              <rect x="8" y="23" width="76" height="28"/>
+              <path d="M8 30 H84 M8 37 H84 M8 44 H84 M23 23 V51 M70 23 V51"/>
+            </g>
+            <path d="M0 59 H92" stroke="#c53030" stroke-width="1.4" stroke-dasharray="4 3"/>
+            <g fill="#17202b">
+              <rect x="22" y="66" width="48" height="4" rx="1"/>
+              <rect x="8" y="74" width="34" height="2.4" rx="1" fill="#6a7584"/>
+              <rect x="52" y="73" width="32" height="5" rx="1"/>
+            </g>
+            <g stroke="#9aa5b3" stroke-width="0.7" fill="none">
+              <rect x="8" y="82" width="76" height="28"/>
+              <path d="M8 89 H84 M8 96 H84 M8 103 H84 M23 82 V110 M70 82 V110"/>
+            </g>
+            <g transform="translate(78 53)" fill="none" stroke="#c53030" stroke-width="1.2">
+              <circle cx="0" cy="3" r="2.3"/><circle cx="0" cy="9" r="2.3"/>
+              <path d="M2 4 L11 7.5 M2 8 L11 4.5"/>
+            </g>
+          </svg>
+          <div class="states">
+            <div><span class="badge blue">1</span><span>Se queda aquí · Stays here</span></div>
+            <div style="color:var(--red);font-weight:700">✂ Cortar aquí · Cut here</div>
+            <div><span class="badge blue">2</span><span>Va con el chofer · Goes with the driver</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="say">
+        <span class="lang es">ES</span>
+        <p class="es">Salen <b>dos etiquetas</b> en una hoja. Corte en la <b>línea punteada</b>: una se queda aquí y la otra va con el chofer. ¿No se abrió? Permita ventanas emergentes.</p>
+        <span class="lang en">EN</span>
+        <p class="en"><b>Two tags</b> print on one sheet. Cut on the <b>dashed line</b>: one stays here, the other goes with the driver. Nothing opened? Allow pop-ups.</p>
+      </div>
+    </article>
+  </section>
+
+    <article class="step wide">
+      <div class="step-h"><div class="num">!</div><h2>Si la pantalla pregunta <span>/ If the screen asks</span></h2></div>
+      <div class="visual">
+        <div class="held">
+          <span class="t">Exactamente igual que la caja anterior · Same as the box before</span>
+          <div class="row">
+            <span class="btn outline mini">Misma caja — omitirla<small>Same box — skip it</small></span>
+            <span class="btn mini">Registrar 41.25 lb<small>Record 41.25 lb</small></span>
+          </div>
+        </div>
+      </div>
+      <div class="col es"><span class="lang es">ES</span><p><b>Mismo peso que la anterior:</b> si es la misma caja (etiqueta rota o repesaje), toque <b>Misma caja — omitirla</b>; si es otra caja, regístrela. <b>Mucho más pesada o ligera:</b> revise el punto decimal. ¿Caja equivocada? <b>Deshacer la última</b>.</p></div>
+      <div class="col en"><span class="lang en">EN</span><p><b>Same weight as the last box:</b> if it is the same box (torn label or re-weigh), tap <b>Same box — skip it</b>; a different box, record it. <b>Much heavier or lighter:</b> check the decimal point. Wrong box? <b>Undo last</b>.</p></div>
+    </article>
+
+  <section class="later">
+    <h2>Después, en la lista <span>/ Later, in the list</span></h2>
+    <div class="legend">
+      <div><span class="name"><span class="btn ghost mini chip">Continuar pesando</span> <span>/ Carry on weighing</span></span>
+        <span class="es">Seguir una tarima abierta.</span><span class="en">Resume a pallet left open.</span></div>
+      <div><span class="name"><span class="btn ghost teal mini chip">Siguiente tarima</span> <span>/ Next pallet</span></span>
+        <span class="es">Otra tarima, mismos datos.</span><span class="en">Another pallet, same details.</span></div>
+      <div><span class="name"><span class="btn ghost mini chip">Imprimir etiqueta</span> <span>/ Print tag</span></span>
+        <span class="es">Volver a imprimir la etiqueta.</span><span class="en">Reprint the tag.</span></div>
+      <div><span class="name"><span class="btn ghost gray mini chip">Reabrir</span> <span>/ Reopen</span></span>
+        <span class="es">Se cerró por error.</span><span class="en">It was closed by mistake.</span></div>
+      <div><span class="name"><span class="btn ghost red mini chip">Marcar</span> <span>/ Flag</span></span>
+        <span class="es">Algo está mal. No borra nada.</span><span class="en">Something is wrong. Deletes nothing.</span></div>
+      <div><span class="name"><span class="btn ghost mini chip">+ Chofer</span> <span>/ + Driver</span></span>
+        <span class="es">Nombre del chofer del envío.</span><span class="en">Driver's name for the shipment.</span></div>
+      <div><span class="name"><span class="btn outline mini chip">Imprimir día</span> <span>/ Print day</span></span>
+        <span class="es">La hoja de salidas del día.</span><span class="en">The day's outgoing sheet.</span></div>
+      <div><span class="name">Doble clic <span>/ Double-click</span></span>
+        <span class="es">Ver las cajas de la tarima.</span><span class="en">See the pallet's boxes.</span></div>
+    </div>
+  </section>
+
+  <section class="rules">
+    <div>
+      <span class="h">No cierre la pantalla <span style="color:var(--muted)">/ Don't close it</span></span>
+      <span class="es">Si dice <b>sin enviar</b>, no recargue ni cierre. Espere <b>todo guardado</b>.</span>
+      <span class="en">If it says <b>not yet sent</b>, don't refresh or close. Wait for <b>all saved</b>.</span>
+    </div>
+    <div>
+      <span class="h">Una caja a la vez <span style="color:var(--muted)">/ One box at a time</span></span>
+      <span class="es">Nunca dos cajas juntas en la báscula.</span>
+      <span class="en">Never two boxes on the scale together.</span>
+    </div>
+    <div>
+      <span class="h">¿Algo mal? <span style="color:var(--muted)">/ Something wrong?</span></span>
+      <span class="es">Toque <b>Marcar</b> y escriba qué pasó. Avise a recepción.</span>
+      <span class="en">Tap <b>Flag</b> and say what happened. Tell reception.</span>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scan Station Test Labels</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a sheet of label cards, two across on paper, each a test case: barcode, printed numbers, what should happen.
+   One deliberate light look: scanners read black bars on white, so the page never goes dark. */
+:root {
+  --paper: #ffffff;
+  --ground: #eef1f4;
+  --ink: #141a21;
+  --ink-2: #47515e;
+  --rule: #d6dce3;
+  --ok: #23774b;
+  --ok-tint: #e6f4ec;
+  --no: #b3261e;
+  --no-tint: #fbeceb;
+  --mark: #2b6cb0;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Barlow", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body {
+  background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.4;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 40px;
+}
+.wrap { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+header h1 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 34px; line-height: 1; text-transform: uppercase; letter-spacing: 0.01em; text-wrap: balance; }
+header p { margin: 6px 0 0; color: var(--ink-2); max-width: 68ch; }
+.howto { background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 24px; }
+.howto h2 { grid-column: 1 / -1; margin: 0; font-family: var(--display); font-size: 18px; text-transform: uppercase; letter-spacing: 0.03em; }
+.howto ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.howto b { font-weight: 700; }
+code, .mono { font-family: var(--mono); font-size: 0.92em; }
+section.group { display: flex; flex-direction: column; gap: 10px; break-inside: avoid-page; }
+.group-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; border-bottom: 2px solid var(--ink); padding-bottom: 4px; }
+.group-h .letter { font-family: var(--display); font-weight: 800; font-size: 26px; line-height: 1; }
+.group-h h2 { margin: 0; font-family: var(--display); font-weight: 700; font-size: 20px; text-transform: uppercase; letter-spacing: 0.02em; }
+.group-h p { margin: 0; color: var(--ink-2); flex: 1 1 280px; min-width: 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 12px; }
+.card { background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px 12px; display: flex; flex-direction: column; gap: 8px; break-inside: avoid; min-width: 0; }
+.card-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.card-top .name { font-weight: 700; font-size: 15px; }
+.test { font-family: var(--display); font-weight: 700; font-size: 11px; letter-spacing: 0.12em; color: var(--no); border: 1.5px solid var(--no); border-radius: 3px; padding: 0 5px; white-space: nowrap; }
+.bars { background: #ffffff; padding: 8px 10px 4px; display: flex; justify-content: center; overflow: hidden; }
+.bars canvas { max-width: 100%; height: auto; image-rendering: pixelated; }
+.bars .fail { color: var(--no); font-size: 13px; padding: 14px 0; }
+.hri { font-family: var(--mono); font-size: 13px; text-align: center; word-break: break-all; user-select: all; color: var(--ink); }
+.expect { font-size: 13px; border-radius: 4px; padding: 5px 8px; display: flex; gap: 6px; align-items: baseline; }
+.expect.ok { background: var(--ok-tint); color: var(--ok); }
+.expect.no { background: var(--no-tint); color: var(--no); }
+.expect b { font-weight: 700; }
+.note { font-size: 12.5px; color: var(--ink-2); margin: -2px 0 0; }
+.keypad { background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.keypad h2 { margin: 0; font-family: var(--display); font-size: 18px; text-transform: uppercase; letter-spacing: 0.03em; }
+.keypad table { border-collapse: collapse; width: 100%; min-width: 560px; }
+.keypad td, .keypad th { text-align: left; padding: 6px 8px; border-top: 1px solid var(--rule); vertical-align: top; font-size: 13.5px; }
+.keypad th { font-weight: 600; color: var(--ink-2); border-top: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.scroll { overflow-x: auto; }
+@media print {
+  body { background: #ffffff; padding: 0; }
+  .wrap { max-width: none; gap: 14px; }
+  .howto, .keypad { break-inside: avoid; }
+  .cards { grid-template-columns: 1fr 1fr; }
+  .card { border-color: #9aa3ad; }
+  @page { size: letter; margin: 10mm; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Scan Station Test Labels</h1>
+    <p>Real GS1-128 box labels with made-up products, for testing Lot Registration and the scan station on a test database. Every label here was read by the server's own barcode parser before this page was made, so the "Expect" line is what the app will actually do. Print the page, or scan straight off a screen if your scanner reads screens.</p>
+  </header>
+
+  <div class="howto">
+    <h2>Before you start</h2>
+    <ol>
+      <li>Use a <b>Neon branch</b> of the database, never production. Start the server with <code>DB_CONNECTION_STRING='…branch…' npm start</code>.</li>
+      <li>On the tablet: <b>Lot Registration</b>, register two lots (call them lot 1 and lot 2), add an item to each, then <b>Connect to receiving station</b>.</li>
+      <li>On the station computer: <b>Scan Station</b> open and focused, scanner plugged in.</li>
+    </ol>
+    <ol start="4">
+      <li>Point the station at <b>lot 1</b> and work through the groups in order. Group B also needs lot 2.</li>
+      <li>Every label carries a red <b>TEST</b> tag. The products are made up, so never stick these on real boxes.</li>
+    </ol>
+  </div>
+
+  <div id="groups"></div>
+
+  <div class="keypad">
+    <h2>Keypad tests (no label needed)</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Do this on the tablet</th><th>Expect</th></tr></thead>
+        <tbody>
+          <tr><td>Keypad: type <b>40.00</b>, Add box. Then type <b>40.00</b> again.</td><td>"Same weight as the last box." <b>Same box, don't add</b> adds nothing; <b>Different box, add it</b> adds it.</td></tr>
+          <tr><td>After the ten group A boxes are on the item, type <b>411</b>.</td><td>"Is that weight right?" about 10× heavier. <b>Let me retype</b> puts 411 back on the keypad.</td></tr>
+          <tr><td>Type <b>4.1</b> on the same item.</td><td>The same question, about 10× lighter.</td></tr>
+          <tr><td>Copy the printed numbers from any card in group A into <b>Barcode will not scan?</b>, with or without spaces, then Add box.</td><td>On a fresh lot it lands with the yellow <b>typed</b> badge and keeps its serial. If that box is already on another lot, it is refused like a scan.</td></tr>
+          <tr><td>Press Enter on the scanner while a question is open.</td><td>Nothing is added: focus is on the safe button.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bwip-js@4.5.1/dist/bwip-js-min.js"></script>
+<script>
+const LABELS = [{"g":"A","n":"Beef box 1","h":"(01)00012345600012(3201)000412(21)TEST001","e":"ok","note":"","w":"41.2","s":"TEST001","pd":null,"err":null},{"g":"A","n":"Beef box 2","h":"(01)00012345600012(3201)000408(21)TEST002","e":"ok","note":"","w":"40.8","s":"TEST002","pd":null,"err":null},{"g":"A","n":"Beef box 3","h":"(01)00012345600012(3201)000416(21)TEST003","e":"ok","note":"","w":"41.6","s":"TEST003","pd":null,"err":null},{"g":"A","n":"Beef box 4","h":"(01)00012345600012(3201)000399(21)TEST004","e":"ok","note":"","w":"39.9","s":"TEST004","pd":null,"err":null},{"g":"A","n":"Beef box 5","h":"(01)00012345600012(3201)000423(21)TEST005","e":"ok","note":"","w":"42.3","s":"TEST005","pd":null,"err":null},{"g":"A","n":"Beef box 6","h":"(01)00012345600012(3201)000405(21)TEST006","e":"ok","note":"","w":"40.5","s":"TEST006","pd":null,"err":null},{"g":"A","n":"Beef box 7","h":"(01)00012345600012(3201)000410(21)TEST007","e":"ok","note":"","w":"41.0","s":"TEST007","pd":null,"err":null},{"g":"A","n":"Beef box 8","h":"(01)00012345600012(3201)000419(21)TEST008","e":"ok","note":"","w":"41.9","s":"TEST008","pd":null,"err":null},{"g":"A","n":"Beef box 9","h":"(01)00012345600012(3201)000402(21)TEST009","e":"ok","note":"","w":"40.2","s":"TEST009","pd":null,"err":null},{"g":"A","n":"Beef box 10","h":"(01)00012345600012(3201)000414(21)TEST010","e":"ok","note":"","w":"41.4","s":"TEST010","pd":null,"err":null},{"g":"B","n":"Box X (copy 1)","h":"(01)00012345600012(3201)000407(21)TESTX01","e":"ok","note":"Scan once: lands.","w":"40.7","s":"TESTX01","pd":null,"err":null},{"g":"B","n":"Box X (copy 2)","h":"(01)00012345600012(3201)000407(21)TESTX01","e":"dup","note":"Same lot: already on this lot. Other lot: already on lot …","w":"40.7","s":"TESTX01","pd":null,"err":null},{"g":"C","n":"Pork, same serial as Beef box 1","h":"(01)00012345600029(3201)000384(21)TEST001","e":"ok","note":"Different GTIN, so a different box.","w":"38.4","s":"TEST001","pd":null,"err":null},{"g":"D","n":"Kilogram label","h":"(01)00098765400012(3102)001870(21)TESTKG1","e":"ok","note":"Stored in pounds.","w":"41.226","s":"TESTKG1","pd":null,"err":null},{"g":"E","n":"No serial (1)","h":"(01)00012345600012(3201)000410","e":"ok","note":"No serial: never refused as a duplicate.","w":"41.0","s":null,"pd":null,"err":null},{"g":"E","n":"No serial (2)","h":"(01)00012345600012(3201)000410","e":"ok","note":"Identical, still accepted.","w":"41.0","s":null,"pd":null,"err":null},{"g":"F","n":"With pack date and lot","h":"(01)00012345600012(3201)000409(13)261105(10)LOT77(21)TESTPD1","e":"ok","note":"Tests field separators.","w":"40.9","s":"TESTPD1","pd":"2026-11-05","err":null},{"g":"G","n":"No weight","h":"(01)00012345600012(21)TESTNW1","e":"NO_WEIGHT","note":"Not a box label.","w":null,"s":null,"pd":null,"err":"NO_WEIGHT"},{"g":"G","n":"Impossible weight","h":"(01)00012345600012(3201)999999(21)TESTBIG","e":"BAD_WEIGHT","note":"99,999.9 lb.","w":null,"s":null,"pd":null,"err":"BAD_WEIGHT"}];
+const GROUPS = {
+  A: ["Ordinary boxes", "Ten different boxes of one product. Scan all ten onto lot 1: each lands and the count reaches 10."],
+  B: ["One box, two copies", "The same box printed twice. Copy 1 lands. Copy 2 on lot 1 is refused as already on this lot. Point the station at lot 2 and scan it: refused, naming lot 1. Remove it on lot 1 and scan it onto lot 2: accepted. Then try Restore on lot 1: refused, naming lot 2."],
+  C: ["Same serial, different product", "Shares its serial with Beef box 1 but has another product code, so it is a different box and lands even with Beef box 1 in stock."],
+  D: ["Kilogram label", "Weighed in kilograms on the label, stored in pounds."],
+  E: ["No serial", "Labels without a serial cannot be told apart, so both copies land. This is why the keypad asks its questions."],
+  F: ["Pack date and label lot", "Extra fields that need a separator inside the barcode. Lands with its pack date."],
+  G: ["Should be refused", "Neither of these is a box label. Each is refused with the message shown, and nothing is added."],
+};
+const MESSAGES = {
+  NO_WEIGHT: "That label has no weight on it, so it is not a box label.",
+  BAD_WEIGHT: "The weight on that label is not a plausible box weight.",
+};
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const root = document.getElementById("groups");
+for (const [letter, [title, blurb]] of Object.entries(GROUPS)) {
+  const sec = el("section", "group");
+  const h = el("div", "group-h");
+  h.append(el("span", "letter", letter), el("h2", null, title), el("p", null, blurb));
+  const cards = el("div", "cards");
+  for (const l of LABELS.filter((x) => x.g === letter)) {
+    const card = el("div", "card");
+    const top = el("div", "card-top");
+    top.append(el("span", "name", l.n), el("span", "test", "TEST"));
+    const bars = el("div", "bars");
+    const canvas = document.createElement("canvas");
+    try {
+      bwipjs.toCanvas(canvas, { bcid: "gs1-128", text: l.h, scale: 2, height: 14, includetext: false, paddingwidth: 10 });
+      bars.append(canvas);
+    } catch (e) {
+      bars.append(el("div", "fail", "Barcode could not be drawn: " + (e.message || e)));
+    }
+    const hri = el("div", "hri", l.h);
+    const ex = el("div", "expect " + (l.err ? "no" : "ok"));
+    if (l.err) { ex.append(el("b", null, "Refused:"), el("span", null, MESSAGES[l.err] || l.err)); }
+    else {
+      const parts = [l.w + " lb", l.s ? "serial " + l.s : "no serial"];
+      if (l.pd) parts.push("packed " + l.pd);
+      ex.append(el("b", null, "Lands:"), el("span", null, parts.join(" · ")));
+    }
+    card.append(top, bars, hri, ex);
+    if (l.note) card.append(el("p", "note", l.note));
+    cards.append(card);
+  }
+  sec.append(h, cards);
+  root.append(sec);
+}
+</script>
+
+</body>
+</html>

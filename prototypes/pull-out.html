@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pull Out Prototype</title>
+<style>
+/* Layout: the app's own look (Chakra blues and greys, system font). Left: the pull list being built.
+   Right: what is in stock and what has gone out. One light look on purpose: it mirrors the app. */
+:root {
+  --bg: #f4f6f9;
+  --card: #ffffff;
+  --ink: #1a202c;
+  --ink-2: #4a5568;
+  --muted: #718096;
+  --rule: #e2e8f0;
+  --blue: #3182ce;
+  --blue-ink: #2b6cb0;
+  --blue-tint: #ebf8ff;
+  --teal: #2c7a7b;
+  --teal-tint: #e6fffa;
+  --green: #2f855a;
+  --green-tint: #f0fff4;
+  --amber: #b7791f;
+  --amber-tint: #fffaf0;
+  --red: #c53030;
+  --red-tint: #fff5f5;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 18px 40px;
+}
+button { font: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #90cdf4; outline-offset: 1px; }
+.top { max-width: 1180px; margin: 0 auto 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.top h1 { margin: 0; font-size: 22px; font-weight: 700; }
+.proto { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--amber); background: var(--amber-tint); border: 1px solid #f6e05e; border-radius: 4px; padding: 2px 7px; }
+.top .reset { margin-left: auto; }
+.grid { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 880px) { .grid { grid-template-columns: 1fr; } }
+.col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.card { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.card h2 small { font-weight: 500; color: var(--muted); font-size: 13px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.btn { border: 1px solid transparent; border-radius: 6px; padding: 7px 14px; font-weight: 600; background: var(--blue); color: #ffffff; }
+.btn:hover { background: var(--blue-ink); }
+.btn:disabled { background: #a0aec0; cursor: not-allowed; }
+.btn.outline { background: var(--card); color: var(--blue-ink); border-color: #90cdf4; }
+.btn.outline:hover { background: var(--blue-tint); }
+.btn.ghost { background: transparent; color: var(--ink-2); padding: 4px 8px; }
+.btn.ghost:hover { background: #edf2f7; }
+.btn.red { background: var(--red); }
+.btn.teal { background: var(--teal); }
+.btn.sm { padding: 4px 10px; font-size: 13px; }
+input[type=text], select { font: inherit; border: 1px solid #cbd5e0; border-radius: 6px; padding: 6px 10px; background: var(--card); color: var(--ink); min-width: 0; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid #cbd5e0; border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--card); padding: 8px 16px; font-weight: 600; color: var(--ink-2); }
+.seg button + button { border-left: 1px solid #cbd5e0; }
+.seg button[aria-pressed=true] { background: var(--blue); color: #ffffff; }
+.seg button[aria-pressed=true].nti { background: var(--teal); }
+
+.scanzone { border: 2px dashed #90cdf4; border-radius: 8px; padding: 14px; background: var(--blue-tint); display: flex; flex-direction: column; gap: 8px; }
+.scanzone.listening { border-style: solid; }
+.last { border-radius: 6px; padding: 10px 12px; font-size: 15px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.last small { font-weight: 500; font-size: 13px; }
+.last.ok { background: var(--green-tint); color: var(--green); border: 1px solid #9ae6b4; }
+.last.warn { background: var(--amber-tint); color: var(--amber); border: 1px solid #fbd38d; }
+.last.bad { background: var(--red-tint); color: var(--red); border: 1px solid #feb2b2; }
+.last.idle { background: var(--card); color: var(--muted); border: 1px solid var(--rule); font-weight: 500; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-family: var(--mono); font-size: 12px; border: 1px solid #cbd5e0; background: var(--card); border-radius: 4px; padding: 3px 7px; color: var(--ink-2); }
+.chip:hover { border-color: var(--blue); color: var(--blue-ink); }
+
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--rule); vertical-align: middle; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; border-top: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.scroll { overflow-x: auto; }
+.group-row td { background: #f7fafc; font-weight: 600; font-size: 13px; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.badge { display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 3px; padding: 1px 5px; vertical-align: 1px; }
+.badge.old { background: #feebc8; color: #9c4221; }
+.badge.out { background: #edf2f7; color: var(--muted); }
+.badge.nti { background: var(--teal-tint); color: var(--teal); }
+.badge.cust { background: var(--blue-tint); color: var(--blue-ink); }
+.badge.undone { background: var(--red-tint); color: var(--red); }
+.totals { display: flex; justify-content: space-between; align-items: baseline; font-weight: 700; font-variant-numeric: tabular-nums; padding-top: 4px; }
+.empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+.confirm { border: 1px solid #90cdf4; background: var(--blue-tint); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.confirm.err { border-color: #feb2b2; background: var(--red-tint); color: var(--red); }
+.opt { border-top: 1px dashed var(--rule); padding-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.opt label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.decide { font-size: 11px; font-weight: 700; color: var(--amber); text-transform: uppercase; letter-spacing: 0.05em; }
+.stock-lot { border-top: 1px solid var(--rule); padding-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.stock-lot:first-of-type { border-top: 0; padding-top: 0; }
+.stock-lot .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.stock-lot .head b { color: var(--blue-ink); }
+.pallet { display: flex; gap: 8px; align-items: center; font-size: 13px; padding-left: 10px; flex-wrap: wrap; }
+.pallet .where { font-family: var(--mono); background: #edf2f7; border-radius: 3px; padding: 0 5px; }
+.pallet .n { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.ship { border-top: 1px solid var(--rule); padding-top: 8px; display: flex; flex-direction: column; gap: 3px; }
+.ship:first-of-type { border-top: 0; padding-top: 0; }
+.ship.undone .what { text-decoration: line-through; color: var(--muted); }
+.custpick { display: flex; flex-direction: column; gap: 6px; }
+.custlist { display: flex; flex-direction: column; border: 1px solid var(--rule); border-radius: 6px; max-height: 180px; overflow-y: auto; margin-top: 6px; }
+.custlist button { text-align: left; border: 0; border-top: 1px solid var(--rule); background: var(--card); padding: 8px 10px; color: var(--ink); display: flex; justify-content: space-between; gap: 8px; }
+.custlist button:first-child { border-top: 0; }
+.custlist button:hover { background: var(--blue-tint); }
+.custlist button small { color: var(--muted); }
+.custlist .add { color: var(--blue-ink); font-weight: 600; }
+.custlist .typo { background: var(--amber-tint); color: var(--amber); font-size: 13px; padding: 8px 10px; }
+.dest { display: inline-flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; border-radius: 6px; padding: 8px 12px; align-self: flex-start; }
+.dest.cust { background: var(--blue-tint); color: var(--blue-ink); border: 1px solid #90cdf4; }
+.dest.nti { background: var(--teal-tint); color: var(--teal); border: 1px solid #81e6d9; }
+.dest button { font-size: 13px; }
+.dest-bar { display: flex; align-items: center; gap: 8px; font-weight: 600; border-radius: 6px; padding: 6px 10px; }
+.dest-bar.cust { background: var(--blue-tint); color: var(--blue-ink); }
+.dest-bar.nti { background: var(--teal-tint); color: var(--teal); }
+.dest-bar.none { background: var(--amber-tint); color: var(--amber); }
+.bycust { display: flex; flex-direction: column; gap: 3px; font-size: 13px; border-top: 1px dashed var(--rule); padding-top: 8px; }
+.bycust div { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+.try li { margin-bottom: 4px; }
+.try { margin: 0; padding-left: 18px; color: var(--ink-2); }
+.pick { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; background: #fbfcfd; }
+.boxgrid { display: flex; flex-wrap: wrap; gap: 6px; }
+.boxgrid label { display: flex; gap: 5px; align-items: center; border: 1px solid var(--rule); border-radius: 5px; padding: 3px 7px; font-size: 12.5px; background: var(--card); }
+.boxgrid label.on { border-color: var(--blue); background: var(--blue-tint); }
+@media (prefers-reduced-motion: no-preference) { .last { transition: background 0.2s; } }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Pull Out</h1>
+  <span class="proto">Prototype · sample stock · nothing is saved</span>
+  <button class="btn ghost reset" id="reset" type="button">Start over</button>
+</div>
+
+<div class="grid">
+  <div class="col">
+    <div class="card">
+      <div class="row" style="justify-content: space-between">
+        <h2>Why it is going out</h2>
+      </div>
+      <div class="seg" role="group" aria-label="Reason">
+        <button type="button" id="r-customer" aria-pressed="true">Customer order</button>
+        <button type="button" id="r-nti" class="nti" aria-pressed="false">Sent to NTI</button>
+      </div>
+      <div id="customer-fields" class="custpick">
+        <div class="label">Going to</div>
+        <div id="cust-chosen"></div>
+        <div id="cust-picker">
+          <input type="text" id="customer" placeholder="Search the customer list…" autocomplete="off" style="width: 100%">
+          <div class="custlist" id="cust-list"></div>
+          <div class="label" style="margin-top: 4px">Recent</div>
+          <div class="chips" id="cust-recent"></div>
+        </div>
+      </div>
+      <div id="customer-extra" class="opt">
+        <span class="decide" style="grid-column: 1 / -1">Still deciding: keep these?</span>
+        <label>Ship date<input type="text" id="o-date" placeholder="optional"></label>
+        <label>BOL #<input type="text" id="o-bol" placeholder="optional"></label>
+        <label>Driver<input type="text" id="o-driver" placeholder="optional"></label>
+      </div>
+      <div id="nti-note" hidden>
+        <div class="label">Going to</div>
+        <div class="dest nti">NTI · Noblesse Trading</div>
+        <div class="empty">Finishing makes a production order for NTI. Boxes that come back later are a new lot.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Scan boxes onto the list</h2>
+      <div class="scanzone" id="zone">
+        <div class="last idle" id="last">Ready. Scan a box label, or click a sample label below.</div>
+        <div class="row">
+          <input type="text" id="manual" placeholder="…or type / paste a label: (01)…(3201)…(21)…" autocomplete="off" spellcheck="false" style="flex: 1 1 260px; font-family: var(--mono); font-size: 13px">
+          <button class="btn outline sm" id="manual-go" type="button">Add</button>
+        </div>
+        <div class="label">Sample labels (click = scan)</div>
+        <div class="chips" id="samples"></div>
+      </div>
+      <div class="row" style="justify-content: space-between">
+        <button class="btn outline sm" id="open-pick" type="button">Pick from a lot instead…</button>
+        <span class="empty" style="padding: 0">For boxes with no serial, or a whole pallet at once.</span>
+      </div>
+      <div class="pick" id="pick" hidden></div>
+    </div>
+
+    <div class="card">
+      <h2>Pull list <small id="list-count"></small></h2>
+      <div id="list-dest"></div>
+      <div class="scroll"><table id="list" style="min-width: 460px"></table></div>
+      <div class="totals" id="list-total"></div>
+      <div id="finish-area"></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="card">
+      <h2>Things to try</h2>
+      <ol class="try">
+        <li>Scan <span class="mono">TEST003</span>, then scan it again.</li>
+        <li>Scan Box X (<span class="mono">TESTX01</span>), then the pork label with serial <span class="mono">TEST001</span>: same serial, different product, both fine.</li>
+        <li>Scan a no-serial label: it sends you to pick from the lot.</li>
+        <li>Pick from lot 26300-01, pallet 2, <b>Whole pallet</b>.</li>
+        <li>Press <b>Someone else takes TEST005</b>, then finish a list holding TEST005.</li>
+        <li>Pick a customer from the list or Recent. Then type <span class="mono">MOANNA</span>: it asks if you meant MOANA.</li>
+        <li>Finish to a customer, then to NTI. Then Undo one. Watch "By destination".</li>
+        <li>Scan an old-system box (<span class="mono">OLD001</span>): old and new stock on one list.</li>
+      </ol>
+      <div class="row"><button class="btn outline sm" id="race" type="button">Someone else takes TEST005</button></div>
+    </div>
+    <div class="card">
+      <h2>In stock</h2>
+      <div id="stock"></div>
+    </div>
+    <div class="card">
+      <h2>Gone out</h2>
+      <div id="ships"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ── Sample stock ──────────────────────────────────────────────────────────
+  const GTIN = { beef: "00012345600012", pork: "00012345600029", other: "00098765400012", brisket: "00012345600036" };
+  const ITEMS = { [GTIN.beef]: "BEEF CHUCK ROLL", [GTIN.pork]: "PORK BUTT", [GTIN.other]: "BEEF SHORT RIB", [GTIN.brisket]: "BEEF BRISKET" };
+  const mils = (s) => { const [w, f = ""] = String(s).split("."); return Number(w) * 1000 + Number((f + "000").slice(0, 3)); };
+  const lb = (m) => `${Math.floor(m / 1000).toLocaleString()}.${String(m % 1000).padStart(3, "0").replace(/0$/, "")}`;
+
+  const seed = () => {
+    let id = 1;
+    const box = (lot, pallet, gtin, weight, serial, old = false) =>
+      ({ id: id++, lot, pallet, gtin, item: ITEMS[gtin], mils: mils(weight), serial, old, status: "in_stock", shipment: null });
+    return {
+      lots: {
+        "26300-01": { vendor: "TEST VENDOR", pallets: { 1: "A101", 2: "A102" }, old: false },
+        "26300-02": { vendor: "TEST VENDOR", pallets: { 1: "B205" }, old: false },
+        "26290-03": { vendor: "OLD SYSTEM", pallets: { 1: "C310" }, old: true },
+      },
+      boxes: [
+        ...[["41.2", "TEST001"], ["40.8", "TEST002"], ["41.6", "TEST003"], ["39.9", "TEST004"], ["42.3", "TEST005"]]
+          .map(([w, s]) => box("26300-01", 1, GTIN.beef, w, s)),
+        ...[["40.5", "TEST006"], ["41.0", "TEST007"], ["41.9", "TEST008"], ["40.2", "TEST009"], ["41.4", "TEST010"], ["40.7", "TESTX01"]]
+          .map(([w, s]) => box("26300-01", 2, GTIN.beef, w, s)),
+        box("26300-01", 2, GTIN.beef, "41.0", null), box("26300-01", 2, GTIN.beef, "41.0", null), box("26300-01", 2, GTIN.beef, "40.6", null),
+        box("26300-02", 1, GTIN.pork, "38.4", "TEST001"),
+        box("26300-02", 1, GTIN.other, "41.226", "TESTKG1"),
+        ...[["52.1", "OLD001"], ["51.7", "OLD002"], ["53.0", "OLD003"], ["50.9", "OLD004"]]
+          .map(([w, s]) => box("26290-03", 1, GTIN.brisket, w, s, true)),
+      ],
+      list: [],
+      ships: [],
+      // The shared customer list (the same table the NTI Outgoing tab picks from). Sample names.
+      customers: ["MOANA", "SHABUYA", "GANGNAM BBQ", "HANKOOK MARKET", "OCEAN SEAFOOD", "SEOUL GARDEN", "KAYA RESTAURANT"],
+      recent: ["MOANA", "SHABUYA", "HANKOOK MARKET"],
+      nextShip: 1001,
+      nextPo: 412,
+    };
+  };
+  let S = seed();
+  let reason = "customer";
+  let customer = null;      // picked from the list
+  let addingNew = null;     // a name being confirmed as a new customer
+  const fold = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  // Close enough to an existing name that it is probably that customer mistyped.
+  const nearMatch = (name) => {
+    const n = fold(name);
+    if (!n) return null;
+    return S.customers.find((c) => { const f = fold(c);
+      if (f === n) return true;
+      if (Math.abs(f.length - n.length) > 1) return false;
+      let diff = 0; for (let i = 0, j = 0; i < f.length || j < n.length;) {
+        if (f[i] === n[j]) { i++; j++; continue; }
+        diff++; if (diff > 1) return false;
+        if (f.length > n.length) i++; else if (n.length > f.length) j++; else { i++; j++; }
+      }
+      return true; }) || null;
+  };
+  let lastMsg = null;
+  let confirming = false;
+  let finishError = null;
+
+  // ── GS1, enough for these labels: (01) (3201) (3102) (13) (11) (10) (21) ──
+  const GS = String.fromCharCode(29);
+  const FIXED = { "01": 14, "13": 6, "11": 6, "15": 6, "17": 6 };
+  const parse = (text) => {
+    const t = String(text || "").replace(/\s+/g, "");
+    if (!t) return null;
+    const out = {};
+    if (t.startsWith("(")) {
+      const re = /\((\d{2,4})\)([^(]*)/g; let m;
+      while ((m = re.exec(t))) out[m[1]] = m[2];
+    } else {
+      let i = 0;
+      while (i < t.length) {
+        if (t[i] === GS) { i += 1; continue; }
+        let ai = t.slice(i, i + 2), len = FIXED[ai];
+        if (/^3[12]0$/.test(t.slice(i, i + 3))) { ai = t.slice(i, i + 4); len = 6; }
+        if (!len && !["10", "21"].includes(ai)) return null;
+        i += ai.length;
+        let v;
+        if (len) { v = t.slice(i, i + len); i += len; }
+        else { const end = t.indexOf(GS, i); v = end < 0 ? t.slice(i) : t.slice(i, end); i = end < 0 ? t.length : end; }
+        out[ai] = v;
+      }
+    }
+    const w = out["3201"] ? `${Number(out["3201"].slice(0, 5))}.${out["3201"].slice(5)}`
+      : out["3202"] ? `${Number(out["3202"].slice(0, 4))}.${out["3202"].slice(4)}`
+      : out["3102"] ? (Number(out["3102"]) / 100 * 2.20462).toFixed(3) : null;
+    return { gtin: out["01"] || null, serial: out["21"] || null, weight: w };
+  };
+
+  // ── Scanning onto the list ────────────────────────────────────────────────
+  const say = (kind, text, sub = "") => { lastMsg = { kind, text, sub }; };
+  const where = (b) => `${b.lot} · pallet ${b.pallet} (${S.lots[b.lot].pallets[b.pallet]})`;
+  const scan = (raw) => {
+    finishError = null;
+    const p = parse(raw);
+    if (!p || (!p.gtin && !p.serial)) return say("bad", "That barcode could not be read.");
+    if (!p.weight) return say("bad", "That label has no weight on it, so it is not a box label.");
+    if (Number(p.weight) > 2000) return say("bad", "The weight on that label is not a plausible box weight.");
+    if (!p.serial) {
+      openPick(S.boxes.find((b) => b.gtin === p.gtin && b.status === "in_stock")?.lot);
+      return say("warn", "This label has no serial, so it cannot say which box it is.", "Pick the boxes from their lot below.");
+    }
+    const same = S.boxes.filter((b) => b.serial === p.serial && b.gtin === p.gtin);
+    const here = same.find((b) => b.status === "in_stock");
+    if (!here) {
+      const gone = same.find((b) => b.status === "out");
+      if (gone) return say("bad", `${p.serial} already went out.`, `On shipment #${gone.shipment}.`);
+      return say("bad", "No box in stock has this label.", `${p.serial} · ${ITEMS[p.gtin] || p.gtin}`);
+    }
+    if (S.list.includes(here.id)) return say("warn", `${here.serial} is already on this list.`, where(here));
+    S.list.push(here.id);
+    say("ok", `${here.serial} · ${lb(here.mils)} lb`, `${here.item} · ${where(here)}${here.old ? " · old system" : ""}`);
+  };
+
+  // ── Picking from a lot: no-serial boxes and whole pallets ─────────────────
+  let pickLot = null;
+  const openPick = (lot) => { pickLot = lot || pickLot || Object.keys(S.lots)[0]; document.getElementById("pick").hidden = false; };
+  const addBoxes = (ids) => {
+    const fresh = ids.filter((id) => !S.list.includes(id));
+    S.list.push(...fresh);
+    const m = fresh.reduce((a, id) => a + S.boxes.find((b) => b.id === id).mils, 0);
+    say(fresh.length ? "ok" : "warn", fresh.length ? `${fresh.length} box${fresh.length === 1 ? "" : "es"} added · ${lb(m)} lb` : "Those boxes are already on the list.");
+  };
+
+  // ── Finishing ─────────────────────────────────────────────────────────────
+  const listBoxes = () => S.list.map((id) => S.boxes.find((b) => b.id === id));
+  const canFinish = () => S.list.length > 0 && (reason === "nti" || customer);
+  const finish = () => {
+    // One transaction: refused whole if any box is no longer in stock.
+    const gone = listBoxes().filter((b) => b.status !== "in_stock");
+    if (gone.length) {
+      finishError = `${gone.map((b) => b.serial || `box ${b.id}`).join(", ")} ${gone.length === 1 ? "is" : "are"} no longer in stock. Remove ${gone.length === 1 ? "it" : "them"} from the list and try again. Nothing was taken out.`;
+      confirming = false;
+      return;
+    }
+    const boxes = listBoxes();
+    const ship = {
+      id: S.nextShip++, reason, at: new Date(),
+      customer: reason === "customer" ? customer : null,
+      po: reason === "nti" ? S.nextPo++ : null,
+      bol: document.getElementById("o-bol").value.trim(), driver: document.getElementById("o-driver").value.trim(),
+      boxIds: boxes.map((b) => b.id), mils: boxes.reduce((a, b) => a + b.mils, 0), undone: false,
+    };
+    for (const b of boxes) { b.status = "out"; b.shipment = ship.id; }
+    S.ships.unshift(ship);
+    if (ship.customer) S.recent = [ship.customer, ...S.recent.filter((c) => c !== ship.customer)].slice(0, 4);
+    S.list = [];
+    confirming = false;
+    say("ok", `Shipment #${ship.id} done: ${ship.boxIds.length} boxes, ${lb(ship.mils)} lb`,
+      reason === "nti" ? `Production order PO-${ship.po} made for NTI.` : `Out for ${ship.customer}.`);
+  };
+  const undo = (id) => {
+    const ship = S.ships.find((s) => s.id === id);
+    const back = ship.boxIds.map((bid) => S.boxes.find((b) => b.id === bid));
+    // A box rescanned in since would make two in stock; refuse rather than double it.
+    const clash = back.filter((b) => S.boxes.some((o) => o !== b && o.serial && o.serial === b.serial && o.gtin === b.gtin && o.status === "in_stock"));
+    if (clash.length) { say("bad", `Cannot undo #${id}: ${clash.map((b) => b.serial).join(", ")} is back in stock on another lot.`); return; }
+    for (const b of back) { b.status = "in_stock"; b.shipment = null; }
+    ship.undone = true;
+    say("ok", `Shipment #${id} undone: ${back.length} boxes back in stock.`, "The shipment stays in the record, marked undone.");
+  };
+
+  // ── Rendering ─────────────────────────────────────────────────────────────
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const render = () => {
+    document.getElementById("r-customer").setAttribute("aria-pressed", reason === "customer");
+    document.getElementById("r-nti").setAttribute("aria-pressed", reason === "nti");
+    document.getElementById("customer-fields").hidden = reason !== "customer";
+    document.getElementById("customer-extra").hidden = reason !== "customer";
+    document.getElementById("nti-note").hidden = reason !== "nti";
+
+    // Customer: chosen, or the picker.
+    document.getElementById("cust-chosen").innerHTML = customer
+      ? `<div class="dest cust">${esc(customer)} <button class="btn ghost sm" id="cust-change" type="button">Change</button></div>` : "";
+    document.getElementById("cust-picker").hidden = Boolean(customer);
+    if (!customer) {
+      const q = document.getElementById("customer").value.trim();
+      const hits = S.customers.filter((c) => !q || fold(c).includes(fold(q)));
+      let h = hits.map((c) => `<button type="button" data-cust="${esc(c)}">${esc(c)}<small>${S.ships.filter((s) => s.customer === c && !s.undone).length || ""}${S.ships.some((s) => s.customer === c && !s.undone) ? " shipments" : ""}</small></button>`).join("");
+      if (q && !S.customers.some((c) => fold(c) === fold(q))) {
+        const near = nearMatch(q);
+        if (addingNew === q.toUpperCase()) {
+          h += `<div class="typo">Add <b>${esc(q.toUpperCase())}</b> to the customer list? Everyone will see it in the list from now on.
+            <div class="row" style="margin-top:6px"><button class="btn outline sm" id="add-no" type="button">Go back</button><button class="btn sm" id="add-yes" type="button">Add customer</button></div></div>`;
+        } else {
+          if (near) h = `<div class="typo">Did you mean <b>${esc(near)}</b>? <button class="btn sm" data-cust="${esc(near)}" type="button" style="margin-left:6px">Use ${esc(near)}</button></div>` + h;
+          h += `<button type="button" class="add" id="add-new">+ Add "${esc(q.toUpperCase())}" as a new customer</button>`;
+        }
+      }
+      document.getElementById("cust-list").innerHTML = h || `<div class="empty" style="padding:8px 10px">No customers yet.</div>`;
+      document.getElementById("cust-recent").innerHTML = S.recent.map((c) => `<button class="chip" type="button" data-cust="${esc(c)}">${esc(c)}</button>`).join("");
+    }
+
+    const last = document.getElementById("last");
+    last.className = "last " + (lastMsg ? lastMsg.kind : "idle");
+    last.innerHTML = lastMsg ? `${esc(lastMsg.text)} <small>${esc(lastMsg.sub)}</small>` : "Ready. Scan a box label, or click a sample label below.";
+
+    // Pull list, grouped by lot and pallet.
+    const boxes = listBoxes();
+    const groups = new Map();
+    for (const b of boxes) {
+      const k = `${b.lot}|${b.pallet}`;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(b);
+    }
+    const destBar = reason === "nti" ? `<div class="dest-bar nti">Going to NTI · Noblesse Trading</div>`
+      : customer ? `<div class="dest-bar cust">Going to ${esc(customer)}</div>`
+      : `<div class="dest-bar none">No customer picked yet</div>`;
+    let rows = `<tr><th>Box</th><th>Item</th><th class="num">lb</th><th></th></tr>`;
+    if (!boxes.length) rows += `<tr><td colspan="4" class="empty">Nothing on the list yet.</td></tr>`;
+    for (const [k, list] of groups) {
+      const [lot, pallet] = k.split("|");
+      const m = list.reduce((a, b) => a + b.mils, 0);
+      rows += `<tr class="group-row"><td colspan="2">${esc(lot)} · pallet ${esc(pallet)} · ${esc(S.lots[lot].pallets[pallet])} ${S.lots[lot].old ? '<span class="badge old">old system</span>' : ""}</td><td class="num">${list.length} · ${lb(m)}</td><td></td></tr>`;
+      for (const b of list) {
+        const gone = b.status !== "in_stock";
+        rows += `<tr><td class="mono">${b.serial ? esc(b.serial) : '<span style="color:var(--muted)">no serial</span>'}${gone ? ' <span class="badge undone">gone</span>' : ""}</td><td>${esc(b.item)}</td><td class="num">${lb(b.mils)}</td><td style="text-align:right"><button class="btn ghost sm" data-remove="${b.id}" aria-label="Remove from list">✕</button></td></tr>`;
+      }
+    }
+    document.getElementById("list").innerHTML = rows;
+    document.getElementById("list-dest").innerHTML = destBar;
+    const total = boxes.reduce((a, b) => a + b.mils, 0);
+    document.getElementById("list-count").textContent = boxes.length ? `· ${boxes.length} box${boxes.length === 1 ? "" : "es"}` : "";
+    document.getElementById("list-total").innerHTML = boxes.length ? `<span>Total</span><span>${boxes.length} boxes · ${lb(total)} lb</span>` : "";
+
+    const fa = document.getElementById("finish-area");
+    const who = reason === "nti" ? "to NTI" : `for ${esc(customer || "…")}`;
+    if (finishError) fa.innerHTML = `<div class="confirm err">${esc(finishError)}</div>`;
+    else fa.innerHTML = "";
+    if (confirming) {
+      fa.innerHTML += `<div class="confirm"><b>Take ${boxes.length} boxes (${lb(total)} lb) out ${who}?</b>
+        <span style="font-size:13px;color:var(--ink-2)">${reason === "nti" ? "A production order is made. " : ""}They come off stock now. An admin can undo it.</span>
+        <div class="row"><button class="btn outline" id="c-back" type="button">Go back</button>
+        <button class="btn ${reason === "nti" ? "teal" : ""}" id="c-go" type="button">Take them out</button></div></div>`;
+    } else {
+      fa.innerHTML += `<div class="row" style="justify-content:flex-end"><button class="btn ${reason === "nti" ? "teal" : ""}" id="finish" type="button" ${canFinish() ? "" : "disabled"}>
+        ${reason === "nti" ? "Send to NTI" : "Take out for customer"}</button></div>`;
+      if (boxes.length && reason === "customer" && !customer) {
+        fa.innerHTML += `<div class="empty" style="text-align:right">Pick who it is going to, to finish.</div>`;
+      }
+    }
+
+    // Pick panel.
+    const pick = document.getElementById("pick");
+    if (!pick.hidden) {
+      const lot = pickLot;
+      const inLot = S.boxes.filter((b) => b.lot === lot && b.status === "in_stock");
+      const pallets = [...new Set(inLot.map((b) => b.pallet))];
+      let h = `<div class="row"><span class="label">Lot</span><select id="pick-lot">${Object.keys(S.lots).map((l) => `<option ${l === lot ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+        <button class="btn ghost sm" id="pick-close" type="button" style="margin-left:auto">Close</button></div>`;
+      if (!pallets.length) h += `<div class="empty">Nothing from this lot is in stock.</div>`;
+      for (const p of pallets) {
+        const pb = inLot.filter((b) => b.pallet === p);
+        h += `<div class="row"><b>Pallet ${p}</b> <span class="mono">${esc(S.lots[lot].pallets[p])}</span>
+          <span class="empty" style="padding:0">${pb.length} in stock</span>
+          <button class="btn outline sm" data-whole="${esc(lot)}|${p}" type="button" style="margin-left:auto">Whole pallet</button></div>
+          <div class="boxgrid">${pb.map((b) => { const on = S.list.includes(b.id);
+            return `<label class="${on ? "on" : ""}"><input type="checkbox" data-pickbox="${b.id}" ${on ? "checked" : ""}>${b.serial ? esc(b.serial) : "no serial"} · ${lb(b.mils)}</label>`; }).join("")}</div>`;
+      }
+      pick.innerHTML = h;
+    }
+
+    // Stock.
+    let st = "";
+    for (const [lot, info] of Object.entries(S.lots)) {
+      const all = S.boxes.filter((b) => b.lot === lot);
+      const inS = all.filter((b) => b.status === "in_stock");
+      const out = all.length - inS.length;
+      st += `<div class="stock-lot"><div class="head"><b>${esc(lot)}</b><span style="color:var(--muted);font-size:13px">${esc(info.vendor)}</span>${info.old ? '<span class="badge old">old system</span>' : ""}
+        <span style="margin-left:auto;font-variant-numeric:tabular-nums;font-size:13px">${inS.length} in · ${lb(inS.reduce((a, b) => a + b.mils, 0))} lb${out ? ` <span class="badge out">${out} out</span>` : ""}</span></div>`;
+      for (const [p, loc] of Object.entries(info.pallets)) {
+        const pb = inS.filter((b) => String(b.pallet) === p);
+        const items = [...new Set(all.filter((b) => String(b.pallet) === p).map((b) => b.item))].join(", ");
+        st += `<div class="pallet">Pallet ${p} <span class="where">${esc(loc)}</span><span style="color:var(--muted)">${esc(items)}</span><span class="n">${pb.length} · ${lb(pb.reduce((a, b) => a + b.mils, 0))} lb</span></div>`;
+      }
+      st += `</div>`;
+    }
+    document.getElementById("stock").innerHTML = st;
+
+    // Shipments.
+    document.getElementById("ships").innerHTML = S.ships.length ? S.ships.map((s) => `
+      <div class="ship ${s.undone ? "undone" : ""}">
+        <div class="row"><b>#${s.id}</b>${s.reason === "nti" ? `<span class="badge nti">Sent to NTI · PO-${s.po}</span>` : `<span class="badge cust">${esc(s.customer)}</span>`}
+          ${s.undone ? '<span class="badge undone">undone</span>' : ""}
+          <span style="margin-left:auto;font-size:12.5px;color:var(--muted)">${s.at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></div>
+        <div class="row what" style="font-size:13px"><span>${s.boxIds.length} boxes · ${lb(s.mils)} lb</span>
+          ${s.bol ? `<span>BOL ${esc(s.bol)}</span>` : ""}${s.driver ? `<span>Driver ${esc(s.driver)}</span>` : ""}
+          ${s.undone ? "" : `<button class="btn ghost sm" data-undo="${s.id}" type="button" style="margin-left:auto">Undo (admin)</button>`}</div>
+      </div>`).join("") : `<div class="empty">Nothing has gone out yet.</div>`;
+    // Who received what: the question a customer list makes answerable.
+    const per = new Map();
+    for (const s of S.ships.filter((x) => !x.undone)) {
+      const k = s.reason === "nti" ? "NTI" : s.customer;
+      const v = per.get(k) || { n: 0, m: 0 };
+      per.set(k, { n: v.n + s.boxIds.length, m: v.m + s.mils });
+    }
+    if (per.size) document.getElementById("ships").innerHTML += `<div class="bycust"><span class="label">By destination</span>${
+      [...per].map(([k, v]) => `<div><span>${esc(k)}</span><span>${v.n} boxes · ${lb(v.m)} lb</span></div>`).join("")}</div>`;
+  };
+
+  // ── Sample label chips ────────────────────────────────────────────────────
+  const SAMPLES = [
+    ["TEST003", `(01)${GTIN.beef}(3201)000416(21)TEST003`],
+    ["TEST005", `(01)${GTIN.beef}(3201)000423(21)TEST005`],
+    ["TESTX01", `(01)${GTIN.beef}(3201)000407(21)TESTX01`],
+    ["pork TEST001", `(01)${GTIN.pork}(3201)000384(21)TEST001`],
+    ["TESTKG1 (kg)", `(01)${GTIN.other}(3102)001870(21)TESTKG1`],
+    ["no serial", `(01)${GTIN.beef}(3201)000410`],
+    ["OLD001", `(01)${GTIN.brisket}(3201)000521(21)OLD001`],
+    ["not in stock", `(01)${GTIN.beef}(3201)000409(13)261105(10)LOT77(21)TESTPD1`],
+    ["no weight", `(01)${GTIN.beef}(21)TESTNW1`],
+  ];
+  document.getElementById("samples").innerHTML = SAMPLES.map(([n, raw], i) =>
+    `<button class="chip" type="button" data-sample="${i}" title="${esc(raw)}">${esc(n)}</button>`).join("");
+
+  // ── Events ────────────────────────────────────────────────────────────────
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("button, input[type=checkbox]");
+    if (!t) return;
+    if (t.dataset.sample != null) scan(SAMPLES[t.dataset.sample][1]);
+    else if (t.id === "r-customer") reason = "customer";
+    else if (t.id === "r-nti") reason = "nti";
+    else if (t.dataset.cust) { customer = t.dataset.cust; addingNew = null; document.getElementById("customer").value = ""; }
+    else if (t.id === "cust-change") customer = null;
+    else if (t.id === "add-new") addingNew = document.getElementById("customer").value.trim().toUpperCase();
+    else if (t.id === "add-no") addingNew = null;
+    else if (t.id === "add-yes") { S.customers.push(addingNew); S.customers.sort(); customer = addingNew; addingNew = null; document.getElementById("customer").value = ""; }
+    else if (t.id === "manual-go") { scan(document.getElementById("manual").value); document.getElementById("manual").value = ""; }
+    else if (t.id === "open-pick") openPick();
+    else if (t.id === "pick-close") document.getElementById("pick").hidden = true;
+    else if (t.dataset.whole) { const [lot, p] = t.dataset.whole.split("|");
+      addBoxes(S.boxes.filter((b) => b.lot === lot && String(b.pallet) === p && b.status === "in_stock").map((b) => b.id)); }
+    else if (t.dataset.pickbox) { const id = Number(t.dataset.pickbox);
+      if (t.checked) addBoxes([id]); else S.list = S.list.filter((x) => x !== id); }
+    else if (t.dataset.remove) { S.list = S.list.filter((x) => x !== Number(t.dataset.remove)); finishError = null; }
+    else if (t.id === "finish") { confirming = true; finishError = null; }
+    else if (t.id === "c-back") confirming = false;
+    else if (t.id === "c-go") finish();
+    else if (t.dataset.undo) undo(Number(t.dataset.undo));
+    else if (t.id === "race") {
+      const b = S.boxes.find((x) => x.serial === "TEST005" && x.status === "in_stock");
+      if (b) { b.status = "out"; b.shipment = 999; say("warn", "Another tablet just took TEST005 out (shipment #999).", "If it is on your list, finishing will be refused."); }
+      else say("warn", "TEST005 is not in stock right now.");
+    }
+    else if (t.id === "reset") { S = seed(); reason = "customer"; customer = null; addingNew = null; lastMsg = null; confirming = false; finishError = null;
+      for (const id of ["customer", "o-date", "o-bol", "o-driver", "manual"]) document.getElementById(id).value = "";
+      document.getElementById("pick").hidden = true; }
+    else return;
+    render();
+  });
+  document.addEventListener("change", (e) => { if (e.target.id === "pick-lot") { pickLot = e.target.value; render(); } });
+  document.getElementById("customer").addEventListener("input", render);
+  document.getElementById("manual").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { scan(e.target.value); e.target.value = ""; render(); }
+  });
+
+  // A real scanner types like a keyboard: buffer keys outside fields, Enter ends a scan.
+  let buf = "", lastKey = 0;
+  window.addEventListener("keydown", (e) => {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    if (e.timeStamp - lastKey > 800) buf = "";
+    lastKey = e.timeStamp;
+    if (e.key === "Enter") { if (buf.length >= 8) { e.preventDefault(); scan(buf); render(); } buf = ""; return; }
+    if (e.key === "F8" || (e.ctrlKey && e.key === "]")) { buf += GS; return; }
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) buf += e.key;
+  });
+
+  render();
+})();
+</script>
+
+</body>
+</html>

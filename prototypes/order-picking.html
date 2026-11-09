@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order Picking Prototype</title>
+<style>
+/* Layout: open orders on the left drawn like the paper order sheet (header lines, item rows, the 1–10 tally grid);
+   a sticky rail on the right with the active line, pulled pallets and orders waiting. One light look: it mirrors the app. */
+:root {
+  --bg: #f2f4f7;
+  --card: #ffffff;
+  --ink: #1a202c;
+  --ink-2: #4a5568;
+  --muted: #718096;
+  --rule: #e2e8f0;
+  --sheet-rule: #2d3748;
+  --blue: #3182ce;
+  --blue-ink: #2b6cb0;
+  --blue-tint: #ebf8ff;
+  --green: #2f855a;
+  --green-tint: #f0fff4;
+  --amber: #b7791f;
+  --amber-tint: #fffaf0;
+  --red: #c53030;
+  --red-tint: #fff5f5;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.4;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 40px;
+}
+button { font: inherit; cursor: pointer; }
+button:focus-visible, select:focus-visible { outline: 3px solid #90cdf4; outline-offset: 1px; }
+.wrap { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.top h1 { margin: 0; font-size: 22px; }
+.proto { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--amber); background: var(--amber-tint); border: 1px solid #f6e05e; border-radius: 4px; padding: 2px 7px; }
+.role { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid #cbd5e0; border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; background: var(--card); padding: 6px 12px; font-weight: 600; color: var(--ink-2); font-size: 13px; }
+.seg button + button { border-left: 1px solid #cbd5e0; }
+.seg button[aria-pressed=true] { background: var(--ink); color: #ffffff; }
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.steps div { background: var(--card); border: 1px solid var(--rule); border-radius: 7px; padding: 8px 10px; font-size: 13px; color: var(--ink-2); min-width: 0; }
+.steps b { display: block; color: var(--ink); font-size: 13.5px; }
+@media (max-width: 760px) { .steps { grid-template-columns: 1fr 1fr; } }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
+@media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+.orders { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 430px), 1fr)); gap: 14px; align-items: start; min-width: 0; }
+.rail { display: flex; flex-direction: column; gap: 12px; position: sticky; top: max(12px, env(safe-area-inset-top, 0px)); min-width: 0; }
+@media (max-width: 1000px) { .rail { position: static; order: -1; } }
+.panel { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.panel h2 { margin: 0; font-size: 14px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.empty { color: var(--muted); font-size: 13px; }
+.btn { border: 1px solid transparent; border-radius: 6px; padding: 7px 14px; font-weight: 600; background: var(--blue); color: #ffffff; }
+.btn:hover { background: var(--blue-ink); }
+.btn:disabled { background: #a0aec0; cursor: not-allowed; }
+.btn.outline { background: var(--card); color: var(--blue-ink); border-color: #90cdf4; }
+.btn.ghost { background: transparent; color: var(--ink-2); padding: 3px 8px; }
+.btn.sm { padding: 4px 10px; font-size: 13px; }
+.btn.green { background: var(--green); }
+.btn.green:disabled { background: #cbd5e0; color: #4a5568; }
+
+/* The order sheet. */
+.sheet { background: var(--card); border: 1.5px solid var(--sheet-rule); border-radius: 4px; display: flex; flex-direction: column; min-width: 0; }
+.sheet.done { opacity: 0.55; }
+.sh-head { display: grid; grid-template-columns: auto 1fr auto auto; gap: 2px 8px; padding: 10px 12px 8px; border-bottom: 1.5px solid var(--sheet-rule); font-size: 13px; align-items: baseline; }
+.sh-head .k { color: var(--muted); font-size: 11.5px; }
+.sh-head .cust { font-size: 17px; font-weight: 700; }
+.sh-head .acct { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+.note { margin: 6px 12px 0; font-size: 12.5px; color: var(--red); font-weight: 600; }
+.line { border-bottom: 1px solid var(--rule); cursor: pointer; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; position: relative; }
+.line:hover { background: #f7fafc; }
+.line.active { background: var(--blue-tint); box-shadow: inset 4px 0 0 var(--blue); }
+.line.full { background: var(--green-tint); }
+.line.active.full { background: var(--blue-tint); }
+.l-top { display: flex; gap: 10px; align-items: baseline; }
+.qty { font-size: 20px; font-weight: 800; min-width: 34px; font-variant-numeric: tabular-nums; text-align: center; }
+.desc { flex: 1; min-width: 0; }
+.desc .code { font-family: var(--mono); font-weight: 700; }
+.desc .lnote { display: block; font-size: 12px; color: var(--red); }
+.prog { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; font-size: 13px; }
+.prog.ok { color: var(--green); }
+.prog.part { color: var(--amber); }
+.prog.none { color: var(--muted); }
+.price { font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
+.tally { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); border: 1px solid #a0aec0; border-radius: 2px; }
+.tally span, .tally button { border-right: 1px dotted #a0aec0; border-bottom: 1px dotted #cbd5e0; font-family: var(--mono); font-size: 11.5px; text-align: center; padding: 3px 0; min-height: 22px; background: transparent; color: var(--ink); min-width: 0; overflow: hidden; }
+.tally > :nth-child(10n) { border-right: 0; }
+.tally button:hover { background: var(--red-tint); color: var(--red); text-decoration: line-through; }
+.tally .need { background: #fafafa; }
+.l-meta { display: flex; gap: 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.tag-active { font-size: 10.5px; font-weight: 800; color: #ffffff; background: var(--blue); border-radius: 3px; padding: 1px 6px; letter-spacing: 0.04em; }
+.sh-foot { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; border-top: 1.5px solid var(--sheet-rule); }
+.sh-foot .tot { display: flex; gap: 14px; flex-wrap: wrap; font-variant-numeric: tabular-nums; font-size: 13px; }
+.sh-foot .tot b { font-size: 15px; }
+.sign { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sign label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--muted); }
+.sign select { font: inherit; font-size: 13px; border: 1px solid #cbd5e0; border-radius: 5px; padding: 5px 6px; background: var(--card); color: var(--ink); }
+.blockers { font-size: 12.5px; color: var(--red); margin: 0; padding-left: 18px; }
+
+/* Rail. */
+.active-box { border-radius: 7px; padding: 10px 12px; background: var(--blue-tint); border: 1px solid #90cdf4; display: flex; flex-direction: column; gap: 2px; }
+.active-box.none { background: #f7fafc; border-color: var(--rule); color: var(--muted); }
+.active-box .who { font-weight: 800; font-size: 15px; color: var(--blue-ink); }
+.msg { border-radius: 7px; padding: 9px 12px; font-weight: 600; display: flex; flex-direction: column; gap: 2px; }
+.msg small { font-weight: 500; }
+.msg.ok { background: var(--green-tint); color: var(--green); border: 1px solid #9ae6b4; }
+.msg.warn { background: var(--amber-tint); color: var(--amber); border: 1px solid #fbd38d; }
+.msg.bad { background: var(--red-tint); color: var(--red); border: 1px solid #feb2b2; }
+.msg .row { display: flex; gap: 6px; margin-top: 6px; }
+.pal { border-top: 1px solid var(--rule); padding-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+.pal:first-of-type { border-top: 0; padding-top: 0; }
+.pal-h { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+.pal-h .where { font-family: var(--mono); background: #edf2f7; border-radius: 3px; padding: 0 5px; }
+.pal-h .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { font-family: var(--mono); font-size: 11.5px; border: 1px solid #cbd5e0; background: var(--card); border-radius: 4px; padding: 2px 6px; color: var(--ink-2); }
+.chip:hover { border-color: var(--blue); color: var(--blue-ink); }
+.chip.used { background: #edf2f7; color: var(--muted); text-decoration: line-through; }
+.chip.online { background: var(--blue-tint); border-color: var(--blue); color: var(--blue-ink); font-weight: 700; text-decoration: none; }
+.leave { border-radius: 7px; padding: 9px 12px; background: var(--amber-tint); border: 1px solid #fbd38d; color: var(--amber); display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.leave span { font-size: 12.5px; }
+.leave .btn { align-self: flex-start; }
+.line.over { background: var(--red-tint); }
+.prog.over { color: var(--red); }
+.wait { display: flex; gap: 8px; align-items: center; font-size: 13px; border-top: 1px solid var(--rule); padding-top: 6px; }
+.wait:first-of-type { border-top: 0; padding-top: 0; }
+.wait span { flex: 1; min-width: 0; }
+.donebox { font-size: 13px; border-top: 1px solid var(--rule); padding-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.donebox:first-of-type { border-top: 0; padding-top: 0; }
+/* Print preview: the paper order sheet, as the print window would show it. */
+.overlay { position: fixed; inset: 0; background: rgba(26, 32, 44, 0.55); z-index: 20; overflow-y: auto;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px)); }
+.pv-bar { max-width: 8.5in; margin: 0 auto 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: #ffffff; }
+.pv-bar .btn.outline { background: #ffffff; }
+.pv-bar .hint { font-size: 12.5px; opacity: 0.9; flex: 1 1 260px; }
+/* A letter page: 8.5 x 11 in, so a short order still prints as a full sheet. */
+.paper { background: #ffffff; color: #000000; max-width: 8.5in; min-height: 11in; margin: 0 auto; padding: 0.45in 0.5in; font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 13.5px; box-shadow: 0 6px 30px rgba(0, 0, 0, 0.35); overflow-x: auto; display: flex; flex-direction: column; }
+.paper .pp-stamp { margin-top: auto; padding-top: 14px; }
+.pp-grid td { height: 24px; }
+.pp-grid .blank { color: transparent; }
+.paper table { border-collapse: collapse; width: 100%; min-width: 640px; }
+.paper td { padding: 3px 5px; vertical-align: bottom; }
+.pp-acct td { font-size: 13.5px; padding-bottom: 8px; vertical-align: middle; }
+.pp-logo { height: 0.75in; width: auto; display: inline-block; }
+.pp-head td { font-size: 14.5px; }
+.pp-head .v { border-bottom: 1px solid #000000; font-weight: 700; }
+.pp-grid { border: 1.5px solid #000000; margin-top: 8px; }
+.pp-grid td { border: 1px solid #000000; }
+.pp-grid .h { text-align: center; font-weight: 700; background: #f2f2f2; }
+.pp-grid .q { width: 50px; text-align: center; font-weight: 700; font-size: 16px; }
+.pp-grid .d { font-weight: 700; }
+.pp-grid .d .ln { display: block; font-weight: 400; font-style: italic; }
+.pp-grid .pr { width: 64px; text-align: right; }
+.pp-grid .w { width: 8%; text-align: right; font-variant-numeric: tabular-nums; border-left: 1px dotted #555555; border-right: 1px dotted #555555; height: 20px; }
+.pp-grid .rt { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pp-foot td { padding-top: 12px; font-size: 14.5px; white-space: nowrap; }
+.pp-foot .v { border-bottom: 1px solid #000000; font-weight: 700; display: inline-block; min-width: 54px; text-align: center; }
+.pp-note { margin-top: 10px; font-weight: 700; color: #000000; }
+.pp-stamp { margin-top: 14px; font-size: 11.5px; color: #555555; display: flex; justify-content: space-between; gap: 10px; }
+.try { margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
+.try li { margin-bottom: 3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Order Picking</h1>
+    <span class="proto">Prototype · sample orders and stock · nothing is saved</span>
+    <div class="role">Viewing as
+      <div class="seg" role="group" aria-label="Viewing as">
+        <button type="button" id="as-crew" aria-pressed="true">Crew</button>
+        <button type="button" id="as-admin" aria-pressed="false">Admin</button>
+      </div>
+      <button class="btn ghost sm" id="reset" type="button">Start over</button>
+    </div>
+  </div>
+
+  <div class="steps">
+    <div><b>1 · Bring in orders</b>The office makes them in Excel. Pick which ones to work.</div>
+    <div><b>2 · Pull pallets</b>Bring the pallets out of the freezer to the dock.</div>
+    <div><b>3 · Tap a line, scan</b>Each box fills the next cell of that line's tally.</div>
+    <div><b>4 · Finish</b>Only when every line is full and it is signed off.</div>
+  </div>
+
+  <div class="layout">
+    <div class="orders" id="orders"></div>
+    <div class="rail">
+      <div class="panel">
+        <h2>Scanning into</h2>
+        <div id="active"></div>
+        <div id="msg"></div>
+      </div>
+      <div class="panel">
+        <h2>Pallets on the dock</h2>
+        <div class="empty" style="margin-top:-4px">Click a box to scan it. A real scanner works too: scan the label, or type a box number like CLD03 and press Enter.</div>
+        <div id="pallets"></div>
+        <div class="label" style="margin-top:4px">Still in the freezer</div>
+        <div id="freezer"></div>
+      </div>
+      <div class="panel">
+        <h2>Orders in Excel</h2>
+        <div id="waiting"></div>
+      </div>
+      <div class="panel">
+        <h2>Finished</h2>
+        <div id="done"></div>
+      </div>
+      <div class="panel">
+        <h2>Things to try</h2>
+        <ol class="try">
+          <li>Tap MOANA's clod line, scan two CLD boxes. Then tap MGD's clod line and keep scanning the same pallet.</li>
+          <li>Scan a CLD box already on MOANA while MGD's line is active.</li>
+          <li>Scan a 3rd box into MOANA's 2-case clod line.</li>
+          <li>With the clod line active, scan a Rib Eye box (pull its pallet first).</li>
+          <li>Try to finish MOANA before every line is full.</li>
+          <li>Click a weight in a tally to take that box back off.</li>
+          <li>Bring in CARGILL (12 cases), tap its line, press <b>Scan pallet tag</b> on the tongue pallet (14 boxes): 2 too many. Tap 2 blue boxes to leave them behind, then Done.</li>
+          <li>Switch to Admin to see prices and order value.</li>
+          <li>Press Print on an open order (pick sheet), then finish it and print again from Finished.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const mils = (s) => { const [w, f = ""] = String(s).split("."); return Number(w) * 1000 + Number((f + "000").slice(0, 3)); };
+  const lb = (m) => { const s = `${Math.floor(m / 1000)}.${String(m % 1000).padStart(3, "0")}`; return s.replace(/0$/, ""); };
+  const money = (cents) => `$${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const CREW = ["IVAN", "ROGELIO", "DANY", "TONY", "STEVE"];
+
+  // Orders as the office types them on the customer's tab (taken from AF_ORDER SHEET_2026.xlsx).
+  const EXCEL = [
+    { id: "moana", customer: "MOANA -Burbank", orderNo: "02A", date: "11/06/2026", due: "FRI", shipTo: "DELIVER TO MOANA Per MR.T",
+      note: "PLEASE DELIVER BY 10:45AM~11AM ON FRIDAYS. KITCHEN OPENS @ 10AM.",
+      lines: [
+        { qty: 2, code: "109202", desc: "BF XT CLOD 2MM -30#", price: 5.99, note: "** PLEASE DEFROST THIS ITEM IF SENDING FROZEN **" },
+        { qty: 1, code: "103109", desc: "NR Beef Short Rib 3/8\" (AIS_ETE)", price: 7.99 },
+        { qty: 1, code: "209210", desc: "PK Shoulder Butt Slice 4mm 20#", price: 3.59 },
+      ] },
+    { id: "mgd", customer: "MGD - Hollywood", orderNo: "11A", date: "11/09/2026", due: "MON", shipTo: "WILL CALL - AM",
+      lines: [
+        { qty: 3, code: "109202", desc: "BF XT CLOD 2MM -30#", price: 5.89 },
+        { qty: 2, code: "209210", desc: "PK Shoulder Butt Slice 4mm 20#", price: 3.59 },
+      ] },
+    { id: "umma", customer: "Umma Kitchen", orderNo: "07B", date: "11/09/2026", due: "TUES", shipTo: "Will Call after 2PM", note: "COD",
+      lines: [{ qty: 4, code: "109208", desc: "SH Brisket Shabu (8pks) Ehwa", price: 7.75 }] },
+    { id: "cargill", customer: "CARGILL", orderNo: "03A", date: "11/09/2026", due: "FRI", shipTo: "(PO#4521032184)",
+      note: "*APPT: 11/13/2026 @ 10AM", lines: [{ qty: 12, code: "109710", desc: "BF Tongue Trimmed & Peeled (Vac. PK)", price: 4.85 }] },
+  ];
+
+  // Pallets as received: each box on a lot item, so its product is known even with no code on the label.
+  const PALLETS = [
+    { id: "p1", lot: "26305-02", pallet: 1, where: "A101", code: "109202", item: "BF XT CLOD 2MM 30#", prefix: "CLD", w: ["30.15", "29.80", "30.40", "30.05", "29.95", "30.25", "30.10", "29.70"] },
+    { id: "p2", lot: "26306-01", pallet: 1, where: "A104", code: "103109", item: "NR SHORT RIB 3/8\"", prefix: "SR", w: ["15.10", "14.85", "15.25", "15.00", "14.90"] },
+    { id: "p3", lot: "26301-03", pallet: 2, where: "B210", code: "209210", item: "PK BUTT SLICE 4MM 20#", prefix: "PK", w: ["20.05", "19.90", "20.15", "20.00", "19.85", "20.10"] },
+    { id: "p4", lot: "26302-01", pallet: 1, where: "B212", code: "109208", item: "BRISKET SHABU EHWA", prefix: "BS", w: ["11.05", "11.70", "10.95", "11.20", "11.40", "11.10"] },
+    { id: "p5", lot: "25342-04", pallet: 3, where: "C301", code: "109710", item: "BEEF TONGUE T&P VAC", prefix: "TG", w: ["17.10", "11.70", "17.60", "16.65", "16.90", "18.50", "16.75", "17.70", "16.35", "17.10", "16.60", "16.50", "18.05", "17.25"] },
+    { id: "p6", lot: "26299-04", pallet: 1, where: "B118", code: "109100", item: "BF RIB EYE SLICE 3.5MM 50#", prefix: "RE", w: ["50.20", "49.85", "50.10"] },
+  ];
+
+  const seed = () => {
+    const boxes = [];
+    for (const p of PALLETS) p.w.forEach((w, i) =>
+      boxes.push({ id: `${p.prefix}${String(i + 1).padStart(2, "0")}`, pallet: p.id, mils: mils(w), status: "in_stock", on: null }));
+    const open = (e) => ({ ...JSON.parse(JSON.stringify(e)), lines: e.lines.map((l) => ({ ...l, boxes: [] })), assembled: "", checked: "", done: false });
+    return {
+      orders: [open(EXCEL[0]), open(EXCEL[1])],
+      waiting: EXCEL.slice(2).map((e) => e.id),
+      boxes, dock: ["p1", "p2", "p3"], done: [], nextShip: 3001,
+    };
+  };
+  let S = seed(), admin = false, active = null, msg = null, pending = null;
+  // After a pallet scan: box scans from that pallet take boxes back off the line, until Done.
+  let leaving = null; // { order, line, pallet }
+
+  const pal = (id) => PALLETS.find((p) => p.id === id);
+  const box = (id) => S.boxes.find((b) => b.id === id);
+  const orderOf = (id) => S.orders.find((o) => o.id === id);
+  const lineName = (o, i) => `${o.customer}, line ${i + 1} (${o.lines[i].code})`;
+
+  // ── Scanning ──────────────────────────────────────────────────────────────
+  // A pallet tag: every box left on the pallet onto the tapped line in one scan.
+  const scanPallet = (pid) => {
+    pending = null;
+    const p = pal(pid);
+    if (leaving) { msg = { kind: "warn", text: "Finish leaving boxes behind first.", sub: "Press Done, then scan the next pallet." }; return; }
+    if (!active) { msg = { kind: "warn", text: "Tap a line on an order first.", sub: "A pallet scan fills the line you tapped." }; return; }
+    const o = orderOf(active.order), line = o.lines[active.line];
+    if (line.boxes.length >= line.qty) { msg = { kind: "bad", text: `This line is full: ${line.qty} of ${line.qty}.`, sub: "Tap the next line." }; return; }
+    if (p.code !== line.code) { msg = { kind: "bad", text: `Pallet ${p.where} is ${p.code} ${p.item}.`, sub: `This line is ${line.code} ${line.desc}. A whole pallet of another product is not added.` }; return; }
+    if (!S.dock.includes(pid)) S.dock.push(pid); // scanning its tag is pulling it
+    const left = S.boxes.filter((b) => b.pallet === pid && b.status === "in_stock" && !b.on);
+    if (!left.length) { msg = { kind: "warn", text: `Pallet ${p.where} has nothing left on it.` }; return; }
+    for (const b of left) { b.on = { order: o.id, line: active.line }; line.boxes.push(b.id); }
+    leaving = { order: o.id, line: active.line, pallet: pid };
+    const over = line.boxes.length - line.qty;
+    // What the tag was printed with, less what is gone or on another order: the scan reads it live.
+    const taken = p.w.length - left.length;
+    const was = taken > 0 ? ` (${taken} already taken from it)` : "";
+    msg = over > 0
+      ? { kind: "warn", text: `Pallet ${p.where}: ${left.length} boxes on the line${was}, ${over} more than it needs.`, sub: `Scan the ${over} box${over === 1 ? "" : "es"} staying behind, then Done.` }
+      : { kind: "ok", text: `Pallet ${p.where}: ${left.length} boxes → ${o.customer}${was}.`, sub: `Line ${active.line + 1}: ${line.boxes.length} of ${line.qty}. Keeping any back? Scan them, then Done.` };
+  };
+  const doneLeaving = () => {
+    const p = pal(leaving.pallet), o = orderOf(leaving.order), line = o.lines[leaving.line];
+    const stay = S.boxes.filter((b) => b.pallet === leaving.pallet && b.status === "in_stock" && !b.on);
+    leaving = null;
+    msg = stay.length
+      ? { kind: "ok", text: `${stay.length} box${stay.length === 1 ? "" : "es"} stay on pallet ${p.where} · ${lb(stay.reduce((a, b) => a + b.mils, 0))} lb.`, sub: `Still in stock, lot ${p.lot}. Reprint its tag for them. Line ${o.lines.indexOf(line) + 1}: ${line.boxes.length} of ${line.qty}.` }
+      : { kind: "ok", text: `Whole pallet ${p.where} is on the line.` };
+    if (line.boxes.length === line.qty) {
+      const next = o.lines.findIndex((l) => l.boxes.length < l.qty);
+      if (next >= 0) active = { order: o.id, line: next };
+    }
+  };
+  const scan = (boxId, force = false) => {
+    pending = null;
+    const b = box(boxId);
+    if (!b) { msg = { kind: "bad", text: `No box ${boxId} in stock.` }; return; }
+    if (leaving) {
+      const on = b.on && b.on.order === leaving.order && b.on.line === leaving.line;
+      if (b.pallet !== leaving.pallet || !on) { msg = { kind: "warn", text: `${b.id} is not part of that pallet scan.`, sub: "Press Done first, then scan it." }; return; }
+      unscan(leaving.order, leaving.line, b.id);
+      const line = orderOf(leaving.order).lines[leaving.line], over = line.boxes.length - line.qty;
+      msg = { kind: "ok", text: `${b.id} stays behind · ${lb(b.mils)} lb.`, sub: over > 0 ? `${over} more to take off.` : `${line.boxes.length} of ${line.qty} on the line. Press Done.` };
+      return;
+    }
+    if (b.status === "out") { msg = { kind: "bad", text: `${b.id} already went out.`, sub: `Shipment #${b.shipment}.` }; return; }
+    if (!S.dock.includes(b.pallet)) { msg = { kind: "warn", text: `${b.id} is on a pallet still in the freezer.`, sub: "Pull that pallet to the dock first." }; return; }
+    if (!active) { msg = { kind: "warn", text: "Tap a line on an order first.", sub: "Scans go onto the line you tapped." }; return; }
+    const o = orderOf(active.order), line = o.lines[active.line];
+    if (b.on) {
+      const ho = orderOf(b.on.order);
+      if (b.on.order === active.order && b.on.line === active.line) { msg = { kind: "warn", text: `${b.id} is already on this line.` }; return; }
+      msg = { kind: "bad", text: `${b.id} is already on ${lineName(ho, b.on.line)}.`, sub: "Click it in that tally to take it off first." }; return;
+    }
+    if (line.boxes.length >= line.qty) { msg = { kind: "bad", text: `This line is full: ${line.qty} of ${line.qty}.`, sub: "Tap the next line to keep scanning." }; return; }
+    const p = pal(b.pallet);
+    if (p.code !== line.code && !force) {
+      pending = b.id;
+      msg = { kind: "warn", text: `${b.id} is ${p.code} ${p.item}.`, sub: `This line is ${line.code} ${line.desc}.`, confirm: true };
+      return;
+    }
+    line.boxes.push(b.id);
+    b.on = { order: o.id, line: active.line };
+    msg = { kind: "ok", text: `${b.id} · ${lb(b.mils)} lb → ${o.customer}`, sub: `Line ${active.line + 1}: ${line.boxes.length} of ${line.qty}${line.boxes.length === line.qty ? " · line full" : ""}${p.code !== line.code ? " · added anyway" : ""}` };
+    if (line.boxes.length === line.qty) {
+      // Move to the next unfilled line of the same order, as a person would.
+      const next = o.lines.findIndex((l) => l.boxes.length < l.qty);
+      if (next >= 0) active = { order: o.id, line: next };
+    }
+  };
+  const unscan = (orderId, lineIdx, boxId) => {
+    const line = orderOf(orderId).lines[lineIdx];
+    line.boxes = line.boxes.filter((x) => x !== boxId);
+    box(boxId).on = null;
+    msg = { kind: "warn", text: `${boxId} taken off the line.`, sub: "It is back on its pallet." };
+  };
+
+  // ── Finishing ─────────────────────────────────────────────────────────────
+  const blockers = (o) => {
+    const out = [];
+    o.lines.forEach((l, i) => {
+      if (l.boxes.length < l.qty) out.push(`Line ${i + 1} (${l.code}): ${l.boxes.length} of ${l.qty} boxes`);
+      if (l.boxes.length > l.qty) out.push(`Line ${i + 1} (${l.code}): ${l.boxes.length - l.qty} too many, scan the boxes staying behind`);
+    });
+    if (leaving && leaving.order === o.id) out.push("Leaving boxes behind: press Done");
+    if (!o.assembled) out.push("Assembled by is not filled in");
+    if (!o.checked) out.push("Check by is not filled in");
+    return out;
+  };
+  const finish = (id) => {
+    const o = orderOf(id);
+    if (blockers(o).length) return;
+    const ship = S.nextShip++;
+    const ids = o.lines.flatMap((l) => l.boxes);
+    for (const bid of ids) { const b = box(bid); b.status = "out"; b.shipment = ship; b.on = null; }
+    o.done = true; o.ship = ship;
+    S.orders = S.orders.filter((x) => x.id !== id);
+    S.done.unshift(o);
+    if (active && active.order === id) active = null;
+    const m = ids.reduce((a, bid) => a + box(bid).mils, 0);
+    msg = { kind: "ok", text: `${o.customer} finished: shipment #${ship}`, sub: `${ids.length} boxes · ${lb(m)} lb are off stock.` };
+  };
+
+  // ── Rendering ─────────────────────────────────────────────────────────────
+  const lineMils = (l) => l.boxes.reduce((a, bid) => a + box(bid).mils, 0);
+  const lineCents = (l) => Math.round(lineMils(l) / 1000 * l.price * 100);
+  const render = () => {
+    document.getElementById("as-crew").setAttribute("aria-pressed", !admin);
+    document.getElementById("as-admin").setAttribute("aria-pressed", admin);
+
+    document.getElementById("orders").innerHTML = S.orders.length ? S.orders.map((o) => {
+      const rows = o.lines.map((l, i) => {
+        const isActive = active && active.order === o.id && active.line === i;
+        const full = l.boxes.length === l.qty, over = l.boxes.length > l.qty;
+        const cells = [];
+        const n = Math.max(10, Math.ceil(Math.max(l.qty, l.boxes.length) / 10) * 10);
+        for (let c = 0; c < n; c++) {
+          const bid = l.boxes[c];
+          if (bid) cells.push(`<button type="button" title="Take ${esc(bid)} off this line" data-un="${o.id}|${i}|${esc(bid)}">${lb(box(bid).mils)}</button>`);
+          else cells.push(`<span class="${c < l.qty ? "need" : ""}"></span>`);
+        }
+        const lots = [...new Set(l.boxes.map((bid) => pal(box(bid).pallet).lot))];
+        const cls = l.boxes.length === 0 ? "none" : over ? "over" : full ? "ok" : "part";
+        return `<div class="line ${isActive ? "active" : ""} ${full ? "full" : ""} ${over ? "over" : ""}" data-line="${o.id}|${i}" role="button" tabindex="0" aria-label="Scan into line ${i + 1}">
+          <div class="l-top">
+            <span class="qty">${l.qty}</span>
+            <span class="desc"><span class="code">${esc(l.code)}</span> ${esc(l.desc)}${l.note ? `<span class="lnote">${esc(l.note)}</span>` : ""}</span>
+            ${isActive ? '<span class="tag-active">SCANNING</span>' : ""}
+            <span class="prog ${cls}">${l.boxes.length}/${l.qty}${full ? " ✓" : ""}</span>
+          </div>
+          <div class="tally">${cells.join("")}</div>
+          <div class="l-meta"><span>${lb(lineMils(l))} lb</span>${lots.length ? `<span>Lot ${lots.map(esc).join(", ")}</span>` : ""}
+            ${admin ? `<span class="price">$${l.price.toFixed(2)}/lb${l.boxes.length ? ` · ${money(lineCents(l))}` : ""}</span>` : ""}</div>
+        </div>`;
+      }).join("");
+      const ordered = o.lines.reduce((a, l) => a + l.qty, 0);
+      const scanned = o.lines.reduce((a, l) => a + l.boxes.length, 0);
+      const m = o.lines.reduce((a, l) => a + lineMils(l), 0);
+      const value = o.lines.reduce((a, l) => a + lineCents(l), 0);
+      const bl = blockers(o);
+      const opts = (sel) => `<option value="">—</option>${CREW.map((c) => `<option ${c === sel ? "selected" : ""}>${c}</option>`).join("")}`;
+      return `<div class="sheet">
+        <div class="sh-head">
+          <div class="acct"><span>Order# ${esc(o.orderNo)}</span><img src="${LOGO}" alt="AdamsFoods" style="height:20px;width:auto"><span>Inv# ______</span></div>
+          <span class="k">Customer</span><span class="cust">${esc(o.customer)}</span><span class="k">Date</span><span>${esc(o.date)}</span>
+          <span class="k">Ship/BL To</span><span>${esc(o.shipTo)}</span><span class="k">Due</span><span><b>${esc(o.due)}</b></span>
+        </div>
+        ${o.note ? `<div class="note">${esc(o.note)}</div>` : ""}
+        ${rows}
+        <div class="sh-foot">
+          <div class="tot"><span>Order Qty <b>${ordered}</b></span><span>Scanned <b>${scanned}</b> cs</span><span><b>${lb(m)}</b> lb</span>${admin ? `<span>Value <b>${money(value)}</b></span>` : ""}</div>
+          <div class="sign">
+            <label>Assemb. by<select data-sign="${o.id}|assembled">${opts(o.assembled)}</select></label>
+            <label>Check by<select data-sign="${o.id}|checked">${opts(o.checked)}</select></label>
+          </div>
+          ${bl.length ? `<ul class="blockers">${bl.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+          <div style="display:flex;gap:8px">
+            <button class="btn outline" type="button" data-print="${o.id}" title="Print the pick sheet">Print</button>
+            <button class="btn green" type="button" data-finish="${o.id}" ${bl.length ? "disabled" : ""} style="flex:1">Finish order · take boxes out</button>
+          </div>
+        </div>
+      </div>`;
+    }).join("") : `<div class="panel"><div class="empty">No open orders. Bring one in from the Excel list.</div></div>`;
+
+    // Active line.
+    const act = document.getElementById("active");
+    if (active && orderOf(active.order)) {
+      const o = orderOf(active.order), l = o.lines[active.line];
+      act.innerHTML = `<div class="active-box"><span class="who">${esc(o.customer)}</span>
+        <span>Line ${active.line + 1}: <b>${esc(l.code)}</b> ${esc(l.desc)}</span>
+        <span>${l.boxes.length} of ${l.qty} boxes</span></div>`;
+    } else act.innerHTML = `<div class="active-box none">No line picked. Tap a line on an order.</div>`;
+    document.getElementById("msg").innerHTML = (msg ? `<div class="msg ${msg.kind}">${esc(msg.text)}${msg.sub ? `<small>${esc(msg.sub)}</small>` : ""}
+      ${msg.confirm ? `<div class="row"><button class="btn outline sm" id="skip" type="button">Skip it</button><button class="btn sm" id="anyway" type="button">Add anyway</button></div>` : ""}</div>` : "")
+      + (leaving ? `<div class="leave"><b>Leaving boxes behind · pallet ${esc(pal(leaving.pallet).where)}</b>
+          <span>Scan each box that stays, or tap it on the pallet. Boxes on the line are blue.</span>
+          <button class="btn sm" type="button" id="leavedone">Done</button></div>` : "");
+
+    // Pallets.
+    document.getElementById("pallets").innerHTML = S.dock.map((pid) => {
+      const p = pal(pid);
+      const bs = S.boxes.filter((b) => b.pallet === pid && b.status === "in_stock");
+      const free = bs.filter((b) => !b.on).length;
+      return `<div class="pal"><div class="pal-h"><b>${esc(p.lot)}</b> P${p.pallet} <span class="where">${esc(p.where)}</span>
+        <span>${esc(p.code)} ${esc(p.item)}</span><span class="n">${free} left</span></div>
+        <div><button class="btn sm" type="button" data-pallet="${p.id}" ${free ? "" : "disabled"} title="P${esc(p.lot)}-${String(p.pallet).padStart(2, "0")}">Scan pallet tag</button></div>
+        <div class="chips">${bs.map((b) => { const onLeaving = leaving && leaving.pallet === pid && b.on && b.on.order === leaving.order && b.on.line === leaving.line;
+          return `<button class="chip ${onLeaving ? "online" : b.on ? "used" : ""}" type="button" data-scan="${b.id}" title="${onLeaving ? "On the line: tap to leave it behind" : b.on ? "On " + esc(lineName(orderOf(b.on.order), b.on.line)) : "Scan"}">${b.id} ${lb(b.mils)}</button>`; }).join("")}</div></div>`;
+    }).join("") || `<div class="empty">No pallets on the dock.</div>`;
+    document.getElementById("freezer").innerHTML = PALLETS.filter((p) => !S.dock.includes(p.id)).map((p) =>
+      `<div class="wait"><span><b>${esc(p.lot)}</b> P${p.pallet} · ${esc(p.where)} · ${esc(p.code)} ${esc(p.item)}</span><button class="btn outline sm" type="button" data-pull="${p.id}">Pull</button><button class="btn sm" type="button" data-pallet="${p.id}" title="Scanning its tag pulls it">Scan tag</button></div>`).join("") || `<div class="empty">All pulled.</div>`;
+
+    // Waiting and done.
+    document.getElementById("waiting").innerHTML = S.waiting.map((id) => {
+      const e = EXCEL.find((x) => x.id === id);
+      return `<div class="wait"><span><b>${esc(e.customer)}</b> · ${esc(e.date)} · due ${esc(e.due)} · ${e.lines.reduce((a, l) => a + l.qty, 0)} cs</span><button class="btn outline sm" type="button" data-bring="${id}">Bring in</button></div>`;
+    }).join("") || `<div class="empty">Every Excel order is open.</div>`;
+    document.getElementById("done").innerHTML = S.done.map((o) => {
+      const n = o.lines.reduce((a, l) => a + l.boxes.length, 0), m = o.lines.reduce((a, l) => a + lineMils(l), 0);
+      return `<div class="donebox"><b>#${o.ship} · ${esc(o.customer)}</b><span>${n} boxes · ${lb(m)} lb${admin ? ` · ${money(o.lines.reduce((a, l) => a + lineCents(l), 0))}` : ""}</span>
+        <span class="empty">Assembled ${esc(o.assembled)} · checked ${esc(o.checked)}</span>
+        <button class="btn outline sm" type="button" data-print="${o.id}" style="align-self:flex-start;margin-top:4px">Print order sheet</button></div>`;
+    }).join("") || `<div class="empty">Nothing finished yet.</div>`;
+  };
+
+  // The AdamsFoods lockup (client/src/assets/AdamsWings.png), embedded so the print needs nothing loaded.
+  const LOGO = "data:image/png;base64,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3ldujmtWNfTzdLyirrn6vS1WKDr8Qp4OQqfwdmTnYOC97rrr7KtjICSPP/543+udAzedWzFIRCAQsE455ZS4eXAfXMOBtTAUwZVMyD/77LPbrGqew89YCYcddph15plnaksTyxqrDQuKgcf7DO+BlZdoLvapp54akgWcSn3FO5x7U02DKZQ1a9bYOe4PAyrz/4nSQrgg8E466STrvPPO03WJ9bfTTjtpQcS9CM14z/AyWkIeYc179j4LAcQce6KpBWeahHK67+dAaUBAJ4J+QQyFV0nASv/Tn/6UUEmgHpqamqwLLrhgwP3kH+UkUd7pu8TheJUE+typp55q1dfXx/W48GzqjTHAfa/7SCTkyde1117bL9/8/OUvfznhmMJz29vb04o92BEZc9H13b2WPLGpSVYGe+X0mhKZYX8vfT1R9psDEia03IbNYA6ozJejaiolP2dwy5LGOryW1a0BeaA2IKoqtkFc8CEVeXL0jCodORrt7pH7N7TIxlBEvrjbFCnKHd7lOETqEplOJLkfauDV0dGqU9pnYnn/6U9/KkqT1z/7wTIsIo+TRRSrjqmjsMkDy3ISwbIrIsaJ3CUCXAlOvcveHXfcIcqaipsXN0rIJ4yuJ0qapYTUC886+eSTddQu0cks01EWib6OfLOEiDL+7//+b9xNhIA6YOkh6flBxDArFuIto3OgPRA9z86D1K8TZa2snpTKDmqw1B9iIZKdMrESgTLE2x/BQQ3ucuutt8rpp59un+lDKU26zp544gn7TH945pIlS0QJJr3sUSlouv64jyh83p0S2jp6W1mg+lnJ8EbXA23ii1/84qCj63neiSeeqCP83SghJhdffLFe3UB+HZTCo1cnHHrooSk9680335Rzzz1Xl9OB+2iL9957b7++5YaVCfQLJQztM7FNqfjmvbJoU4oe571++9vf1t+VcLcRli3yPpViZJ/pz4oVK/Q7c7cL3iP94a9//au+PxkszeR9+H3wijLHi66nXyslWu655x77TPI+NK5RlTumiCrt7541tdp6fXZzn8bVpazUu9fGLHi3VXvpe3XWi8qS7RlmDX17s6U9YP1NWezusnJcocpb29E3n7Q1ELKufK/WuvydTVZwBIIRX3jhhYTWKPOLaMhe1IAedx6ZA8tUDVL21fFB81YDh28a7oNIb6wXggTd+eFnrCUlJAe4BP2O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";
+
+  // ── Printing: the paper order sheet, filled in from the scans ─────────────
+  let printing = null; // { id, prices }
+  const anyOrder = (id) => S.orders.find((o) => o.id === id) || S.done.find((o) => o.id === id);
+  const paperHtml = (o, prices) => {
+    const finished = Boolean(o.ship);
+    let rows = `<tr><td class="h">PL/CS/BX</td><td class="h" colspan="10">Item Description</td>${prices ? '<td class="h">$/lb</td>' : ""}<td class="h">Total lb</td></tr>`;
+    rows += `<tr><td></td>${Array.from({ length: 10 }, (_, i) => `<td class="h">${i + 1}</td>`).join("")}${prices ? "<td></td>" : ""}<td></td></tr>`;
+    let used = 0; // body rows so far, to know how many blank ones fill the page
+    for (const l of o.lines) {
+      used += 1 + Math.max(1, Math.ceil(l.qty / 10));
+      const lots = [...new Set(l.boxes.map((bid) => pal(box(bid).pallet).lot))];
+      const span = prices ? 12 : 11;
+      rows += `<tr><td class="q">${l.qty}</td><td class="d" colspan="10">${esc(l.code)}-${esc(l.desc)}${lots.length ? ` (${lots.map(esc).join(", ")})` : ""}${l.note ? `<span class="ln">${esc(l.note)}</span>` : ""}</td>
+        ${prices ? `<td class="pr">${l.price.toFixed(2)}</td>` : ""}<td class="rt">${l.boxes.length ? lb(lineMils(l)) : ""}</td></tr>`;
+      // Weight rows: as many tens as the line needs, blank cells for boxes not yet scanned.
+      const rowsNeeded = Math.max(1, Math.ceil(l.qty / 10));
+      for (let r = 0; r < rowsNeeded; r++) {
+        const cells = Array.from({ length: 10 }, (_, c) => {
+          const bid = l.boxes[r * 10 + c];
+          return `<td class="w">${bid ? lb(box(bid).mils) : ""}</td>`;
+        }).join("");
+        rows += `<tr><td style="text-align:center;color:#555">${rowsNeeded > 1 ? r + 1 : ""}</td>${cells}${prices ? "<td></td>" : ""}<td></td></tr>`;
+      }
+      void span;
+    }
+    // Blank item and weight rows down to the foot of the page, as the paper form has.
+    // Plenty; renderPrint trims the extras once it can measure the page.
+    const PAGE_ROWS = 40;
+    const blankW = `${Array.from({ length: 10 }, () => '<td class="w"></td>').join("")}${prices ? "<td></td>" : ""}<td></td>`;
+    for (let r = used; r < PAGE_ROWS; r++) {
+      rows += (r - used) % 2 === 0
+        ? `<tr class="fill"><td class="q"></td><td class="d" colspan="10"></td>${prices ? "<td></td>" : ""}<td></td></tr>`
+        : `<tr class="fill"><td></td>${blankW}</tr>`;
+    }
+    const ordered = o.lines.reduce((a, l) => a + l.qty, 0);
+    const scanned = o.lines.reduce((a, l) => a + l.boxes.length, 0);
+    const m = o.lines.reduce((a, l) => a + lineMils(l), 0);
+    const value = o.lines.reduce((a, l) => a + lineCents(l), 0);
+    return `<div class="paper">
+      <table class="pp-acct"><tr><td style="width:30%">Order# <b>${esc(o.orderNo)}</b></td><td style="text-align:center"><img class="pp-logo" src="${LOGO}" alt="AdamsFoods · Premium Quality"></td><td style="width:30%;text-align:right">Inv#_______________</td></tr></table>
+      <table class="pp-head">
+        <tr><td style="width:90px">Customer</td><td class="v">${esc(o.customer)}</td><td style="width:50px;text-align:right">Date:</td><td class="v" style="width:120px">${esc(o.date)}</td></tr>
+        <tr><td>Ship/BL To</td><td class="v">${esc(o.shipTo)}</td><td style="text-align:right">Due:</td><td class="v">${esc(o.due)}</td></tr>
+      </table>
+      <table class="pp-grid">${rows}</table>
+      ${o.note ? `<div class="pp-note">${esc(o.note)}</div>` : ""}
+      <table class="pp-foot"><tr>
+        <td>Order Qty: <span class="v">&nbsp;${ordered}&nbsp;</span></td>
+        <td>Total cs: <span class="v">&nbsp;${scanned}&nbsp;</span></td>
+        <td>Total lb: <span class="v">&nbsp;${scanned ? lb(m) : ""}&nbsp;</span></td>
+        ${prices ? `<td>Value: <span class="v">&nbsp;${scanned ? money(value) : ""}&nbsp;</span></td>` : ""}
+        <td>Assemb. by: <span class="v">&nbsp;${esc(o.assembled)}&nbsp;</span></td>
+        <td>Check By: <span class="v">&nbsp;${esc(o.checked)}&nbsp;</span></td>
+      </tr></table>
+      <div class="pp-stamp"><span>${finished ? `Shipment #${o.ship} · weights and lots from scans` : "PICK SHEET · not finished · weights fill in as boxes are scanned"}</span><span>Printed 11/09/2026</span></div>
+    </div>`;
+  };
+  const renderPrint = () => {
+    let ov = document.getElementById("overlay");
+    if (!printing) { if (ov) ov.remove(); return; }
+    const o = anyOrder(printing.id);
+    if (!ov) { ov = document.createElement("div"); ov.id = "overlay"; ov.className = "overlay"; document.body.append(ov); }
+    ov.innerHTML = `<div class="pv-bar">
+        <button class="btn outline sm" type="button" id="pv-close">Close</button>
+        ${admin ? `<div class="seg" role="group" aria-label="Copy"><button type="button" id="pv-crew" aria-pressed="${!printing.prices}">Floor copy</button><button type="button" id="pv-admin" aria-pressed="${printing.prices}">Office copy (prices)</button></div>` : ""}
+        <span class="hint">In the app this opens the print window, letter size. ${o.ship ? "Finished: every weight is filled in." : "Not finished: a pick sheet the crew can carry."}</span>
+      </div>${paperHtml(o, printing.prices && admin)}`;
+    // Fill the page and no more: drop blank rows from the bottom until it fits one letter sheet.
+    const paper = ov.querySelector(".paper");
+    const PAGE = 11 * 96;
+    let fills = paper.querySelectorAll("tr.fill");
+    for (let i = fills.length - 1; i >= 0 && paper.getBoundingClientRect().height > PAGE + 0.5; i--) fills[i].remove();
+  };
+
+  // ── Events ────────────────────────────────────────────────────────────────
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("button, .line");
+    if (!t) return;
+    if (t.dataset.print) { printing = { id: t.dataset.print, prices: false }; renderPrint(); return; }
+    if (t.id === "pv-close") { printing = null; renderPrint(); return; }
+    if (t.id === "pv-crew" || t.id === "pv-admin") { printing.prices = t.id === "pv-admin"; renderPrint(); return; }
+    if (t.id === "leavedone") { doneLeaving(); render(); return; }
+    if (t.dataset.pallet) { scanPallet(t.dataset.pallet); render(); return; }
+    if (t.dataset.un) { const [o, i, b] = t.dataset.un.split("|"); unscan(o, Number(i), b); }
+    else if (t.dataset.line) { const [o, i] = t.dataset.line.split("|"); active = { order: o, line: Number(i) }; pending = null;
+      msg = { kind: "ok", text: `Scanning into ${orderOf(o).customer}, line ${Number(i) + 1}.` }; }
+    else if (t.dataset.scan) scan(t.dataset.scan);
+    else if (t.id === "anyway" && pending) scan(pending, true);
+    else if (t.id === "skip") { pending = null; msg = { kind: "warn", text: "Skipped. Nothing was added." }; }
+    else if (t.dataset.pull) { S.dock.push(t.dataset.pull); msg = { kind: "ok", text: `Pallet ${pal(t.dataset.pull).where} is on the dock.` }; }
+    else if (t.dataset.bring) { const ex = EXCEL.find((x) => x.id === t.dataset.bring);
+      S.orders.push({ ...JSON.parse(JSON.stringify(ex)), lines: ex.lines.map((l) => ({ ...l, boxes: [] })), assembled: "", checked: "", done: false });
+      S.waiting = S.waiting.filter((x) => x !== ex.id);
+      msg = { kind: "ok", text: `${ex.customer} brought in from Excel.`, sub: `${ex.lines.length} line${ex.lines.length === 1 ? "" : "s"}, ${ex.lines.reduce((a, l) => a + l.qty, 0)} cases.` }; }
+    else if (t.dataset.finish) finish(t.dataset.finish);
+    else if (t.id === "as-crew") admin = false;
+    else if (t.id === "as-admin") admin = true;
+    else if (t.id === "reset") { S = seed(); active = null; msg = null; pending = null; }
+    else return;
+    render();
+  });
+  document.addEventListener("change", (e) => {
+    if (!e.target.dataset.sign) return;
+    const [o, field] = e.target.dataset.sign.split("|");
+    orderOf(o)[field] = e.target.value;
+    render();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.classList && e.target.classList.contains("line") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.target.click(); }
+  });
+
+  // A scanner types like a keyboard: a box number, or a label whose (21) serial is the box number.
+  let buf = "", last = 0;
+  window.addEventListener("keydown", (e) => {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    if (e.timeStamp - last > 800) buf = "";
+    last = e.timeStamp;
+    if (e.key === "Enter") {
+      if (buf.length >= 3) {
+        e.preventDefault();
+        // A pallet tag (P<lot>-<nn>), or a box: its number or a label whose (21) serial is the box number.
+        const pm = /^P(.+)-(\d{2})$/i.exec(buf.trim());
+        const pt = pm && PALLETS.find((x) => x.lot.toUpperCase() === pm[1].toUpperCase() && x.pallet === Number(pm[2]));
+        if (pt) scanPallet(pt.id);
+        else { const m = /\(21\)([A-Z0-9]+)/i.exec(buf); scan((m ? m[1] : buf).toUpperCase().trim()); }
+        render();
+      }
+      buf = ""; return;
+    }
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) buf += e.key;
+  });
+
+  render();
+})();
+</script>
+
+</body>
+</html>
