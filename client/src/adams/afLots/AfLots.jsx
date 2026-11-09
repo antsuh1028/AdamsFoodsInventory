@@ -8,17 +8,21 @@ import useBarcodeKeys from "../boxScan/useBarcodeKeys";
 import { primeAudio, beepSuccess, beepError } from "../../utils/scanFeedback";
 import { sumWeights, toDisplay } from "../../utils/weight";
 import upperInput from "../../utils/upperInput";
+import { isLocation, couldBeLocation } from "../../utils/freezerLayout";
 import ITEM_CODES from "../../utils/itemCodes";
 import printOutgoingTag from "../../noblesse/outgoing/printOutgoingTag";
 import printWeightManifest from "../../noblesse/weightManifest/printWeightManifest";
 import NumericKeypad from "../../noblesse/weighing/NumericKeypad";
 import { fmtDateOnly } from "../../noblesse/common/shared";
+import getRole from "../../utils/getRole";
 
 // Adams Foods lot registration: register a lot, add its items, scan its boxes, put its pallets away.
 // Kept apart from inventory.
 
-const EMPTY = { lotNumber: "", vendor: "", description: "", pricePerLb: "" };
+const EMPTY = { lotNumber: "", vendor: "", description: "" };
 const NO_ITEM = { description: "", pricePerLb: "" };
+// Prices are set later by these roles, never at receiving; the server enforces it.
+const canPrice = () => ["admin", "manager"].includes(getRole());
 
 const dollars = (n) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -27,6 +31,7 @@ const errText = (err) => err.response?.data?.error || err.message || "Something 
 const LotList = ({ onOpen }) => {
   const [lots, setLots] = useState(null);
   const [form, setForm] = useState(EMPTY);
+  const priced = canPrice();
   const [problem, setProblem] = useState(null);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
@@ -78,11 +83,10 @@ const LotList = ({ onOpen }) => {
     <Stack spacing={4}>
       <Box p={3} border="1px solid" borderColor="teal.200" borderRadius="md" bg="teal.50">
         <Text fontSize="sm" fontWeight="600" mb={2}>Register a lot</Text>
-        <SimpleGrid columns={{ base: 1, md: typing ? 4 : 3 }} spacing={3}>
+        <SimpleGrid columns={{ base: 1, md: typing ? 3 : 2 }} spacing={3}>
           {typing && field("lotNumber", "Lot # (e.g. 26298-03)")}
           {field("vendor", "Vendor")}
           {field("description", "First item")}
-          {field("pricePerLb", "Price / lb", false)}
         </SimpleGrid>
         <Flex mt={3} align="center" gap={3} wrap="wrap">
           <Button size="sm" colorScheme="teal" onClick={register} isLoading={busy} isDisabled={!ready}>
@@ -110,11 +114,11 @@ const LotList = ({ onOpen }) => {
           <Table size="sm" minW="640px">
             <Thead><Tr>
               <Th>Lot #</Th><Th>Vendor</Th><Th>Items</Th>
-              <Th isNumeric>Pallets</Th><Th isNumeric>Boxes</Th><Th isNumeric>Lb</Th><Th isNumeric>Value</Th>
+              <Th isNumeric>Pallets</Th><Th isNumeric>Boxes</Th><Th isNumeric>Lb</Th>{priced && <Th isNumeric>Value</Th>}
             </Tr></Thead>
             <Tbody>
               {shown.length === 0 && (
-                <Tr><Td colSpan={7}><Text fontSize="sm" color="gray.500">
+                <Tr><Td colSpan={priced ? 7 : 6}><Text fontSize="sm" color="gray.500">
                   {lots.length === 0 ? "No lots registered yet." : `No lots match "${search.trim()}".`}
                 </Text></Td></Tr>
               )}
@@ -126,7 +130,7 @@ const LotList = ({ onOpen }) => {
                   <Td isNumeric>{l.pallets}</Td>
                   <Td isNumeric>{l.boxCount}</Td>
                   <Td isNumeric>{toDisplay(l.totalLb || "0")}</Td>
-                  <Td isNumeric>{l.value ? dollars(Number(l.value)) : ""}</Td>
+                  {priced && <Td isNumeric>{l.value ? dollars(Number(l.value)) : ""}</Td>}
                 </Tr>
               ))}
             </Tbody>
@@ -233,7 +237,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
     if (station) { setStation(null); return; }
     try {
       const { data } = await axiosInstance.get("/af-stations");
-      if (!data[0]) { setProblem("No scan station is set up."); return; }
+      if (!data[0]) { setProblem("No receiving station is set up."); return; }
       const feed = await axiosInstance.get(`/af-stations/${data[0].id}/feed`);
       lastEvent.current = feed.data.lastEventId;
       setStation(data[0]);
@@ -277,7 +281,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
         if (data.taken) {
           sessionId.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
           setStation(null);
-          setProblem(`The scan station was taken by ${data.by}.`);
+          setProblem(`The receiving station was taken by ${data.by}.`);
           beepError();
           return;
         }
@@ -309,6 +313,11 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
     send({ weight: padValue, unit: padUnit });
     setPadValue("");
   };
+
+  // Normalised as the server does; flagged only once it can no longer become a location.
+  const putAwayLoc = locationInput.trim().toUpperCase().replace(/[\s-]/g, "");
+  const putAwayOk = isLocation(putAwayLoc);
+  const putAwayBad = Boolean(putAwayLoc) && !putAwayOk && !couldBeLocation(putAwayLoc);
 
   // Puts the selected pallet away; its boxes take the location.
   const putAway = async () => {
@@ -518,12 +527,12 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
               onChange={(e) => setItemForm({ ...itemForm, description: upperInput(e) })}
               onKeyDown={(e) => { if (e.key === "Enter" && itemForm.description.trim()) saveItem(); }} />
           </Box>
-          <Box>
+          {canPrice() && <Box>
             <Text fontSize="xs" color="gray.500" mb={1}>Price / lb</Text>
             <Input size="sm" bg="white" w="110px" value={itemForm.pricePerLb}
               onChange={(e) => setItemForm({ ...itemForm, pricePerLb: e.target.value })}
               onKeyDown={(e) => { if (e.key === "Enter" && itemForm.description.trim()) saveItem(); }} />
-          </Box>
+          </Box>}
           <Button size="sm" colorScheme="teal" onClick={saveItem} isDisabled={!itemForm.description.trim()}>
             {itemForm.id ? "Save" : "Add"}
           </Button>
@@ -557,14 +566,16 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
           Pallet {pallet} {locations[pallet] ? `is at ${locations[pallet]}.` : "is not put away yet."}
         </Text>
         <Input size="sm" w="120px" bg="white" placeholder="A101" value={locationInput}
+          isInvalid={putAwayBad}
           onChange={(e) => setLocationInput(upperInput(e))}
-          onKeyDown={(e) => { if (e.key === "Enter" && locationInput.trim()) putAway(); }} />
-        <Button size="sm" colorScheme="blue" variant="outline" onClick={putAway} isDisabled={!locationInput.trim()}>
+          onKeyDown={(e) => { if (e.key === "Enter" && putAwayOk) putAway(); }} />
+        <Button size="sm" colorScheme="blue" variant="outline" onClick={putAway} isDisabled={!putAwayOk}>
           {locations[pallet] ? "Move pallet" : "Put away"}
         </Button>
+        {putAwayBad && <Text fontSize="sm" color="red.600">{putAwayLoc} is not a freezer location</Text>}
         <Button size="sm" ml="auto" {...quiet} colorScheme="teal" variant={station ? "solid" : "outline"}
           onClick={toggleStation} isDisabled={stationHere && !station}>
-          {station ? `Scan station on · ${station.name}` : "Use scan station"}
+          {station ? `Connected to ${station.name}` : "Connect to receiving station"}
         </Button>
         <Button size="sm" variant="ghost" {...quiet} onClick={() => setPadOpen((o) => !o)}>
           {padOpen ? "Hide keypad" : "Keypad"}
@@ -579,7 +590,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
 
       {stationHere && (
         <Alert status="info" borderRadius="md" py={2}>
-          <AlertIcon />This computer is the scan station. Use Lot Registration on the tablet.
+          <AlertIcon />This computer is the receiving station. Use Lot Registration on the tablet.
         </Alert>
       )}
       {problem
@@ -662,7 +673,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
   );
 };
 
-// stationHere: the Scan Station window is open on this same device.
+// stationHere: the Receiving Station window is open on this same device.
 const AfLots = ({ isOpen, onClose, stationHere = false }) => {
   const [open, setOpen] = useState(null); // the lot being scanned onto
   const close = () => { setOpen(null); onClose(); };

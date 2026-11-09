@@ -21,10 +21,16 @@ import {
   InputGroup,
   InputLeftElement,
   InputRightElement,
+  IconButton,
+  Tooltip,
 } from "@chakra-ui/react";
 import { SearchIcon, CloseIcon, RepeatIcon, ChevronDownIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
 import cache from "../../utils/apiCache";
+import findItem from "../../utils/homescreen/findItem";
+import StockView from "./StockView";
+import ShowMap from "../locations/locationMap";
+import PopInIcon from "../../components/PopInIcon";
 
 const ORDERS_TTL   = 2 * 60 * 1000;
 const DETAIL_TTL   = 5 * 60 * 1000;
@@ -456,6 +462,16 @@ const NoblessePanel = ({ items, handleItemClick, selectedItem, selectedIds, onTo
 
 const SEARCH_KEYS = ["location", "lot", "vendor", "brand", "species", "description"];
 
+// Tab positions; Stock and Map come first.
+const TAB = { stock: 0, map: 1, level1: 2, other: 5, toNoblesse: 6, fromNoblesse: 7 };
+
+// The tab a location belongs on.
+const tabFor = (location) => {
+  if (location.toUpperCase().startsWith("NOBLESSE")) return TAB.toNoblesse;
+  const level = parseInt(location[1]);
+  return level >= 1 && level <= 3 ? TAB.level1 + level - 1 : TAB.other;
+};
+
 const InventoryTabs = ({
   items,
   handleItemClick,
@@ -475,6 +491,11 @@ const InventoryTabs = ({
   const [detailLoading, setDetailLoading] = useState(null);
   const [togglingOrderId, setTogglingOrderId] = useState(null);
   const [rangeDays, setRangeDays] = useState(30);
+  // The location the Map tab was asked to show.
+  const [mapHighlight, setMapHighlight] = useState(null);
+  // The map moved out of its tab into a window.
+  const [mapPopped, setMapPopped] = useState(false);
+  const showOnMap = useCallback((location) => { setMapHighlight(location); setTabIndex(TAB.map); }, []);
 
   const fetchNoblesseOrders = useCallback(async () => {
     const hit = cache.get("prod-orders-pending");
@@ -525,22 +546,25 @@ const InventoryTabs = ({
   }, [expandedOrderId, orderDetails]);
 
   useEffect(() => {
-    if (tabIndex === 4) fetchNoblesseOrders();
+    if (tabIndex === TAB.toNoblesse) fetchNoblesseOrders();
   }, [tabIndex, fetchNoblesseOrders]);
 
   useEffect(() => {
     if (flashLocation && flashLocation.length >= 2) {
-      if (flashLocation.toUpperCase().startsWith("NOBLESSE")) { setTabIndex(4); return; }
-      const level = parseInt(flashLocation[1]);
-      if (level >= 1 && level <= 3) setTabIndex(level - 1);
-      else setTabIndex(3);
+      setTabIndex(tabFor(flashLocation));
     }
   }, [flashLocation]);
 
-  // Reset search when a new find result comes in
+  // Reset search when a new find result comes in, and leave the Stock tab to show it.
   useEffect(() => {
     setSearch("");
+    if (items.length) setTabIndex((t) => (t < TAB.level1 ? tabFor(items[0].location || "") : t));
   }, [items]);
+
+  // An old row tapped on the Stock tab, fetched whole (the stock list leaves out its boxes).
+  const openOld = useCallback((row) => {
+    findItem({ location: row.location }, (rows) => handleItemClick((rows || []).find((r) => r._id === row._id) || row), null, null);
+  }, [handleItemClick]);
 
   // Prune selections that no longer exist in items
   useEffect(() => {
@@ -597,8 +621,32 @@ const InventoryTabs = ({
   }, [selectedIds, items, onBulkRemove]);
 
   return (
-    <Tabs variant="enclosed" width="100%" height="100%" display="flex" flexDirection="column" index={tabIndex} onChange={(i) => { setTabIndex(i); handleTabClick(); }}>
+    <Tabs variant="enclosed" width="100%" height="100%" display="flex" flexDirection="column" index={tabIndex} onChange={(i) => { setTabIndex(i); setMapHighlight(null); handleTabClick(); }}>
       <TabList borderBottom="2px" borderColor="gray.100" px={2} pt={1}>
+        <Tab
+          fontWeight="semibold"
+          fontSize="sm"
+          _hover={{ bg: "teal.50" }}
+          _selected={{
+            color: "teal.600",
+            borderColor: "teal.500",
+            borderBottomColor: "white",
+          }}
+        >
+          Stock
+        </Tab>
+        <Tab
+          fontWeight="semibold"
+          fontSize="sm"
+          _hover={{ bg: "teal.50" }}
+          _selected={{
+            color: "teal.600",
+            borderColor: "teal.500",
+            borderBottomColor: "white",
+          }}
+        >
+          Map
+        </Tab>
         {[1, 2, 3].map((level) => (
           <Tab
             key={`level-${level}`}
@@ -652,6 +700,7 @@ const InventoryTabs = ({
         </Tab>
       </TabList>
 
+      {tabIndex !== TAB.map && (
       <Flex px={3} py={1} borderBottom="1px" borderColor="gray.100" gap={3} align="center" bg="gray.50" flexShrink={0}>
         {[
           { color: "green.400",  label: "<30d" },
@@ -666,8 +715,9 @@ const InventoryTabs = ({
           </Flex>
         ))}
       </Flex>
+      )}
 
-      {items.length > 0 && (
+      {tabIndex >= TAB.level1 && items.length > 0 && (
         <Box px={3} py={1.5} borderBottom="1px" borderColor="gray.100" flexShrink={0}>
           <InputGroup size="xs">
             <InputLeftElement pointerEvents="none">
@@ -690,7 +740,7 @@ const InventoryTabs = ({
         </Box>
       )}
 
-      {selectedIds.size > 0 && (
+      {tabIndex >= TAB.level1 && selectedIds.size > 0 && (
         <Flex
           px={3}
           py={1.5}
@@ -727,6 +777,21 @@ const InventoryTabs = ({
       )}
 
       <TabPanels flex={1} minH={0} border="0">
+        <TabPanel height="100%" p={0}>
+          <StockView active={tabIndex === TAB.stock} onOpenOld={openOld} onShowOnMap={showOnMap} />
+        </TabPanel>
+        <TabPanel height="100%" p={0} overflowY="auto">
+          {mapPopped ? (
+            <Flex direction="column" align="center" justify="center" gap={2} py={10}>
+              <Text fontSize="sm" color="gray.500">The map is open in its own window.</Text>
+              <Tooltip label="Bring it back here">
+                <IconButton size="sm" variant="ghost" aria-label="Bring it back here" icon={<PopInIcon />} onClick={() => setMapPopped(false)} />
+              </Tooltip>
+            </Flex>
+          ) : (
+            <ShowMap inline isOpen={tabIndex === TAB.map} highlightLocation={mapHighlight} onPopOut={() => setMapPopped(true)} />
+          )}
+        </TabPanel>
         {[1, 2, 3].map((level) => (
           <InventoryLevelPanel
             key={`panel-${level}`}
@@ -921,6 +986,9 @@ const InventoryTabs = ({
           />
         </TabPanel>
       </TabPanels>
+
+      {/* The popped-out map; closing it puts the map back in its tab. */}
+      <ShowMap isOpen={mapPopped} onClose={() => setMapPopped(false)} highlightLocation={mapHighlight} onPopIn={() => setMapPopped(false)} />
     </Tabs>
   );
 };

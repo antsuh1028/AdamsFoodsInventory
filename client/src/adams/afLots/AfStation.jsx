@@ -84,10 +84,10 @@ const AfStation = ({ isOpen, onClose }) => {
   const live = Boolean(station && station.live);
   const target = live
     ? `${station.lotNumber} · ${station.itemDescription || "no item"} · Pallet ${station.palletNo}`
-    : "No tablet connected. Scans are refused until a tablet turns on Use scan station.";
+    : "No tablet connected. Scans are refused until a tablet chooses Connect to receiving station.";
 
   return (
-    <FloatingWindow isOpen={isOpen} onClose={onClose} title={station ? `Scan Station · ${station.name}` : "Scan Station"} width={720}>
+    <FloatingWindow isOpen={isOpen} onClose={onClose} title={station ? `Receiving Station: ${station.name}` : "Receiving Station"} width={720}>
       <Stack spacing={4} onClick={() => primeAudio()}>
         <Text fontSize="sm" color="gray.600">
           Leave this open on the computer the scanner base is plugged into. Pick the lot on the tablet.

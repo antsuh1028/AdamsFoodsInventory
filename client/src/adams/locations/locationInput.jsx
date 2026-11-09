@@ -7,11 +7,10 @@ import {
   Badge,
   VStack,
   FormLabel,
-  useBreakpointValue,
 } from "@chakra-ui/react";
 
 const LocationInput = ({ value, onChange, badgeState, isInvalid = false }) => {
-  const inputSize = useBreakpointValue({ base: "sm", md: "md" });
+  const inputSize = "sm";
   const getBadgeProps = (state) => {
     switch (state) {
       case "in":
@@ -26,8 +25,8 @@ const LocationInput = ({ value, onChange, badgeState, isInvalid = false }) => {
   };
 
   return (
-    <VStack spacing={1} width="100%">
-      <FormLabel marginTop="5px" textAlign="center" marginBottom="5px" fontSize={{ base: "sm", md: "md" }} color={isInvalid ? "red.500" : undefined}>
+    <VStack spacing={0.5} width="100%" align="stretch">
+      <FormLabel m={0} fontSize="xs" color={isInvalid ? "red.500" : "gray.600"}>
         Location
       </FormLabel>
       <InputGroup size={inputSize}>
@@ -43,7 +42,7 @@ const LocationInput = ({ value, onChange, badgeState, isInvalid = false }) => {
           autoComplete="off"
         />
         <InputRightElement width="auto" marginRight="5px">
-          {badgeState && <Badge {...getBadgeProps(badgeState)} p="2" />}
+          {badgeState && <Badge {...getBadgeProps(badgeState)} px={2} />}
         </InputRightElement>
       </InputGroup>
     </VStack>

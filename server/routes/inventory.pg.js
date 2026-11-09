@@ -18,7 +18,7 @@ router.post("/inventoryAdd", verifyToken, async (req, res) => {
 
   if (!location || !location.trim()) return res.status(400).json({ error: "Location field cannot be blank." });
   const locationUpper = location.toUpperCase();
-  if (!validLocations.includes(locationUpper)) return res.status(400).json({ error: "Location Does Not Exist" });
+  if (!validLocations.has(locationUpper)) return res.status(400).json({ error: "Location Does Not Exist" });
   const parsedBoxes = Array.isArray(boxes) ? boxes.map((b) => ({ weight: String(b.weight ?? b) })) : [];
   const computedWeight = parsedBoxes.length > 0 ? boxesWeight(parsedBoxes) : weight;
   const computedQty    = parsedBoxes.length > 0 ? String(parsedBoxes.length) : quantity;
@@ -505,7 +505,7 @@ router.post("/inventoryRestore", verifyToken, requireRole("admin", "manager"), a
 
   if (!location) return res.status(400).json({ error: "No location in history record" });
   const locationUpper = location.toUpperCase();
-  if (!validLocations.includes(locationUpper)) return res.status(400).json({ error: "Location no longer exists" });
+  if (!validLocations.has(locationUpper)) return res.status(400).json({ error: "Location no longer exists" });
 
   const client = await pool.connect();
   try {
@@ -543,7 +543,7 @@ router.post("/inventoryRestore", verifyToken, requireRole("admin", "manager"), a
 // ── Verify Location ───────────────────────────────────────────────────────────
 router.post("/verifyLocation", verifyToken, (req, res) => {
   const { location } = req.body;
-  res.send(validLocations.includes(location) ? "OK" : "INVALID");
+  res.send(validLocations.has(location) ? "OK" : "INVALID");
 });
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -584,7 +584,7 @@ router.get("/inventoryStats", verifyToken, requireRole("admin"), async (req, res
       totalWeight:       parseFloat(totalRes.rows[0].total_weight) || 0,
       totalValue:        parseFloat(totalRes.rows[0].total_value)  || 0,
       occupiedLocations: parseInt(locRes.rows[0].occupied),
-      totalLocations:    validLocations.length,
+      totalLocations:    validLocations.size,
       bySpecies:         group("species"),
       byGrade:           group("grade"),
       byVendor:          group("vendor"),

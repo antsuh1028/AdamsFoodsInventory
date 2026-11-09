@@ -1,4 +1,8 @@
-export const locationRows = {
+// The freezer: every rack slot by level and block, and the named places that are not slots.
+// Mirrored byte for byte at client/src/utils/freezerLayout.js; edit both.
+
+// "-" marks a seat that does not exist.
+const locationRows = {
   topRow1: {
     W1: ["03", "02", "01"],
     V1: ["06", "03", "05", "02", "04", "01"],
@@ -87,3 +91,20 @@ export const locationRows = {
     M3: ["01", "05", "02", "06", "03", "07", "04", "08"],
   },
 };
+
+// Places that are not rack slots.
+const EXTRA_LOCATIONS = ["FLOOR", "CHILLING", "NOBLESSE TRADING"];
+
+// Every location that exists.
+const LOCATIONS = new Set([
+  ...Object.values(locationRows).flatMap((row) =>
+    Object.entries(row).flatMap(([id, seats]) => seats.filter((s) => s !== "-").map((s) => `${id}${s}`))),
+  ...EXTRA_LOCATIONS,
+]);
+
+const isLocation = (loc) => LOCATIONS.has(loc);
+
+// True while what is typed could still become a location, so a half-typed one is not flagged.
+const couldBeLocation = (loc) => [...LOCATIONS].some((l) => l.startsWith(loc));
+
+module.exports = { locationRows, EXTRA_LOCATIONS, LOCATIONS, isLocation, couldBeLocation };

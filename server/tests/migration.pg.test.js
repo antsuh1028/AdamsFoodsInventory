@@ -498,7 +498,7 @@ describe("GET /inventoryStats", () => {
   it("totalLocations matches the validLocations list length", async () => {
     const validLocations = require("../utils/locations");
     const res = await request(app).get("/inventoryStats").set("Authorization", adminToken);
-    expect(res.body.totalLocations).toBe(validLocations.length);
+    expect(res.body.totalLocations).toBe(validLocations.size);
   });
 
   it("bySpecies is sorted by count descending", async () => {
