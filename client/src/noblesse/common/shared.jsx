@@ -49,10 +49,10 @@ export const PROCESSING_LINES = [
   "Bandsaw #2",
 ];
 
-// A lot number without our N, NX or FP prefix is EHWA's.
+// A lot number without our N, NX, FP or FPX prefix is EHWA's, FP-{number} included.
 export const isEhwaLot = (lotNumber) => {
   const s = String(lotNumber || "").trim().toUpperCase();
-  return Boolean(s) && !/^(N|NX|FP)\d/.test(s);
+  return Boolean(s) && !/^(N|NX|FP|FPX)\d/.test(s);
 };
 
 // A mixed lot: NX{YY}{JJJ}-{NN}, ours.

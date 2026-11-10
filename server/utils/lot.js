@@ -124,23 +124,38 @@ const parseLot = (input) => {
 const isCanonicalLot = (text) => LOT_SHAPE.test(String(text ?? "").trim());
 
 // ── Further-processing lots ──────────────────────────────────────────────────
-// FP{YY}{JJJ}-{NN}: the parent N lot's digits, never allocated on their own.
+// Named for the parent, never allocated on their own: FP{digits} for an N lot,
+// FPX{digits} for an NX lot, FP-{number} for an EHWA lot.
 
 const FP_SHAPE = /^FP(\d{2})(\d{3})-(\d{1,2})$/;
+const FPX_SHAPE = /^FPX(\d{2})(\d{3})-(\d{1,2})$/;
+const FP_OUTSIDE_SHAPE = /^FP-(\S.*)$/;
 
-/** The FP number for a canonical N lot, or null. */
-const fpNumberFor = (parentNumber) => {
-  const m = String(parentNumber ?? "").trim().match(LOT_SHAPE);
-  return m ? `FP${m[1]}${m[2]}-${pad(Number(m[3]), 2)}` : null;
+/** The FP number for a lot, or null. `outside` marks an EHWA (external) lot's own number. */
+const fpNumberFor = (parentNumber, { outside = false } = {}) => {
+  const s = String(parentNumber ?? "").trim().toUpperCase();
+  if (outside) return s ? `FP-${s}` : null;
+  let m = s.match(LOT_SHAPE);
+  if (m) return `FP${m[1]}${m[2]}-${pad(Number(m[3]), 2)}`;
+  m = s.match(MIX_SHAPE);
+  return m ? `FPX${m[1]}${m[2]}-${pad(Number(m[3]), 2)}` : null;
 };
 
 /** Text that is an FP number, canonicalised, with its parent's number. */
 const parseFpLot = (input) => {
-  const m = String(input ?? "").trim().toUpperCase().match(FP_SHAPE);
-  if (!m) return { ok: false };
-  const parent = parseLot(`N${m[1]}${m[2]}-${m[3]}`);
-  if (!parent.ok) return { ok: false };
-  return { ok: true, lotNumber: `FP${parent.lotNumber.slice(1)}`, parentNumber: parent.lotNumber };
+  const text = String(input ?? "").trim().toUpperCase();
+  let m = text.match(FP_SHAPE);
+  if (m) {
+    const parent = parseLot(`N${m[1]}${m[2]}-${m[3]}`);
+    return parent.ok ? { ok: true, lotNumber: `FP${parent.lotNumber.slice(1)}`, parentNumber: parent.lotNumber } : { ok: false };
+  }
+  m = text.match(FPX_SHAPE);
+  if (m) {
+    const parent = parseMixLot(`NX${m[1]}${m[2]}-${m[3]}`);
+    return parent.ok ? { ok: true, lotNumber: `FP${parent.lotNumber.slice(1)}`, parentNumber: parent.lotNumber } : { ok: false };
+  }
+  m = text.match(FP_OUTSIDE_SHAPE);
+  return m ? { ok: true, lotNumber: text, parentNumber: m[1] } : { ok: false };
 };
 
 // ── Mixed lots ───────────────────────────────────────────────────────────────
