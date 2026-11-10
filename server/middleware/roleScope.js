@@ -35,6 +35,7 @@ const ADAMS = [
   [/^\/af-lots(\/|$)/, null],
   [/^\/af-stations(\/|$)/, null],
   [/^\/af-stock(\/|$)/, ["GET"]],
+  [/^\/af-(orders|customers|items)(\/|$)/, null],
   [/^\/verifyLocation$/, null],
   [/^\/(add|get)History(\/|$)/, null],
   [/^\/production-orders(\/|$)/, null],

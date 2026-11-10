@@ -47,6 +47,7 @@ const boot = async () => {
   app.use("/", require("./routes/afScan.pg"));
   app.use("/", require("./routes/afLots.pg"));
   app.use("/", require("./routes/afStock.pg"));
+  app.use("/", require("./routes/afOrders.pg"));
   app.use("/", require("./routes/history.pg"));
   app.use("/", require("./routes/scanner.pg"));
   app.use("/", require("./routes/snapshots.pg"));

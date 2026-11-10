@@ -1049,6 +1049,99 @@ const steps = async () => {
   `);
   await run("support_messages ticket index",
     `CREATE INDEX IF NOT EXISTS support_messages_ticket_idx ON support_messages (ticket_id, message_id)`);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Adams Foods orders: the office's order sheet, made in the app.
+
+  // Every product the office orders by: an item code, an optional variant tag, a description.
+  await run("af_items", `
+    CREATE TABLE IF NOT EXISTS af_items (
+      item_id     SERIAL PRIMARY KEY,
+      tenant_id   UUID NOT NULL REFERENCES tenants(id),
+      code        TEXT NOT NULL,
+      tag         TEXT,
+      description TEXT NOT NULL,
+      active      BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (tenant_id, code, description)
+    )
+  `);
+  // A customer and the order it usually places, which every new order starts from.
+  await run("af_customers", `
+    CREATE TABLE IF NOT EXISTS af_customers (
+      customer_id   SERIAL PRIMARY KEY,
+      tenant_id     UUID NOT NULL REFERENCES tenants(id),
+      name          TEXT NOT NULL,
+      display_name  TEXT,
+      ship_to       TEXT,
+      due_day       TEXT,
+      template_from DATE,
+      active        BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (tenant_id, name)
+    )
+  `);
+  await run("af_customer_items", `
+    CREATE TABLE IF NOT EXISTS af_customer_items (
+      id          SERIAL PRIMARY KEY,
+      tenant_id   UUID NOT NULL REFERENCES tenants(id),
+      customer_id INT NOT NULL REFERENCES af_customers(customer_id) ON DELETE CASCADE,
+      position    INT NOT NULL DEFAULT 0,
+      code        TEXT NOT NULL,
+      tag         TEXT,
+      description TEXT NOT NULL,
+      price       NUMERIC(10,2)
+    )
+  `);
+  await run("af_customer_items customer index",
+    `CREATE INDEX IF NOT EXISTS af_customer_items_customer_idx ON af_customer_items (customer_id, position)`);
+  // One running order number per tenant, issued when the order is first saved.
+  await run("af_orders", `
+    CREATE TABLE IF NOT EXISTS af_orders (
+      order_id      SERIAL PRIMARY KEY,
+      tenant_id     UUID NOT NULL REFERENCES tenants(id),
+      order_no      INT NOT NULL,
+      customer_id   INT REFERENCES af_customers(customer_id),
+      customer_name TEXT NOT NULL,
+      ship_to       TEXT,
+      order_date    DATE NOT NULL,
+      due_day       TEXT,
+      po            TEXT,
+      notes         TEXT,
+      status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'cancelled')),
+      created_by    TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      sent_by       TEXT,
+      sent_at       TIMESTAMPTZ,
+      cancelled_by  TEXT,
+      cancelled_at  TIMESTAMPTZ,
+      UNIQUE (tenant_id, order_no)
+    )
+  `);
+  await run("af_orders status index",
+    `CREATE INDEX IF NOT EXISTS af_orders_status_idx ON af_orders (tenant_id, status, order_no DESC)`);
+  // Only what was ordered: a line asks for cases, pounds, or both (exact cases AND at least the pounds).
+  await run("af_order_lines", `
+    CREATE TABLE IF NOT EXISTS af_order_lines (
+      line_id       SERIAL PRIMARY KEY,
+      order_id      INT NOT NULL REFERENCES af_orders(order_id) ON DELETE CASCADE,
+      tenant_id     UUID NOT NULL REFERENCES tenants(id),
+      position      INT NOT NULL DEFAULT 0,
+      code          TEXT NOT NULL,
+      tag           TEXT,
+      description   TEXT NOT NULL,
+      qty_cases     INT CHECK (qty_cases > 0),
+      lbs           NUMERIC(10,3) CHECK (lbs > 0),
+      price         NUMERIC(10,2),
+      note          TEXT,
+      from_template BOOLEAN NOT NULL DEFAULT TRUE,
+      CHECK (qty_cases IS NOT NULL OR lbs IS NOT NULL)
+    )
+  `);
+  await run("af_order_lines order index",
+    `CREATE INDEX IF NOT EXISTS af_order_lines_order_idx ON af_order_lines (order_id, position)`);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection

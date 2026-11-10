@@ -1,0 +1,119 @@
+/* Order Sheets: customers on the left, the order drawn like the paper sheet in the
+   middle, a summary rail on the right. Scoped to .afo so nothing leaks into the app. */
+.afo {
+  --bg: #f2f4f7;
+  --card: #ffffff;
+  --ink: #1a202c;
+  --ink-2: #4a5568;
+  --muted: #718096;
+  --rule: #e2e8f0;
+  --sheet: #2d3748;
+  --blue: #3182ce;
+  --blue-ink: #2b6cb0;
+  --blue-tint: #ebf8ff;
+  --green: #2f855a;
+  --green-tint: #f0fff4;
+  --amber: #b7791f;
+  --amber-tint: #fffaf0;
+  --red: #c53030;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.4;
+  min-height: 100%; padding: 16px;
+}
+.afo *, .afo *::before, .afo *::after { box-sizing: border-box; }
+.afo button { font: inherit; cursor: pointer; }
+.afo input, .afo select { font: inherit; color: var(--ink); }
+.afo button:focus-visible, .afo input:focus-visible, .afo select:focus-visible { outline: 3px solid #90cdf4; outline-offset: 1px; }
+
+.afo-wrap { max-width: 1380px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.afo-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.afo-top h1 { margin: 0; font-size: 22px; font-weight: 700; }
+.afo-who { margin-left: auto; font-size: 13px; color: var(--muted); }
+.afo-layout { display: grid; grid-template-columns: 270px minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+@media (max-width: 1150px) { .afo-layout { grid-template-columns: 240px minmax(0, 1fr); } .afo-rail { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .afo-layout { grid-template-columns: 1fr; } }
+
+.afo .panel { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.afo .panel h2 { margin: 0; font-size: 14px; font-weight: 700; }
+.afo .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.afo .empty { color: var(--muted); font-size: 13px; }
+.afo .btn { border: 1px solid transparent; border-radius: 6px; padding: 8px 14px; font-weight: 600; background: var(--blue); color: #ffffff; }
+.afo .btn:hover { background: var(--blue-ink); }
+.afo .btn:disabled { background: #cbd5e0; color: #4a5568; cursor: not-allowed; }
+.afo .btn.outline { background: var(--card); color: var(--blue-ink); border-color: #90cdf4; }
+.afo .btn.outline:hover { background: var(--blue-tint); }
+.afo .btn.ghost { background: transparent; color: var(--ink-2); padding: 3px 8px; }
+.afo .btn.ghost:hover { background: #edf2f7; }
+.afo .btn.sm { padding: 4px 10px; font-size: 13px; }
+.afo .btn.green { background: var(--green); }
+.afo .btn.green:disabled { background: #cbd5e0; color: #4a5568; }
+.afo .btn.red { background: transparent; color: var(--red); padding: 3px 8px; }
+.afo .btn.red:hover { background: #fff5f5; }
+.afo .field { border: 1px solid #cbd5e0; border-radius: 6px; padding: 6px 9px; background: var(--card); min-width: 0; width: 100%; }
+.afo .field:disabled { background: #f7fafc; color: var(--ink-2); }
+
+.afo .custs { display: flex; flex-direction: column; max-height: 70vh; overflow-y: auto; border: 1px solid var(--rule); border-radius: 6px; }
+.afo .custs button { text-align: left; border: 0; border-top: 1px solid var(--rule); background: var(--card); padding: 7px 10px; display: flex; flex-direction: column; gap: 1px; }
+.afo .custs button:first-child { border-top: 0; }
+.afo .custs button:hover { background: #f7fafc; }
+.afo .custs button[aria-current="true"] { background: var(--blue-tint); box-shadow: inset 3px 0 0 var(--blue); }
+.afo .custs b { font-size: 13.5px; }
+.afo .custs small { color: var(--muted); font-size: 12px; }
+
+/* The order, drawn like the sheet. */
+.afo .sheet { background: var(--card); border: 1.5px solid var(--sheet); border-radius: 4px; display: flex; flex-direction: column; min-width: 0; }
+.afo .sh-top { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px 4px; gap: 10px; flex-wrap: wrap; }
+.afo .sh-top img { height: 30px; width: auto; }
+.afo .sh-top .from { font-size: 12px; color: var(--muted); }
+.afo .sh-no { font-size: 15px; }
+.afo .sh-no b { font-size: 18px; }
+.afo .sh-head { display: grid; grid-template-columns: auto minmax(0, 2fr) auto minmax(0, 1fr); gap: 6px 10px; padding: 6px 14px 12px; border-bottom: 1.5px solid var(--sheet); align-items: center; }
+.afo .sh-head .k { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.afo .sh-head .cust { font-size: 18px; font-weight: 800; }
+@media (max-width: 560px) { .afo .sh-head { grid-template-columns: auto minmax(0, 1fr); } }
+.afo .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 14px; border-bottom: 1px solid var(--rule); font-size: 13px; }
+.afo .tools label { display: flex; gap: 6px; align-items: center; color: var(--ink-2); cursor: pointer; }
+.afo .lines { overflow-x: auto; }
+.afo .lines table { border-collapse: collapse; width: 100%; min-width: 620px; }
+.afo .lines th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--rule); font-weight: 600; }
+.afo .lines td { padding: 6px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.afo .lines tr.on td { background: var(--blue-tint); }
+.afo .lines .qty { width: 64px; text-align: center; font-size: 16px; font-weight: 800; padding: 4px; }
+.afo .lines .qty.lbs { width: 72px; }
+.afo .lines .code { font-family: var(--mono); font-weight: 700; }
+.afo .lines .tag { font-size: 11px; font-weight: 700; color: var(--ink-2); background: #edf2f7; border-radius: 3px; padding: 0 4px; margin: 0 4px; }
+.afo .lines .desc { font-weight: 600; }
+.afo .lines .price { width: 82px; text-align: right; }
+.afo .lines .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink-2); }
+.afo .lines .note { margin-top: 4px; font-size: 12.5px; }
+.afo .lines .noteline { color: var(--red); font-size: 12.5px; font-weight: 600; }
+.afo .lines .added { font-size: 10.5px; font-weight: 700; color: var(--green); background: var(--green-tint); border-radius: 3px; padding: 0 5px; margin-left: 6px; }
+.afo .addrow { padding: 10px 14px; border-bottom: 1px solid var(--rule); display: flex; flex-direction: column; gap: 6px; }
+.afo .found { display: flex; flex-direction: column; border: 1px solid var(--rule); border-radius: 6px; max-height: 210px; overflow-y: auto; }
+.afo .found button { text-align: left; border: 0; border-top: 1px solid var(--rule); background: var(--card); padding: 6px 10px; }
+.afo .found button:first-child { border-top: 0; }
+.afo .found button:hover { background: var(--blue-tint); }
+.afo .sh-foot { padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+.afo .sh-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.afo .afo-rail { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 0; }
+@media (max-width: 1150px) { .afo .afo-rail { position: static; } }
+.afo .sum { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; font-variant-numeric: tabular-nums; font-size: 13.5px; }
+.afo .sum b { font-size: 15px; }
+.afo .warn { font-size: 12.5px; color: var(--amber); }
+.afo .err { font-size: 12.5px; color: var(--red); }
+
+/* The orders list in the rail. */
+.afo .seg { display: flex; flex-wrap: wrap; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; }
+.afo .seg button { flex: 1 1 auto; border: 0; border-left: 1px solid #cbd5e0; background: var(--card); padding: 4px 8px; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.afo .seg button:first-child { border-left: 0; }
+.afo .seg button[aria-pressed="true"] { background: var(--blue); color: #ffffff; }
+.afo .orders { display: flex; flex-direction: column; max-height: 52vh; overflow-y: auto; }
+.afo .orders button { text-align: left; border: 0; border-top: 1px solid var(--rule); background: transparent; padding: 7px 4px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.afo .orders button:first-child { border-top: 0; }
+.afo .orders button:hover { background: #f7fafc; }
+.afo .orders button[aria-current="true"] { background: var(--blue-tint); box-shadow: inset 3px 0 0 var(--blue); }
+.afo .pill { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
+.afo .pill.draft { background: #edf2f7; color: var(--ink-2); }
+.afo .pill.sent { background: var(--green-tint); color: var(--green); }
+.afo .pill.cancelled { background: #fff5f5; color: var(--red); }
