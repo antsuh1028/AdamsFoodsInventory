@@ -94,8 +94,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .palw { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
 .palw .pchip { align-self: flex-start; }
 .wgrid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); border: 1px solid #cbd5e0; border-radius: 3px; max-width: 560px; }
-.wgrid span { font-family: var(--mono); font-size: 11px; text-align: center; padding: 2px 0; border-right: 1px dotted #cbd5e0; border-bottom: 1px dotted #e2e8f0; }
-.wgrid span:nth-child(10n) { border-right: 0; }
+.wgrid span, .wgrid button { font-family: var(--mono); font-size: 11px; text-align: center; padding: 2px 0; border: 0; border-right: 1px dotted #cbd5e0; border-bottom: 1px dotted #e2e8f0; background: transparent; color: var(--ink); }
+.wgrid > :nth-child(10n) { border-right: 0; }
+.wgrid button:hover, .wgrid button:focus-visible { background: var(--red-tint); color: var(--red); text-decoration: line-through; }
 .prog small { display: block; font-size: 12px; font-weight: 600; color: var(--ink-2); }
 .pchip { font-size: 12px; border: 1px solid #90cdf4; background: var(--card); border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums; }
 .pchip.loose { border-color: #fbd38d; }
@@ -230,6 +231,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
           <li>New BOL: scan pallets of different lots one after another. Each lot gets its own line; a second pallet of a lot joins its line ("30 + 30").</li>
           <li><b>All but two:</b> on BOL 30301 tap the chuck roll line (22 cases) and scan its pallet tag (24 boxes). Then tap 2 blue boxes to leave them behind, and Done.</li>
           <li>After that, <b>See tag</b> on the chuck roll pallet: the reprint for the 2 boxes left.</li>
+          <li><b>A box loaded by mistake:</b> tap its weight on the line. It comes off and goes back on its pallet. The ✕ on a pallet chip takes the whole pallet off.</li>
           <li>Print either BOL: each pallet's box weights, ten to a row, with subtotals and the total lb.</li>
           <li>Press <b>See tag</b> on a pallet: what the pallet tag and its barcode would look like. Scan it with a real scanner.</li>
         </ol>
@@ -369,7 +371,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   const scanBox = (bid) => {
     const b = box(bid);
     if (leaving) {
-      if (b.pallet !== leaving.pallet) { msg = { kind: "warn", text: `${bid} is from another pallet.`, sub: "Press Done first, then scan it." }; return; }
+      if (b.pallet !== leaving.pallet) {
+        // A box from elsewhere closes leaving-behind, as the next pallet does, unless that line is still over.
+        const ll = bolOf(leaving.bol).lines[leaving.line];
+        if (ll.want != null && lineCases(ll) > ll.want) { msg = { kind: "warn", text: `Line still has ${lineCases(ll) - ll.want} too many.`, sub: "Scan the boxes staying behind first." }; return; }
+        leaving = null; openPal = null;
+        return scanBox(bid);
+      }
       if (!(b.on && b.on.bol === leaving.bol && b.on.line === leaving.line)) { msg = { kind: "warn", text: `${bid} is not on this line.` }; return; }
       const l = bolOf(leaving.bol).lines[leaving.line];
       l.boxes = l.boxes.filter((x) => x !== bid); b.on = null;
@@ -377,9 +385,18 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       msg = { kind: "ok", text: `${bid} stays behind · ${lb(b.mils)} lb.`, sub: over > 0 ? `${over} more to take off.` : `${lineCases(l)}${l.want != null ? ` of ${l.want}` : ""} on the line. Press Done when finished.` };
       return;
     }
-    if (b.on) { msg = { kind: "bad", text: `${bid} is already on BOL ${b.on.bol}.` }; return; }
+    if (b.on) { msg = { kind: "bad", text: `${bid} is already on BOL ${b.on.bol}.`, sub: "Loaded by mistake? Tap its weight on the line to take it off." }; return; }
     if (b.status !== "in_stock") { msg = { kind: "bad", text: `${bid} already went out.` }; return; }
     add([bid], pal(b.pallet), `Box ${bid}`);
+  };
+  // One box off a line, back onto its pallet: a box loaded by mistake.
+  const takeBoxOff = (no, li, bid) => {
+    const b = bolOf(no), l = b.lines[li], bx = box(bid), p = pal(bx.pallet);
+    if (b.status !== "loading") { msg = { kind: "bad", text: `BOL ${no} already went out.`, sub: "A sent load is not edited." }; return; }
+    l.boxes = l.boxes.filter((x) => x !== bid); bx.on = null;
+    if (leaving && leaving.bol === no && leaving.line === li && !l.boxes.some((x) => box(x).pallet === leaving.pallet)) leaving = null;
+    msg = { kind: "ok", text: `Box ${bid.split("-")[1]} (${lb(bx.mils)} lb) taken off BOL ${no}.`,
+      sub: `Back on pallet ${p.where}, in stock. Line: ${lineCases(l)}${l.want != null ? ` of ${l.want}` : ""} cases.` };
   };
   const takeOff = (no, li, pid) => {
     const l = bolOf(no).lines[li];
@@ -427,7 +444,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
             <div class="meta"><span>EST ${esc(pr.est)}</span><span>${esc(pr.pack)}</span><span class="lot">#${esc(l.lot)}</span></div>
             ${bd.map((x) => `<div class="palw">
               <span class="pchip ${x.whole ? "" : "loose"}">${x.whole ? "Pallet" : "Part of"} ${esc(pal(x.p).where)} · ${x.n} cs · ${lb(x.m)} lb<button type="button" title="Take this pallet off" data-off="${b.no}|${i}|${x.p}">✕</button></span>
-              <div class="wgrid">${x.ids.map((id) => `<span>${lb(box(id).mils)}</span>`).join("")}</div></div>`).join("")}
+              <div class="wgrid">${x.ids.map((id) => `<button type="button" data-unbox="${b.no}|${i}|${id}" title="Take ${id.split("-")[1]} (${lb(box(id).mils)} lb) off this line">${lb(box(id).mils)}</button>`).join("")}</div></div>`).join("")}
             ${isA ? '<span class="tag-active">SCANNING</span>' : ""}</div>
           <div class="prog ${cls}">${l.want != null ? `${n}/${l.want}` : `${n} cs`}${full ? " ✓" : ""}${n ? `<small>${lb(lineMils(l))} lb</small>` : ""}</div>
         </div>`;
@@ -598,6 +615,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     if (!t) return;
     if (t.dataset.tag) { showTag = t.dataset.tag; renderTag(); return; }
     if (t.id === "leavedone") { doneLeaving(); render(); return; }
+    if (t.dataset.unbox) { const [no, li, bid] = t.dataset.unbox.split("|"); takeBoxOff(Number(no), Number(li), bid); render(); return; }
     if (t.id === "tagclose") { showTag = null; renderTag(); return; }
     if (t.dataset.print) { printing = Number(t.dataset.print); renderPrint(); return; }
     if (t.id === "pvclose") { printing = null; renderPrint(); return; }
