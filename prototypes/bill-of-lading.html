@@ -227,7 +227,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
           <li>Scan the third short plate pallet into it: refused, the line wants 60.</li>
           <li>Tap the brisket line and scan its pallet tag.</li>
           <li>Pick Loaded by and Driver, then Send to NTI, then mark it received at NTI.</li>
-          <li>New BOL: with no line tapped, scanning a pallet tag adds a line for it.</li>
+          <li>New BOL: scan pallets of different lots one after another. Each lot gets its own line; a second pallet of a lot joins its line ("30 + 30").</li>
           <li><b>All but two:</b> on BOL 30301 tap the chuck roll line (22 cases) and scan its pallet tag (24 boxes). Then tap 2 blue boxes to leave them behind, and Done.</li>
           <li>After that, <b>See tag</b> on the chuck roll pallet: the reprint for the 2 boxes left.</li>
           <li>Print either BOL: each pallet's box weights, ten to a row, with subtotals and the total lb.</li>
@@ -307,10 +307,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 
   // ── Scanning ──────────────────────────────────────────────────────────────
   const target = (p) => {
-    // The active line, or with none active on an open BOL, a line for this lot (made if missing).
-    if (active) return active;
-    const open = S.bols.find((b) => b.status === "loading" && b.build);
-    if (!open) return null;
+    // A BOL built as it is loaded files each pallet under its own lot's line, made if missing.
+    // A request BOL uses the tapped line, since its lines are what was asked for.
+    const current = active && bolOf(active.bol);
+    const open = current && current.status === "loading" ? (current.build ? current : null)
+      : S.bols.find((b) => b.status === "loading" && b.build);
+    if (!open) return active;
     let i = open.lines.findIndex((l) => l.lot === p.lot);
     if (i < 0) { open.lines.push({ lot: p.lot, prod: p.prod, want: null, boxes: [] }); i = open.lines.length - 1; }
     active = { bol: open.no, line: i };
@@ -333,7 +335,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   };
   const scanPallet = (pid) => {
     const p = pal(pid), left = free(pid).map((b) => b.id);
-    if (leaving) { msg = { kind: "warn", text: "Finish leaving boxes behind first.", sub: "Press Done, then scan the next pallet." }; return; }
+    // The next pallet closes the last one, unless that line still has boxes too many.
+    if (leaving) {
+      const ll = bolOf(leaving.bol).lines[leaving.line];
+      if (ll.want != null && lineCases(ll) > ll.want) { msg = { kind: "warn", text: `Line still has ${lineCases(ll) - ll.want} too many.`, sub: "Scan the boxes staying behind first." }; return; }
+      leaving = null; openPal = null;
+    }
     if (!left.length) { msg = { kind: "warn", text: `Pallet ${p.where} has nothing left to take.` }; return; }
     const t = target(p);
     if (!t) { msg = { kind: "warn", text: "Tap a line on a bill of lading first.", sub: "Or open a new BOL and scan straight onto it." }; return; }

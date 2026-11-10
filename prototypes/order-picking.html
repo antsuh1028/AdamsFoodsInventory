@@ -298,7 +298,12 @@ button:focus-visible, select:focus-visible { outline: 3px solid #90cdf4; outline
   const scanPallet = (pid) => {
     pending = null;
     const p = pal(pid);
-    if (leaving) { msg = { kind: "warn", text: "Finish leaving boxes behind first.", sub: "Press Done, then scan the next pallet." }; return; }
+    // The next pallet closes the last one, unless that line still has boxes too many.
+    if (leaving) {
+      const ll = orderOf(leaving.order).lines[leaving.line];
+      if (ll.boxes.length > ll.qty) { msg = { kind: "warn", text: `Line still has ${ll.boxes.length - ll.qty} too many.`, sub: "Scan the boxes staying behind first." }; return; }
+      doneLeaving();
+    }
     if (!active) { msg = { kind: "warn", text: "Tap a line on an order first.", sub: "A pallet scan fills the line you tapped." }; return; }
     const o = orderOf(active.order), line = o.lines[active.line];
     if (line.boxes.length >= line.qty) { msg = { kind: "bad", text: `This line is full: ${line.qty} of ${line.qty}.`, sub: "Tap the next line." }; return; }
