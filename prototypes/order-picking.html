@@ -164,7 +164,10 @@ button:focus-visible, select:focus-visible { outline: 3px solid #90cdf4; outline
 .pp-grid .rt { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pp-foot td { padding-top: 12px; font-size: 14.5px; white-space: nowrap; }
 .pp-foot .v { border-bottom: 1px solid #000000; font-weight: 700; display: inline-block; min-width: 54px; text-align: center; }
-.pp-note { margin-top: 10px; font-weight: 700; color: #000000; }
+/* Additional notes: a labelled box, kept on the sheet even when empty so there is room to write. */
+.pp-note { margin-top: 10px; border: 1.5px solid #000000; color: #000000; }
+.pp-note .nh { background: #f2f2f2; border-bottom: 1px solid #000000; font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; padding: 3px 8px; }
+.pp-note .nb { min-height: 44px; padding: 6px 8px; font-size: 14px; font-weight: 700; white-space: pre-wrap; }
 .pp-stamp { margin-top: 14px; font-size: 11.5px; color: #555555; display: flex; justify-content: space-between; gap: 10px; }
 .try { margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
 .try li { margin-bottom: 3px; }
@@ -545,7 +548,7 @@ button:focus-visible, select:focus-visible { outline: 3px solid #90cdf4; outline
         <tr><td>Ship/BL To</td><td class="v">${esc(o.shipTo)}</td><td style="text-align:right">Due:</td><td class="v">${esc(o.due)}</td></tr>
       </table>
       <table class="pp-grid">${rows}</table>
-      ${o.note ? `<div class="pp-note">${esc(o.note)}</div>` : ""}
+      <div class="pp-note"><div class="nh">ADDITIONAL NOTES</div><div class="nb">${esc(o.note || "")}</div></div>
       <table class="pp-foot"><tr>
         <td>Order Qty: <span class="v">&nbsp;${ordered}&nbsp;</span></td>
         <td>Total cs: <span class="v">&nbsp;${scanned}&nbsp;</span></td>
