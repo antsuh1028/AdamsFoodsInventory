@@ -124,23 +124,62 @@ const parseLot = (input) => {
 const isCanonicalLot = (text) => LOT_SHAPE.test(String(text ?? "").trim());
 
 // ── Further-processing lots ──────────────────────────────────────────────────
-// FP{YY}{JJJ}-{NN}: the parent N lot's digits, never allocated on their own.
+// Named for the parent, never allocated on their own: FP{digits} for an N lot,
+// FPX{digits} for an NX lot, FP-{number} for an EHWA lot.
 
 const FP_SHAPE = /^FP(\d{2})(\d{3})-(\d{1,2})$/;
+const FPX_SHAPE = /^FPX(\d{2})(\d{3})-(\d{1,2})$/;
+const FP_OUTSIDE_SHAPE = /^FP-(\S.*)$/;
 
-/** The FP number for a canonical N lot, or null. */
-const fpNumberFor = (parentNumber) => {
-  const m = String(parentNumber ?? "").trim().match(LOT_SHAPE);
-  return m ? `FP${m[1]}${m[2]}-${pad(Number(m[3]), 2)}` : null;
+/** The FP number for a lot, or null. `outside` marks an EHWA (external) lot's own number. */
+const fpNumberFor = (parentNumber, { outside = false } = {}) => {
+  const s = String(parentNumber ?? "").trim().toUpperCase();
+  if (outside) return s ? `FP-${s}` : null;
+  let m = s.match(LOT_SHAPE);
+  if (m) return `FP${m[1]}${m[2]}-${pad(Number(m[3]), 2)}`;
+  m = s.match(MIX_SHAPE);
+  return m ? `FPX${m[1]}${m[2]}-${pad(Number(m[3]), 2)}` : null;
 };
 
 /** Text that is an FP number, canonicalised, with its parent's number. */
 const parseFpLot = (input) => {
-  const m = String(input ?? "").trim().toUpperCase().match(FP_SHAPE);
+  const text = String(input ?? "").trim().toUpperCase();
+  let m = text.match(FP_SHAPE);
+  if (m) {
+    const parent = parseLot(`N${m[1]}${m[2]}-${m[3]}`);
+    return parent.ok ? { ok: true, lotNumber: `FP${parent.lotNumber.slice(1)}`, parentNumber: parent.lotNumber } : { ok: false };
+  }
+  m = text.match(FPX_SHAPE);
+  if (m) {
+    const parent = parseMixLot(`NX${m[1]}${m[2]}-${m[3]}`);
+    return parent.ok ? { ok: true, lotNumber: `FP${parent.lotNumber.slice(1)}`, parentNumber: parent.lotNumber } : { ok: false };
+  }
+  m = text.match(FP_OUTSIDE_SHAPE);
+  return m ? { ok: true, lotNumber: text, parentNumber: m[1] } : { ok: false };
+};
+
+// ── Mixed lots ───────────────────────────────────────────────────────────────
+// NX{YY}{JJJ}-{NN}: the day the lots were mixed, with its own sequence, so the
+// first mix of a day is -01 however many N lots came in that day.
+
+const MIX_SHAPE = /^NX(\d{2})(\d{3})-(\d{1,2})$/;
+
+const formatMixLot = (yy, dayOfYear, seq) =>
+  `NX${pad(yy, 2)}${pad(dayOfYear, 3)}-${pad(seq, 2)}`;
+
+/** Text that is an NX number, canonicalised, with its day and sequence. */
+const parseMixLot = (input) => {
+  const m = String(input ?? "").trim().toUpperCase().match(MIX_SHAPE);
   if (!m) return { ok: false };
-  const parent = parseLot(`N${m[1]}${m[2]}-${m[3]}`);
-  if (!parent.ok) return { ok: false };
-  return { ok: true, lotNumber: `FP${parent.lotNumber.slice(1)}`, parentNumber: parent.lotNumber };
+  const yy = Number(m[1]);
+  const dayOfYear = Number(m[2]);
+  const seq = Number(m[3]);
+  const year = fullYear(yy);
+  if (dayOfYear < 1 || dayOfYear > daysInYear(year) || seq < 1) return { ok: false };
+  return {
+    ok: true, lotNumber: formatMixLot(yy, dayOfYear, seq),
+    lotDate: dateFromDayOfYear(year, dayOfYear), seq,
+  };
 };
 
 // ── Issuing a new lot ────────────────────────────────────────────────────────
@@ -186,6 +225,7 @@ const lotPrefixForDate = (dateStr) => {
 };
 
 module.exports = {
-  parseLot, formatLot, isCanonicalLot, fpNumberFor, parseFpLot, dateFromDayOfYear, daysInYear,
+  parseLot, formatLot, isCanonicalLot, fpNumberFor, parseFpLot, formatMixLot, parseMixLot,
+  dateFromDayOfYear, daysInYear,
   pacificToday, dayOfYearFromDate, lotPrefixForDate, PACIFIC_TZ,
 };

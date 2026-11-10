@@ -2,11 +2,11 @@ import upperInput from "../../utils/upperInput";
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   Box, Flex, Text, Button, IconButton, Badge, Spinner, useToast, Image,
-  Grid, Input, Textarea, Select, Checkbox, Menu, MenuButton, MenuList, MenuItem,
+  Grid, Input, Textarea, Select, Checkbox, Menu, MenuButton, MenuList, MenuItem, ButtonGroup,
 } from "@chakra-ui/react";
 import { DeleteIcon, ChevronDownIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
-import { fmtDate, today, Th, Td, timeNow, upper, fmtWeight, PROCESSING_TYPES, SheetField, sheetInputProps, SectionBar, isEhwaLot } from "../common/shared";
+import { fmtDate, today, Th, Td, timeNow, upper, fmtWeight, PROCESSING_TYPES, SheetField, sheetInputProps, SectionBar, isEhwaLot, isMixedLot } from "../common/shared";
 import printRegistrationForm from "./printRegistrationForm";
 import BoxWeightLink from "./BoxWeightLink";
 import ProcessingReportLink from "../processing/ProcessingReportLink";
@@ -18,6 +18,7 @@ import ntiLogo from "../../assets/nti.jpg";
 import FloatingWindow from "../../components/FloatingWindow";
 import AllFormsTable from "./AllFormsTable";
 import SearchBar from "../../components/SearchBar";
+import { MixLotsWindow, MixSources, MixValue, mixShared, MIXED_TEXT } from "../lots/MixLots";
 
 
 // Stored verbatim as the field value, so the number, abbreviation and name all
@@ -81,7 +82,7 @@ export const formToDraft = (form) => {
 
 // readOnly shows the same sheet with every control disabled, for viewing from other tabs.
 export const RegistrationFormModal = ({
-  isOpen, onClose, draft, setDraft, onSave, saving, readOnly = false, zIndex,
+  isOpen, onClose, draft, setDraft, onSave, saving, readOnly = false, zIndex, onMixUndone,
 }) => {
   // Accepted reports are what the locked run rows below say; the panel needs
   // the waiting ones too, so this loads both and hands them down.
@@ -136,6 +137,20 @@ export const RegistrationFormModal = ({
 
   const [isFullScreen, setIsFullScreen] = useState(false);
   if (!draft) return null;
+  // An NX form: these fields come from its lots and are not typed here.
+  const isMix = Boolean(draft.mix);
+  const sources = (draft.mix && draft.mix.sources) || [];
+  const fromLots = (key, fmt) => {
+    const v = mixShared(sources, key);
+    return v && v !== MIXED_TEXT && fmt ? fmt(v) : v;
+  };
+  // The mix changed under the form: take the figures it now has, keep what is being typed.
+  const takeMix = async () => {
+    if (!draft.id) return;
+    const { data } = await axiosInstance.get(`/noblesse-registration-forms/${draft.id}`);
+    setDraft((d) => ({ ...d, mix: data.mix, originalWeight: data.originalWeight, totalQuantity: data.totalQuantity,
+      vendor: data.vendor, vendorLot: data.vendorLot, brand: data.brand, estNumber: data.estNumber, grade: data.grade }));
+  };
   const set = (key) => (e) => setDraft({ ...draft, [key]: upperInput(e) });
   const setCheck = (key) => (e) => setDraft({ ...draft, [key]: e.target.checked });
   const tally = caseTally(draft);
@@ -234,6 +249,14 @@ export const RegistrationFormModal = ({
                     kept so the select stays bound to it, and it is read off the
                     masthead above rather than out of this control. */}
                 <Box width={{ base: "100%", md: "260px" }}>
+                  {isMix ? (
+                    <Flex align="center" gap={2} minH="32px">
+                      <Badge colorScheme="purple">Mixed lot</Badge>
+                      <Text fontSize="xs" color="gray.600">
+                        {sources.length} lot{sources.length === 1 ? "" : "s"} mixed. Change them under Source Lots.
+                      </Text>
+                    </Flex>
+                  ) : (
                   <LotPicker
                     allowCreate
                     hideRegistered
@@ -245,6 +268,7 @@ export const RegistrationFormModal = ({
                       lotNumber: lot ? lot.lotNumber : "",
                     })}
                   />
+                  )}
                 </Box>
               </Flex>
               <Flex align="center" gap={2}>
@@ -256,12 +280,30 @@ export const RegistrationFormModal = ({
           <Text textAlign="center" fontSize="lg" fontWeight="extrabold" color="blue.700" mb={4}>
             {readOnly ? "Registration Form" : draft.id ? "Edit Registration Form" : "New Registration Form"}
           </Text>
+          {draft.mixedInto && (
+            <Box mb={4} px={3} py={2} bg="purple.50" border="1px solid" borderColor="purple.200" borderRadius="md">
+              <Text fontSize="sm" color="purple.900">
+                Mixed into <b>{draft.mixedInto.lotNumber}</b>
+                {draft.mixedInto.at ? ` on ${fmtDate(String(draft.mixedInto.at).slice(0, 10))}` : ""}.
+                {" "}Its cases are on {draft.mixedInto.lotNumber} now, so none remain here. Product that
+                comes in on this lot is still entered on this form, and is added to {draft.mixedInto.lotNumber}.
+              </Text>
+            </Box>
+          )}
 
           <Grid
             templateColumns={{ base: "1fr", md: "1fr 2fr 1fr 2fr" }}
             gap="1px" bg="gray.200" mb={5} border="1px solid" borderColor="gray.200"
           >
             <SectionBar>Logistics &amp; Vendor</SectionBar>
+            {isMix ? (
+              <>
+                <SheetField label="Date Received"><MixValue value={fromLots("dateReceived", fmtDate)} /></SheetField>
+                <SheetField label="Time Received"><MixValue value={fromLots("timeReceived")} /></SheetField>
+                <SheetField label="Vendor Lot/(IC)#"><MixValue value={fromLots("vendorLot")} /></SheetField>
+                <SheetField label="Vendor"><MixValue value={fromLots("vendor")} /></SheetField>
+              </>
+            ) : <>
             <SheetField label="Date Received"><Input {...sheetInputProps} type="date" value={draft.dateReceived} onChange={set("dateReceived")} /></SheetField>
             <SheetField label="Time Received"><Input {...sheetInputProps} type="time" value={draft.timeReceived} onChange={set("timeReceived")} /></SheetField>
             <SheetField label="Vendor Lot/(IC)#"><Input {...sheetInputProps} value={draft.vendorLot} onChange={set("vendorLot")} /></SheetField>
@@ -271,6 +313,7 @@ export const RegistrationFormModal = ({
               <VendorInput {...sheetInputProps} value={draft.vendor} onChange={set("vendor")}
                 listId="vendor-suggestions-form" />
             </SheetField>
+            </>}
 
             <SectionBar>Product Identification</SectionBar>
             <SheetField label="Product Description" full><Input {...sheetInputProps} value={draft.productDescription} onChange={set("productDescription")} /></SheetField>
@@ -292,8 +335,15 @@ export const RegistrationFormModal = ({
                 )}
               </Select>
             </SheetField>
+            {isMix ? (
+              <>
+                <SheetField label="Original Wt. (lbs)"><MixValue value={draft.originalWeight != null && draft.originalWeight !== "" ? fmtWeight(draft.originalWeight) : ""} /></SheetField>
+                <SheetField label="Total Quantity (c/s)"><MixValue value={draft.totalQuantity} /></SheetField>
+              </>
+            ) : <>
             <SheetField label="Original Wt. (lbs)"><Input {...sheetInputProps} type="number" value={draft.originalWeight} onChange={set("originalWeight")} /></SheetField>
             <SheetField label="Total Quantity (c/s)"><Input {...sheetInputProps} value={draft.totalQuantity} onChange={set("totalQuantity")} /></SheetField>
+            </>}
             <SheetField label="Spec. ">
               <Flex gap={1} align="center">
                 <Input
@@ -319,9 +369,17 @@ export const RegistrationFormModal = ({
                 />
               </Flex>
             </SheetField>
+            {isMix ? (
+              <>
+                <SheetField label="Brand"><MixValue value={fromLots("brand")} /></SheetField>
+                <SheetField label="EST#"><MixValue value={fromLots("estNumber")} /></SheetField>
+                <SheetField label="Grade"><MixValue value={fromLots("grade")} /></SheetField>
+              </>
+            ) : <>
             <SheetField label="Brand"><Input {...sheetInputProps} value={draft.brand} onChange={set("brand")} /></SheetField>
             <SheetField label="EST#"><Input {...sheetInputProps} value={draft.estNumber} onChange={set("estNumber")} /></SheetField>
             <SheetField label="Grade"><Input {...sheetInputProps} value={draft.grade} onChange={set("grade")} /></SheetField>
+            </>}
 
             <SectionBar>Estimation/Checks</SectionBar>
             <SheetField label="Due Date?"><Input {...sheetInputProps} type="date" value={draft.dueDate} onChange={set("dueDate")} /></SheetField>
@@ -336,6 +394,18 @@ export const RegistrationFormModal = ({
             {/* Where Original Weight and Total Quantity actually come from —
                 both live in Product Identification above, since they describe
                 what arrived rather than what processing did to it. */}
+            {isMix ? (
+              <>
+                <SectionBar>Source Lots</SectionBar>
+                <Box gridColumn="1 / -1" p={2}>
+                  {draft.lotId ? (
+                    <MixSources mixLotId={draft.lotId} readOnly={readOnly}
+                      onChanged={() => takeMix().catch(() => {})}
+                      onUndone={(data) => { if (onMixUndone) onMixUndone(data); }} />
+                  ) : null}
+                </Box>
+              </>
+            ) : <>
             <SectionBar>Box Weights</SectionBar>
             <Box gridColumn="1 / -1" p={2}>
               <BoxWeightLink
@@ -347,6 +417,7 @@ export const RegistrationFormModal = ({
                 onPendingChange={(ids) => setDraft({ ...draft, pendingBatchIds: ids })}
               />
             </Box>
+            </>}
 
             <SectionBar>Processing &amp; Yield</SectionBar>
 
@@ -710,6 +781,17 @@ const HistorySnapshot = ({ form, tone, label }) => {
 
 const statusColor = (status) => (status === "completed" ? "green" : "yellow");
 
+// A labelled box around one set of filter buttons, so two sets never read as one.
+const FilterGroup = ({ label, children }) => (
+  <Flex align="center" gap={2} pl={2} pr={1} py={1} bg="gray.50"
+    border="1px solid" borderColor="gray.200" borderRadius="md">
+    <Text fontSize="10px" fontWeight="bold" color="gray.500" textTransform="uppercase" letterSpacing="wider">
+      {label}
+    </Text>
+    {children}
+  </Flex>
+);
+
 // How much of the lot has been PUT THROUGH processing, as a percentage of what
 // arrived.
 //
@@ -767,7 +849,8 @@ const caseTally = (draft) => {
       return sum + (isNaN(n) ? 0 : n);
     }, 0);
 
-  return { total, processed, remaining: total - processed };
+  // A lot in a mix has everything on the NX lot, so nothing remains on it.
+  return { total, processed, remaining: draft.mixedInto ? 0 : total - processed };
 };
 
 export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = false, refreshSignal = 0 }) => {
@@ -782,6 +865,8 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   // All, not just in progress: a completed form is still the thing someone
   // opens to check what a lot was registered as.
   const [statusFilter, setStatusFilter] = useState(null);
+  // null, "ours", "mixed" or "ehwa": jumps to a kind of lot instead of scrolling for it.
+  const [lotFilter, setLotFilter] = useState(null);
   const [page, setPage] = useState(0);
   const [allHistoryOpen, setAllHistoryOpen] = useState(false);
   const [allHistory, setAllHistory] = useState([]);
@@ -857,6 +942,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
     fetchFound();
   }, [refreshSignal, fetchForms, fetchFound]);
 
+  const [mixing, setMixing] = useState(false);
   const openNew  = () => setDraft(emptyDraft());
   const openEdit = (form) => setDraft(formToDraft(form));
   const close    = () => setDraft(null);
@@ -870,6 +956,8 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
       if (draft.id) {
         const res = await axiosInstance.patch(`/noblesse-registration-forms/${draft.id}`, payload);
         updateForms((prev) => prev.map((f) => (f.id === res.data.id ? res.data : f)));
+        // A lot in a mix moved its NX form's figures too.
+        if (res.data.mixRefresh) { fetchForms(); fetchFound(); }
       } else {
         const res = await axiosInstance.post("/noblesse-registration-forms", payload);
 
@@ -895,11 +983,12 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
         }
         // Into the search results too, so what was just made is on screen.
         updateForms((prev) => [res.data, ...prev]);
+        if (res.data.mixRefresh) { fetchForms(); fetchFound(); }
       }
       toast({ status: "success", title: "Registration form saved", duration: 2000 });
       close();
     } catch (err) {
-      toast({ status: "error", title: "Save failed", description: err.message, duration: 3000 });
+      toast({ status: "error", title: "Save failed", description: err.response?.data?.error || err.message, duration: 6000, isClosable: true });
     } finally {
       setSaving(false);
     }
@@ -941,8 +1030,11 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
   // can be parsed wrong (CLAUDE.md §3). Upper-cased and trimmed so casing or a
   // stray space cannot split one lot across two positions, and a form with no
   // lot yet sorts LAST rather than riding above today's work.
-  const matching = (found ?? forms)
-    .filter((f) => !statusFilter || f.status === statusFilter)
+  const byStatus = (found ?? forms).filter((f) => !statusFilter || f.status === statusFilter);
+  const lotKind = (f) => (f.mix || isMixedLot(f.lotNumber) ? "mixed" : isEhwaLot(f.lotNumber) ? "ehwa" : "ours");
+  const kindCounts = byStatus.reduce((acc, f) => ({ ...acc, [lotKind(f)]: (acc[lotKind(f)] || 0) + 1 }), {});
+  const matching = byStatus
+    .filter((f) => !lotFilter || lotKind(f) === lotFilter)
     .slice()
     .sort((a, b) => {
       const la = String(a.lotNumber || "").trim().toUpperCase();
@@ -1000,38 +1092,57 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
             isSearching={searching}
             onSearch={(text) => { setSearching(true); setQ(text); setPage(0); }}
           />
-          <Flex gap={1}>
-            <Button
-              size="xs"
-              variant={statusFilter === null ? "solid" : "outline"}
-              colorScheme={statusFilter === null ? "teal" : "gray"}
-              onClick={() => { setStatusFilter(null); setPage(0); }}
-            >
-              All
-            </Button>
-            <Button
-              size="xs"
-              variant={statusFilter === "in_progress" ? "solid" : "outline"}
-              colorScheme={statusFilter === "in_progress" ? "blue" : "gray"}
-              onClick={() => { setStatusFilter("in_progress"); setPage(0); }}
-            >
-              In Progress
-            </Button>
-            <Button
-              size="xs"
-              variant={statusFilter === "completed" ? "solid" : "outline"} 
-              colorScheme={statusFilter === "completed" ? "green" : "gray"}
-              onClick={() => { setStatusFilter("completed"); setPage(0); }}
-            >
-              Completed
-            </Button>
-          </Flex>
+          {/* Two kinds of filter, two looks: status is one joined bar, lot type is separate chips. */}
+          <FilterGroup label="Status">
+            <ButtonGroup size="xs" isAttached variant="outline">
+              {[
+                [null, "All", "gray"],
+                ["in_progress", "In Progress", "blue"],
+                ["completed", "Completed", "green"],
+              ].map(([key, label, scheme]) => (
+                <Button key={label} bg={statusFilter === key ? undefined : "white"}
+                  variant={statusFilter === key ? "solid" : "outline"}
+                  colorScheme={statusFilter === key ? scheme : "gray"}
+                  onClick={() => { setStatusFilter(key); setPage(0); }}>
+                  {label}
+                </Button>
+              ))}
+            </ButtonGroup>
+          </FilterGroup>
+          <FilterGroup label="Lots">
+            <Flex gap={1} wrap="wrap">
+              {[
+                [null, "All", "gray"],
+                ["ours", "N lots", "blue"],
+                ["mixed", "Mixed (NX)", "purple"],
+                ["ehwa", "EHWA", "orange"],
+              ].map(([key, label, scheme]) => {
+                const on = lotFilter === key;
+                return (
+                  <Button key={label} size="xs" borderRadius="full" px={2.5} fontWeight={on ? "bold" : "medium"}
+                    bg={on ? `${scheme}.100` : "white"} color={on ? `${scheme}.800` : "gray.600"}
+                    border="1px solid" borderColor={on ? `${scheme}.400` : "gray.200"}
+                    _hover={{ bg: `${scheme}.50`, borderColor: `${scheme}.300` }}
+                    onClick={() => { setLotFilter(key); setPage(0); }}>
+                    {key && <Box as="span" w="7px" h="7px" borderRadius="full" bg={`${scheme}.400`} mr={1.5} />}
+                    {label}
+                    {key && kindCounts[key] ? (
+                      <Box as="span" ml={1.5} color={on ? `${scheme}.700` : "gray.400"} fontWeight="semibold">
+                        {kindCounts[key]}
+                      </Box>
+                    ) : null}
+                  </Button>
+                );
+              })}
+            </Flex>
+          </FilterGroup>
         </Flex>
         <Flex gap={2} wrap="wrap">
           <Button size="xs" colorScheme="gray" variant="outline" onClick={() => setExcelViewOpen(true)}>View All</Button>
           {/* The isAdmin prop above is really "can edit" and is always true here.
               History is gated on the actual role check. */}
           {isAdminUser && <Button size="xs" colorScheme="gray" onClick={openAllHistoryModal}>History</Button>}
+          {isAdmin && <Button size="xs" colorScheme="purple" variant="outline" onClick={() => setMixing(true)}>Mix lots</Button>}
           {isAdmin && <Button size="xs" colorScheme="blue" onClick={openNew}>+ New Registration Form</Button>}
         </Flex>
       </Flex>
@@ -1044,7 +1155,9 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
             ? (found && found.length > 0 && statusFilter
               ? `No ${statusFilter === "in_progress" ? "in progress" : "completed"} form matches “${q}”, but ${found.length} other${found.length === 1 ? " does" : "s do"}.`
               : `Nothing matches “${q}”.`)
-            : forms.length === 0 ? "No registration forms saved yet." : statusFilter ? `No ${statusFilter === "in_progress" ? "in progress" : "completed"} registration forms.` : "No registration forms."}
+            : forms.length === 0 ? "No registration forms saved yet."
+            : lotFilter ? `No ${{ ours: "N lot", mixed: "mixed lot", ehwa: "EHWA" }[lotFilter]}${statusFilter ? ` ${statusFilter === "in_progress" ? "in progress" : "completed"}` : ""} registration forms.`
+            : statusFilter ? `No ${statusFilter === "in_progress" ? "in progress" : "completed"} registration forms.` : "No registration forms."}
         </Text>
       ) : (
         // A table cannot reflow into a narrow column, so on mobile it scrolls
@@ -1116,6 +1229,14 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                       ) : (
                         <Text as="span">{f.lotNumber || "—"}</Text>
                       )}
+                      {f.mix && (
+                        <Badge colorScheme="purple" fontSize="9px" title={f.mix.sources.map((x) => x.lotNumber).join(", ")}>
+                          mix of {f.mix.sources.length}
+                        </Badge>
+                      )}
+                      {f.mixedInto && (
+                        <Badge colorScheme="purple" variant="outline" fontSize="9px">in {f.mixedInto.lotNumber}</Badge>
+                      )}
                     </Flex>
                   </Td>
                   <Td>
@@ -1137,7 +1258,7 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
                     {f.originalWeight ? `${fmtWeight(f.originalWeight)} lb` : "—"}
                   </Td>
                   <Td textAlign="right" style={{ fontVariantNumeric: "tabular-nums" }}>
-                    {remainingCases || "—"}/{f.totalQuantity || "—"}
+                    {f.mixedInto ? 0 : (remainingCases || "—")}/{f.totalQuantity || "—"}
                   </Td>
                   <Td>
                     <Menu>
@@ -1326,7 +1447,21 @@ export const RegistrationFormTab = ({ isAdmin, canDelete = false, isAdminUser = 
         isOpen={!!draft} onClose={close}
         draft={draft} setDraft={setDraft}
         onSave={save} saving={saving}
+        onMixUndone={() => { close(); fetchForms(); fetchFound(); }}
       />
+      <MixLotsWindow isOpen={mixing} onClose={() => setMixing(false)}
+        onMade={async (mix) => {
+          setMixing(false);
+          await fetchForms();
+          fetchFound();
+          // Straight onto the new NX form, where its lots are listed.
+          if (mix.formId) {
+            try {
+              const { data } = await axiosInstance.get(`/noblesse-registration-forms/${mix.formId}`);
+              setDraft(formToDraft(data));
+            } catch { /* the list already has it */ }
+          }
+        }} />
     </Box>
   );
 };

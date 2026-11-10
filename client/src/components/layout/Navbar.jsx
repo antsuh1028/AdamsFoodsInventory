@@ -56,8 +56,8 @@ const ShowDrawer = ({
 }) => {
   const navigate = useNavigate();
   const role = getRole();
-  const isAdmin = role === "admin";
-  const isAdminOrManager = role === "admin" || role === "manager";
+  const isAdmin = role === "admin" || role === "master";
+  const isAdminOrManager = isAdmin || role === "manager";
 
   const handleLogout = () => {
     localStorage.removeItem("token");

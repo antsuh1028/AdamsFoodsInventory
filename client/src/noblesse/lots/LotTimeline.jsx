@@ -5,7 +5,7 @@ import {
 } from "@chakra-ui/react";
 import { ChevronLeftIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import axiosInstance from "../../utils/axiosInstance";
-import getRole from "../../utils/getRole";
+import getRole, { isAdminRole } from "../../utils/getRole";
 import { toDisplay } from "../../utils/weight";
 import { translator } from "../../utils/i18n";
 import FloatingWindow from "../../components/FloatingWindow";
@@ -36,6 +36,7 @@ const KIND = {
   shipment_cancelled: { label: "Load cancelled", color: "red" },
   fp_sent:            { label: "To the freezer", color: "blue" },
   fp_returned:        { label: "Back from freezer", color: "teal" },
+  mixed:              { label: "Mixed",          color: "purple" },
 };
 
 // A departure is not an arrival, and they rendered identically before the
@@ -150,7 +151,7 @@ const LotTimeline = ({
   lotId, lotNumber, isOpen, onClose, t = ENGLISH,
   onStep = null, stepPosition = null,
 }) => {
-  const isAdmin = getRole() === "admin";
+  const isAdmin = isAdminRole(getRole());
   const toast = useToast();
   const [data, setData] = useState(null);
   const [events, setEvents] = useState(null);

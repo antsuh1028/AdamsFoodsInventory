@@ -93,10 +93,20 @@ const ensureFpLot = async (db, tenantId, parentLotId, userId) => {
   const parent = (await db.query(
     "SELECT * FROM lots WHERE lot_id = $1 AND tenant_id = $2", [parentLotId, tenantId])).rows[0];
   if (!parent) throw Object.assign(new Error("That lot is not in the registry."), { status: 400, code: "NO_SUCH_LOT" });
-  const number = parent.kind === "internal" ? fpNumberFor(parent.lot_number) : null;
+  // N and NX lots by their digits, EHWA lots by their own number.
+  const number = parent.kind === "internal" || parent.kind === "mixed" ? fpNumberFor(parent.lot_number)
+    : parent.kind === "external" ? fpNumberFor(parent.lot_number, { outside: true }) : null;
   if (!number) {
-    throw Object.assign(new Error(`${parent.lot_number} is not one of our N lots, so it cannot have an FP lot.`),
+    throw Object.assign(new Error(`${parent.lot_number} is already a further-processing lot.`),
       { status: 400, code: "NOT_AN_N_LOT" });
+  }
+  // A lot in a mix has nothing of its own to send.
+  const mix = (await db.query(
+    `SELECT x.lot_number FROM lot_mix_members m JOIN lots x ON x.lot_id = m.mix_lot_id
+      WHERE m.lot_id = $1 AND m.tenant_id = $2`, [parentLotId, tenantId])).rows?.[0];
+  if (mix && mix.lot_number) {
+    throw Object.assign(new Error(`${parent.lot_number} is mixed into ${mix.lot_number}, so it has no stock of its own.`),
+      { status: 409, code: "LOT_IN_MIX" });
   }
   const existing = await findFpChild(db, tenantId, parentLotId);
   if (existing) return { lot: existing, created: false };

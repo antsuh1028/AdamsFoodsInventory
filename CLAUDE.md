@@ -109,6 +109,30 @@
 > - Phases A+B applied to prod; text columns still authoritative (Phase D — drop
 >   them — not done).
 >
+> ### Mixed lots — NX (2026-11-10, branch `nti-lot-merge`, NOT committed or deployed)
+> N lots mixed **before processing** into one `NX{YY}{JJJ}-{NN}` lot (`lots.kind = 'mixed'`,
+> `seq` NULL). The day is the day of mixing; the sequence is its own, so the first
+> mix of a day is `-01` however far the N lots went.
+> - `lot_mix_members` (PK `lot_id`, so one mix per lot). Code: `utils/lotMix.js`,
+>   routes `routes/lotMixes.pg.js` (`/lot-mixes`, reception roles, in roleScope).
+> - **The NX lot is an ordinary lot downstream**: one registration form, one raw
+>   stock row. Processing and Outgoing needed no change beyond refusing a source lot.
+> - A source keeps its form and its claim (`registered_*`) but holds **0 on hand**
+>   (`syncRegistrationStock` zeroes it while mixed). Its form's Remaining shows 0.
+> - `refreshMix` recomputes the NX form from its sources (vendor etc. shared or
+>   `MIXED`, weight and cases summed) and re-syncs the NX stock row, so more product
+>   on a source lot lands on the NX total as a delta. Every form save/delete on a
+>   source calls it (`refreshMixesFor`).
+> - Lots can be **added any time**; **taken out / undone only until the NX lot is
+>   used** (a non-rejected report, hand runs, a session, a load). Logged to
+>   `nti_inventory_history` as `lot_mixed` / `lot_unmixed` / `mix_undone`.
+> - Refused on a source lot: processing reports, load lines, outgoing weighing, FP.
+>   Refused on an NX lot: incoming weighing, a second form, typing its number into `POST /lots`.
+> - **NX lots are ours, never EHWA.** `isEhwaLot` (client `shared.jsx`) once read any
+>   number not starting `N\d`/`FP\d` as EHWA, which put NX forms in the EHWA block.
+> - `db/migrate.js` cannot build an EMPTY database (an index on `box_batches.lot_id`
+>   precedes the column). Prod is unaffected; a throwaway test DB needs a workaround.
+>
 > ### Not done
 > - The tally-sheet **date is still discarded** on import — see §4 Known gap.
 > - iPad keyboard: the user should check whether their scanner has an *iOS

@@ -5,6 +5,7 @@ const requireRole = require("../middleware/requireRole");
 const { RECEPTION_ROLES } = require("../middleware/receptionRoles");
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
 const { searchTerm, searchClause } = require("../utils/search");
+const { refuseInMix } = require("../utils/lotMix");
 
 // Outgoing.
 
@@ -344,6 +345,13 @@ router.post("/shipments/:id/items", verifyToken, requireRole(...RECEPTION_ROLES)
     const lot = await pool.query(
       `SELECT lot_id FROM lots WHERE lot_id = $1 AND tenant_id = $2`, [lotId, req.tenantId]);
     if (!lot.rows.length) return res.status(404).json({ error: "Lot not found" });
+    // A lot in a mix ships as the mix.
+    try {
+      await refuseInMix(pool, req.tenantId, lotId, "Ship it");
+    } catch (err) {
+      if (!err.status) throw err;
+      return res.status(err.status).json({ code: err.code, error: err.message });
+    }
 
     if (ntiItemId != null) {
       const stock = await pool.query(

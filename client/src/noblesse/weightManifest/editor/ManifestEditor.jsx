@@ -5,7 +5,7 @@ import upperInput from "../../../utils/upperInput";
 import { Box, Flex, Text, Button, Badge, Input, Textarea, Alert, AlertIcon, useToast, AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader, AlertDialogContent, AlertDialogOverlay } from "@chakra-ui/react";
 import axiosInstance from "../../../utils/axiosInstance";
 import { fmtDate, today } from "../../common/shared";
-import getRole from "../../../utils/getRole";
+import getRole, { isAdminRole } from "../../../utils/getRole";
 import LotPicker from "../../lots/LotPicker";
 
 // The sessions a removed manifest covered. They are untouched by the removal,
@@ -70,7 +70,7 @@ const ManifestEditor = ({ batchId, detail, onChanged, onReopened }) => {
   // Read here rather than passed down: this component is rendered per row, and
   // threading the role through every one of them only creates a chance for the
   // two to disagree. Courtesy only — the server decides.
-  const isAdmin = getRole() === "admin";
+  const isAdmin = isAdminRole(getRole());
   const mayEdit = detail.status !== "closed" || isAdmin;
   const original = fromDetail(detail);
   const lotChanged = lot.lotId !== null && lot.lotId !== (detail.lot_id ?? null);

@@ -10,7 +10,7 @@ import FloatingWindow from "../../components/FloatingWindow";
 import LotTimeline from "../lots/LotTimeline";
 import LotMenu from "../lots/LotMenu";
 import axiosInstance from "../../utils/axiosInstance";
-import getRole from "../../utils/getRole";
+import getRole, { isAdminRole } from "../../utils/getRole";
 import { today, fmtWeight, fmtLongDate } from "../common/shared";
 
 // The day, for whoever has to answer for it.
@@ -277,7 +277,7 @@ const AttentionSection = ({ grouped, truncated, isToday }) => {
 
 const DailyReport = ({ isOpen, onClose }) => {
   // Yield is admin-only; the server leaves it out for everyone else too.
-  const isAdmin = getRole() === "admin";
+  const isAdmin = isAdminRole(getRole());
   const [day, setDay] = useState(() => today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);

@@ -236,7 +236,7 @@ const PrivateRoute = ({ children, allowedRoles }) => {
   }
 
   // No idle logout for an admin on the dev server; production builds always have it.
-  const devAdmin = process.env.NODE_ENV === "development" && payload.role === "admin";
+  const devAdmin = process.env.NODE_ENV === "development" && (payload.role === "admin" || payload.role === "master");
 
   return (
     <>

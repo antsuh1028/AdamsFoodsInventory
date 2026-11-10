@@ -32,11 +32,25 @@ const MAX_DESC = 38;
 const optionLabel = (l) => {
   const num = l.parentLotNumber
     ? `${l.lotNumber}, from ${l.parentLotNumber}${l.fpReady != null ? ` (${Math.max(l.fpReady, 0)} back)` : ""}`
+    : l.mixLotNumber ? `${l.lotNumber} (in ${l.mixLotNumber})`
+    : l.kind === "mixed" && l.sourceCount != null ? `${l.lotNumber} (${l.sourceCount} lot${l.sourceCount === 1 ? "" : "s"})`
     : l.lotNumber;
   const d = (l.description || "").trim();
   if (!d) return num;
   const short = d.length > MAX_DESC ? `${d.slice(0, MAX_DESC - 1)}\u2026` : d;
   return `${num} \u2014 ${short}`;
+};
+
+// English with {name} filled in, for screens that pass no translator.
+const plainText = (text, vars) => text.replace(/\{(\w+)\}/g, (_, k) => (vars && vars[k] != null ? vars[k] : ""));
+
+// Case- and space-blind, so "short rib" finds "BEEF SHORT RIB ".
+const fold = (s) => String(s || "").toUpperCase().replace(/\s+/g, " ").trim();
+export const lotMatches = (lot, search) => {
+  const needle = fold(search);
+  if (!needle) return true;
+  return fold(lot.lotNumber).includes(needle) || fold(lot.description).includes(needle)
+    || fold(lot.parentLotNumber).includes(needle);
 };
 
 // The plain lot number when a typed one has a name or a dot attached: "26285-05 EHWA" -> "26285-05".
@@ -63,8 +77,15 @@ const LotPicker = ({
   hideRegistered = false,
   // Also offer FP lots. Only a processing run can take from one.
   includeFurther = false,
+  // A search box beside the list: narrows it by lot number or product.
+  searchable = false,
+  // The screen's translator, for the search box's own words.
+  t = plainText,
 }) => {
   const [lots, setLots] = useState([]);
+  const [search, setSearch] = useState("");
+  // Lots the server found for the search that the loaded page does not hold.
+  const [found, setFound] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [nextLot, setNextLot] = useState(null);
@@ -99,9 +120,30 @@ const LotPicker = ({
 
   useEffect(() => { load(); }, [load]);
 
+  // Older lots are past the loaded page, so a search also asks the server.
+  useEffect(() => {
+    const text = search.trim();
+    if (!searchable || text.length < 2) { setFound([]); return undefined; }
+    let live = true;
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await axiosInstance.get("/lots", {
+          params: { q: text, limit: 50, ...(includeFurther ? { further: 1 } : {}) },
+        });
+        if (live) setFound(data || []);
+      } catch { /* the loaded page still filters */ }
+    }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [search, searchable, includeFurther]);
+
+  const known = useMemo(
+    () => [...lots, ...found.filter((f) => !lots.some((l) => l.lotId === f.lotId))],
+    [lots, found]
+  );
+
   const selected = useMemo(
-    () => lots.find((l) => l.lotId === value) || null,
-    [lots, value]
+    () => known.find((l) => l.lotId === value) || null,
+    [known, value]
   );
 
   // A lot that was picked but is not in the loaded page (an older one, or one
@@ -111,12 +153,16 @@ const LotPicker = ({
     () => (hideRegistered
       // The one already on this form is registered by definition; dropping it
       // would leave the select bound to a value it has no option for.
-      ? lots.filter((l) => !l.registered || l.lotId === value)
-      : lots),
-    [lots, hideRegistered, value]
+      ? known.filter((l) => !l.registered || l.lotId === value)
+      : known),
+    [known, hideRegistered, value]
   );
 
-  const options = visible;
+  // The chosen lot stays an option while searching, so the select keeps showing it.
+  const options = useMemo(
+    () => visible.filter((l) => l.lotId === value || lotMatches(l, search)),
+    [visible, search, value]
+  );
 
   // The server already returns ours first and outside numbers after; splitting
   // here only puts a heading between them. Kept as a filter rather than a slice
@@ -136,11 +182,33 @@ const LotPicker = ({
     () => options.filter((l) => l.kind === "external"),
     [options]
   );
+  const mixed = useMemo(
+    () => options.filter((l) => l.kind === "mixed"),
+    [options]
+  );
+  // A lot in a mix is used as the mix, so downstream it is shown but not offered.
+  const inMix = (l) => !allowCreate && Boolean(l.mixLotNumber) && l.lotId !== value;
+  const option = (l) => (
+    <option key={l.lotId} value={l.lotId} disabled={inMix(l)}>{optionLabel(l)}</option>
+  );
 
   const pick = (lotId) => {
     if (!lotId) { onChange(null); return; }
-    const lot = lots.find((l) => String(l.lotId) === String(lotId));
+    const lot = known.find((l) => String(l.lotId) === String(lotId));
     onChange(lot || null);
+  };
+
+  // The matches in the order the list shows them, for Enter and the count.
+  const matches = useMemo(
+    () => [...further, ...mixed, ...ours, ...outside].filter((l) => !inMix(l) && lotMatches(l, search)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [further, mixed, ours, outside, search, value, allowCreate]
+  );
+  const searching = searchable && search.trim() !== "";
+  const pickFirst = () => {
+    if (!matches.length) return;
+    onChange(matches[0]);
+    setSearch("");
   };
 
   const adopt = (lot, created) => {
@@ -241,6 +309,26 @@ const LotPicker = ({
   return (
     <Box>
       <Flex gap={2} align="center" wrap="wrap">
+        {searchable && (
+          <Input
+            size={size}
+            bg="white"
+            flex="1 1 150px"
+            minW="140px"
+            type="search"
+            placeholder={t("Search lot or product…")}
+            value={search}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            isDisabled={isDisabled}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); pickFirst(); }
+              if (e.key === "Escape") setSearch("");
+            }}
+          />
+        )}
         <Select
           size={size}
           bg="white"
@@ -258,20 +346,19 @@ const LotPicker = ({
           {/* FP lots first: only a few, and the ones a run is usually picking. */}
           {further.length > 0 && (
             <optgroup label="Further processing (back from the freezer)">
-              {further.map((l) => (
-                <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
-              ))}
+              {further.map(option)}
             </optgroup>
           )}
-          {further.length > 0 ? (
-            <optgroup label="Our lots">
-              {ours.map((l) => (
-                <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
-              ))}
+          {mixed.length > 0 && (
+            <optgroup label="Mixed lots (NX)">
+              {mixed.map(option)}
             </optgroup>
-          ) : ours.map((l) => (
-            <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
-          ))}
+          )}
+          {further.length > 0 || mixed.length > 0 ? (
+            <optgroup label="Our lots">
+              {ours.map(option)}
+            </optgroup>
+          ) : ours.map(option)}
           {outside.length > 0 && (
             <optgroup label="EHWA (not our lot numbers)">
               {outside.map((l) => (
@@ -282,6 +369,16 @@ const LotPicker = ({
         </Select>
 
         {loading && <Spinner size="xs" color="blue.500" />}
+
+        {searching && (
+          <Text fontSize="xs" color={matches.length ? "gray.500" : "red.600"} flexBasis="100%" mt={-1}>
+            {matches.length === 0
+              ? t("No lot matches \"{text}\".", { text: search.trim() })
+              : matches.length === 1
+                ? t("1 match: {lot}. Press Enter to pick it.", { lot: matches[0].lotNumber })
+                : t("{n} matches. Open the list, or press Enter for {lot}.", { n: matches.length, lot: matches[0].lotNumber })}
+          </Text>
+        )}
 
         {/* A free-form lot has no lotId, so the Select above cannot show it and
             the field would read as empty — someone would type a lot, confirm
@@ -331,6 +428,9 @@ const LotPicker = ({
           <Badge colorScheme="blue" fontSize="10px">{selected.lotNumber}</Badge>
           <Text fontSize="xs" color="gray.500">{selected.lotDate}</Text>
           {selected.notes && <Text fontSize="xs" color="gray.500">· {selected.notes}</Text>}
+          {selected.mixLotNumber && (
+            <Badge colorScheme="purple" fontSize="9px">in {selected.mixLotNumber}</Badge>
+          )}
         </Flex>
       )}
 

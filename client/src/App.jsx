@@ -79,7 +79,7 @@ function App() {
         <Route
           path="/home"
           element={
-            <PrivateRoute allowedRoles={["admin", "manager", "user"]}>
+            <PrivateRoute allowedRoles={["master", "admin", "manager", "user"]}>
               <Homescreen />
             </PrivateRoute>
           }
@@ -88,7 +88,7 @@ function App() {
         <Route
           path="/noblesse"
           element={
-            <PrivateRoute allowedRoles={["admin", ...NOBLESSE_SIDE]}>
+            <PrivateRoute allowedRoles={["master", "admin", ...NOBLESSE_SIDE]}>
               <NoblesseScreen />
             </PrivateRoute>
           }

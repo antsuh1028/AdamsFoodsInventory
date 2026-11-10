@@ -48,6 +48,7 @@ const ADAMS = [
 // Noblesse Trading: processing, weighing and outgoing.
 const NOBLESSE = [
   [/^\/lots(\/|$)/, null],
+  [/^\/lot-mixes(\/|$)/, null],
   [/^\/shipments(\/|$)/, null],
   [/^\/noblesse-/, null],
   [/^\/nti-/, null],
@@ -65,6 +66,7 @@ const NOBLESSE = [
 
 // Every role is listed; null is unrestricted. A role not listed reaches nothing.
 const SCOPES = {
+  master: null,
   admin: null,
   user: ADAMS,
   manager: ADAMS,

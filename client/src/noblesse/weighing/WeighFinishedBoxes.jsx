@@ -164,7 +164,7 @@ const WeighFinishedBoxes = ({
         keepAsTyped,
       });
     } catch (err) {
-      toast({ title: t("Could not start weighing"), description: err.message,
+      toast({ title: t("Could not start weighing"), description: err.response?.data?.error || err.message,
         status: "error", position: "top", duration: 6000, isClosable: true });
     } finally { setBusy(false); }
   };
@@ -477,6 +477,8 @@ const WeighFinishedBoxes = ({
                 so there is nothing here to mint or type in. */}
             <LotPicker
               size="md"
+              searchable
+              t={t}
               value={lot.lotId}
               lotNumber={lot.lotNumber}
               onChange={(picked) => setLot({

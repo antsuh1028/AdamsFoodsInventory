@@ -31,7 +31,7 @@ import {
 } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
-import getRole, { isOutgoingOnly, canSeeReport, canManageItems } from "../utils/getRole";
+import getRole, { isOutgoingOnly, canSeeReport, canManageItems, isAdminRole } from "../utils/getRole";
 // eslint-disable-next-line no-unused-vars -- Incoming Records is commented out below, not removed
 import { IncomingRecordsTab } from "./incoming/IncomingRecordsTab";
 import ProcessingReportsTab from "./processing/ProcessingReportsTab";
@@ -51,7 +51,7 @@ const REFRESH_INTERVAL_MS = 60 * 1000;
 
 const NoblesseScreen = () => {
   const navigate = useNavigate();
-  const isAdmin = getRole() === "admin";
+  const isAdmin = isAdminRole(getRole());
   // Admin, and the Noblesse-side manager. NOT `manager`, which is an Adams
   // Foods role that /noblesse does not admit at all.
   const showReport = canSeeReport();

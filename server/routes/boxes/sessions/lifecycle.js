@@ -2,6 +2,7 @@
 
 const router = require("express").Router();
 const pool = require("../../../utils/pg");
+const { isAdminRole } = require("../../../middleware/roles");
 const verifyToken = require("../../../middleware/verifyToken.pg");
 const requireRole = require("../../../middleware/requireRole");
 const { lotColumns, lookupLot } = require("../../../utils/lotRegistry");
@@ -10,6 +11,7 @@ const { correctHeading, parseKeep } = require("../../../utils/nameCorrect");
 const { scanLimiter } = require("../../../middleware/rateLimits");
 const { weightInLb } = require("../../../utils/sqlWeight");
 const { logBoxRemoval, batchBlockers } = require("../helpers/shared");
+const { refuseInMix, refuseMixedLot, familySql } = require("../../../utils/lotMix");
 
 // Create a batch. Idempotent on client_uuid so a retried POST after a dropped
 // response returns the original batch instead of orphaning one.
@@ -69,13 +71,23 @@ router.post("/box-batches", verifyToken, scanLimiter, async (req, res) => {
       lot = await lotColumns(req.tenantId, req.userId, lotNumber, pool, lotId ?? null);
     }
 
-    // What the product IS was recorded when it arrived.
+    // A lot in a mix is weighed out as the mix; product arrives under its own N lot.
+    try {
+      if (dir === "outgoing") await refuseInMix(pool, req.tenantId, lot.lotId, "Weigh it out");
+      else await refuseMixedLot(pool, req.tenantId, lot.lotId,
+        "Weigh incoming product under its own lot, then add that lot to the mix.");
+    } catch (err) {
+      if (!err.status) throw err;
+      return res.status(err.status).json({ code: err.code, error: err.message });
+    }
+
+    // What the product IS was recorded when it arrived: for a mix, under one of its lots.
     let inherited = {};
     if (dir === "outgoing" && lot.lotId != null) {
       const src = await pool.query(
         `SELECT vendor, item_description, brand, est_number, grade
            FROM box_batches
-          WHERE tenant_id = $1 AND lot_id = $2 AND direction = 'incoming'
+          WHERE tenant_id = $1 AND lot_id IN ${familySql("$2::int")} AND direction = 'incoming'
           ORDER BY created_at DESC
           LIMIT 1`,
         [req.tenantId, lot.lotId]
@@ -350,7 +362,7 @@ router.post("/box-batches/:id/reopen", verifyToken, async (req, res) => {
     // Same shared definition the delete guard uses, so the two can never
     // disagree about what counts as filed.
     const blockers = await batchBlockers(pool, batchId, req.tenantId);
-    const isAdmin = req.role === "admin";
+    const isAdmin = isAdminRole(req.role);
 
     if (!isAdmin) {
       const filed = [
