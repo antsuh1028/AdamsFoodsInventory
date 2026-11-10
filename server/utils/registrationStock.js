@@ -103,6 +103,11 @@ const syncRegistrationStock = async (client, tenantId, formId) => {
 
   const want = intendedRow(form);
 
+  // A lot in a mix keeps its own claim but holds nothing: the NX lot has its stock.
+  const inMix = form != null && form.lot_id != null && (await client.query(
+    `SELECT mix_lot_id FROM lot_mix_members WHERE lot_id = $1 AND tenant_id = $2`,
+    [form.lot_id, tenantId])).rows?.[0]?.mix_lot_id != null;
+
   // Form deleted, or its weight cleared: the registration no longer claims
   // anything, so its stock must not linger.
   if (!want) {
@@ -151,11 +156,13 @@ const syncRegistrationStock = async (client, tenantId, formId) => {
               est = $6, received_date = $7, notes = $8,
               weight = GREATEST(
                 0::numeric,
-                COALESCE(weight, 0) + ($9::numeric - COALESCE(registered_weight, weight, 0))
+                CASE WHEN $13 THEN 0::numeric
+                     ELSE COALESCE(weight, 0) + ($9::numeric - COALESCE(registered_weight, weight, 0)) END
               ),
               qty_cases = GREATEST(
                 0,
-                COALESCE(qty_cases, 0) + (COALESCE($10::int, 0) - COALESCE(registered_cases, qty_cases, 0))
+                CASE WHEN $13 THEN 0
+                     ELSE COALESCE(qty_cases, 0) + (COALESCE($10::int, 0) - COALESCE(registered_cases, qty_cases, 0)) END
               ),
               registered_weight = $9::numeric,
               registered_cases  = $10::int
@@ -167,10 +174,10 @@ const syncRegistrationStock = async (client, tenantId, formId) => {
               (COALESCE(weight, 0) + ($9::numeric - COALESCE(registered_weight, weight, 0))) AS uncapped_weight`,
       [want.lot, want.lotId, want.description, want.brand, want.grade,
        want.est, want.receivedDate, want.notes,
-       want.weight, want.qtyCases, existing.id, tenantId]
+       want.weight, want.qtyCases, existing.id, tenantId, inMix]
     );
     const row = updated.rows[0];
-    const uncapped = row ? Number(row.uncapped_weight) : 0;
+    const uncapped = row && !inMix ? Number(row.uncapped_weight) : 0;
     return {
       action: "updated",
       row,
@@ -183,10 +190,13 @@ const syncRegistrationStock = async (client, tenantId, formId) => {
        (tenant_id, lot, lot_id, description, brand, grade, est,
         weight, qty_cases, received_date, notes, stage,
         registered_weight, registered_cases, source_registration_form_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::numeric,$9::int,$10,$11,'raw',$8::numeric,$9::int,$12)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,
+             CASE WHEN $13 THEN 0::numeric ELSE $8::numeric END,
+             CASE WHEN $13 THEN 0 ELSE $9::int END,
+             $10,$11,'raw',$8::numeric,$9::int,$12)
      RETURNING *`,
     [tenantId, want.lot, want.lotId, want.description, want.brand, want.grade,
-     want.est, want.weight, want.qtyCases, want.receivedDate, want.notes, formId]
+     want.est, want.weight, want.qtyCases, want.receivedDate, want.notes, formId, inMix]
   );
   return { action: "created", row: inserted.rows[0], shortfall: null };
 };

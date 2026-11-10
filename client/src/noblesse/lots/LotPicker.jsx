@@ -32,6 +32,8 @@ const MAX_DESC = 38;
 const optionLabel = (l) => {
   const num = l.parentLotNumber
     ? `${l.lotNumber}, from ${l.parentLotNumber}${l.fpReady != null ? ` (${Math.max(l.fpReady, 0)} back)` : ""}`
+    : l.mixLotNumber ? `${l.lotNumber} (in ${l.mixLotNumber})`
+    : l.kind === "mixed" && l.sourceCount != null ? `${l.lotNumber} (${l.sourceCount} lot${l.sourceCount === 1 ? "" : "s"})`
     : l.lotNumber;
   const d = (l.description || "").trim();
   if (!d) return num;
@@ -135,6 +137,15 @@ const LotPicker = ({
   const outside = useMemo(
     () => options.filter((l) => l.kind === "external"),
     [options]
+  );
+  const mixed = useMemo(
+    () => options.filter((l) => l.kind === "mixed"),
+    [options]
+  );
+  // A lot in a mix is used as the mix, so downstream it is shown but not offered.
+  const inMix = (l) => !allowCreate && Boolean(l.mixLotNumber) && l.lotId !== value;
+  const option = (l) => (
+    <option key={l.lotId} value={l.lotId} disabled={inMix(l)}>{optionLabel(l)}</option>
   );
 
   const pick = (lotId) => {
@@ -258,20 +269,19 @@ const LotPicker = ({
           {/* FP lots first: only a few, and the ones a run is usually picking. */}
           {further.length > 0 && (
             <optgroup label="Further processing (back from the freezer)">
-              {further.map((l) => (
-                <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
-              ))}
+              {further.map(option)}
             </optgroup>
           )}
-          {further.length > 0 ? (
-            <optgroup label="Our lots">
-              {ours.map((l) => (
-                <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
-              ))}
+          {mixed.length > 0 && (
+            <optgroup label="Mixed lots (NX)">
+              {mixed.map(option)}
             </optgroup>
-          ) : ours.map((l) => (
-            <option key={l.lotId} value={l.lotId}>{optionLabel(l)}</option>
-          ))}
+          )}
+          {further.length > 0 || mixed.length > 0 ? (
+            <optgroup label="Our lots">
+              {ours.map(option)}
+            </optgroup>
+          ) : ours.map(option)}
           {outside.length > 0 && (
             <optgroup label="EHWA (not our lot numbers)">
               {outside.map((l) => (
@@ -331,6 +341,9 @@ const LotPicker = ({
           <Badge colorScheme="blue" fontSize="10px">{selected.lotNumber}</Badge>
           <Text fontSize="xs" color="gray.500">{selected.lotDate}</Text>
           {selected.notes && <Text fontSize="xs" color="gray.500">· {selected.notes}</Text>}
+          {selected.mixLotNumber && (
+            <Badge colorScheme="purple" fontSize="9px">in {selected.mixLotNumber}</Badge>
+          )}
         </Flex>
       )}
 

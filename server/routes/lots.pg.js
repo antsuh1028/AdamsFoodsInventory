@@ -3,7 +3,8 @@ const pool = require("../utils/pg");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { RECEPTION_ROLES } = require("../middleware/receptionRoles");
-const { parseLot, parseFpLot, formatLot, pacificToday, dayOfYearFromDate } = require("../utils/lot");
+const { parseLot, parseFpLot, parseMixLot, formatLot, pacificToday, dayOfYearFromDate } = require("../utils/lot");
+const { mixSources } = require("../utils/lotMix");
 const { fpCounts, findFpChild, sentSql, takenSql, returnedSql } = require("../utils/fpLot");
 // Shared with routes/boxes.pg.js so a lot's totals and a manifest agree.
 const { weightInLb, stockWeightInLb } = require("../utils/sqlWeight");
@@ -44,6 +45,10 @@ const fmtLot = (row) => ({
   // An FP lot's cases still waiting for a run. Present only where the query joined it in.
   fpWaiting: row.fp_waiting ?? null,
   fpReady: row.fp_ready ?? null,
+  // A lot in a mix: the NX lot it went into. An NX lot: how many lots are in it.
+  mixLotId: row.mix_lot_id ?? null,
+  mixLotNumber: row.mix_lot_number ?? null,
+  sourceCount: row.source_count ?? null,
   // What the lot IS, for screens that only ever showed a number. Present only
   // where the query joined it in; a lot number alone tells nobody what it is.
   description: row.description ?? null,
@@ -132,6 +137,14 @@ const issueNextForDate = async (tenantId, lotDate, userId, notes) => {
 // rule. It reports which happened so the caller can say so.
 router.post("/lots", verifyToken, async (req, res) => {
   const { date, lotNumber, notes, external } = req.body || {};
+
+  // An NX lot only ever comes from mixing lots.
+  if (parseMixLot(lotNumber).ok) {
+    return res.status(400).json({
+      code: "MIXED_LOT",
+      error: `${parseMixLot(lotNumber).lotNumber} is a mixed lot. It is made by mixing lots, not here.`,
+    });
+  }
 
   // An FP lot only ever comes from the F.P Tracker, as the child of its N lot.
   if (parseFpLot(lotNumber).ok) {
@@ -249,8 +262,8 @@ router.post("/lots", verifyToken, async (req, res) => {
 router.post("/lots/resolve", verifyToken, async (req, res) => {
   const { text } = req.body || {};
 
-  // An FP number resolves to the FP lot when it exists, and never creates one.
-  const fp = parseFpLot(text);
+  // An FP or NX number resolves to its lot when it exists, and never creates one.
+  const fp = parseFpLot(text).ok ? parseFpLot(text) : parseMixLot(text);
   if (fp.ok) {
     try {
       const found = await findLot(req.tenantId, fp.lotNumber);
@@ -321,10 +334,14 @@ router.get("/lots", verifyToken, async (req, res) => {
       // of the list. The client renders the two blocks as separate groups.
       `SELECT l.*, d.description, d.registered,
               (SELECT p.lot_number FROM lots p WHERE p.lot_id = l.parent_lot_id) AS parent_lot_number,
+              mm.mix_lot_id, (SELECT x.lot_number FROM lots x WHERE x.lot_id = mm.mix_lot_id) AS mix_lot_number,
+              CASE WHEN l.kind = 'mixed' THEN (SELECT COUNT(*)::int FROM lot_mix_members s
+                                                WHERE s.mix_lot_id = l.lot_id) END AS source_count,
               CASE WHEN l.kind = 'further' THEN ${sentSql("l")} - ${takenSql("l")} END AS fp_waiting,
               -- Counted back from the freezer and not yet run: what a run is shown.
               CASE WHEN l.kind = 'further' THEN ${returnedSql("l")} - ${takenSql("l")} END AS fp_ready
          FROM lots l
+         LEFT JOIN lot_mix_members mm ON mm.lot_id = l.lot_id
          -- The registration form is what says what a lot is; the incoming
          -- weighing session is the fallback for a lot never registered.
          LEFT JOIN LATERAL (
@@ -507,13 +524,28 @@ router.get("/lots/:id", verifyToken, async (req, res) => {
       }
     }
     const y = yieldFor(req.role, yieldFrom(f));
+    // An NX lot lists its lots; a lot in a mix names the NX lot.
+    let mix = null;
+    if (row.kind === "mixed") {
+      mix = { sources: await mixSources(pool, req.tenantId, lotId) };
+    } else {
+      const into = await pool.query(
+        `SELECT m.mix_lot_id, x.lot_number, m.added_at FROM lot_mix_members m
+           JOIN lots x ON x.lot_id = m.mix_lot_id WHERE m.lot_id = $1 AND m.tenant_id = $2`,
+        [lotId, req.tenantId]);
+      if (into.rows.length) {
+        mix = { mixLotId: into.rows[0].mix_lot_id, mixLotNumber: into.rows[0].lot_number,
+          mixedAt: into.rows[0].added_at };
+      }
+    }
     res.json({
       lot: req.role === "admin"
         ? { ...fmtLot(row), closedYield: row.closed_yield != null ? Number(row.closed_yield) : null }
         : fmtLot(row),
       description: row.description || null,
       further,
-      status: lotStatus(f),
+      mix,
+      status: mix && mix.mixLotId ? "mixed" : lotStatus(f),
       closeSuggestion: closeSuggestion(lot.rows[0], f, y),
       figures: {
         rawOnHand: f.raw_on_hand,
@@ -789,6 +821,18 @@ router.get("/lots/:id/timeline", verifyToken, async (req, res) => {
        WHERE si.lot_id = $1 AND sh.tenant_id = $2
        GROUP BY sh.shipment_id, sh.shipped_at, sh.cancelled_at, sh.created_at,
                 sh.status, sh.destination_name, sh.bill_of_lading, sh.carrier
+
+      UNION ALL
+      -- Mixing: on an NX lot, each lot that went in; on a lot, the NX lot it went into.
+      SELECT m.added_at, 'mixed',
+             CASE WHEN m.mix_lot_id = $1 THEN 'Mixed in ' || src.lot_number
+                  ELSE 'Mixed into ' || mx.lot_number END,
+             NULL::text, NULL::int, m.added_by,
+             CASE WHEN m.mix_lot_id = $1 THEN m.lot_id ELSE m.mix_lot_id END, NULL::text
+        FROM lot_mix_members m
+        JOIN lots src ON src.lot_id = m.lot_id
+        JOIN lots mx ON mx.lot_id = m.mix_lot_id
+       WHERE m.tenant_id = $2 AND (m.mix_lot_id = $1 OR m.lot_id = $1)
 
       ORDER BY at
       `,

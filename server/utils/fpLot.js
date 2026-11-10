@@ -98,6 +98,14 @@ const ensureFpLot = async (db, tenantId, parentLotId, userId) => {
     throw Object.assign(new Error(`${parent.lot_number} is not one of our N lots, so it cannot have an FP lot.`),
       { status: 400, code: "NOT_AN_N_LOT" });
   }
+  // A lot in a mix has nothing of its own to send.
+  const mix = (await db.query(
+    `SELECT x.lot_number FROM lot_mix_members m JOIN lots x ON x.lot_id = m.mix_lot_id
+      WHERE m.lot_id = $1 AND m.tenant_id = $2`, [parentLotId, tenantId])).rows?.[0];
+  if (mix && mix.lot_number) {
+    throw Object.assign(new Error(`${parent.lot_number} is mixed into ${mix.lot_number}, so it has no stock of its own.`),
+      { status: 409, code: "LOT_IN_MIX" });
+  }
   const existing = await findFpChild(db, tenantId, parentLotId);
   if (existing) return { lot: existing, created: false };
   // lot_date is the parent's so it sorts with it; seq stays null so the day's sequence is untouched.

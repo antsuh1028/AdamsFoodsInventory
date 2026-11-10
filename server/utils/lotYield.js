@@ -13,13 +13,17 @@ const { weightInLb } = require("./sqlWeight");
 
 const DIRECTIONS = new Set(["incoming", "outgoing"]);
 
+// The lot and any lots mixed into it: an NX lot's arrivals were weighed under its sources.
+const LOT_AND_SOURCES = `(SELECT $1::int UNION ALL
+  SELECT mm.lot_id FROM lot_mix_members mm WHERE mm.mix_lot_id = $1)`;
+
 // Weighed pounds on one side of a lot. Expects $1 = lot_id, $2 = tenant_id.
 const weighedSql = (direction) => {
   // A literal, so it is checked here rather than trusted.
   if (!DIRECTIONS.has(direction)) throw new Error(`bad direction: ${direction}`);
   return `COALESCE((SELECT SUM(${weightInLb("bi")}) FROM batch_items bi
                       JOIN box_batches b ON b.batch_id = bi.batch_id
-                     WHERE b.lot_id = $1 AND b.tenant_id = $2
+                     WHERE b.lot_id IN ${LOT_AND_SOURCES} AND b.tenant_id = $2
                        AND b.direction = '${direction}' AND bi.voided_at IS NULL
                        AND NOT b.further_processing), 0)::text`;
 };
@@ -30,7 +34,7 @@ const boxesSql = (direction) => {
   if (!DIRECTIONS.has(direction)) throw new Error(`bad direction: ${direction}`);
   return `COALESCE((SELECT COUNT(*) FROM batch_items bi
                       JOIN box_batches b ON b.batch_id = bi.batch_id
-                     WHERE b.lot_id = $1 AND b.tenant_id = $2
+                     WHERE b.lot_id IN ${LOT_AND_SOURCES} AND b.tenant_id = $2
                        AND b.direction = '${direction}' AND bi.voided_at IS NULL
                        AND NOT b.further_processing), 0)::int`;
 };
@@ -42,7 +46,7 @@ const estimatedSql = (direction) => {
   if (!DIRECTIONS.has(direction)) throw new Error(`bad direction: ${direction}`);
   return `COALESCE((SELECT COUNT(*) FROM batch_items bi
                       JOIN box_batches b ON b.batch_id = bi.batch_id
-                     WHERE b.lot_id = $1 AND b.tenant_id = $2
+                     WHERE b.lot_id IN ${LOT_AND_SOURCES} AND b.tenant_id = $2
                        AND b.direction = '${direction}' AND bi.voided_at IS NULL
                        AND NOT b.further_processing
                        AND bi.is_estimated), 0)::int`;
@@ -76,10 +80,12 @@ const yieldLateralSql = (alias) => `
        -- A freezer trip comes back, so it is not weight out.
        AND NOT b.further_processing
        -- Forms predate the registry, so some carry only the text.
-       AND b.lot_id = COALESCE(${alias}.lot_id,
+       AND (b.lot_id = COALESCE(${alias}.lot_id,
              (SELECT l.lot_id FROM lots l
                WHERE l.tenant_id = ${alias}.tenant_id
                  AND l.lot_number = ${alias}.lot_number))
+            OR b.lot_id IN (SELECT mm.lot_id FROM lot_mix_members mm
+                             WHERE mm.mix_lot_id = ${alias}.lot_id))
   ) y ON TRUE`;
 
 const mils = (v) => Math.round(Number(v || 0) * 1000);

@@ -8,6 +8,20 @@ const { isCalendarDay } = require("../utils/weighedAt");
 const { fpCounts, lockLot, findFpChild } = require("../utils/fpLot");
 const { manualCasesSql } = require("../utils/formManualCases");
 const { lotDescriptionSql } = require("../utils/lotDescription");
+const { refuseInMix } = require("../utils/lotMix");
+
+// A refusal from refuseInMix as a response, or false when there was none.
+const inMixRefusal = async (client, res, tenantId, lotId) => {
+  try {
+    await refuseInMix(client, tenantId, lotId, "Run it");
+    return false;
+  } catch (err) {
+    if (!err.status) throw err;
+    await client.query("ROLLBACK");
+    res.status(err.status).json({ code: err.code, error: err.message, mixLotId: err.mixLotId });
+    return true;
+  }
+};
 
 // The shop-floor record of one processing run: which lot, which line, who ran
 // it, how many cases went through.
@@ -332,6 +346,8 @@ router.post("/processing-reports", verifyToken, async (req, res) => {
       await client.query("ROLLBACK");
       return res.status(400).json({ code: "NO_SUCH_LOT", error: "That lot is not in the registry" });
     }
+    // A lot in a mix is run as the mix.
+    if (await inMixRefusal(client, res, req.tenantId, lotId)) return;
     // An FP lot is already further processing, so it never carries the flag.
     const furtherProcessing = v.furtherProcessing && lot.rows[0].kind !== "further";
 
@@ -407,6 +423,7 @@ router.patch("/processing-reports/:id", verifyToken, async (req, res) => {
         await client.query("ROLLBACK");
         return res.status(400).json({ code: "NO_SUCH_LOT", error: "That lot is not in the registry" });
       }
+      if (await inMixRefusal(client, res, req.tenantId, lotId)) return;
     }
 
     const h = v.head;
@@ -488,6 +505,9 @@ router.post("/processing-reports/:id/accept", verifyToken, requireRole(...REPORT
         error: why[report.status] || "That report is not ready to be accepted.",
       });
     }
+
+    // Filed before its lot was mixed: the lot holds nothing now, so it is refiled on the mix.
+    if (await inMixRefusal(client, res, req.tenantId, report.lot_id)) return;
 
     // A run on an FP lot goes on its N lot's form and takes from the FP count, not raw stock.
     const isFp = report.lot_kind === "further";

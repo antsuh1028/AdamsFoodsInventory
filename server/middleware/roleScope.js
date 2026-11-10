@@ -47,6 +47,7 @@ const ADAMS = [
 // Noblesse Trading: processing, weighing and outgoing.
 const NOBLESSE = [
   [/^\/lots(\/|$)/, null],
+  [/^\/lot-mixes(\/|$)/, null],
   [/^\/shipments(\/|$)/, null],
   [/^\/noblesse-/, null],
   [/^\/nti-/, null],

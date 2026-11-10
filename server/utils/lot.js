@@ -143,6 +143,30 @@ const parseFpLot = (input) => {
   return { ok: true, lotNumber: `FP${parent.lotNumber.slice(1)}`, parentNumber: parent.lotNumber };
 };
 
+// ── Mixed lots ───────────────────────────────────────────────────────────────
+// NX{YY}{JJJ}-{NN}: the day the lots were mixed, with its own sequence, so the
+// first mix of a day is -01 however many N lots came in that day.
+
+const MIX_SHAPE = /^NX(\d{2})(\d{3})-(\d{1,2})$/;
+
+const formatMixLot = (yy, dayOfYear, seq) =>
+  `NX${pad(yy, 2)}${pad(dayOfYear, 3)}-${pad(seq, 2)}`;
+
+/** Text that is an NX number, canonicalised, with its day and sequence. */
+const parseMixLot = (input) => {
+  const m = String(input ?? "").trim().toUpperCase().match(MIX_SHAPE);
+  if (!m) return { ok: false };
+  const yy = Number(m[1]);
+  const dayOfYear = Number(m[2]);
+  const seq = Number(m[3]);
+  const year = fullYear(yy);
+  if (dayOfYear < 1 || dayOfYear > daysInYear(year) || seq < 1) return { ok: false };
+  return {
+    ok: true, lotNumber: formatMixLot(yy, dayOfYear, seq),
+    lotDate: dateFromDayOfYear(year, dayOfYear), seq,
+  };
+};
+
 // ── Issuing a new lot ────────────────────────────────────────────────────────
 // Everything below has to agree exactly with `lotNumberForDate` in
 // client/src/pages/noblesse/shared.jsx. A lot issued by the server and a lot
@@ -186,6 +210,7 @@ const lotPrefixForDate = (dateStr) => {
 };
 
 module.exports = {
-  parseLot, formatLot, isCanonicalLot, fpNumberFor, parseFpLot, dateFromDayOfYear, daysInYear,
+  parseLot, formatLot, isCanonicalLot, fpNumberFor, parseFpLot, formatMixLot, parseMixLot,
+  dateFromDayOfYear, daysInYear,
   pacificToday, dayOfYearFromDate, lotPrefixForDate, PACIFIC_TZ,
 };

@@ -482,6 +482,33 @@ const steps = async () => {
       END IF;
     END $$`);
 
+  // Mixed lots: NX{YY}{JJJ}-{NN}, N lots mixed together before processing.
+  await run("lots kind allows mixed", `
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'lots'::regclass AND conname = 'lots_kind_check'
+           AND pg_get_constraintdef(oid) LIKE '%mixed%'
+      ) THEN
+        ALTER TABLE lots DROP CONSTRAINT IF EXISTS lots_kind_check;
+        ALTER TABLE lots ADD CONSTRAINT lots_kind_check
+          CHECK (kind IN ('internal', 'external', 'further', 'mixed'));
+      END IF;
+    END $$`);
+  // The lots in a mix. Keyed on the source lot, so a lot is in one mix at most.
+  await run("lot_mix_members", `
+    CREATE TABLE IF NOT EXISTS lot_mix_members (
+      lot_id      INT PRIMARY KEY REFERENCES lots(lot_id),
+      tenant_id   UUID NOT NULL REFERENCES tenants(id),
+      mix_lot_id  INT NOT NULL REFERENCES lots(lot_id),
+      added_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      added_by    TEXT,
+      CHECK (lot_id <> mix_lot_id)
+    )
+  `);
+  await run("lot_mix_members mix index",
+    `CREATE INDEX IF NOT EXISTS lot_mix_members_mix_idx ON lot_mix_members (tenant_id, mix_lot_id)`);
+
   // Back-references. ADD COLUMN IF NOT EXISTS skips the whole clause, FK
   // included, when the column is already there — so re-running is safe.
   for (const table of [

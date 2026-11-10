@@ -6,6 +6,7 @@ const verifyToken = require("../../../middleware/verifyToken.pg");
 const { correctHeading, parseKeep } = require("../../../utils/nameCorrect");
 const { parseWeighedOn } = require("../../../utils/weighedAt");
 const { logBoxRemoval, batchBlockers } = require("../helpers/shared");
+const { refuseInMix, refuseMixedLot } = require("../../../utils/lotMix");
 
 // Flag a session as a mistake, or clear the flag.
 //
@@ -238,6 +239,14 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
       );
       if (!lot.rows.length) {
         return res.status(400).json({ code: "BAD_LOT", error: "That lot is not in the registry." });
+      }
+      try {
+        if (direction === "outgoing") await refuseInMix(pool, req.tenantId, lotId, "Weigh it out");
+        else await refuseMixedLot(pool, req.tenantId, lotId,
+          "Incoming product stays under its own lot, which is then added to the mix.");
+      } catch (err) {
+        if (!err.status) throw err;
+        return res.status(err.status).json({ code: err.code, error: err.message });
       }
       const { groups, forms, shipments } = await batchBlockers(pool, batchId, req.tenantId);
       const holders = [

@@ -120,9 +120,12 @@ const LOTS_ISSUED = `
 // NOT how many were finished in it. Nothing records when a form was completed.
 const FORMS = `
   SELECT COUNT(*)::int AS forms,
-         COUNT(*) FILTER (WHERE status <> 'completed')::int AS open
-    FROM noblesse_registration_forms
-   WHERE tenant_id = $1 AND date_received BETWEEN $2 AND $3`;
+         COUNT(*) FILTER (WHERE f.status <> 'completed')::int AS open
+    FROM noblesse_registration_forms f
+    LEFT JOIN lots l ON l.lot_id = f.lot_id
+   WHERE f.tenant_id = $1 AND f.date_received BETWEEN $2 AND $3
+     -- An NX form is a mix, not a delivery.
+     AND l.kind IS DISTINCT FROM 'mixed'`;
 
 // Entered inside the range, counted on a day outside it. Without this, late
 // entry is invisible: it is absent from the day it was typed and it silently

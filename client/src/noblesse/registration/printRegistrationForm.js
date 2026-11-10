@@ -1,5 +1,6 @@
 import ntiLogo from "../../assets/nti.jpg";
 import { esc, printDocument } from "../common/printWindow";
+import { mixShared, MIXED_TEXT } from "../lots/mixShared";
 
 // Opens a printable "Registration Form" (Noblesse Trading Inc.) in a new tab.
 // Pass a saved form object to print filled-in values, or omit for a blank template.
@@ -21,6 +22,36 @@ const printRegistrationForm = (form = {}) => {
       <td class="field">${val(pd.cases)}${pd.cases ? " c/s" : ""}</td>
       <td class="field">${val(pd.date)}</td>
     </tr>`;
+
+  // An NX form prints what its lots share once, MIXED where they differ, and a table of the lots.
+  const sources = form.mix && Array.isArray(form.mix.sources) ? form.mix.sources : null;
+  const fromLots = (key, fallback) => {
+    if (!sources) return val(fallback);
+    const v = mixShared(sources, key);
+    return v === MIXED_TEXT ? `<span class="mixed">${esc(v)}</span>` : val(v);
+  };
+  const sourceTable = sources ? `
+    <tr><td colspan="4" class="sources">
+      <table class="src">
+        <thead><tr>
+          <th>Lot#</th><th>Received</th><th>Vendor</th><th>Vendor Lot</th><th>EST#</th>
+          <th>Brand</th><th>Grade</th><th class="n">C/S</th><th class="n">Lbs</th>
+        </tr></thead>
+        <tbody>
+          ${sources.map((x) => `<tr>
+            <td><b>${val(x.lotNumber)}</b></td><td>${val(x.dateReceived)}</td><td>${val(x.vendor)}</td>
+            <td>${val(x.vendorLot)}</td><td>${val(x.estNumber)}</td><td>${val(x.brand)}</td><td>${val(x.grade)}</td>
+            <td class="n">${val(x.cases ?? x.totalQuantity)}</td><td class="n">${wt(x.originalWeight)}</td>
+          </tr>`).join("")}
+          <tr class="tot"><td colspan="7">Total, ${sources.length} lot${sources.length === 1 ? "" : "s"}</td>
+            <td class="n">${val(form.totalQuantity)}</td><td class="n">${wt(form.originalWeight)}</td></tr>
+        </tbody>
+      </table>
+    </td></tr>` : "";
+  // A lot in a mix says where it went, above whatever remarks it has.
+  const remarks = form.mixedInto
+    ? `<b>Mixed into ${esc(form.mixedInto.lotNumber)}${form.mixedInto.at ? ` on ${esc(String(form.mixedInto.at).slice(0, 10))}` : ""}.</b> No cases remain on this lot.${form.remarks ? "<br>" + val(form.remarks) : ""}`
+    : val(form.remarks);
 
   const all = Array.isArray(form.processingDates) ? form.processingDates : [];
   // Runs back from the freezer print after the lot's own, under the FP lot's number.
@@ -76,7 +107,14 @@ const printRegistrationForm = (form = {}) => {
             text-align: center; font-size: 23px; font-weight: 800; color: #1f3864;
             margin: 7px 0 7px;
           }
-          table.form { width: 100%; border-collapse: separate; margin-bottom: 24px; border-spacing: 12px 16px; }
+          table.form { width: 100%; border-collapse: separate; margin-bottom: 24px; border-spacing: 12px ${sources ? "5px" : "16px"}; }
+          .mixed { color: #5b21b6; font-weight: 700; }
+          td.sources { padding: 0; }
+          table.src { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+          table.src th { background: #ebe7f5; color: #1f3864; text-align: left; padding: 3px 5px; font-size: 10.5px; text-transform: uppercase; }
+          table.src td { border-bottom: 1px solid #ddd; padding: 3px 5px; }
+          table.src .n { text-align: right; font-variant-numeric: tabular-nums; }
+          table.src tr.tot td { font-weight: 700; border-top: 2px solid #999; border-bottom: none; }
           td.section {
             background: #c9cace; font-weight: 700; font-size: 14px; color: #000000;
             padding: 8px 14px; height: auto;
@@ -128,15 +166,16 @@ const printRegistrationForm = (form = {}) => {
 
           <table class="form">
             ${sectionHeader("Logistics &amp; Vendor")}
-            ${row("Date Received", val(form.dateReceived), "Time Received", val(form.timeReceived))}
-            ${row("Vendor Lot/(IC)#", val(form.vendorLot), "Vendor", val(form.vendor))}
+            ${row("Date Received", fromLots("dateReceived", form.dateReceived), "Time Received", fromLots("timeReceived", form.timeReceived))}
+            ${row("Vendor Lot/(IC)#", fromLots("vendorLot", form.vendorLot), "Vendor", fromLots("vendor", form.vendor))}
 
             ${sectionHeader("Product Identification")}
             ${fullRow("Product Description", val(form.productDescription))}
             ${fullRow("Processing Type", val(form.processingType))}
             ${row("Original Weight (lbs)", wt(form.originalWeight), "Total Quantity (c/s)", val(form.totalQuantity))}
-            ${row("Spec.(##X##)", val(form.spec), "Brand", val(form.brand))}
-            ${row("EST#", val(form.estNumber), "Grade", val(form.grade))}
+            ${row("Spec.(##X##)", val(form.spec), "Brand", fromLots("brand", form.brand))}
+            ${row("EST#", fromLots("estNumber", form.estNumber), "Grade", fromLots("grade", form.grade))}
+            ${sources ? sectionHeader("Source Lots") + sourceTable : ""}
             <tr><td colspan="4" class="separator"></td></tr>
 
             ${sectionHeader("Estimation/Checks")}
@@ -148,7 +187,7 @@ const printRegistrationForm = (form = {}) => {
             ${row("Actual Yield (%)", wt(form.actualYield) + (form.actualYield ? "%" : ""), "Temp", val(form.temp))}
 
             ${sectionHeader("Additional")}
-            ${fullRow("Remarks", val(form.remarks), { tall: true })}
+            ${fullRow("Remarks", remarks, { tall: !sources })}
 
             <tr class="footer-row"><td colspan="4">Checked By${form.checkedBy ? ": " + val(form.checkedBy) : ""}</td></tr>
           </table>

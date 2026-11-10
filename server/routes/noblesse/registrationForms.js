@@ -9,6 +9,7 @@ const { syncRegistrationStock } = require("../../utils/registrationStock");
 const { yieldLateralSql, yieldFrom, yieldFor } = require("../../utils/lotYield");
 const { searchTerm, searchClause } = require("../../utils/search");
 const { fmtDate } = require("./helpers/shared");
+const { refuseMixedLot, refreshMixesFor, mixSources } = require("../../utils/lotMix");
 
 const fmtRegistrationForm = (row) => {
   // Handle processingDates: use JSON column if available, otherwise build from legacy columns
@@ -83,7 +84,60 @@ const fmtRegistrationForm = (row) => {
     status:                 row.status,
     createdAt:              row.created_at,
     updatedAt:              row.updated_at,
+    // An NX form: its lots, where the query attached them.
+    ...(row.lot_kind === "mixed" ? { mix: { sources: row.mix_sources || [] } } : {}),
+    // A lot in a mix: which one. Its cases are all there, so none remain here.
+    ...(row.mixed_into_id != null ? {
+      mixedInto: { lotId: row.mixed_into_id, lotNumber: row.mixed_into_number, at: row.mixed_at },
+    } : {}),
   };
+};
+
+// The lot's kind and the mix it is in, for forms read with FORM_FROM.
+const FORM_COLS = `l.kind AS lot_kind, mx.lot_id AS mixed_into_id, mx.lot_number AS mixed_into_number,
+       mm.added_at AS mixed_at`;
+const FORM_FROM = `noblesse_registration_forms f
+         LEFT JOIN lots l ON l.lot_id = f.lot_id
+         LEFT JOIN lot_mix_members mm ON mm.lot_id = f.lot_id
+         LEFT JOIN lots mx ON mx.lot_id = mm.mix_lot_id`;
+
+// NX forms get their source lots attached.
+const withSources = async (rows, tenantId) => {
+  for (const r of rows) {
+    if (r.lot_kind === "mixed" && r.lot_id != null) r.mix_sources = await mixSources(pool, tenantId, r.lot_id);
+  }
+  return rows;
+};
+
+// One form as the list reads it, so a save answers with what the list will show.
+const readForm = async (id, tenantId) => {
+  const { rows } = await pool.query(
+    `SELECT f.*, ${FORM_COLS}, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out,
+            y.estimated_in, y.estimated_out
+       FROM ${FORM_FROM}
+       ${yieldLateralSql("f")}
+      WHERE f.id = $1 AND f.tenant_id = $2`,
+    [id, tenantId]);
+  await withSources(rows, tenantId);
+  return rows[0] ? fmtRegistrationForm(rows[0]) : null;
+};
+
+// The fields an NX form takes from its lots, never from what is typed on it.
+const MIX_OWNED = ["date_received", "time_received", "vendor_lot", "vendor", "brand", "est_number",
+  "grade", "original_weight", "total_quantity"];
+// Their places in regFormValues().
+const MIX_OWNED_AT = { date_received: 2, time_received: 3, vendor_lot: 4, vendor: 5, brand: 9,
+  est_number: 10, grade: 11, original_weight: 16, total_quantity: 17 };
+
+// The mixes these lots are in, brought up to date. Never fails the save that called it.
+const refreshMixes = async (tenantId, lotIds) => {
+  try {
+    const done = await refreshMixesFor(pool, tenantId, lotIds);
+    return done.length ? { refreshed: done.map((d) => d.mixLotId) } : undefined;
+  } catch (err) {
+    console.error("lot mix refresh error:", err.message);
+    return { error: err.message };
+  }
 };
 
 // A form as this role may see it: Actual Yield and the measured yield are admin-only.
@@ -238,13 +292,14 @@ router.get("/noblesse-registration-forms", verifyToken, async (req, res) => {
   try {
     // A search looks past the newest 200 a plain listing stops at.
     const result = await pool.query(
-      `SELECT f.*, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out,
+      `SELECT f.*, ${FORM_COLS}, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out,
               y.estimated_in, y.estimated_out
-         FROM noblesse_registration_forms f
+         FROM ${FORM_FROM}
          ${yieldLateralSql("f")}
         WHERE f.tenant_id = $1${where} ORDER BY f.created_at DESC LIMIT ${term ? 500 : 200}`,
       params
     );
+    await withSources(result.rows, req.tenantId);
     res.json(result.rows.map((r) => formFor(fmtRegistrationForm(r), req.role)));
   } catch (err) {
     console.error(err);
@@ -278,16 +333,9 @@ router.get("/noblesse-registration-forms/all/history", verifyToken, async (req, 
 
 router.get("/noblesse-registration-forms/:id", verifyToken, async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT f.*, y.weighed_in, y.weighed_out, y.boxes_in, y.boxes_out,
-              y.estimated_in, y.estimated_out
-         FROM noblesse_registration_forms f
-         ${yieldLateralSql("f")}
-        WHERE f.id = $1 AND f.tenant_id = $2`,
-      [req.params.id, req.tenantId]
-    );
-    if (!result.rows.length) return res.status(404).json({ error: "Not found" });
-    res.json(formFor(fmtRegistrationForm(result.rows[0]), req.role));
+    const form = await readForm(req.params.id, req.tenantId);
+    if (!form) return res.status(404).json({ error: "Not found" });
+    res.json(formFor(form, req.role));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -297,6 +345,8 @@ router.get("/noblesse-registration-forms/:id", verifyToken, async (req, res) => 
 router.post("/noblesse-registration-forms", verifyToken, async (req, res) => {
   try {
     const lot = await lotColumns(req.tenantId, req.userId, req.body.lotNumber, pool, req.body.lotId);
+    // An NX lot's form is made with the mix, so a second one would count its lots twice.
+    await refuseMixedLot(pool, req.tenantId, lot.lotId, "Its registration form is made when the lots are mixed.");
     const result = await pool.query(
       `INSERT INTO noblesse_registration_forms
          (tenant_id, lot_number, form_date, date_received, time_received, vendor_lot, vendor,
@@ -314,9 +364,12 @@ router.post("/noblesse-registration-forms", verifyToken, async (req, res) => {
     logRegistrationFormHistory(req.tenantId, form.id, "created", form.lot_number, null, null, fmtRegistrationForm(form), req.username);
 
     const stock = await syncStock(req.tenantId, form.id);
+    const mix = await refreshMixes(req.tenantId, [form.lot_id]);
 
-    res.json({ ...formFor(fmtRegistrationForm(form), req.role), stock });
+    const saved = (await readForm(form.id, req.tenantId)) || fmtRegistrationForm(form);
+    res.json({ ...formFor(saved, req.role), stock, ...(mix ? { mixRefresh: mix } : {}) });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ code: err.code, error: err.message });
     console.error(err);
     res.status(500).json({ error: err.message });
   }
@@ -335,10 +388,22 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
     // Any case is the same status; anything else keeps the one the form has, never null.
     const asked = String(req.body.status || "").trim().toLowerCase();
     const status = ["in_progress", "completed"].includes(asked) ? asked : (oldRes.rows[0].status || "in_progress");
-    const lot = await lotColumns(req.tenantId, req.userId, req.body.lotNumber, pool, req.body.lotId);
+    const old = oldRes.rows[0];
+    const oldKind = old.lot_id != null
+      ? (await pool.query("SELECT kind FROM lots WHERE lot_id = $1", [old.lot_id])).rows[0]?.kind : null;
+    const isMixForm = oldKind === "mixed";
+    // An NX form stays on its lot; any other form may not move onto one.
+    const lot = isMixForm
+      ? { lotId: old.lot_id, lotNumber: old.lot_number }
+      : await lotColumns(req.tenantId, req.userId, req.body.lotNumber, pool, req.body.lotId);
+    if (!isMixForm) {
+      await refuseMixedLot(pool, req.tenantId, lot.lotId, "Its registration form is made when the lots are mixed.");
+    }
     const values = regFormValues(req.body, lot);
     // Actual Yield never reaches a non-admin, so their save keeps what is stored.
     if (req.role !== "admin") values[19] = oldRes.rows[0].actual_yield;
+    // Its lots own these, so what was sent is ignored.
+    if (isMixForm) for (const col of MIX_OWNED) values[MIX_OWNED_AT[col]] = old[col];
     const result = await pool.query(
       `UPDATE noblesse_registration_forms
        SET lot_number = $1, form_date = $2, date_received = $3, time_received = $4, vendor_lot = $5, vendor = $6,
@@ -363,9 +428,13 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
     // Re-synced on every save, not just when the weight changed: the lot,
     // description and case count all land on the stock row too.
     const stock = await syncStock(req.tenantId, req.params.id);
+    // A lot in a mix passes its new figures on; a form moved off or onto one, both mixes.
+    const mix = isMixForm ? undefined : await refreshMixes(req.tenantId, [old.lot_id, lot.lotId]);
 
-    res.json({ ...formFor(newForm, req.role), stock });
+    const saved = (await readForm(req.params.id, req.tenantId)) || newForm;
+    res.json({ ...formFor(saved, req.role), stock, ...(mix ? { mixRefresh: mix } : {}) });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ code: err.code, error: err.message });
     console.error(err);
     res.status(500).json({ error: err.message });
   }
@@ -414,6 +483,14 @@ router.delete("/noblesse-registration-forms/:id", verifyToken, requireRole("admi
     );
     if (!formRes.rows.length) return res.status(404).json({ error: "Not found" });
     const deletedForm = fmtRegistrationForm(formRes.rows[0]);
+    const deletedLotId = formRes.rows[0].lot_id;
+    // Processing and stock run through an NX form, so it goes only with its mix.
+    try {
+      await refuseMixedLot(pool, req.tenantId, deletedLotId,
+        "Its form goes with the mix: undo the mix instead of deleting the form.");
+    } catch (err) {
+      return res.status(err.status).json({ code: err.code, error: err.message });
+    }
 
     // Clear any links to weighing sessions first. That table deliberately has
     // no foreign key to this one (see the migration in boxes.pg.js), so nothing
@@ -437,8 +514,9 @@ router.delete("/noblesse-registration-forms/:id", verifyToken, requireRole("admi
     // stock left behind would be credited to whatever form reuses the id. The
     // sync sees a form that no longer exists and removes its row.
     const stock = await syncStock(req.tenantId, req.params.id);
+    const mix = await refreshMixes(req.tenantId, [deletedLotId]);
 
-    res.json({ deleted: result.rows[0].id, stock });
+    res.json({ deleted: result.rows[0].id, stock, ...(mix ? { mixRefresh: mix } : {}) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
