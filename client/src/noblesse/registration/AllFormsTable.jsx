@@ -8,7 +8,7 @@ import {
 } from "@chakra-ui/icons";
 import { fmtDate, today, fmtWeight } from "../common/shared";
 import LotMenu from "../lots/LotMenu";
-import getRole from "../../utils/getRole";
+import getRole, { isAdminRole } from "../../utils/getRole";
 
 // Sortable, filterable view of every registration form.
 //
@@ -62,7 +62,7 @@ const compare = (a, b, col, dir) => {
 const AllFormsTable = ({ forms = [], onEdit }) => {
   // Yield is admin-only.
   const COLUMNS = useMemo(
-    () => (getRole() === "admin" ? ALL_COLUMNS : ALL_COLUMNS.filter((c) => c.key !== "actualYield")), []);
+    () => (isAdminRole(getRole()) ? ALL_COLUMNS : ALL_COLUMNS.filter((c) => c.key !== "actualYield")), []);
   const [sort, setSort] = useState({ key: "dateReceived", dir: "desc" });
   const [filters, setFilters] = useState({});
   const [page, setPage] = useState(0);

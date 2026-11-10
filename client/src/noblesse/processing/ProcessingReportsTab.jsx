@@ -14,7 +14,7 @@ import {
   fmtClock, minutesSince, fmtDuration, fmtLongDate,
   SheetField, sheetInputProps, SectionBar, SHEET_GRID, isEhwaLot,
 } from "../common/shared";
-import getRole, { canAcceptReports } from "../../utils/getRole";
+import getRole, { canAcceptReports, isAdminRole } from "../../utils/getRole";
 import { acceptReport, rejectReport, unacceptReport } from "./reportActions";
 import AcceptReportDialog from "./AcceptReportDialog";
 import LotMenu from "../lots/LotMenu";
@@ -130,7 +130,7 @@ const FILTER_LABEL = {
 
 const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const toast = useToast();
-  const isAdmin = getRole() === "admin";
+  const isAdmin = isAdminRole(getRole());
   // Reception checks and accepts; the floor manager submits and waits.
   const canAccept = canAcceptReports();
   const [checking, setChecking] = useState(null);

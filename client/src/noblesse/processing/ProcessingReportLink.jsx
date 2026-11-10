@@ -4,7 +4,7 @@ import {
 } from "@chakra-ui/react";
 import { fmtDate } from "../common/shared";
 import { acceptReport, rejectReport, unacceptReport } from "./reportActions";
-import getRole, { canAcceptReports } from "../../utils/getRole";
+import getRole, { canAcceptReports, isAdminRole } from "../../utils/getRole";
 import AcceptReportDialog from "./AcceptReportDialog";
 
 // Reception's side of the processing report.
@@ -14,7 +14,7 @@ import AcceptReportDialog from "./AcceptReportDialog";
 // an unsaved draft.
 const ProcessingReportLink = ({ lotId, lotNumber, reports = [], onApplied }) => {
   const toast = useToast();
-  const isAdmin = getRole() === "admin";
+  const isAdmin = isAdminRole(getRole());
   const canAccept = canAcceptReports();
   const [checking, setChecking] = useState(null);
   const [busyId, setBusyId] = useState(null);

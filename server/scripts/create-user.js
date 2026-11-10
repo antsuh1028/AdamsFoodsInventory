@@ -13,7 +13,7 @@ async function run() {
     process.exit(1);
   }
 
-  const VALID_ROLES = ["user", "manager", "admin", "noblesse", "outgoing"];
+  const VALID_ROLES = ["user", "manager", "admin", "master", "noblesse", "outgoing"];
   if (!VALID_ROLES.includes(role)) {
     console.error(`Invalid role "${role}". Must be one of: ${VALID_ROLES.join(", ")}`);
     process.exit(1);

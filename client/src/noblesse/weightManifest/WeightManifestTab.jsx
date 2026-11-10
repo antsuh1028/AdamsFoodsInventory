@@ -7,7 +7,7 @@ import BoxScanner from "../weighing/boxScanner";
 import printWeightManifest from "./printWeightManifest";
 import FpReturnWindow from "../fpTracker/FpReturnWindow";
 import { fmtDate, today, weighedDay } from "../common/shared";
-import getRole from "../../utils/getRole";
+import getRole, { isAdminRole } from "../../utils/getRole";
 import SearchBar from "../../components/SearchBar";
 import { COLUMNS, lotKey } from "./constants";
 import { readSeen, writeSeen } from "./seen";
@@ -27,7 +27,7 @@ import RemovalsWindow from "./removals/RemovalsWindow";
 export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
   // An open session can be corrected by whoever is running it; a closed one is
   // an admin act. The server enforces both — this only decides what to draw.
-  const isAdmin = getRole() === "admin";
+  const isAdmin = isAdminRole(getRole());
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -89,7 +89,7 @@ export const WeightManifestTab = ({ refreshSignal = 0, company, shipTo }) => {
   const [scannerAdopt, setScannerAdopt] = useState(null);
   const [returnsOpen, setReturnsOpen] = useState(false);
   // Who counts freezer returns at the incoming dock; the server's RETURN_ROLES is the control.
-  const canReturnFp = ["admin", "reception", "ntimanager", "noblesse"].includes(getRole());
+  const canReturnFp = ["master", "admin", "reception", "ntimanager", "noblesse"].includes(getRole());
   const toast = useToast();
 
   // ARRIVALS ONLY. A weight manifest is the tally for product that came IN.

@@ -7,7 +7,7 @@ import FloatingWindow from "../../components/FloatingWindow";
 import LangToggle from "../../components/LangToggle";
 import axiosInstance from "../../utils/axiosInstance";
 import useLang from "../../hooks/useLang";
-import getRole from "../../utils/getRole";
+import getRole, { isAdminRole } from "../../utils/getRole";
 
 // Problem reports to admin: staff write in, admin replies, both see the thread.
 
@@ -67,7 +67,7 @@ const StatusBadge = ({ status, t }) => (
 const SupportWindow = ({ isOpen, onClose, screen, refreshSignal, onChanged }) => {
   const { lang, t, toggle } = useLang();
   const toast = useToast();
-  const admin = getRole() === "admin";
+  const admin = isAdminRole(getRole());
   // "list", "new", or a ticket id.
   const [view, setView] = useState("list");
   const [tickets, setTickets] = useState([]);

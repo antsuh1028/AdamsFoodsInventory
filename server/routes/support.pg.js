@@ -3,6 +3,7 @@ const { PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const heicConvert = require("heic-convert");
 const pool = require("../utils/pg");
+const { isAdminRole } = require("../middleware/roles");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { s3Client, upload } = require("../utils/aws");
@@ -10,7 +11,7 @@ const { s3Client, upload } = require("../utils/aws");
 // Problem reports: NTI staff write in, admin answers. Staff see only their own account's.
 
 const MAX_BODY = 4000;
-const isAdmin = (req) => req.role === "admin";
+const isAdmin = (req) => isAdminRole(req.role);
 const clean = (v, max) => {
   const s = String(v ?? "").trim();
   return s ? s.slice(0, max) : null;

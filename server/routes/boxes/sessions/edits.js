@@ -2,6 +2,7 @@
 
 const router = require("express").Router();
 const pool = require("../../../utils/pg");
+const { isAdminRole } = require("../../../middleware/roles");
 const verifyToken = require("../../../middleware/verifyToken.pg");
 const { correctHeading, parseKeep } = require("../../../utils/nameCorrect");
 const { parseWeighedOn } = require("../../../utils/weighedAt");
@@ -177,7 +178,7 @@ router.patch("/box-batches/:id", verifyToken, async (req, res) => {
     if (!batch.rows.length) return res.status(404).json({ error: "Session not found" });
 
     const { status, direction } = batch.rows[0];
-    const isAdmin = req.role === "admin";
+    const isAdmin = isAdminRole(req.role);
 
     // On the way out the heading is the driver's paperwork. The dock says what
     // is in the boxes and where they are going; the rest — who weighed it, the

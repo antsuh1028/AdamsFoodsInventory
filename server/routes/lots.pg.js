@@ -1,5 +1,6 @@
 const router = require("express").Router();
 const pool = require("../utils/pg");
+const { isAdminRole } = require("../middleware/roles");
 const verifyToken = require("../middleware/verifyToken.pg");
 const requireRole = require("../middleware/requireRole");
 const { RECEPTION_ROLES } = require("../middleware/receptionRoles");
@@ -549,7 +550,7 @@ router.get("/lots/:id", verifyToken, async (req, res) => {
       }
     }
     res.json({
-      lot: req.role === "admin"
+      lot: isAdminRole(req.role)
         ? { ...fmtLot(row), closedYield: row.closed_yield != null ? Number(row.closed_yield) : null }
         : fmtLot(row),
       description: row.description || null,

@@ -2,6 +2,7 @@
 
 const router = require("express").Router();
 const pool = require("../../utils/pg");
+const { isAdminRole } = require("../../middleware/roles");
 const verifyToken = require("../../middleware/verifyToken.pg");
 const requireRole = require("../../middleware/requireRole");
 const { lotColumns } = require("../../utils/lotRegistry");
@@ -142,11 +143,11 @@ const refreshMixes = async (tenantId, lotIds) => {
 
 // A form as this role may see it: Actual Yield and the measured yield are admin-only.
 const formFor = (form, role) =>
-  (role === "admin" ? form : { ...form, actualYield: null, yield: yieldFor(role, form.yield) });
+  (isAdminRole(role) ? form : { ...form, actualYield: null, yield: yieldFor(role, form.yield) });
 
 // History entries carry whole forms, so the same fields come out of them.
 const historyFor = (entry, role) => {
-  if (role === "admin") return entry;
+  if (isAdminRole(role)) return entry;
   const strip = (v) => {
     if (!v || typeof v !== "object") return v;
     const out = { ...v };
@@ -401,7 +402,7 @@ router.patch("/noblesse-registration-forms/:id", verifyToken, async (req, res) =
     }
     const values = regFormValues(req.body, lot);
     // Actual Yield never reaches a non-admin, so their save keeps what is stored.
-    if (req.role !== "admin") values[19] = oldRes.rows[0].actual_yield;
+    if (!isAdminRole(req.role)) values[19] = oldRes.rows[0].actual_yield;
     // Its lots own these, so what was sent is ignored.
     if (isMixForm) for (const col of MIX_OWNED) values[MIX_OWNED_AT[col]] = old[col];
     const result = await pool.query(

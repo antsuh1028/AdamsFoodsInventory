@@ -21,7 +21,7 @@ import LotMenu from "../lots/LotMenu";
 const EMPTY = () => ({ lotId: null, lotNumber: "", item: "", cases: "", rawWeight: "", sentOn: today() });
 
 // Who counts returns at the incoming dock. The server's RETURN_ROLES is the control.
-const RETURN_ROLES = new Set(["admin", "reception", "ntimanager", "noblesse"]);
+const RETURN_ROLES = new Set(["master", "admin", "reception", "ntimanager", "noblesse"]);
 
 const num = { style: { fontVariantNumeric: "tabular-nums" } };
 

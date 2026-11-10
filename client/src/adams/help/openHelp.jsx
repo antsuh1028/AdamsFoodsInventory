@@ -20,7 +20,7 @@ import FloatingWindow from "../../components/FloatingWindow";
 const features = [
   {
     tab: "Inventory Tabs",
-    roles: ["user", "manager", "admin"],
+    roles: ["user", "manager", "admin", "master"],
     en: {
       title: "Inventory Tabs",
       intro: "Items are organized into tabs at the top of the screen.",
@@ -48,7 +48,7 @@ const features = [
   },
   {
     tab: "Add Item",
-    roles: ["manager", "admin"],
+    roles: ["manager", "admin", "master"],
     en: {
       title: "Adding an Item",
       intro: "Fill out the form to create a new inventory record.",
@@ -76,7 +76,7 @@ const features = [
   },
   {
     tab: "Details & Editing",
-    roles: ["user", "manager", "admin"],
+    roles: ["user", "manager", "admin", "master"],
     en: {
       title: "Item Details & Inline Editing",
       intro: "Click any item to open its detail panel. All fields can be edited without leaving the screen.",
@@ -104,7 +104,7 @@ const features = [
   },
   {
     tab: "Box Management",
-    roles: ["user", "manager", "admin"],
+    roles: ["user", "manager", "admin", "master"],
     en: {
       title: "Box Management",
       intro: "Each inventory item tracks individual boxes and their weights. Total weight and quantity update automatically.",
@@ -132,7 +132,7 @@ const features = [
   },
   {
     tab: "Scanner",
-    roles: ["manager", "admin"],
+    roles: ["manager", "admin", "master"],
     en: {
       title: "Scanner (OCR)",
       intro: "Upload a pallet form or order sheet to automatically extract inventory fields.",
@@ -162,7 +162,7 @@ const features = [
   },
   {
     tab: "Send to Noblesse",
-    roles: ["manager", "admin"],
+    roles: ["manager", "admin", "master"],
     en: {
       title: "Send to Noblesse",
       intro: "Send inventory items to Noblesse Trading for processing.",
@@ -190,7 +190,7 @@ const features = [
   },
   {
     tab: "Return from Noblesse",
-    roles: ["manager", "admin"],
+    roles: ["manager", "admin", "master"],
     en: {
       title: "Return from Noblesse",
       intro: "Record items coming back from Noblesse as processed inventory.",
@@ -220,7 +220,7 @@ const features = [
   },
   {
     tab: "History & Restore",
-    roles: ["user", "manager", "admin"],
+    roles: ["user", "manager", "admin", "master"],
     en: {
       title: "History Log & Restore",
       intro: "Every change to inventory is logged. Removed items can be restored.",
@@ -250,7 +250,7 @@ const features = [
   },
   {
     tab: "Production Orders",
-    roles: ["manager", "admin"],
+    roles: ["manager", "admin", "master"],
     en: {
       title: "Production Orders",
       intro: "View and manage all orders sent to Noblesse Trading.",
@@ -278,7 +278,7 @@ const features = [
   },
   {
     tab: "Remove Item",
-    roles: ["manager", "admin"],
+    roles: ["manager", "admin", "master"],
     en: {
       title: "Removing an Item",
       intro: "Items can be removed from inventory. All removals are logged and can be restored.",

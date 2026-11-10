@@ -1,6 +1,7 @@
 "use strict";
 
 const { weightInLb } = require("./sqlWeight");
+const { isAdminRole } = require("../middleware/roles");
 
 // Yield for a lot: what left, over what arrived.
 //
@@ -142,6 +143,6 @@ const yieldFrom = (f) => {
 };
 
 // The yield for this role: admins see it whole, everyone else gets the weights without the percent or the loss.
-const yieldFor = (role, y) => (role === "admin" || !y ? y : { ...y, percent: null, unaccountedLb: null, hidden: true });
+const yieldFor = (role, y) => (isAdminRole(role) || !y ? y : { ...y, percent: null, unaccountedLb: null, hidden: true });
 
 module.exports = { weighedSql, boxesSql, estimatedSql, formWeightSql, yieldLateralSql, yieldFrom, yieldFor };

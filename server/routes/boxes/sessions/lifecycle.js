@@ -2,6 +2,7 @@
 
 const router = require("express").Router();
 const pool = require("../../../utils/pg");
+const { isAdminRole } = require("../../../middleware/roles");
 const verifyToken = require("../../../middleware/verifyToken.pg");
 const requireRole = require("../../../middleware/requireRole");
 const { lotColumns, lookupLot } = require("../../../utils/lotRegistry");
@@ -361,7 +362,7 @@ router.post("/box-batches/:id/reopen", verifyToken, async (req, res) => {
     // Same shared definition the delete guard uses, so the two can never
     // disagree about what counts as filed.
     const blockers = await batchBlockers(pool, batchId, req.tenantId);
-    const isAdmin = req.role === "admin";
+    const isAdmin = isAdminRole(req.role);
 
     if (!isAdmin) {
       const filed = [

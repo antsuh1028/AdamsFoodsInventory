@@ -10,6 +10,12 @@ const getRole = () => {
   }
 };
 
+// Master is the role above admin: it passes every admin check, and alone may
+// take a measurement back out of the records. Mirrors server/middleware/roles.js.
+export const isAdminRole = (role) => role === "admin" || role === "master";
+export const isAdmin = () => isAdminRole(getRole());
+export const isMaster = () => getRole() === "master";
+
 // Outgoing is two-party: the dock weighs finished boxes, reception owns the
 // load and calls a lot finished. Mirrors RECEPTION_ROLES on the server, which
 // is the actual control — this only decides what is worth showing.
@@ -18,7 +24,7 @@ const getRole = () => {
 // and there is only one tenant, so the role name is the only thing separating
 // the two facilities. `ntimanager` is its Noblesse counterpart.
 export const RECEPTION_ROLES = [
-  "admin", "manager", "ntimanager", "noblesse", "reception", "outgoing",
+  "master", "admin", "manager", "ntimanager", "noblesse", "reception", "outgoing",
 ];
 
 export const canReceive = () => RECEPTION_ROLES.includes(getRole());
@@ -34,15 +40,15 @@ export const NOBLESSE_SIDE = ["noblesse", "ntimanager", "reception", "outgoing"]
 
 // Who may read the daily report. Mirrors requireRole on the route, which is
 // the control — admin for everything, ntimanager for the figures.
-export const REPORT_ROLES = ["admin", "ntimanager"];
+export const REPORT_ROLES = ["master", "admin", "ntimanager"];
 export const canSeeReport = () => REPORT_ROLES.includes(getRole());
 
 // Who checks a processing report and accepts it. Mirrors REPORT_ACCEPT_ROLES on the server.
-export const REPORT_ACCEPT_ROLES = ["admin", "reception"];
+export const REPORT_ACCEPT_ROLES = ["master", "admin", "reception"];
 export const canAcceptReports = () => REPORT_ACCEPT_ROLES.includes(getRole());
 
 // Who may add to or retire from the item description list. Mirrors the route.
-export const ITEM_LIST_ROLES = ["admin", "ntimanager"];
+export const ITEM_LIST_ROLES = ["master", "admin", "ntimanager"];
 export const canManageItems = () => ITEM_LIST_ROLES.includes(getRole());
 
 export const landingFor = (role) =>

@@ -12,7 +12,7 @@ import FlagSession from "../common/FlagSession";
 import { toDisplay } from "../../utils/weight";
 import { fmtDate, fmtDateTime, fmtLongDate, today, upper, weighedDay } from "../common/shared";
 import { groupOutgoing, milsToLb, clockOf } from "./outgoingGroups";
-import getRole, { canReceive } from "../../utils/getRole";
+import getRole, { canReceive, isAdminRole } from "../../utils/getRole";
 import LotTimeline from "../lots/LotTimeline";
 import LotMenu from "../lots/LotMenu";
 import ItemDescriptionInput from "../../components/inputs/ItemDescriptionInput";
@@ -291,7 +291,7 @@ const EmptyNote = ({ children }) => (
 
 
 export const OutgoingTab = ({ refreshSignal = 0 }) => {
-  const isAdmin = getRole() === "admin";
+  const isAdmin = isAdminRole(getRole());
   // The dock weighs; reception owns the load and calls a lot finished. The
   // server enforces this — hiding it here only keeps the dock's screen to the
   // one job it has.

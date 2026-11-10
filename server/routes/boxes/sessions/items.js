@@ -2,6 +2,7 @@
 
 const router = require("express").Router();
 const pool = require("../../../utils/pg");
+const { isAdminRole } = require("../../../middleware/roles");
 const verifyToken = require("../../../middleware/verifyToken.pg");
 const { toPounds } = require("../../../utils/weight");
 const { scanLimiter } = require("../../../middleware/rateLimits");
@@ -35,7 +36,7 @@ router.post("/box-batches/:id/items", verifyToken, scanLimiter, async (req, res)
       return res.status(404).json({ error: "Batch not found" });
     }
     // A closed session is admin-only, not sealed.
-    if (batch.rows[0].status !== "open" && req.role !== "admin") {
+    if (batch.rows[0].status !== "open" && !isAdminRole(req.role)) {
       await client.query("ROLLBACK");
       return res.status(409).json({
         code: "BATCH_CLOSED",
@@ -199,7 +200,7 @@ const rowGate = async (batchId, req) => {
     [batchId, req.tenantId]
   );
   if (!batch.rows.length) return { ok: false, status: 404, error: "Batch not found" };
-  if (batch.rows[0].status !== "open" && req.role !== "admin") {
+  if (batch.rows[0].status !== "open" && !isAdminRole(req.role)) {
     return { ok: false, status: 403,
       error: "This session is closed — only an admin can change it" };
   }
