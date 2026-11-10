@@ -23,6 +23,10 @@ const ES = {
     "Lo que va en las cajas. Si se deja en blanco se toma de la sesión de entrada del lote, que es el producto crudo y no éste.",
   "Going to": "Destino",
   "Boxes expected": "Cajas esperadas",
+  "Search lot or product…": "Buscar lote o producto…",
+  "No lot matches \"{text}\".": "Ningún lote coincide con \"{text}\".",
+  "1 match: {lot}. Press Enter to pick it.": "1 resultado: {lot}. Presione Enter para elegirlo.",
+  "{n} matches. Open the list, or press Enter for {lot}.": "{n} resultados. Abra la lista, o presione Enter para {lot}.",
   "Only used to show progress. Going over is not blocked.":
     "Solo se usa para mostrar el avance. Pasarse no está bloqueado.",
   "Start weighing": "Empezar a pesar",

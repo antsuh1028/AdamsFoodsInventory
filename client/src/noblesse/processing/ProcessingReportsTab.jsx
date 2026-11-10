@@ -868,6 +868,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                     size="sm"
                     allowCreate={false}
                     includeFurther
+                    searchable
                     isDisabled={draft.readOnly}
                     value={draft.lotId}
                     lotNumber={draft.lotNumber}

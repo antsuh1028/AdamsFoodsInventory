@@ -477,6 +477,8 @@ const WeighFinishedBoxes = ({
                 so there is nothing here to mint or type in. */}
             <LotPicker
               size="md"
+              searchable
+              t={t}
               value={lot.lotId}
               lotNumber={lot.lotNumber}
               onChange={(picked) => setLot({

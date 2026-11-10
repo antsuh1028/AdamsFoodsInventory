@@ -41,6 +41,9 @@ const optionLabel = (l) => {
   return `${num} \u2014 ${short}`;
 };
 
+// English with {name} filled in, for screens that pass no translator.
+const plainText = (text, vars) => text.replace(/\{(\w+)\}/g, (_, k) => (vars && vars[k] != null ? vars[k] : ""));
+
 // Case- and space-blind, so "short rib" finds "BEEF SHORT RIB ".
 const fold = (s) => String(s || "").toUpperCase().replace(/\s+/g, " ").trim();
 export const lotMatches = (lot, search) => {
@@ -76,6 +79,8 @@ const LotPicker = ({
   includeFurther = false,
   // A search box beside the list: narrows it by lot number or product.
   searchable = false,
+  // The screen's translator, for the search box's own words.
+  t = plainText,
 }) => {
   const [lots, setLots] = useState([]);
   const [search, setSearch] = useState("");
@@ -195,8 +200,9 @@ const LotPicker = ({
 
   // The matches in the order the list shows them, for Enter and the count.
   const matches = useMemo(
-    () => [...further, ...ours, ...outside].filter((l) => lotMatches(l, search)),
-    [further, ours, outside, search]
+    () => [...further, ...mixed, ...ours, ...outside].filter((l) => !inMix(l) && lotMatches(l, search)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [further, mixed, ours, outside, search, value, allowCreate]
   );
   const searching = searchable && search.trim() !== "";
   const pickFirst = () => {
@@ -310,7 +316,7 @@ const LotPicker = ({
             flex="1 1 150px"
             minW="140px"
             type="search"
-            placeholder="Search lot or product…"
+            placeholder={t("Search lot or product…")}
             value={search}
             autoComplete="off"
             autoCorrect="off"
@@ -367,10 +373,10 @@ const LotPicker = ({
         {searching && (
           <Text fontSize="xs" color={matches.length ? "gray.500" : "red.600"} flexBasis="100%" mt={-1}>
             {matches.length === 0
-              ? `No lot matches "${search.trim()}".`
+              ? t("No lot matches \"{text}\".", { text: search.trim() })
               : matches.length === 1
-                ? `1 match: ${matches[0].lotNumber}. Press Enter to pick it.`
-                : `${matches.length} matches. Open the list, or press Enter for ${matches[0].lotNumber}.`}
+                ? t("1 match: {lot}. Press Enter to pick it.", { lot: matches[0].lotNumber })
+                : t("{n} matches. Open the list, or press Enter for {lot}.", { n: matches.length, lot: matches[0].lotNumber })}
           </Text>
         )}
 
