@@ -1142,6 +1142,39 @@ const steps = async () => {
   `);
   await run("af_order_lines order index",
     `CREATE INDEX IF NOT EXISTS af_order_lines_order_idx ON af_order_lines (order_id, position)`);
+
+  // Picking: a finished order is 'filled'. Widened only when it does not allow it yet.
+  await run("af_orders status allows filled", `
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'af_orders'::regclass AND contype = 'c'
+           AND pg_get_constraintdef(oid) LIKE '%filled%'
+      ) THEN
+        ALTER TABLE af_orders DROP CONSTRAINT IF EXISTS af_orders_status_check;
+        ALTER TABLE af_orders ADD CONSTRAINT af_orders_status_check
+          CHECK (status IN ('draft', 'sent', 'filled', 'cancelled'));
+      END IF;
+    END $$`);
+  await run("af_orders filled",
+    `ALTER TABLE af_orders ADD COLUMN IF NOT EXISTS filled_at TIMESTAMPTZ,
+       ADD COLUMN IF NOT EXISTS filled_by TEXT,
+       ADD COLUMN IF NOT EXISTS checked_by TEXT`);
+  // A box on an order line. One line at a time per box: held while picking, out once filled.
+  await run("af_order_picks", `
+    CREATE TABLE IF NOT EXISTS af_order_picks (
+      pick_id    SERIAL PRIMARY KEY,
+      tenant_id  UUID NOT NULL REFERENCES tenants(id),
+      order_id   INT  NOT NULL REFERENCES af_orders(order_id) ON DELETE CASCADE,
+      line_id    INT  NOT NULL REFERENCES af_order_lines(line_id) ON DELETE CASCADE,
+      box_id     INT  NOT NULL REFERENCES af_lot_boxes(box_id),
+      picked_by  TEXT,
+      picked_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (box_id)
+    )
+  `);
+  await run("af_order_picks line index",
+    `CREATE INDEX IF NOT EXISTS af_order_picks_line_idx ON af_order_picks (line_id)`);
 };
 
 // Retries cover the one failure that is not our fault: Neon dropping the connection

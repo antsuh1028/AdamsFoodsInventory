@@ -84,6 +84,7 @@ const ShowDrawer = ({
     ]],
     ["Orders", [
       isAdminOrManager && navBtn("Order Sheets", onOrdersOpen),
+      navBtn("Order Picking", () => navigate("/picking")),
     ]],
     ["Stock", [
       navBtn("Freezer Map", onMapOpen),

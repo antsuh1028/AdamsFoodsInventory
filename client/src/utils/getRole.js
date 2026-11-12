@@ -51,7 +51,11 @@ export const canAcceptReports = () => REPORT_ACCEPT_ROLES.includes(getRole());
 export const ITEM_LIST_ROLES = ["master", "admin", "ntimanager"];
 export const canManageItems = () => ITEM_LIST_ROLES.includes(getRole());
 
+// The Adams Foods floor: Order Picking and nothing else. Mirrors FLOOR in roleScope.js.
+export const isFloorOnly = () => getRole() === "floor";
+export const PICKING_ROLES = ["floor", "user", "manager", "admin", "master"];
+
 export const landingFor = (role) =>
-  (NOBLESSE_SIDE.includes(role) ? "/noblesse" : "/home");
+  (NOBLESSE_SIDE.includes(role) ? "/noblesse" : role === "floor" ? "/picking" : "/home");
 
 export default getRole;

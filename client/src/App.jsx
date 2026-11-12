@@ -1,12 +1,13 @@
 import { Route, Routes } from "react-router-dom";
 import { ChakraProvider, extendTheme, theme as base } from "@chakra-ui/react";
 import Homescreen from "./adams/Homescreen";
+import OrderPicking from "./adams/picking/OrderPicking";
 import NoblesseScreen from "./noblesse/NoblesseScreen";
 import Login from "./adams/Login";
 import NoblesseLogin from "./noblesse/NoblesseLogin";
 import Loading from "./components/Loading";
 import PrivateRoute from "./PrivateRoute";
-import { NOBLESSE_SIDE } from "./utils/getRole";
+import { NOBLESSE_SIDE, PICKING_ROLES } from "./utils/getRole";
 
 // This app has no orange and no purple in it.
 //
@@ -76,6 +77,14 @@ function App() {
         <Route path="/noblesse-login" element={<NoblesseLogin />} />
         <Route path="/loading..." element={<Loading />} />
 
+        <Route
+          path="/picking"
+          element={
+            <PrivateRoute allowedRoles={PICKING_ROLES}>
+              <OrderPicking />
+            </PrivateRoute>
+          }
+        />
         <Route
           path="/home"
           element={

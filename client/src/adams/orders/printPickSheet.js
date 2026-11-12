@@ -13,14 +13,27 @@ const usDate = (d) => {
 const printPickSheet = (order, opened = null) => {
   const lines = (order.lines || []).filter(isOrdered);
   const gridCells = `<td></td>${Array.from({ length: 10 }, () => '<td class="w"></td>').join("")}<td></td>`;
-  const grid = () => `<tr>${gridCells}</tr>`;
   let rows = `<tr><td class="h">PL/CS/BX</td><td class="h" colspan="10">Item Description</td><td class="h">Total lb</td></tr>
     <tr><td></td>${Array.from({ length: 10 }, (_, i) => `<td class="h">${i + 1}</td>`).join("")}<td></td></tr>`;
+  // Picked boxes fill the grid, ten to a row, with the line's total beside its name.
+  let pickedCases = 0;
+  let pickedMils = 0;
   for (const l of lines) {
+    const weights = (l.picks || []).map((p) => p.weight);
+    const lineMils = weights.reduce((a, w) => a + Math.round(Number(w) * 1000), 0);
+    pickedCases += weights.length;
+    pickedMils += lineMils;
     const qty = `${casesOf(l) || ""}${lbsOf(l) ? `<span class="lbq">${esc(lbText(l.lbs))}#</span>` : ""}`;
     rows += `<tr><td class="q">${qty}</td><td class="d" colspan="10">${esc(l.code)}${l.tag ? "-" + esc(l.tag) : ""} ${esc(l.description)}`
-      + `${l.note ? `<span class="ln">${esc(l.note)}</span>` : ""}</td><td></td></tr>`;
-    for (let r = 0; r < Math.max(1, Math.ceil(estCases(l) / 10)); r++) rows += grid();
+      + `${l.note ? `<span class="ln">${esc(l.note)}</span>` : ""}</td><td class="t">${weights.length ? esc(lbText(lineMils / 1000)) : ""}</td></tr>`;
+    const gridRows = Math.max(1, Math.ceil(estCases(l) / 10), Math.ceil(weights.length / 10));
+    for (let r = 0; r < gridRows; r++) {
+      const cells = Array.from({ length: 10 }, (_, c) => {
+        const w = weights[r * 10 + c];
+        return `<td class="w">${w != null ? esc(lbText(w)) : ""}</td>`;
+      }).join("");
+      rows += `<tr><td></td>${cells}<td></td></tr>`;
+    }
   }
   // Blank rows to the bottom of the page, as the paper sheet has them.
   for (let r = 0; r < 40; r++) {
@@ -46,7 +59,8 @@ const printPickSheet = (order, opened = null) => {
   .grid .q .lbq { display: block; font-size: 12.5px; font-weight: 800; line-height: 1.1; }
   .grid .d { font-weight: 700; }
   .grid .d .ln { display: block; font-weight: 400; font-style: italic; }
-  .grid .w { width: 8%; border-left: 1px dotted #555; border-right: 1px dotted #555; }
+  .grid .w { width: 8%; border-left: 1px dotted #555; border-right: 1px dotted #555; text-align: center; font-size: 12px; }
+  .grid .t { text-align: right; font-weight: 700; }
   .note { margin-top: 10px; border: 1.5px solid #000; }
   .note .nh { background: #f2f2f2; border-bottom: 1px solid #000; font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; padding: 3px 8px; }
   .note .nb { min-height: 40px; padding: 6px 8px; font-size: 14px; font-weight: 700; white-space: pre-wrap; }
@@ -66,9 +80,10 @@ const printPickSheet = (order, opened = null) => {
     <tr><td>Ship/BL To</td><td class="v">${esc(order.shipTo || "")}</td><td style="text-align:right">Due:</td><td class="v">${esc(order.dueDay || "")}</td></tr></table>
   <table class="grid">${rows}</table>
   <div class="note"><div class="nh">ADDITIONAL NOTES</div><div class="nb">${esc(order.notes || "")}</div></div>
-  <table class="foot"><tr><td>Order Qty: <span class="v">${esc(wantText(lines))}</span></td><td>Total cs: <span class="v"></span></td>
-    <td>Total lb: <span class="v"></span></td><td>Assemb. by: <span class="v"></span></td><td>Check By: <span class="v"></span></td></tr></table>
-  <div class="stamp"><span>PICK SHEET${order.status === "draft" ? " · DRAFT, not sent to the floor" : ""}</span><span>Printed ${esc(printed)}</span></div>
+  <table class="foot"><tr><td>Order Qty: <span class="v">${esc(wantText(lines))}</span></td><td>Total cs: <span class="v">${pickedCases || ""}</span></td>
+    <td>Total lb: <span class="v">${pickedCases ? esc(lbText(pickedMils / 1000)) : ""}</span></td>
+    <td>Assemb. by: <span class="v">${esc(order.filledBy || "")}</span></td><td>Check By: <span class="v">${esc(order.checkedBy || "")}</span></td></tr></table>
+  <div class="stamp"><span>${order.status === "filled" ? "FILLED ORDER" : "PICK SHEET"}${order.status === "draft" ? " · DRAFT, not sent to the floor" : ""}</span><span>Printed ${esc(printed)}</span></div>
 </div>
 <script>
   // Blank rows only to the bottom of one page.

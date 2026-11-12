@@ -440,6 +440,14 @@ router.delete("/af-lots/:id/boxes/:boxId", verifyToken, async (req, res) => {
   const boxId = Number(req.params.boxId);
   if (!Number.isInteger(id) || !Number.isInteger(boxId)) return res.status(400).json({ error: "Invalid id" });
   try {
+    // A box held on an order comes off the order first.
+    const held = await pool.query(
+      `SELECT o.order_no, o.customer_name FROM af_order_picks p JOIN af_orders o ON o.order_id = p.order_id
+        WHERE p.box_id = $1 AND p.tenant_id = $2`, [boxId, req.tenantId]);
+    if (held.rows.length) {
+      return res.status(409).json({ code: "HELD",
+        error: `That box is picked onto order #${held.rows[0].order_no} (${held.rows[0].customer_name}). Take it off the order first.` });
+    }
     const { rows } = await pool.query(
       `UPDATE af_lot_boxes SET removed_at = now(), removed_by = $4
         WHERE box_id = $1 AND af_lot_id = $2 AND tenant_id = $3 AND removed_at IS NULL

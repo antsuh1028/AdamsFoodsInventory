@@ -1,0 +1,96 @@
+/* Order Picking: the open orders drawn like the paper sheet on the left, what is
+   being scanned into on the right. Scoped to .afp so nothing leaks into the app. */
+.afp {
+  --bg: #f2f4f7; --card: #ffffff; --ink: #1a202c; --ink-2: #4a5568; --muted: #718096; --rule: #e2e8f0;
+  --sheet-rule: #2d3748; --blue: #3182ce; --blue-ink: #2b6cb0; --blue-tint: #ebf8ff; --green: #2f855a;
+  --green-tint: #f0fff4; --amber: #b7791f; --amber-tint: #fffaf0; --red: #c53030; --red-tint: #fff5f5;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.4; min-height: 100vh;
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px));
+}
+.afp *, .afp *::before, .afp *::after { box-sizing: border-box; }
+.afp button { font: inherit; cursor: pointer; }
+.afp button:focus-visible, .afp input:focus-visible { outline: 3px solid #90cdf4; outline-offset: 1px; }
+.afp .wrap { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.afp .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.afp .top h1 { margin: 0; font-size: 22px; font-weight: 700; }
+.afp .who { margin-left: auto; font-size: 13px; color: var(--muted); }
+.afp .seg { display: inline-flex; border: 1px solid #cbd5e0; border-radius: 7px; overflow: hidden; }
+.afp .seg button { border: 0; background: var(--card); padding: 6px 12px; font-weight: 600; color: var(--ink-2); font-size: 13px; }
+.afp .seg button + button { border-left: 1px solid #cbd5e0; }
+.afp .seg button[aria-pressed="true"] { background: var(--ink); color: #ffffff; }
+.afp .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.afp .steps div { background: var(--card); border: 1px solid var(--rule); border-radius: 7px; padding: 8px 10px; font-size: 13px; color: var(--ink-2); min-width: 0; }
+.afp .steps b { display: block; color: var(--ink); font-size: 13.5px; }
+@media (max-width: 760px) { .afp .steps { grid-template-columns: 1fr 1fr; } }
+.afp .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
+@media (max-width: 1000px) { .afp .layout { grid-template-columns: 1fr; } }
+.afp .orders { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 430px), 1fr)); gap: 14px; align-items: start; min-width: 0; }
+.afp .rail { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 12px; min-width: 0; }
+@media (max-width: 1000px) { .afp .rail { position: static; order: -1; } }
+.afp .panel { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.afp .panel h2 { margin: 0; font-size: 14px; font-weight: 700; }
+.afp .empty { color: var(--muted); font-size: 13px; }
+.afp .btn { border: 1px solid transparent; border-radius: 6px; padding: 7px 14px; font-weight: 600; background: var(--blue); color: #ffffff; }
+.afp .btn:hover { background: var(--blue-ink); }
+.afp .btn:disabled { background: #cbd5e0; color: #4a5568; cursor: not-allowed; }
+.afp .btn.outline { background: var(--card); color: var(--blue-ink); border-color: #90cdf4; }
+.afp .btn.ghost { background: transparent; color: var(--ink-2); padding: 3px 8px; }
+.afp .btn.sm { padding: 4px 10px; font-size: 13px; }
+.afp .btn.green { background: var(--green); }
+.afp .btn.green:disabled { background: #cbd5e0; color: #4a5568; }
+.afp .field { border: 1px solid #cbd5e0; border-radius: 5px; padding: 5px 8px; background: var(--card); width: 100%; font: inherit; font-size: 13px; color: var(--ink); }
+/* The order sheet. */
+.afp .sheet { background: var(--card); border: 1.5px solid var(--sheet-rule); border-radius: 4px; display: flex; flex-direction: column; min-width: 0; }
+.afp .sheet.done { opacity: 0.6; }
+.afp .sh-head { display: grid; grid-template-columns: auto 1fr auto auto; gap: 2px 8px; padding: 10px 12px 8px; border-bottom: 1.5px solid var(--sheet-rule); font-size: 13px; align-items: baseline; }
+.afp .sh-head .k { color: var(--muted); font-size: 11.5px; }
+.afp .sh-head .cust { font-size: 17px; font-weight: 700; }
+.afp .sh-head .acct { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+.afp .sh-head .acct img { height: 16px; width: auto; }
+.afp .note { margin: 6px 12px 0; font-size: 12.5px; color: var(--red); font-weight: 600; }
+.afp .line { border-bottom: 1px solid var(--rule); cursor: pointer; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.afp .line:hover { background: #f7fafc; }
+.afp .line.full { background: var(--green-tint); }
+.afp .line.active, .afp .line.active.full { background: var(--blue-tint); box-shadow: inset 4px 0 0 var(--blue); }
+.afp .l-top { display: flex; gap: 10px; align-items: baseline; }
+.afp .qty { font-size: 20px; font-weight: 800; min-width: 34px; font-variant-numeric: tabular-nums; text-align: center; line-height: 1.1; }
+.afp .qty small { display: block; font-size: 12.5px; font-weight: 800; }
+.afp .desc { flex: 1; min-width: 0; }
+.afp .desc .code { font-family: var(--mono); font-weight: 700; }
+.afp .desc .lnote { display: block; font-size: 12px; color: var(--red); }
+.afp .prog { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; font-size: 13px; }
+.afp .prog.ok { color: var(--green); }
+.afp .prog.part { color: var(--amber); }
+.afp .prog.none { color: var(--muted); }
+.afp .tally { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); border: 1px solid #a0aec0; border-radius: 2px; }
+.afp .tally span, .afp .tally button { border: 0; border-right: 1px dotted #a0aec0; border-bottom: 1px dotted #cbd5e0; font-family: var(--mono); font-size: 11.5px; text-align: center; padding: 3px 0; min-height: 22px; background: transparent; color: var(--ink); }
+.afp .tally > :nth-child(10n) { border-right: 0; }
+.afp .tally button:hover { background: var(--red-tint); color: var(--red); text-decoration: line-through; }
+.afp .tally .need { background: #fafafa; }
+.afp .l-meta { display: flex; gap: 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.afp .l-meta .warn { color: var(--amber); font-weight: 600; }
+.afp .l-meta .bad { color: var(--red); font-weight: 600; }
+.afp .tag-active { font-size: 10.5px; font-weight: 800; color: #ffffff; background: var(--blue); border-radius: 3px; padding: 1px 6px; letter-spacing: 0.04em; }
+.afp .sh-foot { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; border-top: 1.5px solid var(--sheet-rule); }
+.afp .sh-foot .tot { display: flex; gap: 14px; flex-wrap: wrap; font-variant-numeric: tabular-nums; font-size: 13px; }
+.afp .sh-foot .tot b { font-size: 15px; }
+.afp .sh-foot label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--muted); }
+.afp .blockers { font-size: 12.5px; color: var(--red); margin: 0; padding-left: 18px; }
+.afp .actions { display: flex; gap: 8px; }
+.afp .actions .btn.green { flex: 1; }
+/* Rail. */
+.afp .active-box { border-radius: 7px; padding: 10px 12px; background: var(--blue-tint); border: 1px solid #90cdf4; display: flex; flex-direction: column; gap: 2px; }
+.afp .active-box.none { background: #f7fafc; border-color: var(--rule); color: var(--muted); }
+.afp .active-box .whom { font-weight: 800; font-size: 15px; color: var(--blue-ink); }
+.afp .msg { border-radius: 7px; padding: 9px 12px; font-weight: 600; display: flex; flex-direction: column; gap: 2px; }
+.afp .msg small { font-weight: 500; }
+.afp .msg.ok { background: var(--green-tint); color: var(--green); border: 1px solid #9ae6b4; }
+.afp .msg.warn { background: var(--amber-tint); color: var(--amber); border: 1px solid #fbd38d; }
+.afp .msg.bad { background: var(--red-tint); color: var(--red); border: 1px solid #feb2b2; }
+.afp .leave { border-radius: 7px; padding: 9px 12px; background: var(--amber-tint); border: 1px solid #fbd38d; color: var(--amber); display: flex; flex-direction: column; gap: 6px; }
+.afp .leave.fits { background: var(--blue-tint); border-color: #90cdf4; color: var(--blue-ink); }
+.afp .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.afp .chip { font-family: var(--mono); font-size: 11.5px; border: 1px solid #cbd5e0; background: var(--card); border-radius: 4px; padding: 2px 6px; color: var(--ink-2); }
+.afp .chip.on { background: var(--blue-tint); border-color: var(--blue); color: var(--blue-ink); font-weight: 700; }
+.afp .chip.off { background: #edf2f7; color: var(--muted); text-decoration: line-through; }

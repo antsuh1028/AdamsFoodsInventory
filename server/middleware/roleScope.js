@@ -35,7 +35,7 @@ const ADAMS = [
   [/^\/af-lots(\/|$)/, null],
   [/^\/af-stations(\/|$)/, null],
   [/^\/af-stock(\/|$)/, ["GET"]],
-  [/^\/af-(orders|customers|items)(\/|$)/, null],
+  [/^\/af-(orders|customers|items|picking)(\/|$)/, null],
   [/^\/verifyLocation$/, null],
   [/^\/(add|get)History(\/|$)/, null],
   [/^\/production-orders(\/|$)/, null],
@@ -65,6 +65,12 @@ const NOBLESSE = [
   [/^\/support-tickets(\/|$)/, null],
 ];
 
+// Adams Foods floor: Order Picking and nothing else.
+const FLOOR = [
+  [/^\/af-picking(\/|$)/, null],
+  [/^\/support-tickets(\/|$)/, null],
+];
+
 // Every role is listed; null is unrestricted. A role not listed reaches nothing.
 const SCOPES = {
   master: null,
@@ -75,6 +81,7 @@ const SCOPES = {
   ntimanager: NOBLESSE,
   reception: NOBLESSE,
   outgoing: OUTGOING,
+  floor: FLOOR,
 };
 
 const roleScope = (req, res, next) => {

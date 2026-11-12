@@ -55,6 +55,7 @@ const fmtOrder = (r) => ({
   shipTo: r.ship_to, orderDate: fmtDay(r.order_date), dueDay: r.due_day, po: r.po, notes: r.notes,
   status: r.status, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at,
   sentBy: r.sent_by, sentAt: r.sent_at, cancelledBy: r.cancelled_by, cancelledAt: r.cancelled_at,
+  filledBy: r.filled_by, filledAt: r.filled_at, checkedBy: r.checked_by,
   ...(r.line_count != null ? {
     lineCount: Number(r.line_count), cases: Number(r.cases || 0), lbsOnly: r.lbs_only != null ? String(r.lbs_only) : "0",
   } : {}),
@@ -285,7 +286,7 @@ router.post("/af-customers/import", verifyToken, requireRole("admin"), upload.si
 // ── Orders ───────────────────────────────────────────────────────────────────
 
 router.get("/af-orders", verifyToken, async (req, res) => {
-  const status = ["draft", "sent", "cancelled"].includes(req.query.status) ? req.query.status : null;
+  const status = ["draft", "sent", "filled", "cancelled"].includes(req.query.status) ? req.query.status : null;
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
   const like = `%${q.replace(/[\\%_]/g, "\\$&")}%`;
   try {
@@ -430,6 +431,13 @@ router.put("/af-orders/:id", verifyToken, requireRole(...ORDER_ROLES), async (re
       "SELECT * FROM af_orders WHERE order_id = $1 AND tenant_id = $2 FOR UPDATE", [id, req.tenantId]);
     if (!cur.rows.length) throw fail(404, "Order not found");
     if (cur.rows[0].status === "cancelled") throw fail(409, "That order was cancelled, so it cannot be changed.", "CANCELLED");
+    if (cur.rows[0].status === "filled") throw fail(409, "That order was filled, so it cannot be changed.", "FILLED");
+    // Saving replaces the lines, which would drop the boxes already picked onto them.
+    const picked = await client.query("SELECT COUNT(*)::int AS n FROM af_order_picks WHERE order_id = $1", [id]);
+    if (picked.rows[0].n > 0) {
+      throw fail(409, `The floor has started picking this order (${picked.rows[0].n} box${picked.rows[0].n === 1 ? "" : "es"}). `
+        + "Take those boxes off first, or cancel the order.", "PICKING");
+    }
     const lines = await cleanOrderLines(client, req.tenantId, cur.rows[0].customer_id, id, req.body?.lines, admin);
     if (cur.rows[0].status === "sent" && !lines.length) {
       throw fail(409, "A sent order needs at least one line. Cancel it instead.", "EMPTY");
@@ -476,11 +484,14 @@ router.post("/af-orders/:id/cancel", verifyToken, requireRole("admin"), async (r
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid order id" });
   try {
+    // A filled order's boxes have left; only an order still open can be withdrawn.
     const upd = await pool.query(
       `UPDATE af_orders SET status = 'cancelled', cancelled_by = $3, cancelled_at = now(), updated_at = now()
-        WHERE order_id = $1 AND tenant_id = $2 AND status <> 'cancelled' RETURNING order_id`,
+        WHERE order_id = $1 AND tenant_id = $2 AND status IN ('draft', 'sent') RETURNING order_id`,
       [id, req.tenantId, req.username || null]);
     if (!upd.rows.length) return res.status(404).json({ error: "No open order with that id." });
+    // Boxes held for it go back to stock.
+    await pool.query("DELETE FROM af_order_picks WHERE order_id = $1 AND tenant_id = $2", [id, req.tenantId]);
     res.json(await loadOrder(pool, req.tenantId, id, true));
   } catch (err) {
     sendError(res, err, "cancel af order");
