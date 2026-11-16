@@ -1,7 +1,7 @@
 import React, { useEffect, useReducer, useRef, useState } from "react";
 import { Box, Flex, Text, IconButton, Portal, Tooltip } from "@chakra-ui/react";
 import { CloseIcon } from "@chakra-ui/icons";
-import { raise, drop, subscribe, zFor } from "../utils/windowStack";
+import { raise, drop, subscribe, zFor, isTop } from "../utils/windowStack";
 
 const MIN_WIDTH = 300;
 const MIN_HEIGHT = 220;
@@ -70,6 +70,8 @@ const FloatingWindow = ({
   zIndex = 1400,
   // Caps a content-height window; responsive values are allowed.
   maxHeight = null,
+  // Told whether this window is the top one, so only the top window takes scanner input.
+  onTopChange = null,
 }) => {
   const [position, setPosition] = useState(null);
   const [size, setSize] = useState(null); // null height = auto (content-driven) until user resizes
@@ -89,6 +91,8 @@ const FloatingWindow = ({
     raise(id);
     return () => drop(id);
   }, [isOpen]);
+  const onTop = isOpen && isTop(idRef.current);
+  useEffect(() => { if (onTopChange) onTopChange(onTop); }, [onTop, onTopChange]);
   const dragState = useRef(null);   // { startX, startY, originX, originY }
   const resizeState = useRef(null); // { edge, startX, startY, startWidth, startHeight, startLeft, startTop }
 

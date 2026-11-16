@@ -768,11 +768,12 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
 // stationHere: the Receiving Station window is open on this same device.
 const AfLots = ({ isOpen, onClose, stationHere = false }) => {
   const [open, setOpen] = useState(null); // the lot being scanned onto
+  const [onTop, setOnTop] = useState(true);
   const close = () => { setOpen(null); onClose(); };
   return (
-    <FloatingWindow isOpen={isOpen} onClose={close} title="Lot Registration" width={960}>
+    <FloatingWindow isOpen={isOpen} onClose={close} title="Lot Registration" width={960} onTopChange={setOnTop}>
       {open
-        ? <LotScan key={open.id} lot={open} active={isOpen} stationHere={stationHere} onBack={() => setOpen(null)} />
+        ? <LotScan key={open.id} lot={open} active={isOpen && onTop} stationHere={stationHere} onBack={() => setOpen(null)} />
         : <LotList onOpen={setOpen} />}
     </FloatingWindow>
   );

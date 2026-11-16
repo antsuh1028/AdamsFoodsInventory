@@ -53,6 +53,34 @@ const lineState = (line, picks) => {
   return { count, totalLb: lbText(total), full: casesOk && lbsOk, room, extraBox, short };
 };
 
+// A held box with what the floor is shown about it.
+const PICK_SELECT = `SELECT p.pick_id, p.line_id, p.order_id, p.picked_by, p.picked_at, b.box_id, b.weight::text AS weight,
+            b.pallet_no, b.item_code, b.status AS box_status, l.lot_number, i.description AS item
+       FROM af_order_picks p
+       JOIN af_lot_boxes b ON b.box_id = p.box_id
+       JOIN af_lots l ON l.af_lot_id = b.af_lot_id
+       LEFT JOIN af_lot_items i ON i.item_id = b.item_id`;
+
+// A box with its lot, item, and the order holding it, if any, in words.
+const BOX_SELECT = `SELECT b.*, l.lot_number, i.description AS item,
+            (SELECT format('order #%s (%s, %s)', o.order_no, o.customer_name, ol.code)
+               FROM af_order_picks hp JOIN af_orders o ON o.order_id = hp.order_id
+               JOIN af_order_lines ol ON ol.line_id = hp.line_id
+              WHERE hp.box_id = b.box_id) AS held_on
+       FROM af_lot_boxes b JOIN af_lots l ON l.af_lot_id = b.af_lot_id
+       LEFT JOIN af_lot_items i ON i.item_id = b.item_id`;
+
+// One line as the floor sees it: its boxes and where it stands.
+const fmtLine = (l, mine) => ({
+  lineId: l.line_id, code: l.code, tag: l.tag, description: l.description,
+  qtyCases: l.qty_cases, lbs: l.lbs != null ? lbText(mils(l.lbs)) : null, note: l.note,
+  picks: mine.map((p) => ({
+    pickId: p.pick_id, boxId: p.box_id, weight: p.weight, lotNumber: p.lot_number, palletNo: p.pallet_no,
+    item: p.item, itemCode: p.item_code, pickedBy: p.picked_by,
+  })),
+  ...lineState(l, mine),
+});
+
 // Orders with their lines, each line's held boxes and where it stands.
 const loadOrders = async (db, tenantId, { orderIds = null, status = "sent" } = {}) => {
   const orders = await db.query(
@@ -67,31 +95,14 @@ const loadOrders = async (db, tenantId, { orderIds = null, status = "sent" } = {
   const lines = await db.query(
     "SELECT * FROM af_order_lines WHERE order_id = ANY($1::int[]) ORDER BY order_id, position, line_id", [ids]);
   const picks = await db.query(
-    `SELECT p.pick_id, p.line_id, p.order_id, p.picked_by, p.picked_at, b.box_id, b.weight::text AS weight,
-            b.pallet_no, b.item_code, b.status AS box_status, l.lot_number, i.description AS item
-       FROM af_order_picks p
-       JOIN af_lot_boxes b ON b.box_id = p.box_id
-       JOIN af_lots l ON l.af_lot_id = b.af_lot_id
-       LEFT JOIN af_lot_items i ON i.item_id = b.item_id
-      WHERE p.order_id = ANY($1::int[])
-      ORDER BY p.picked_at, p.pick_id`, [ids]);
+    `${PICK_SELECT} WHERE p.order_id = ANY($1::int[]) ORDER BY p.picked_at, p.pick_id`, [ids]);
   return orders.rows.map((o) => ({
     orderId: o.order_id, orderNo: o.order_no, customerName: o.customer_name, shipTo: o.ship_to,
     orderDate: o.order_date instanceof Date ? o.order_date.toISOString().slice(0, 10) : o.order_date,
     dueDay: o.due_day, po: o.po, notes: o.notes, status: o.status,
     filledAt: o.filled_at, filledBy: o.filled_by, checkedBy: o.checked_by,
-    lines: lines.rows.filter((l) => l.order_id === o.order_id).map((l) => {
-      const mine = picks.rows.filter((p) => p.line_id === l.line_id);
-      return {
-        lineId: l.line_id, code: l.code, tag: l.tag, description: l.description,
-        qtyCases: l.qty_cases, lbs: l.lbs != null ? lbText(mils(l.lbs)) : null, note: l.note,
-        picks: mine.map((p) => ({
-          pickId: p.pick_id, boxId: p.box_id, weight: p.weight, lotNumber: p.lot_number, palletNo: p.pallet_no,
-          item: p.item, itemCode: p.item_code, pickedBy: p.picked_by,
-        })),
-        ...lineState(l, mine),
-      };
-    }),
+    lines: lines.rows.filter((l) => l.order_id === o.order_id)
+      .map((l) => fmtLine(l, picks.rows.filter((p) => p.line_id === l.line_id))),
   }));
 };
 
@@ -100,29 +111,19 @@ const lockLine = async (client, tenantId, lineId) => {
   const { rows } = await client.query(
     `SELECT l.*, o.status AS order_status, o.order_no
        FROM af_order_lines l JOIN af_orders o ON o.order_id = l.order_id
-      WHERE l.line_id = $1 AND l.tenant_id = $2`, [lineId, tenantId]);
+      WHERE l.line_id = $1 AND l.tenant_id = $2 FOR UPDATE OF o`, [lineId, tenantId]);
   const line = rows[0];
   if (!line) throw fail(404, "That order line was not found.", "NO_LINE");
-  await client.query("SELECT 1 FROM af_orders WHERE order_id = $1 FOR UPDATE", [line.order_id]);
   if (line.order_status !== "sent") {
     throw fail(409, `Order #${line.order_no} is ${line.order_status}, so nothing can be picked onto it.`, "NOT_OPEN");
   }
-  const picks = await client.query(
-    `SELECT p.pick_id, b.weight::text AS weight FROM af_order_picks p JOIN af_lot_boxes b ON b.box_id = p.box_id
-      WHERE p.line_id = $1`, [lineId]);
+  // Read after the lock, so a pick that just committed on another scanner is counted.
+  const picks = await client.query(`${PICK_SELECT} WHERE p.line_id = $1 ORDER BY p.picked_at, p.pick_id`, [lineId]);
   return { line, picks: picks.rows };
 };
 
-// Who is holding a box, in words.
-const holder = async (db, boxId) => {
-  const { rows } = await db.query(
-    `SELECT o.order_no, o.customer_name, l.code FROM af_order_picks p
-       JOIN af_orders o ON o.order_id = p.order_id JOIN af_order_lines l ON l.line_id = p.line_id
-      WHERE p.box_id = $1`, [boxId]);
-  return rows[0] ? `order #${rows[0].order_no} (${rows[0].customer_name}, ${rows[0].code})` : null;
-};
-
 // Puts boxes on a line, after checking each is free and the line has room for all of them.
+// Boxes come from BOX_SELECT. Returns the new picks, shaped like PICK_SELECT rows.
 const hold = async (client, req, line, before, boxes) => {
   const qty = line.qty_cases;
   const want = line.lbs != null ? mils(line.lbs) : null;
@@ -139,19 +140,26 @@ const hold = async (client, req, line, before, boxes) => {
     if (b.item_code && b.item_code !== line.code) {
       throw fail(409, `That box is item ${b.item_code}; this line is ${line.code} ${line.description}.`, "WRONG_ITEM");
     }
-    const by = await holder(client, b.box_id);
-    if (by) throw fail(409, `That box is already on ${by}.`, "HELD");
+    if (b.held_on) throw fail(409, `That box is already on ${b.held_on}.`, "HELD");
   }
+  let ins;
   try {
-    await client.query(
+    ins = await client.query(
       `INSERT INTO af_order_picks (tenant_id, order_id, line_id, box_id, picked_by)
-       SELECT $1, $2, $3, id, $4 FROM UNNEST($5::int[]) AS id`,
+       SELECT $1, $2, $3, id, $4 FROM UNNEST($5::int[]) AS id
+       RETURNING pick_id, box_id, picked_by`,
       [req.tenantId, line.order_id, line.line_id, req.username || null, boxes.map((b) => b.box_id)]);
   } catch (err) {
     // Picked onto another order in the same moment.
     if (err.code === "23505") throw fail(409, "That box was just picked onto another order.", "HELD");
     throw err;
   }
+  const byId = new Map(boxes.map((b) => [b.box_id, b]));
+  return ins.rows.sort((a, b) => a.pick_id - b.pick_id).map((r) => {
+    const b = byId.get(r.box_id);
+    return { pick_id: r.pick_id, box_id: r.box_id, weight: b.weight, pallet_no: b.pallet_no, item_code: b.item_code,
+      lot_number: b.lot_number, item: b.item, picked_by: r.picked_by };
+  });
 };
 
 const IN_STOCK = "b.tenant_id = $1 AND b.status = 'in_stock' AND b.removed_at IS NULL";
@@ -206,20 +214,29 @@ router.post("/af-picking/lines/:lineId/scan", verifyToken, requireRole(...PICK_R
     // A packer box is its GTIN and serial; a label without a serial is any free box of that code, weight and day.
     const found = await client.query(
       box.serial
-        ? `SELECT b.* FROM af_lot_boxes b WHERE ${IN_STOCK} AND b.serial = $2 AND COALESCE(b.gtin, '') = COALESCE($3, '')
+        ? `${BOX_SELECT} WHERE ${IN_STOCK} AND b.serial = $2 AND COALESCE(b.gtin, '') = COALESCE($3, '')
             ORDER BY b.box_id LIMIT 1`
-        : `SELECT b.* FROM af_lot_boxes b WHERE ${IN_STOCK} AND b.serial IS NULL AND COALESCE(b.gtin, '') = COALESCE($2, '')
+        : `${BOX_SELECT} WHERE ${IN_STOCK} AND b.serial IS NULL AND COALESCE(b.gtin, '') = COALESCE($2, '')
              AND b.weight = $3::numeric AND b.pack_date IS NOT DISTINCT FROM $4::date
              AND NOT EXISTS (SELECT 1 FROM af_order_picks p WHERE p.box_id = b.box_id)
             ORDER BY b.box_id LIMIT 1`,
       box.serial ? [req.tenantId, box.serial, box.gtin] : [req.tenantId, box.gtin, box.weight, box.packDate]);
     if (!found.rows.length) {
+      // Every identical label is already held, usually the same box scanned twice: say where it is.
+      if (!box.serial) {
+        const held = await client.query(
+          `${BOX_SELECT} WHERE ${IN_STOCK} AND b.serial IS NULL AND COALESCE(b.gtin, '') = COALESCE($2, '')
+             AND b.weight = $3::numeric AND b.pack_date IS NOT DISTINCT FROM $4::date
+            ORDER BY b.box_id LIMIT 1`, [req.tenantId, box.gtin, box.weight, box.packDate]);
+        if (held.rows[0] && held.rows[0].held_on) throw fail(409, `That box is already on ${held.rows[0].held_on}.`, "HELD");
+      }
       throw fail(404, "That box is not in stock on any lot. Was it received through Lot Registration?", "NOT_IN_STOCK");
     }
-    await hold(client, req, line, picks, found.rows);
+    const added = await hold(client, req, line, picks, found.rows);
     await client.query("COMMIT");
+    // Only the line changed, so only the line goes back.
     res.json({ picked: { boxId: found.rows[0].box_id, weight: found.rows[0].weight },
-      order: (await loadOrders(pool, req.tenantId, { orderIds: [line.order_id] }))[0] });
+      line: fmtLine(line, [...picks, ...added]) });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     sendError(res, err, "pick scan");
@@ -239,12 +256,12 @@ router.post("/af-picking/lines/:lineId/boxes", verifyToken, requireRole(...PICK_
     await client.query("BEGIN");
     const { line, picks } = await lockLine(client, req.tenantId, lineId);
     const found = await client.query(
-      `SELECT b.* FROM af_lot_boxes b WHERE ${IN_STOCK} AND b.box_id = ANY($2::int[]) ORDER BY b.box_id FOR UPDATE`,
+      `${BOX_SELECT} WHERE ${IN_STOCK} AND b.box_id = ANY($2::int[]) ORDER BY b.box_id FOR UPDATE OF b`,
       [req.tenantId, ids]);
     if (found.rows.length !== ids.length) throw fail(409, "One of those boxes is no longer in stock.", "NOT_IN_STOCK");
-    await hold(client, req, line, picks, found.rows);
+    const added = await hold(client, req, line, picks, found.rows);
     await client.query("COMMIT");
-    res.json({ order: (await loadOrders(pool, req.tenantId, { orderIds: [line.order_id] }))[0] });
+    res.json({ line: fmtLine(line, [...picks, ...added]) });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     sendError(res, err, "pick pallet boxes");

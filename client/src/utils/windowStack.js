@@ -20,6 +20,8 @@ export const drop = (id) => {
   notify();
 };
 
+export const isTop = (id) => stack.length > 0 && stack[stack.length - 1] === id;
+
 export const subscribe = (fn) => {
   listeners.add(fn);
   return () => listeners.delete(fn);

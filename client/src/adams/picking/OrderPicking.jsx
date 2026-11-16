@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../../utils/axiosInstance";
+import FloatingWindow from "../../components/FloatingWindow";
 import getRole from "../../utils/getRole";
 import { createScanAssembler, scanKey } from "../../utils/scanInput";
+import { parseGs1 } from "../../utils/gs1";
+import { toPounds } from "../../utils/weight";
 import logo from "../../assets/AdamsWings.png";
 import printPickSheet from "../orders/printPickSheet";
 import { wantText, lbText } from "../orders/orderMath";
@@ -18,17 +21,29 @@ const progress = (l) => {
   return lbsPart;
 };
 const progClass = (l) => (l.full ? "ok" : l.count ? "part" : "none");
-const lineCells = (l) => {
-  const want = l.qtyCases || (l.lbs ? Math.max(l.count + 1, 1) : 1);
-  return Math.max(10, Math.ceil(Math.max(want, l.count) / 10) * 10);
+const lineCells = (l, count) => {
+  const want = l.qtyCases || (l.lbs ? Math.max(count + 1, 1) : 1);
+  return Math.max(10, Math.ceil(Math.max(want, count) / 10) * 10);
+};
+
+// The label's own weight in pounds, shown until the server confirms the box; null for a pallet tag.
+const labelWeight = (raw) => {
+  try {
+    const p = parseGs1(raw);
+    return p && p.weight ? toPounds(p.weight.value, p.weight.unit).weight : null;
+  } catch {
+    return null;
+  }
 };
 
 // The scanner types like a keyboard; keys typed into a field are left alone.
-const useScanner = (onScan) => {
+const useScanner = (enabled, onScan) => {
   const assembler = useMemo(() => createScanAssembler({ parse: (raw) => raw }), []);
   const handler = useRef(onScan);
   handler.current = onScan;
   useEffect(() => {
+    if (!enabled) return undefined;
+    assembler.reset();
     const onKeyDown = (e) => {
       const key = scanKey(e);
       if (key === null) return;
@@ -39,11 +54,11 @@ const useScanner = (onScan) => {
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [assembler]);
+  }, [enabled, assembler]);
 };
 
 /** The floor fills sent orders by scanning boxes into their lines. */
-const OrderPicking = () => {
+const PickingBoard = ({ inWindow = false, scanning = true }) => {
   const navigate = useNavigate();
   const role = getRole();
   const [view, setView] = useState("open");          // open | filled
@@ -53,6 +68,11 @@ const OrderPicking = () => {
   const [pallet, setPallet] = useState(null);        // { lineId, code, boxes, room, chosen: Set }
   const [checker, setChecker] = useState({});        // orderId -> name
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState([]);       // scanned, not yet confirmed: { key, lineId, weight }
+  const queue = useRef(Promise.resolve());           // scans go to the server one at a time, in order
+  const seq = useRef(0);
+  const ordersRef = useRef(orders);
+  ordersRef.current = orders;
 
   const load = useCallback(async () => {
     try {
@@ -69,8 +89,20 @@ const OrderPicking = () => {
   useEffect(() => { const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
 
   const replace = (order) => setOrders((os) => (os || []).map((o) => (o.orderId === order.orderId ? order : o)));
+  // A line from the server swapped into its order; returns that order.
+  const mergeLine = (line) => {
+    let merged = null;
+    const next = (ordersRef.current || []).map((o) => {
+      if (!o.lines.some((l) => l.lineId === line.lineId)) return o;
+      merged = { ...o, lines: o.lines.map((l) => (l.lineId === line.lineId ? line : l)) };
+      return merged;
+    });
+    ordersRef.current = next;
+    setOrders(next);
+    return merged;
+  };
   const findLine = (lineId) => {
-    for (const o of orders || []) {
+    for (const o of ordersRef.current || []) {
       const l = o.lines.find((x) => x.lineId === lineId);
       if (l) return { order: o, line: l, index: o.lines.indexOf(l) };
     }
@@ -94,17 +126,12 @@ const OrderPicking = () => {
     }
   };
 
-  const onScan = async (result) => {
-    if (view !== "open") return;
-    if (result.type === "reject") { setMsg({ kind: "bad", text: "That scan did not read.", sub: result.reason }); return; }
-    if (!active) { setMsg({ kind: "warn", text: "Tap a line first, then scan its boxes." }); return; }
-    if (busy) return;
-    setBusy(true);
+  const sendScan = async (lineId, raw, key) => {
     try {
-      const { data } = await axiosInstance.post(`/af-picking/lines/${active.lineId}/scan`, { barcode: result.raw });
+      const { data } = await axiosInstance.post(`/af-picking/lines/${lineId}/scan`, { barcode: raw });
       if (data.pallet) {
         const p = data.pallet;
-        const f = findLine(active.lineId);
+        const f = findLine(lineId);
         // Preselect what the line can take: its free cases, or enough boxes to reach its pounds.
         let chosen = p.boxes.map((b) => b.boxId);
         if (p.room != null) chosen = chosen.slice(0, p.room);
@@ -112,18 +139,31 @@ const OrderPicking = () => {
           let have = mils(f.line.totalLb); const want = mils(f.line.lbs); chosen = [];
           for (const b of p.boxes) { if (have >= want) break; chosen.push(b.boxId); have += mils(b.weight); }
         }
-        setPallet({ lineId: active.lineId, ...p, chosen: new Set(chosen) });
+        setPallet({ lineId, ...p, chosen: new Set(chosen) });
         setMsg(null);
       } else {
-        afterPick(data.order, active.lineId, data.picked.weight);
+        const order = mergeLine(data.line);
+        if (order) afterPick(order, lineId, data.picked.weight);
       }
     } catch (err) {
       setMsg({ kind: "bad", text: errText(err) });
     } finally {
-      setBusy(false);
+      setPending((ps) => ps.filter((x) => x.key !== key));
     }
   };
-  useScanner(onScan);
+
+  // The box shows in its line at once; the server confirms it or takes it back off with the reason.
+  const onScan = (result) => {
+    if (view !== "open") return;
+    if (result.type === "reject") { setMsg({ kind: "bad", text: "That scan did not read.", sub: result.reason }); return; }
+    if (!active) { setMsg({ kind: "warn", text: "Tap a line first, then scan its boxes." }); return; }
+    const { lineId } = active;
+    const key = ++seq.current;
+    const weight = labelWeight(result.raw);
+    if (weight) setPending((ps) => [...ps, { key, lineId, weight }]);
+    queue.current = queue.current.then(() => sendScan(lineId, result.raw, key));
+  };
+  useScanner(scanning, onScan);
 
   const takePallet = async () => {
     setBusy(true);
@@ -131,7 +171,8 @@ const OrderPicking = () => {
       const { data } = await axiosInstance.post(`/af-picking/lines/${pallet.lineId}/boxes`, { boxIds: [...pallet.chosen] });
       const n = pallet.chosen.size;
       setPallet(null);
-      afterPick(data.order, pallet.lineId, null);
+      const order = mergeLine(data.line);
+      if (order) afterPick(order, pallet.lineId, null);
       setMsg((m) => ({ ...m, text: `${n} box${n === 1 ? "" : "es"} from ${pallet.code}: ${m.text}` }));
     } catch (err) {
       setMsg({ kind: "bad", text: errText(err) });
@@ -170,18 +211,18 @@ const OrderPicking = () => {
   const act = active && findLine(active.lineId);
 
   return (
-    <div className="afp">
+    <div className={`afp${inWindow ? " in-window" : ""}`}>
       <div className="wrap">
         <div className="top">
-          <h1>Order Picking</h1>
+          {!inWindow && <h1>Order Picking</h1>}
           <div className="seg">
             <button type="button" aria-pressed={view === "open"} onClick={() => { setView("open"); setPallet(null); }}>Open</button>
             <button type="button" aria-pressed={view === "filled"} onClick={() => { setView("filled"); setActive(null); setPallet(null); }}>Finished</button>
           </div>
           <span className="who">{role}</span>
-          {role === "floor"
+          {!inWindow && (role === "floor"
             ? <button type="button" className="btn ghost" onClick={logout}>Log out</button>
-            : <button type="button" className="btn ghost" onClick={() => navigate("/home")}>← Home</button>}
+            : <button type="button" className="btn ghost" onClick={() => navigate("/home")}>← Home</button>)}
         </div>
 
         <div className="steps">
@@ -220,7 +261,8 @@ const OrderPicking = () => {
                   {o.notes && <div className="note">{o.notes}</div>}
                   {o.lines.map((l, i) => {
                     const isActive = active && active.lineId === l.lineId;
-                    const cells = lineCells(l);
+                    const waiting = pending.filter((x) => x.lineId === l.lineId);
+                    const cells = lineCells(l, l.count + waiting.length);
                     return (
                       <div key={l.lineId} className={`line${l.full ? " full" : ""}${isActive ? " active" : ""}`}
                         onClick={() => { if (!done) { setActive({ orderId: o.orderId, lineId: l.lineId }); setPallet(null); setMsg(null); } }}>
@@ -236,6 +278,8 @@ const OrderPicking = () => {
                         <div className="tally">
                           {Array.from({ length: cells }, (_, c) => {
                             const p = l.picks[c];
+                            const w = !p && waiting[c - l.picks.length];
+                            if (w) return <span key={c} className="pending" title="Checking with the server">{lbText(w.weight)}</span>;
                             if (!p) return <span key={c} className={c < (l.qtyCases || 0) ? "need" : ""} />;
                             return done
                               ? <span key={c}>{lbText(p.weight)}</span>
@@ -273,7 +317,8 @@ const OrderPicking = () => {
                         {blockers.length > 0 && <ul className="blockers">{blockers.map((b) => <li key={b}>{b}</li>)}</ul>}
                         <div className="actions">
                           <button type="button" className="btn outline" onClick={() => print(o)}>Print</button>
-                          <button type="button" className="btn green" disabled={blockers.length > 0 || busy} onClick={() => finish(o)}>
+                          <button type="button" className="btn green" disabled={blockers.length > 0 || busy || pending.length > 0}
+                            onClick={() => finish(o)}>
                             Finish order · take boxes out
                           </button>
                         </div>
@@ -347,6 +392,21 @@ const OrderPicking = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+// The floor's login lands here as a page.
+const OrderPicking = () => <PickingBoard />;
+
+// Everyone else opens it from the menu; it takes scans only while it is the top window.
+export const OrderPickingWindow = ({ isOpen, onClose }) => {
+  const [full, setFull] = useState(false);
+  const [onTop, setOnTop] = useState(true);
+  return (
+    <FloatingWindow isOpen={isOpen} onClose={onClose} title="Order Picking" width={1400} onTopChange={setOnTop}
+      isFullScreen={full} onToggleFullScreen={() => setFull((f) => !f)} bodyProps={{ p: 0, bg: "#f2f4f7" }}>
+      <PickingBoard inWindow scanning={onTop} />
+    </FloatingWindow>
   );
 };
 
