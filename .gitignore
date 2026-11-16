@@ -37,3 +37,12 @@ server/tests
 
 # Working notes and plans — local only
 notes/
+
+# Spreadsheets, label zips and other working files — local only
+local-files/
+
+# .env backups hold real credentials
+.env.bak*
+
+# Per-machine Claude settings
+.claude/settings.local.json
