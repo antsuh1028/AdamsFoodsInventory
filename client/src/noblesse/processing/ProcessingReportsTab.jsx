@@ -77,31 +77,39 @@ const dayTag = (day) => {
   return day === y.toISOString().slice(0, 10) ? "Yesterday" : null;
 };
 
+const cleanPulls = (pulls) => pulls
+  .map((p) => ({ cases: parseInt(p.cases, 10) }))
+  .filter((p) => Number.isInteger(p.cases) && p.cases > 0);
+
 const casesLeftOn = (row) => Math.max(0, (Number(row.qtyCases) || 0) - (Number(row.formManualCases) || 0));
 
+// Switching from one lot to another replaces the product details; a first pick fills blanks only.
 const withLotDefaults = (draft, lot, row) => {
+  // detailsLotId: the lot the details came from, kept through a clear-then-pick.
+  const from = draft.detailsLotId ?? draft.lotId;
+  const switched = Boolean(from && lot && lot.lotId !== from);
   const next = {
     ...draft,
     lotId: lot ? lot.lotId : null,
     lotNumber: lot ? lot.lotNumber : "",
     lotKind: lot ? lot.kind || "internal" : "internal",
+    detailsLotId: from,
   };
   // An FP lot is already further processing.
   if (next.lotKind === "further") next.furtherProcessing = false;
   if (!row) return next;
+  next.detailsLotId = lot.lotId;
 
-  const fill = (key, value, transform = upper) => {
-    if (String(next[key] || "").trim() || !String(value ?? "").trim()) return;
-    next[key] = transform(String(value));
+  const fill = (key, value) => {
+    if (!switched && String(next[key] || "").trim()) return;
+    next[key] = upper(String(value ?? "")).trim();
   };
   fill("description", row.description);
   fill("brand", row.brand);
   fill("grade", row.grade);
   fill("estNumber", row.est);
-  // The lot's own pack date seeds the SET, and only while it is empty — what
-  // the manager picked outranks it, same as every other field here.
-  if (!(next.packDates || []).length && String(row.packDate ?? "").trim()) {
-    next.packDates = [row.packDate];
+  if (switched || !(next.packDates || []).length) {
+    next.packDates = String(row.packDate ?? "").trim() ? [row.packDate] : [];
   }
 
   // The cases still on the lot: processing what is left is the common case.
@@ -315,13 +323,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
   const submit = async (inProgress = false) => {
     setSaving(true);
     try {
-      const payload = {
-        ...draft,
-        inProgress,
-        pulls: draft.pulls
-          .map((p) => ({ cases: parseInt(p.cases, 10) }))
-          .filter((p) => Number.isInteger(p.cases) && p.cases > 0),
-      };
+      const payload = { ...draft, inProgress, pulls: cleanPulls(draft.pulls) };
       const editing = Boolean(draft.reportId);
       const wasRejected = draft.status === "rejected";
       if (editing) {
@@ -429,10 +431,14 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
 
   // Opening a draft decides the section with it, rather than an effect
   // correcting the panel after it has already painted.
+  // The draft as last opened or saved, so a waiting report can tell it has unsaved edits.
+  const savedDraft = useRef(null);
   const openDraft = (d) => {
+    savedDraft.current = JSON.stringify(d);
     setProductOpen(productIncomplete(d));
     setDraft(d);
   };
+  const unsaved = Boolean(draft && savedDraft.current !== JSON.stringify(draft));
 
   const openReport = (r) => openDraft({
     readOnly: r.status === "accepted",
@@ -446,6 +452,23 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
     inedibleWeight: r.inedibleWeight != null ? String(r.inedibleWeight) : "",
     furtherProcessing: Boolean(r.furtherProcessing),
   });
+
+  // Reception's edits to a waiting report: saved, still waiting, window stays open to accept.
+  const saveReview = async () => {
+    setSaving(true);
+    try {
+      const { data } = await axiosInstance.patch(`/processing-reports/${draft.reportId}`, {
+        ...draft, inProgress: false, pulls: cleanPulls(draft.pulls),
+      });
+      await fetchReports();
+      openReport(data);
+      toast({ status: "success", position: "top", duration: 4000, title: "Changes saved",
+        description: "Still waiting. Accept it when it is right." });
+    } catch (err) {
+      toast({ status: "error", position: "top", duration: 7000, isClosable: true,
+        title: "Could not save", description: err.response?.data?.error || err.message });
+    } finally { setSaving(false); }
+  };
 
   return (
     <Box>
@@ -803,7 +826,7 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 Print
               </Button>
               <Button size="md" variant="ghost" onClick={closeDraft}>
-                {draft?.readOnly || reviewing ? "Close" : "Cancel"}
+                Close
               </Button>
               {/* A run is opened when it starts and confirmed when it ends.
                   Saving while it is still running keeps it off reception's
@@ -816,7 +839,15 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                 </Button>
               )}
               {reviewing && (
+                <Button size="md" variant={unsaved ? "solid" : "outline"} colorScheme="blue"
+                  onClick={saveReview} isLoading={saving} isDisabled={!unsaved || !canSubmit}>
+                  Save changes
+                </Button>
+              )}
+              {/* Accept takes the saved report, so unsaved edits would be dropped. */}
+              {reviewing && (
                 <Button size="md" colorScheme="blue" isLoading={busyId === draft.reportId}
+                  isDisabled={unsaved} title={unsaved ? "Save your changes first" : undefined}
                   onClick={() => setChecking(reports.find((x) => x.reportId === draft.reportId) || draft)}>
                   Accept
                 </Button>
@@ -836,7 +867,8 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
               {!draft?.readOnly && !reviewing && (
                 <Button size="md" colorScheme="blue" onClick={() => submit(false)}
                   isLoading={saving} isDisabled={!canSubmit}>
-                  {draft?.status === "in_progress" ? "Confirm run" : "Submit report"}
+                  {draft?.status === "in_progress" ? "Confirm run"
+                    : draft?.status === "submitted" ? "Save changes" : "Submit report"}
                 </Button>
               )}
             </Flex>
@@ -853,8 +885,10 @@ const ProcessingReportsTab = ({ refreshSignal = 0 }) => {
                     ? " You can correct the details and the cases processed; only the difference moves on the lot. Un-accept from the list to change the lot or date."
                     : " Reception can correct it or un-accept it from the list.")
                 : reviewing
-                  ? "Waiting for your check. Accepting takes the cases off the lot; sending it back returns it to the floor."
-                  : "Submitting files the report. Cases come off the lot when reception accepts it."}
+                  ? "Waiting for your check. Fix anything and Save changes first; accepting takes the cases off the lot, sending it back returns it to the floor."
+                  : draft.status === "submitted"
+                    ? "Already sent to reception. Saving changes keeps it waiting for them."
+                    : "Submitting files the report. Cases come off the lot when reception accepts it."}
             </Text>
 
             <Grid {...SHEET_GRID} mb={5}>
