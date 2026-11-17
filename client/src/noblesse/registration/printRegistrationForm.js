@@ -1,5 +1,5 @@
 import ntiLogo from "../../assets/nti.jpg";
-import { esc, printDocument } from "../common/printWindow";
+import { esc, printDocument, fitOnePage } from "../common/printWindow";
 import { mixShared, MIXED_TEXT } from "../lots/mixShared";
 
 // Opens a printable "Registration Form" (Noblesse Trading Inc.) in a new tab.
@@ -198,6 +198,7 @@ const printRegistrationForm = (form = {}) => {
             </button>
           </div>
         </div>
+        ${fitOnePage(".sheet", 9.75)}
       </body>
     </html>`;
 

@@ -1,4 +1,4 @@
-import { esc } from "../../noblesse/common/printWindow";
+import { esc, fitOnePage } from "../../noblesse/common/printWindow";
 
 // What the AdamsFoods Incoming Form and Pallet Receiving Sheet share: black and white, write-in lines, one page.
 
@@ -61,11 +61,4 @@ export const PRINT_BUTTON =
   '<div class="no-print"><button onclick="window.print()" style="padding:8px 18px;font-size:14px;cursor:pointer">Print</button></div>';
 
 // Always one page: anything taller is shrunk to fit, never run onto a second sheet.
-export const FIT_ONE_PAGE = `<script>
-  (function () {
-    var paper = document.querySelector(".paper");
-    var limit = (11 - 0.9) * 96 - 8;
-    var h = paper.getBoundingClientRect().height;
-    if (h > limit) paper.style.zoom = String(limit / h);
-  })();
-</script>`;
+export const FIT_ONE_PAGE = fitOnePage(".paper", 11 - 0.9 - 0.1);

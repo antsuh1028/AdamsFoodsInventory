@@ -1,5 +1,5 @@
 import { toDisplay } from "../../utils/weight";
-import { esc, printDocument } from "../common/printWindow";
+import { esc, printDocument, fitOnePage } from "../common/printWindow";
 
 // The packing list for an outgoing load: one line per lot, with a total.
 //
@@ -136,6 +136,7 @@ const printPackingList = (shipment = {}) => {
             <button onclick="window.print()">Print</button>
           </div>
         </div>
+        ${fitOnePage(".sheet", 9.4)}
       </body>
     </html>`;
 

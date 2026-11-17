@@ -272,6 +272,22 @@ const printOutgoingTag = ({
             Print
           </button>
         </div>
+        <script>
+          // A tag too long for its half sheet shrinks inside it, so the cut still falls mid-page.
+          (function () {
+            function fit() {
+              document.querySelectorAll(".tag").forEach(function (t) {
+                t.style.zoom = ""; t.style.height = "auto";
+                var r = (5 * 96) / t.getBoundingClientRect().height;
+                t.style.height = "";
+                if (r < 1) { t.style.zoom = String(r); t.style.height = (5 / r) + "in"; }
+              });
+            }
+            fit();
+            window.addEventListener("load", fit);
+            window.addEventListener("beforeprint", fit);
+          })();
+        </script>
       </body>
     </html>`;
 

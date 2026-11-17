@@ -1,7 +1,7 @@
 import {
   kgToLb, toDisplayHundredths, fromHundredths,
 } from "../../utils/weight";
-import { esc, printDocument } from "../common/printWindow";
+import { esc, printDocument, fitOnePage } from "../common/printWindow";
 
 // The Noblesse Trading tally sheet, reproduced from the paper form.
 
@@ -186,6 +186,7 @@ const printWeightManifest = ({
             </button>
           </div>
         </div>
+        ${fitOnePage(".sheet", 9.35)}
       </body>
     </html>`;
 

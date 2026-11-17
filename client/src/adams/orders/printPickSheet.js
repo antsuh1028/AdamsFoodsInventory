@@ -1,5 +1,5 @@
 import logo from "../../assets/AdamsWings.png";
-import { esc, printDocument } from "../../noblesse/common/printWindow";
+import { esc, printDocument, fitOnePage } from "../../noblesse/common/printWindow";
 import { isOrdered, casesOf, lbsOf, lbText, estCases, wantText } from "./orderMath";
 
 // The floor's copy of an order: the paper sheet the office used to print from
@@ -73,7 +73,7 @@ const printPickSheet = (order, opened = null) => {
 <div class="no-print"><button onclick="window.print()" style="padding:8px 18px;font-size:14px;cursor:pointer">Print</button></div>
 <div class="paper">
   <table class="acct"><tr><td style="width:30%">Order# <b>${esc(order.orderNo)}</b></td>
-    <td style="text-align:center"><img class="logo" src="${logo}" alt="Adams Foods"></td>
+    <td style="text-align:center"><img class="logo" src="${logo}" alt="AdamsFoods"></td>
     <td style="width:30%;text-align:right">${order.po ? `PO# <b>${esc(order.po)}</b>` : "Inv#_______________"}</td></tr></table>
   <table class="head"><tr><td style="width:90px">Customer</td><td class="v">${esc(order.customerName)}</td>
       <td style="width:50px;text-align:right">Date:</td><td class="v" style="width:120px">${esc(usDate(order.orderDate))}</td></tr>
@@ -97,6 +97,7 @@ const printPickSheet = (order, opened = null) => {
     paper.style.minHeight = "";
   })();
 </script>
+${fitOnePage(".paper", 10.1)}
 </body></html>`;
   return printDocument(html, opened);
 };

@@ -10,6 +10,28 @@ export const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
 ));
 
+// A script that shrinks `selector` to fit one page `limitIn` inches tall; rerun once images load and before printing.
+export const fitOnePage = (selector, limitIn) => `<script>
+  (function () {
+    var limit = ${Number(limitIn)} * 96;
+    function fit() {
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return;
+      el.style.zoom = "";
+      // Borders stay at least a pixel when zoomed, so one pass lands short; measure again until it fits.
+      for (var z = 1, i = 0; i < 6; i++) {
+        var h = el.getBoundingClientRect().height;
+        if (h <= limit) break;
+        z = z * (limit / h) * 0.995;
+        el.style.zoom = String(z);
+      }
+    }
+    fit();
+    window.addEventListener("load", fit);
+    window.addEventListener("beforeprint", fit);
+  })();
+</script>`;
+
 // Open a built document in a new tab. Returns false when the popup was
 // blocked, which is the caller's only failure case — everything before this is
 // string building and cannot throw.

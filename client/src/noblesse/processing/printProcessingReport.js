@@ -1,6 +1,6 @@
 import ntiLogo from "../../assets/nti.jpg";
 import { fmtDateTime } from "../common/shared";
-import { esc, printDocument } from "../common/printWindow";
+import { esc, printDocument, fitOnePage } from "../common/printWindow";
 
 // Opens a printable "Processing Report" in a new tab, laid out like the
 // registration form so the two read as one document family — same masthead,
@@ -156,6 +156,7 @@ const printProcessingReport = (report = {}, { lotLine = null } = {}) => {
             </button>
           </div>
         </div>
+        ${fitOnePage(".sheet", 9.75)}
       </body>
     </html>`;
 
