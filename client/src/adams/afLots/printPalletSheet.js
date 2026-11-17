@@ -2,7 +2,7 @@ import logo from "../../assets/AdamsWings.png";
 import { esc, printDocument } from "../../noblesse/common/printWindow";
 import { val, field, check, pacificDay, idBox, FORM_CSS, PRINT_BUTTON, FIT_ONE_PAGE } from "./afFormParts";
 
-// The Pallet Receiving Sheet: one pallet of a delivery, under that delivery's Incoming Form.
+// The Pallet Incoming Sheet: one pallet of a delivery, under that delivery's Incoming Form.
 // Each item on the pallet gets its own heading and its own box weights, ten to a row.
 // No argument prints a blank sheet.
 const BLANK_ITEMS = 2;
@@ -30,7 +30,7 @@ const printPalletSheet = (sheet = {}) => {
       : "Scanned, not registered yet";
 
   const html = `<!doctype html><html><head><meta charset="utf-8">
-<title>Pallet Receiving Sheet${sheet.lotNumber ? ` — ${esc(sheet.lotNumber)} pallet ${esc(sheet.palletNo || "")}` : ""}</title>
+<title>Pallet Incoming Sheet${sheet.lotNumber ? ` — ${esc(sheet.lotNumber)} pallet ${esc(sheet.palletNo || "")}` : ""}</title>
 <style>${FORM_CSS}
   table.tally { width: 100%; border-collapse: collapse; border: 1.5px solid #000; }
   .tally tr.ih td { border-top: 1.5px solid #000; border-bottom: 1px solid #000; padding: 4px 8px; font-size: 13px; font-weight: 700; background: #f0f0f0; }
@@ -47,7 +47,7 @@ ${PRINT_BUTTON}
     <img src="${logo}" alt="AdamsFoods">
     ${idBox([["Lot #", sheet.lotNumber], ["Pallet #", sheet.palletNo], ["AF PO #", sheet.afPo], ["Date received", sheet.dateReceived]])}
   </div>
-  <h1>PALLET RECEIVING SHEET</h1>
+  <h1>PALLET INCOMING SHEET</h1>
   <div class="sub">ADAMSFOODS · ONE SHEET PER PALLET · FILED WITH INCOMING FORM ${val(sheet.lotNumber) || "__________"}</div>
 
   <h2><span class="k">1</span>Condition of this pallet</h2>

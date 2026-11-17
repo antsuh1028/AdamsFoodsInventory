@@ -1,6 +1,6 @@
 import { esc, fitOnePage } from "../../noblesse/common/printWindow";
 
-// What the AdamsFoods Incoming Form and Pallet Receiving Sheet share: black and white, write-in lines, one page.
+// What the AdamsFoods Incoming Form and Pallet Incoming Sheet share: black and white, write-in lines, one page.
 
 export const val = (x) => (x === null || x === undefined || x === "" ? "" : esc(x));
 

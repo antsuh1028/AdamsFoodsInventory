@@ -999,7 +999,7 @@ const steps = async () => {
       updated_at    TIMESTAMPTZ
     )
   `);
-  // A pallet's receiving sheet, filled in after its boxes are scanned. One per pallet; editing replaces it.
+  // A pallet's Pallet Incoming Sheet, filled in after its boxes are scanned. One per pallet; editing replaces it.
   await run("af_pallet_registrations", `
     CREATE TABLE IF NOT EXISTS af_pallet_registrations (
       tenant_id     UUID NOT NULL REFERENCES tenants(id),

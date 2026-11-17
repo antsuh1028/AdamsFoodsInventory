@@ -2,7 +2,7 @@ import logo from "../../assets/AdamsWings.png";
 import { esc, printDocument } from "../../noblesse/common/printWindow";
 import { val, field, check, pacificDay, idBox, FORM_CSS, PRINT_BUTTON, FIT_ONE_PAGE } from "./afFormParts";
 
-// The Incoming Form: one delivery, the parent of its pallets' receiving sheets.
+// The Incoming Form: one delivery, the parent of its pallets' Pallet Incoming Sheets.
 // Lists every pallet, a row per item on it, so a mixed pallet shows what it holds.
 // No argument prints a blank form.
 const BLANK_ROWS = 10;
@@ -52,7 +52,7 @@ ${PRINT_BUTTON}
     ${idBox([["Lot #", form.lotNumber], ["AF PO #", reg.afPo], ["Pallets", filled ? pallets.length : ""], ["Date received", form.dateReceived]])}
   </div>
   <h1>INCOMING FORM</h1>
-  <div class="sub">ADAMSFOODS · RECEIVING · ONE FORM PER DELIVERY · EACH PALLET HAS ITS OWN RECEIVING SHEET</div>
+  <div class="sub">ADAMSFOODS · RECEIVING · ONE FORM PER DELIVERY · EACH PALLET HAS ITS OWN PALLET INCOMING SHEET</div>
 
   <div class="manifest"><span class="big">${reg.manifestAttached ? "&#10003;" : ""}</span><b>MANIFEST / BILL OF LADING ATTACHED</b></div>
 

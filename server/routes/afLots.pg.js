@@ -9,6 +9,7 @@ const { pacificToday, dayOfYearFromDate, dateFromDayOfYear, daysInYear } = requi
 const { toPounds, toThousandths } = require("../utils/weight");
 const validLocations = require("../utils/locations");
 const { seesValue } = require("../utils/afValue");
+const { MASTER } = require("../middleware/roles");
 
 const PRICE_RE = /^\d{1,6}(\.\d{1,4})?$/;
 const MAX_BOX_THOUSANDTHS = 2000n * 1000n;
@@ -128,7 +129,7 @@ const fmtRegistration = (r) => ({
   updatedAt: r.updated_at,
 });
 
-// The two forms: a delivery's incoming form (the parent) and each pallet's receiving sheet.
+// The two forms: a delivery's Incoming Form (the parent) and each pallet's Pallet Incoming Sheet.
 const DELIVERY_FORM = {
   text: { afPo: 30, timeReceived: 10, carrier: 60, bol: 60, trailerSeal: 60, remarks: 500, receivedBy: 40, checkedBy: 40 },
   temps: ["truckTemp"], counts: [], flags: ["manifestAttached", "countMatches"],
@@ -140,6 +141,10 @@ const PALLET_FORM = {
   required: ["checkedBy", "Say who checked this pallet."],
 };
 const TEMP_RE = /^-?\d{1,3}(\.\d)?$/;
+// A saved form is anyone's to fix on the day it was first saved; after that, these roles only.
+const LATE_EDIT_ROLES = [MASTER, "admin", "manager"];
+const sameDay = (table) => `(${table}.registered_at AT TIME ZONE 'America/Los_Angeles')::date = (now() AT TIME ZONE 'America/Los_Angeles')::date`;
+const LOCKED = { code: "FORM_LOCKED", error: "This form was saved on an earlier day. Only an admin or manager can change it now." };
 // A form as typed, checked field by field against its spec; unknown keys are dropped.
 const readForm = (body, spec) => {
   const b = body || {};
@@ -479,7 +484,6 @@ router.patch("/af-lots/:id/boxes/:boxId", verifyToken, async (req, res) => {
   }
 });
 
-// Put a pallet away: its location in the freezer, which every box on it takes.
 // The delivery's incoming form, the parent of its pallets' sheets. Saving again edits it.
 router.put("/af-lots/:id/registration", verifyToken, async (req, res) => {
   const id = Number(req.params.id);
@@ -492,9 +496,14 @@ router.put("/af-lots/:id/registration", verifyToken, async (req, res) => {
        SELECT $1, af_lot_id, $3::jsonb, $4 FROM af_lots WHERE af_lot_id = $2 AND tenant_id = $1
        ON CONFLICT (af_lot_id)
          DO UPDATE SET form = EXCLUDED.form, updated_by = EXCLUDED.registered_by, updated_at = now()
+         WHERE $5 OR ${sameDay("af_lot_registrations")}
        RETURNING form, registered_by, registered_at, updated_by, updated_at`,
-      [req.tenantId, id, JSON.stringify(form), req.username || null]);
-    if (!rows.length) return res.status(404).json({ error: "Lot not found" });
+      [req.tenantId, id, JSON.stringify(form), req.username || null, LATE_EDIT_ROLES.includes(req.role)]);
+    if (!rows.length) {
+      // Nothing written: no such lot, or a form from an earlier day this role may not change.
+      const lot = await pool.query("SELECT 1 FROM af_lots WHERE af_lot_id = $1 AND tenant_id = $2", [id, req.tenantId]);
+      return lot.rows.length ? res.status(403).json(LOCKED) : res.status(404).json({ error: "Lot not found" });
+    }
     res.json(fmtRegistration(rows[0]));
   } catch (err) {
     console.error("register af delivery:", err);
@@ -502,7 +511,7 @@ router.put("/af-lots/:id/registration", verifyToken, async (req, res) => {
   }
 });
 
-// Registers a pallet: its receiving sheet, saved after its boxes are scanned. Saving again edits it.
+// Registers a pallet: its Pallet Incoming Sheet, saved after its boxes are scanned. Saving again edits it.
 router.put("/af-lots/:id/pallets/:palletNo/registration", verifyToken, async (req, res) => {
   const id = Number(req.params.id);
   const palletNo = asPallet(req.params.palletNo);
@@ -522,8 +531,10 @@ router.put("/af-lots/:id/pallets/:palletNo/registration", verifyToken, async (re
        VALUES ($1, $2, $3, $4::jsonb, $5)
        ON CONFLICT (af_lot_id, pallet_no)
          DO UPDATE SET form = EXCLUDED.form, updated_by = EXCLUDED.registered_by, updated_at = now()
+         WHERE $6 OR ${sameDay("af_pallet_registrations")}
        RETURNING pallet_no, form, registered_by, registered_at, updated_by, updated_at`,
-      [req.tenantId, id, palletNo, JSON.stringify(form), req.username || null]);
+      [req.tenantId, id, palletNo, JSON.stringify(form), req.username || null, LATE_EDIT_ROLES.includes(req.role)]);
+    if (!rows.length) return res.status(403).json(LOCKED);
     res.json(fmtRegistration(rows[0]));
   } catch (err) {
     console.error("register af pallet:", err);
@@ -531,6 +542,7 @@ router.put("/af-lots/:id/pallets/:palletNo/registration", verifyToken, async (re
   }
 });
 
+// Put a pallet away: its location in the freezer, which every box on it takes.
 router.put("/af-lots/:id/pallets/:palletNo", verifyToken, async (req, res) => {
   const id = Number(req.params.id);
   const palletNo = asPallet(req.params.palletNo);

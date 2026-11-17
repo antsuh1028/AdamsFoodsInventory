@@ -25,7 +25,7 @@ import getRole from "../../utils/getRole";
 
 const EMPTY = { lotNumber: "", vendor: "", description: "" };
 const NO_ITEM = { description: "", pricePerLb: "" };
-// The delivery's incoming form and a pallet's receiving sheet, while being filled in.
+// The delivery's incoming form and a pallet's Pallet Incoming Sheet, while being filled in.
 const NO_DELIVERY = { afPo: "", timeReceived: "", carrier: "", bol: "", trailerSeal: "", truckTemp: "", remarks: "",
   receivedBy: "", checkedBy: "", manifestAttached: false, countMatches: false };
 const NO_PALLET = { productTemp: "", damagedBoxes: "", remarks: "", checkedBy: "", packagingOk: false, labelsReadable: false };
@@ -36,6 +36,11 @@ const nowPacific = () => new Date().toLocaleTimeString("en-US",
   { timeZone: "America/Los_Angeles", hour: "2-digit", minute: "2-digit", hour12: false });
 // Prices are set later by these roles, never at receiving; the server enforces it.
 const canPrice = () => ["admin", "manager"].includes(getRole());
+const pacificDate = (when) => new Date(when).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+// A saved form is anyone's to fix on the day it was first saved; after that, admin or manager only. The server enforces it.
+const canEditForm = (r) => !r || ["master", "admin", "manager"].includes(getRole())
+  || pacificDate(r.registeredAt) === pacificDate(Date.now());
+const LOCKED_TIP = "Saved on an earlier day. Only an admin or manager can change it now.";
 
 const dollars = (n) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -193,7 +198,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
   // Where each pallet was put away, by pallet number.
   const [locations, setLocations] = useState({});
   const [locatedBy, setLocatedBy] = useState({});
-  // The delivery's saved incoming form; each pallet's saved receiving sheet, by pallet number;
+  // The delivery's saved incoming form; each pallet's saved Pallet Incoming Sheet, by pallet number;
   // and whichever of the two is being filled in ({ kind: "delivery" | "pallet", ... }), or null.
   const [delivery, setDelivery] = useState(null);
   const [registrations, setRegistrations] = useState({});
@@ -541,7 +546,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
     if (!ok) setProblem("Allow pop-ups to print the form.");
   };
 
-  // One pallet's Pallet Receiving Sheet: its boxes as scanned, its sheet as saved, the rest left for pen.
+  // One pallet's Pallet Incoming Sheet: its boxes as scanned, its sheet as saved, the rest left for pen.
   const printSheet = (n) => {
     const list = onPallet(n);
     const r = registrations[n];
@@ -610,8 +615,9 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
             {[lot.vendor, `${items.length} item${items.length === 1 ? "" : "s"}`].filter(Boolean).join(" · ")}
           </Text>
           <Flex gap={2} mt={2} wrap="wrap" align="center">
-            <Button size="xs" colorScheme="teal" variant={delivery ? "outline" : "solid"} {...quiet} onClick={openDelivery}>
-              {delivery ? "Edit incoming form" : "Fill in incoming form"}
+            <Button size="xs" colorScheme="teal" variant={delivery ? "outline" : "solid"} {...quiet} onClick={openDelivery}
+              isDisabled={!canEditForm(delivery)} title={canEditForm(delivery) ? undefined : LOCKED_TIP}>
+              {!delivery ? "Fill in incoming form" : canEditForm(delivery) ? "Edit incoming form" : "Incoming form locked"}
             </Button>
             <Button size="xs" variant="outline" {...quiet} onClick={printDelivery} isDisabled={pending > 0}>
               Print incoming form
@@ -724,8 +730,11 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
         </Button>
         <Button size="sm" ml="auto" {...quiet}
           colorScheme="teal" variant={registrations[pallet] ? "outline" : "solid"}
-          onClick={() => openPallet(pallet)} isDisabled={pending > 0 || onPallet(pallet).length === 0}>
-          {registrations[pallet] ? `Edit pallet ${pallet} sheet` : `Register pallet ${pallet}`}
+          onClick={() => openPallet(pallet)}
+          isDisabled={pending > 0 || onPallet(pallet).length === 0 || !canEditForm(registrations[pallet])}
+          title={canEditForm(registrations[pallet]) ? undefined : LOCKED_TIP}>
+          {!registrations[pallet] ? `Register pallet ${pallet}`
+            : canEditForm(registrations[pallet]) ? `Edit pallet ${pallet} sheet` : `Pallet ${pallet} sheet locked`}
         </Button>
         <Button size="sm" variant="outline" {...quiet}
           onClick={() => printSheet(pallet)} isDisabled={pending > 0 || onPallet(pallet).length === 0}>
@@ -737,7 +746,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
         </Button>
       </Flex>
 
-      {/* The delivery's incoming form, or step two for a pallet: its receiving sheet once its boxes are scanned. */}
+      {/* The delivery's incoming form, or step two for a pallet: its Pallet Incoming Sheet once its boxes are scanned. */}
       {regForm && (
         <Box p={3} bg="gray.50" border="1px solid" borderColor="gray.300" borderRadius="md">
           <Flex justify="space-between" align="baseline" wrap="wrap" gap={2} mb={2}>
