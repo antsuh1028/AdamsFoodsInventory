@@ -143,7 +143,7 @@ const features = [
         "Extracted fields: lot number, vendor, species, weight, pack date, and more.",
         "Species is automatically converted to uppercase after extraction.",
         "Always review extracted values before confirming — OCR can make mistakes.",
-        "Supports Adams Foods pallet forms, pick sheets, and Bill of Lading grid formats.",
+        "Supports AdamsFoods pallet forms, pick sheets, and Bill of Lading grid formats.",
       ],
     },
     ko: {
@@ -156,7 +156,7 @@ const features = [
         "추출 필드: 로트 번호, 공급업체, 종류, 무게, 포장일 등.",
         "추출 후 종류(Species)는 자동으로 대문자로 변환됩니다.",
         "확인하기 전에 항상 추출된 값을 검토하세요 — OCR이 실수할 수 있습니다.",
-        "Adams Foods 팔레트 양식, 픽 시트, Bill of Lading 그리드 형식을 지원합니다.",
+        "AdamsFoods 팔레트 양식, 픽 시트, Bill of Lading 그리드 형식을 지원합니다.",
       ],
     },
   },

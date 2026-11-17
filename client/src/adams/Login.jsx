@@ -91,7 +91,7 @@ const Login = () => {
         {/* Logo */}
         <Image
           src={adamsWings}
-          alt="Adams Foods"
+          alt="AdamsFoods"
           height="56px"
           objectFit="contain"
         />

@@ -634,7 +634,7 @@ const NoblesseScreen = () => {
                 {drawerBtn("Scanner Diagnostic", () => setScanDiagOpen(true))}
                 {drawerBtn("Scale Diagnostic", () => setScaleDiagOpen(true))}
                 <Divider />
-                {drawerBtn("← Adams Foods", () => navigate("/home"))}
+                {drawerBtn("← AdamsFoods", () => navigate("/home"))}
               </>
             )}
           </Stack>

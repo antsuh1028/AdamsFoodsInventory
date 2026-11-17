@@ -202,7 +202,7 @@ const OrderEditor = ({ orderId = null, customerId = null, rail = null, onChanged
       <div className="sheet">
         <div className="sh-top">
           <span className="sh-no">{head.orderNo ? <>Order# <b>{head.orderNo}</b></> : <>Order# <span className="empty">given on save</span></>}</span>
-          <img src={logo} alt="Adams Foods" />
+          <img src={logo} alt="AdamsFoods" />
           <span className="from">
             {template ? `Template: ${template.name}${template.from ? `, as of ${template.from}` : ""}` : ""}
           </span>

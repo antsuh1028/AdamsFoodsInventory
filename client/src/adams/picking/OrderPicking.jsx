@@ -252,7 +252,7 @@ const PickingBoard = ({ inWindow = false, scanning = true }) => {
               return (
                 <div className={`sheet${done ? " done" : ""}`} key={o.orderId}>
                   <div className="sh-head">
-                    <div className="acct"><span>Order# {o.orderNo}</span><img src={logo} alt="Adams Foods" /><span>{o.po ? `PO# ${o.po}` : ""}</span></div>
+                    <div className="acct"><span>Order# {o.orderNo}</span><img src={logo} alt="AdamsFoods" /><span>{o.po ? `PO# ${o.po}` : ""}</span></div>
                     <span className="k">Customer</span><span className="cust">{o.customerName}</span>
                     <span className="k">Date</span><span>{o.orderDate}</span>
                     <span className="k">Ship/BL To</span><span>{o.shipTo || "—"}</span>
