@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert, AlertIcon, Badge, Box, Button, Flex, Input, Select, SimpleGrid, Spinner, Stack, Table, Tbody, Td, Text, Th, Thead, Tr,
+  Alert, AlertIcon, Badge, Box, Button, Checkbox, Flex, Input, Select, SimpleGrid, Spinner, Stack, Table, Tbody, Td, Text, Th, Thead, Tr,
   AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter,
 } from "@chakra-ui/react";
 import { checkTypedBox, typedBarcode } from "./typedBoxCheck";
@@ -14,6 +14,8 @@ import { isLocation, couldBeLocation } from "../../utils/freezerLayout";
 import ITEM_CODES from "../../utils/itemCodes";
 import printOutgoingTag from "../../noblesse/outgoing/printOutgoingTag";
 import printWeightManifest from "../../noblesse/weightManifest/printWeightManifest";
+import printIncomingForm from "./printIncomingForm";
+import printPalletSheet from "./printPalletSheet";
 import NumericKeypad from "../../noblesse/weighing/NumericKeypad";
 import { fmtDateOnly } from "../../noblesse/common/shared";
 import getRole from "../../utils/getRole";
@@ -23,6 +25,15 @@ import getRole from "../../utils/getRole";
 
 const EMPTY = { lotNumber: "", vendor: "", description: "" };
 const NO_ITEM = { description: "", pricePerLb: "" };
+// The delivery's incoming form and a pallet's receiving sheet, while being filled in.
+const NO_DELIVERY = { afPo: "", timeReceived: "", carrier: "", bol: "", trailerSeal: "", truckTemp: "", remarks: "",
+  receivedBy: "", checkedBy: "", manifestAttached: false, countMatches: false };
+const NO_PALLET = { productTemp: "", damagedBoxes: "", remarks: "", checkedBy: "", packagingOk: false, labelsReadable: false };
+// A saved form as the inputs hold it: text, with ticks left as ticks.
+const asInputs = (saved) => (saved
+  ? Object.fromEntries(Object.entries(saved).map(([k, x]) => [k, typeof x === "boolean" ? x : String(x)])) : {});
+const nowPacific = () => new Date().toLocaleTimeString("en-US",
+  { timeZone: "America/Los_Angeles", hour: "2-digit", minute: "2-digit", hour12: false });
 // Prices are set later by these roles, never at receiving; the server enforces it.
 const canPrice = () => ["admin", "manager"].includes(getRole());
 
@@ -101,6 +112,14 @@ const LotList = ({ onOpen }) => {
             onClick={() => { setTyping((t) => !t); setForm((f) => ({ ...f, lotNumber: "" })); }}>
             {typing ? "Issue the number instead" : "Type lot # instead"}
           </Button>
+          <Button size="xs" variant="link" ml="auto"
+            onClick={() => { if (!printIncomingForm()) setProblem("Allow pop-ups to print the form."); }}>
+            Blank incoming form
+          </Button>
+          <Button size="xs" variant="link"
+            onClick={() => { if (!printPalletSheet()) setProblem("Allow pop-ups to print the sheet."); }}>
+            Blank pallet sheet
+          </Button>
         </Flex>
       </Box>
 
@@ -173,6 +192,12 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
 
   // Where each pallet was put away, by pallet number.
   const [locations, setLocations] = useState({});
+  const [locatedBy, setLocatedBy] = useState({});
+  // The delivery's saved incoming form; each pallet's saved receiving sheet, by pallet number;
+  // and whichever of the two is being filled in ({ kind: "delivery" | "pallet", ... }), or null.
+  const [delivery, setDelivery] = useState(null);
+  const [registrations, setRegistrations] = useState({});
+  const [regForm, setRegForm] = useState(null);
   const [locationInput, setLocationInput] = useState("");
 
   // The scan station: the base's computer receives the scans; this screen points it here and watches.
@@ -199,6 +224,9 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
         setItems(data.items || []);
         setBoxes(data.boxes || []);
         setLocations(Object.fromEntries((data.pallets || []).map((p) => [p.palletNo, p.location])));
+        setLocatedBy(Object.fromEntries((data.pallets || []).map((p) => [p.palletNo, p.locatedBy])));
+        setRegistrations(Object.fromEntries((data.registrations || []).map((r) => [r.palletNo, r])));
+        setDelivery(data.registration || null);
         const kept = (data.boxes || []).filter((b) => !b.removedAt);
         pickPallet(Math.max(1, ...kept.map((b) => b.palletNo || 1)));
         const last = kept.filter((b) => b.itemId).pop();
@@ -351,6 +379,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
     try {
       const { data } = await axiosInstance.put(`/af-lots/${start.id}/pallets/${pallet}`, { location: locationInput });
       setLocations((m) => ({ ...m, [data.palletNo]: data.location }));
+      setLocatedBy((m) => ({ ...m, [data.palletNo]: data.locatedBy }));
       setLocationInput("");
       setProblem(null);
       if (document.activeElement) document.activeElement.blur();
@@ -418,6 +447,10 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
   const palletNos = [...new Set([...all.map(palletOf), pallet])].sort((a, b) => a - b);
   const onPallet = (n) => all.filter((b) => palletOf(b) === n);
   const ofItem = (list, id) => list.filter((b) => b.itemId === id);
+  // Labels with no serial seen more than once on this lot: two real boxes, or one box scanned twice.
+  const labelKey = (b) => [b.gtin, b.itemCode, b.weight, b.packDate, b.labelLot].join("|");
+  const repeats = all.filter((b) => !b.serial && b.raw).reduce((m, b) => m.set(labelKey(b), (m.get(labelKey(b)) || 0) + 1), new Map());
+  const isRepeat = (b) => !b.removedAt && !b.serial && b.raw && repeats.get(labelKey(b)) > 1;
   // Pallet by pallet, newest scan first within each, removed boxes included.
   const rows = [...new Set([...listed.map(palletOf), pallet])].sort((a, b) => a - b)
     .flatMap((n) => listed.filter((b) => palletOf(b) === n).reverse());
@@ -441,7 +474,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
     const sorted = [...list].sort((a, b) => order.indexOf(a.itemId) - order.indexOf(b.itemId));
     const here = [...new Set(sorted.map((b) => b.itemId))];
     const ok = printOutgoingTag({
-      company: "Adams Foods",
+      company: "AdamsFoods",
       heading: "RECEIVED — FOR THE AF FREEZER",
       lotNumber: lot.lotNumber,
       date: fmtDateOnly(list[0]?.scannedAt || lot.createdAt),
@@ -467,7 +500,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
     const vendorLots = [...new Set(list.map((b) => b.labelLot).filter(Boolean))];
     const pals = palletNos.filter((n) => ofItem(onPallet(n), id).length);
     printWeightManifest({
-      company: "Adams Foods",
+      company: "AdamsFoods",
       lotNumber: lot.lotNumber,
       date: fmtDateOnly(list[0]?.scannedAt || lot.createdAt),
       vendor: lot.vendor,
@@ -480,6 +513,91 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
     });
   };
 
+  // Each item on some boxes, with its box weights in scan order.
+  const itemsOf = (list) => items.filter((i) => ofItem(list, i.id).length).map((i) => {
+    const mine = ofItem(list, i.id);
+    return { code: [...new Set(mine.map((b) => b.itemCode).filter(Boolean))].join(", "),
+      description: i.description, cases: mine.length, lb: lbOf(mine),
+      avg: (Number(sumWeights(mine.map((b) => b.weight))) / mine.length).toFixed(2),
+      weights: mine.map((b) => toDisplay(b.weight)) };
+  });
+  const vendorLotsOf = (list) => [...new Set(list.map((b) => b.labelLot).filter(Boolean))].join(", ");
+  const stampOf = (r) => ({ registeredAt: r ? r.updatedAt || r.registeredAt : null, registeredBy: r ? r.updatedBy || r.registeredBy : null });
+
+  // The delivery's Incoming Form: its own details, then every pallet a row per item.
+  const printDelivery = () => {
+    const ok = printIncomingForm({
+      lotNumber: lot.lotNumber,
+      dateReceived: fmtDateOnly(all[0]?.scannedAt || lot.createdAt),
+      vendor: lot.vendor || "",
+      vendorLots: vendorLotsOf(all),
+      pallets: palletNos.filter((n) => onPallet(n).length).map((n) => ({
+        no: n, location: locations[n] || "", sheet: Boolean(registrations[n]), items: itemsOf(onPallet(n)) })),
+      totalCases: all.length,
+      totalLb: total,
+      reg: delivery ? delivery.form : {},
+      ...stampOf(delivery),
+    });
+    if (!ok) setProblem("Allow pop-ups to print the form.");
+  };
+
+  // One pallet's Pallet Receiving Sheet: its boxes as scanned, its sheet as saved, the rest left for pen.
+  const printSheet = (n) => {
+    const list = onPallet(n);
+    const r = registrations[n];
+    const ok = printPalletSheet({
+      lotNumber: lot.lotNumber,
+      palletNo: n,
+      afPo: delivery && delivery.form ? delivery.form.afPo : "",
+      dateReceived: fmtDateOnly(list[0]?.scannedAt || lot.createdAt),
+      vendor: lot.vendor || "",
+      vendorLots: vendorLotsOf(list),
+      location: locations[n] || "",
+      locatedBy: locations[n] ? locatedBy[n] || "" : "",
+      items: itemsOf(list),
+      totalCases: list.length,
+      totalLb: lbOf(list),
+      reg: r ? r.form : {},
+      ...stampOf(r),
+    });
+    if (!ok) setProblem("Allow pop-ups to print the sheet.");
+  };
+
+  // Opens a form with what was saved; a new incoming form starts with the time now.
+  const openDelivery = () => setRegForm({
+    ...NO_DELIVERY, timeReceived: delivery ? "" : nowPacific(), ...asInputs(delivery && delivery.form), kind: "delivery" });
+  const openPallet = (n) => setRegForm({
+    ...NO_PALLET, ...asInputs(registrations[n] && registrations[n].form), kind: "pallet", palletNo: n });
+  const saveRegistration = async () => {
+    const { kind, palletNo, ...fields } = regForm;
+    try {
+      if (kind === "delivery") {
+        const { data } = await axiosInstance.put(`/af-lots/${start.id}/registration`, fields);
+        setDelivery(data);
+      } else {
+        const { data } = await axiosInstance.put(`/af-lots/${start.id}/pallets/${palletNo}/registration`, fields);
+        setRegistrations((m) => ({ ...m, [data.palletNo]: data }));
+      }
+      setRegForm(null);
+      setProblem(null);
+      if (document.activeElement) document.activeElement.blur();
+    } catch (err) {
+      setProblem(errText(err));
+    }
+  };
+  const regInput = (key, label, opts = {}) => (
+    <Box gridColumn={opts.wide ? "1 / -1" : undefined}>
+      <Text fontSize="xs" color="gray.500" mb={1}>{label}</Text>
+      <Input size="sm" bg="white" value={regForm[key]} inputMode={opts.numeric ? "decimal" : undefined}
+        onChange={(e) => setRegForm({ ...regForm, [key]: opts.numeric || key === "remarks" ? e.target.value : upperInput(e) })} />
+    </Box>
+  );
+  const regCheck = (key, label) => (
+    <Checkbox isChecked={regForm[key]} onChange={(e) => setRegForm({ ...regForm, [key]: e.target.checked })}>{label}</Checkbox>
+  );
+  const isDelivery = regForm && regForm.kind === "delivery";
+  const regReady = regForm && (isDelivery ? regForm.receivedBy.trim() : regForm.checkedBy.trim());
+
   const quiet = { tabIndex: -1, onMouseDown: (e) => e.preventDefault() };
 
   return (
@@ -491,6 +609,17 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
           <Text fontSize="sm" color="gray.600">
             {[lot.vendor, `${items.length} item${items.length === 1 ? "" : "s"}`].filter(Boolean).join(" · ")}
           </Text>
+          <Flex gap={2} mt={2} wrap="wrap" align="center">
+            <Button size="xs" colorScheme="teal" variant={delivery ? "outline" : "solid"} {...quiet} onClick={openDelivery}>
+              {delivery ? "Edit incoming form" : "Fill in incoming form"}
+            </Button>
+            <Button size="xs" variant="outline" {...quiet} onClick={printDelivery} isDisabled={pending > 0}>
+              Print incoming form
+            </Button>
+            {delivery && <Badge colorScheme={delivery.form.manifestAttached ? "green" : "red"}>
+              {delivery.form.manifestAttached ? "Manifest attached ✓" : "No manifest yet"}
+            </Badge>}
+          </Flex>
         </Box>
         <Box textAlign="right" style={{ fontVariantNumeric: "tabular-nums" }}>
           <Text fontSize="3xl" fontWeight="800" lineHeight="1">{boxes ? all.length : "…"}</Text>
@@ -501,8 +630,8 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
 
       {/* The latest scan, large enough to read at arm's length. */}
       <Box p={4} borderRadius="lg" border="2px solid" textAlign="center" style={{ fontVariantNumeric: "tabular-nums" }}
-        bg={!lastScan ? "gray.50" : lastScan.ok ? "green.50" : "red.50"}
-        borderColor={!lastScan ? "gray.200" : lastScan.ok ? "green.300" : "red.300"}>
+        bg={!lastScan ? "gray.50" : !lastScan.ok ? "red.50" : lastScan.box.sameLabelAs ? "orange.50" : "green.50"}
+        borderColor={!lastScan ? "gray.200" : !lastScan.ok ? "red.300" : lastScan.box.sameLabelAs ? "orange.400" : "green.300"}>
         {!lastScan ? (
           <Text fontSize="md" color="gray.500">Waiting for a scan. Each box's weight shows here.</Text>
         ) : lastScan.ok ? (
@@ -519,6 +648,12 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
               {lastScan.box.restored ? " · restored" : ""}
             </Text>
             {labelOf(lastScan.box) && <Text fontSize="sm" color="gray.600">{labelOf(lastScan.box)}</Text>}
+            {lastScan.box.sameLabelAs && (
+              <Text mt={2} fontSize="md" fontWeight="700" color="orange.700">
+                Same label as {lastScan.box.sameLabelAs.length === 1 ? "a box" : `${lastScan.box.sameLabelAs.length} boxes`} already on this lot.
+                {" "}If it is the same box scanned twice, remove one below; two identical boxes are fine.
+              </Text>
+            )}
           </>
         ) : (
           <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="700" color="red.700">{lastScan.text}</Text>
@@ -579,6 +714,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
             colorScheme={n === pallet ? "blue" : "gray"} variant={n === pallet ? "solid" : "outline"}
             onClick={() => pickPallet(n)} style={{ fontVariantNumeric: "tabular-nums" }}>
             Pallet {n}{locations[n] ? ` @ ${locations[n]}` : ""} · {onPallet(n).length} · {lbOf(onPallet(n))} lb
+            {registrations[n] ? " · registered ✓" : ""}
           </Button>
         ))}
         <Button size="sm" variant="ghost" colorScheme="teal" {...quiet}
@@ -586,11 +722,78 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
           isDisabled={onPallet(Math.max(...palletNos)).length === 0}>
           + New pallet
         </Button>
-        <Button size="sm" ml="auto" variant="outline" {...quiet}
+        <Button size="sm" ml="auto" {...quiet}
+          colorScheme="teal" variant={registrations[pallet] ? "outline" : "solid"}
+          onClick={() => openPallet(pallet)} isDisabled={pending > 0 || onPallet(pallet).length === 0}>
+          {registrations[pallet] ? `Edit pallet ${pallet} sheet` : `Register pallet ${pallet}`}
+        </Button>
+        <Button size="sm" variant="outline" {...quiet}
+          onClick={() => printSheet(pallet)} isDisabled={pending > 0 || onPallet(pallet).length === 0}>
+          Print pallet {pallet} sheet
+        </Button>
+        <Button size="sm" variant="outline" {...quiet}
           onClick={() => printTag(pallet)} isDisabled={pending > 0 || onPallet(pallet).length === 0}>
           Print Pallet {pallet} tag
         </Button>
       </Flex>
+
+      {/* The delivery's incoming form, or step two for a pallet: its receiving sheet once its boxes are scanned. */}
+      {regForm && (
+        <Box p={3} bg="gray.50" border="1px solid" borderColor="gray.300" borderRadius="md">
+          <Flex justify="space-between" align="baseline" wrap="wrap" gap={2} mb={2}>
+            <Text fontWeight="700">
+              {isDelivery
+                ? `Incoming form · lot ${lot.lotNumber} · ${palletNos.filter((n) => onPallet(n).length).length} pallets · ${all.length} boxes`
+                : `Register pallet ${regForm.palletNo} · ${[...new Set(onPallet(regForm.palletNo).map((b) => itemName(b.itemId)))].join(" + ")}`
+                  + ` · ${onPallet(regForm.palletNo).length} boxes · ${lbOf(onPallet(regForm.palletNo))} lb`}
+            </Text>
+            <Text fontSize="xs" color="gray.500">Scanning is paused while you type in this form.</Text>
+          </Flex>
+          {isDelivery ? (
+            <>
+              {/* The manifest is the one check that must never be missed. */}
+              <Box p={3} mb={3} bg="white" border="3px solid" borderColor={regForm.manifestAttached ? "green.500" : "gray.800"} borderRadius="md">
+                <Checkbox size="lg" colorScheme="green" isChecked={regForm.manifestAttached}
+                  onChange={(e) => setRegForm({ ...regForm, manifestAttached: e.target.checked })}>
+                  <Text as="span" fontWeight="800" fontSize="lg">Manifest / bill of lading attached</Text>
+                </Checkbox>
+              </Box>
+              <SimpleGrid columns={{ base: 1, sm: 2, md: 4 }} spacing={3}>
+                {regInput("afPo", "AF PO #")}
+                {regInput("timeReceived", "Time received")}
+                {regInput("carrier", "Carrier / truck")}
+                {regInput("bol", "Bill of lading #")}
+                {regInput("trailerSeal", "Trailer / seal #")}
+                {regInput("truckTemp", "Truck temp (°F)", { numeric: true })}
+                {regInput("receivedBy", "Received by (required)")}
+                {regInput("checkedBy", "Checked by")}
+                {regInput("remarks", "Remarks", { wide: true })}
+              </SimpleGrid>
+              <Flex gap={5} wrap="wrap" mt={3}>{regCheck("countMatches", "Count matches the paperwork")}</Flex>
+            </>
+          ) : (
+            <>
+              <SimpleGrid columns={{ base: 1, sm: 2, md: 4 }} spacing={3}>
+                {regInput("productTemp", "Product temp (°F)", { numeric: true })}
+                {regInput("damagedBoxes", "Damaged boxes", { numeric: true })}
+                {regInput("checkedBy", "Checked by (required)")}
+                {regInput("remarks", "Remarks", { wide: true })}
+              </SimpleGrid>
+              <Flex gap={5} wrap="wrap" mt={3}>
+                {regCheck("packagingOk", "Packaging OK")}
+                {regCheck("labelsReadable", "Labels readable")}
+              </Flex>
+            </>
+          )}
+          <Flex gap={2} mt={3}>
+            <Button size="sm" colorScheme="teal" onClick={saveRegistration} isDisabled={!regReady}>
+              {isDelivery ? "Save incoming form"
+                : (registrations[regForm.palletNo] ? "Save changes" : "Register pallet")}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setRegForm(null)}>Cancel</Button>
+          </Flex>
+        </Box>
+      )}
 
       {/* Put-away for the selected pallet, and the keypad for labels without a weight barcode. */}
       <Flex gap={2} wrap="wrap" align="center">
@@ -701,7 +904,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
             <Tbody>
               {rows.map((b) => (
                 <Tr key={b.id} style={{ fontVariantNumeric: "tabular-nums" }}
-                  bg={lastScan?.ok && lastScan.box.id === b.id ? "green.50" : undefined}
+                  bg={isRepeat(b) ? "orange.50" : lastScan?.ok && lastScan.box.id === b.id ? "green.50" : undefined}
                   color={b.removedAt ? "gray.400" : undefined}
                   sx={b.removedAt ? { "& td:not(:last-child)": { textDecoration: "line-through" } } : undefined}>
                   {b.removedAt ? (
@@ -732,6 +935,7 @@ const LotScan = ({ lot: start, active, stationHere, onBack }) => {
                     {b.weight}
                     {b.scannedUnit === "KG" && <Text as="span" fontSize="xs" color="gray.500"> ({b.scannedWeight} kg)</Text>}
                     {b.entryMethod === "typed" && <Badge ml={1} fontSize="9px" colorScheme="yellow">typed</Badge>}
+                    {isRepeat(b) && <Badge ml={1} fontSize="9px" colorScheme="orange">same label</Badge>}
                   </Td>
                   <Td>{b.packDate || ""}</Td>
                   <Td>

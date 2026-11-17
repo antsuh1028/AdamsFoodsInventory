@@ -987,6 +987,32 @@ const steps = async () => {
       PRIMARY KEY (af_lot_id, pallet_no)
     )
   `);
+  // A delivery's incoming form: what is true of the whole truck. One per lot; editing replaces it.
+  await run("af_lot_registrations", `
+    CREATE TABLE IF NOT EXISTS af_lot_registrations (
+      tenant_id     UUID NOT NULL REFERENCES tenants(id),
+      af_lot_id     INT  PRIMARY KEY REFERENCES af_lots(af_lot_id) ON DELETE CASCADE,
+      form          JSONB NOT NULL DEFAULT '{}'::jsonb,
+      registered_by TEXT,
+      registered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_by    TEXT,
+      updated_at    TIMESTAMPTZ
+    )
+  `);
+  // A pallet's receiving sheet, filled in after its boxes are scanned. One per pallet; editing replaces it.
+  await run("af_pallet_registrations", `
+    CREATE TABLE IF NOT EXISTS af_pallet_registrations (
+      tenant_id     UUID NOT NULL REFERENCES tenants(id),
+      af_lot_id     INT  NOT NULL REFERENCES af_lots(af_lot_id) ON DELETE CASCADE,
+      pallet_no     INT  NOT NULL CHECK (pallet_no > 0),
+      form          JSONB NOT NULL DEFAULT '{}'::jsonb,
+      registered_by TEXT,
+      registered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_by    TEXT,
+      updated_at    TIMESTAMPTZ,
+      PRIMARY KEY (af_lot_id, pallet_no)
+    )
+  `);
   // A scan station: the computer a corded scanner base types into. The tablet sets its target.
   await run("af_scan_stations", `
     CREATE TABLE IF NOT EXISTS af_scan_stations (

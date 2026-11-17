@@ -119,6 +119,53 @@ const fmtPallet = (p) => ({
   locatedAt: p.located_at,
 });
 
+const fmtRegistration = (r) => ({
+  palletNo: r.pallet_no,
+  form: r.form || {},
+  registeredBy: r.registered_by,
+  registeredAt: r.registered_at,
+  updatedBy: r.updated_by,
+  updatedAt: r.updated_at,
+});
+
+// The two forms: a delivery's incoming form (the parent) and each pallet's receiving sheet.
+const DELIVERY_FORM = {
+  text: { afPo: 30, timeReceived: 10, carrier: 60, bol: 60, trailerSeal: 60, remarks: 500, receivedBy: 40, checkedBy: 40 },
+  temps: ["truckTemp"], counts: [], flags: ["manifestAttached", "countMatches"],
+  required: ["receivedBy", "Say who received this delivery."],
+};
+const PALLET_FORM = {
+  text: { remarks: 500, checkedBy: 40 },
+  temps: ["productTemp"], counts: ["damagedBoxes"], flags: ["packagingOk", "labelsReadable"],
+  required: ["checkedBy", "Say who checked this pallet."],
+};
+const TEMP_RE = /^-?\d{1,3}(\.\d)?$/;
+// A form as typed, checked field by field against its spec; unknown keys are dropped.
+const readForm = (body, spec) => {
+  const b = body || {};
+  const form = {};
+  for (const [key, max] of Object.entries(spec.text)) {
+    const t = String(b[key] ?? "").replace(/\s+/g, " ").trim();
+    if (t.length > max) return { error: `That is too long for ${key}: ${max} characters at most.` };
+    if (t) form[key] = key === "remarks" ? t : t.toUpperCase();
+  }
+  for (const key of spec.temps) {
+    const t = String(b[key] ?? "").trim();
+    if (!t) continue;
+    if (!TEMP_RE.test(t) || Number(t) < -40 || Number(t) > 120) return { error: "A temperature is a number of °F, like 28 or -5." };
+    form[key] = t;
+  }
+  for (const key of spec.counts) {
+    const t = String(b[key] ?? "").trim();
+    if (!t) continue;
+    if (!/^\d{1,3}$/.test(t)) return { error: "Damaged boxes is a whole number." };
+    form[key] = Number(t);
+  }
+  for (const key of spec.flags) form[key] = b[key] === true;
+  if (!form[spec.required[0]]) return { error: spec.required[1] };
+  return { form };
+};
+
 // A pallet number as given, or null when it is not a whole number from 1 to 999.
 const asPallet = (v) => {
   const n = Number(v);
@@ -223,8 +270,15 @@ router.get("/af-lots/:id", verifyToken, async (req, res) => {
     const pallets = await pool.query(
       `SELECT pallet_no, location, located_by, located_at FROM af_lot_pallets
         WHERE af_lot_id = $1 AND tenant_id = $2 ORDER BY pallet_no`, [id, req.tenantId]);
+    const registrations = await pool.query(
+      `SELECT pallet_no, form, registered_by, registered_at, updated_by, updated_at FROM af_pallet_registrations
+        WHERE af_lot_id = $1 AND tenant_id = $2 ORDER BY pallet_no`, [id, req.tenantId]);
+    const delivery = await pool.query(
+      `SELECT form, registered_by, registered_at, updated_by, updated_at FROM af_lot_registrations
+        WHERE af_lot_id = $1 AND tenant_id = $2`, [id, req.tenantId]);
     res.json({ ...lotFor(req.role, fmtLot(lot.rows[0])), items: items.rows.map((i) => itemFor(req.role, fmtItem(i))), boxes: boxes.rows.map(fmtBox),
-      pallets: pallets.rows.map(fmtPallet) });
+      pallets: pallets.rows.map(fmtPallet), registrations: registrations.rows.map(fmtRegistration),
+      registration: delivery.rows[0] ? fmtRegistration(delivery.rows[0]) : null });
   } catch (err) {
     console.error("read af lot:", err);
     res.status(500).json({ error: "Internal Server Error" });
@@ -342,6 +396,20 @@ const addBox = async ({ tenantId, lotId, itemId, palletNo: rawPallet, entry, use
     const held = await inStockElsewhere(tenantId, box.gtin, box.serial, lotId);
     if (held) return onAnotherLot(held);
   }
+  // No serial: an identical label is recorded, as NTI does, since two such boxes can be real.
+  // It is flagged so the receiver can remove the extra one if it was the same box scanned twice.
+  let sameLabelAs = [];
+  if (!box.serial && !byWeight) {
+    const same = await pool.query(
+      `SELECT box_id FROM af_lot_boxes
+        WHERE af_lot_id = $1 AND tenant_id = $2 AND removed_at IS NULL AND serial IS NULL
+          AND COALESCE(gtin, '') = COALESCE($3, '') AND COALESCE(item_code, '') = COALESCE($4, '')
+          AND weight = $5::numeric AND pack_date IS NOT DISTINCT FROM $6::date
+          AND COALESCE(label_lot, '') = COALESCE($7, '')
+        ORDER BY box_id`,
+      [lotId, tenantId, box.gtin || null, box.itemCode || null, box.weight, box.packDate || null, box.lot || null]);
+    sameLabelAs = same.rows.map((r) => r.box_id);
+  }
   try {
     if (box.serial && dup.rows.length) {
       const { rows } = await pool.query(
@@ -359,7 +427,7 @@ const addBox = async ({ tenantId, lotId, itemId, palletNo: rawPallet, entry, use
        box.lot || null, box.itemCode || null, box.customerPart || null, box.packDate || null, box.raw || null,
        username || null, palletNo, itemId, typed ? "typed" : "scan"]
     );
-    return { status: 201, body: fmtBox(rows[0]) };
+    return { status: 201, body: sameLabelAs.length ? { ...fmtBox(rows[0]), sameLabelAs } : fmtBox(rows[0]) };
   } catch (err) {
     if (!isOneLotViolation(err)) throw err;
     // Two scans of one box at once: the database let one through. Say where it went.
@@ -412,6 +480,57 @@ router.patch("/af-lots/:id/boxes/:boxId", verifyToken, async (req, res) => {
 });
 
 // Put a pallet away: its location in the freezer, which every box on it takes.
+// The delivery's incoming form, the parent of its pallets' sheets. Saving again edits it.
+router.put("/af-lots/:id/registration", verifyToken, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid lot id" });
+  const { form, error } = readForm(req.body, DELIVERY_FORM);
+  if (error) return res.status(400).json({ error });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO af_lot_registrations (tenant_id, af_lot_id, form, registered_by)
+       SELECT $1, af_lot_id, $3::jsonb, $4 FROM af_lots WHERE af_lot_id = $2 AND tenant_id = $1
+       ON CONFLICT (af_lot_id)
+         DO UPDATE SET form = EXCLUDED.form, updated_by = EXCLUDED.registered_by, updated_at = now()
+       RETURNING form, registered_by, registered_at, updated_by, updated_at`,
+      [req.tenantId, id, JSON.stringify(form), req.username || null]);
+    if (!rows.length) return res.status(404).json({ error: "Lot not found" });
+    res.json(fmtRegistration(rows[0]));
+  } catch (err) {
+    console.error("register af delivery:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Registers a pallet: its receiving sheet, saved after its boxes are scanned. Saving again edits it.
+router.put("/af-lots/:id/pallets/:palletNo/registration", verifyToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const palletNo = asPallet(req.params.palletNo);
+  if (!Number.isInteger(id) || !palletNo) return res.status(400).json({ error: "Invalid lot or pallet" });
+  const { form, error } = readForm(req.body, PALLET_FORM);
+  if (error) return res.status(400).json({ error });
+  try {
+    const lot = await pool.query("SELECT 1 FROM af_lots WHERE af_lot_id = $1 AND tenant_id = $2", [id, req.tenantId]);
+    if (!lot.rows.length) return res.status(404).json({ error: "Lot not found" });
+    // Scan first, register after: a pallet with no boxes has nothing to register.
+    const boxes = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM af_lot_boxes
+        WHERE af_lot_id = $1 AND tenant_id = $2 AND pallet_no = $3 AND removed_at IS NULL`, [id, req.tenantId, palletNo]);
+    if (!boxes.rows[0].n) return res.status(409).json({ code: "EMPTY_PALLET", error: `Scan the boxes on pallet ${palletNo} first.` });
+    const { rows } = await pool.query(
+      `INSERT INTO af_pallet_registrations (tenant_id, af_lot_id, pallet_no, form, registered_by)
+       VALUES ($1, $2, $3, $4::jsonb, $5)
+       ON CONFLICT (af_lot_id, pallet_no)
+         DO UPDATE SET form = EXCLUDED.form, updated_by = EXCLUDED.registered_by, updated_at = now()
+       RETURNING pallet_no, form, registered_by, registered_at, updated_by, updated_at`,
+      [req.tenantId, id, palletNo, JSON.stringify(form), req.username || null]);
+    res.json(fmtRegistration(rows[0]));
+  } catch (err) {
+    console.error("register af pallet:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 router.put("/af-lots/:id/pallets/:palletNo", verifyToken, async (req, res) => {
   const id = Number(req.params.id);
   const palletNo = asPallet(req.params.palletNo);

@@ -218,16 +218,19 @@ router.post("/af-picking/lines/:lineId/scan", verifyToken, requireRole(...PICK_R
             ORDER BY b.box_id LIMIT 1`
         : `${BOX_SELECT} WHERE ${IN_STOCK} AND b.serial IS NULL AND COALESCE(b.gtin, '') = COALESCE($2, '')
              AND b.weight = $3::numeric AND b.pack_date IS NOT DISTINCT FROM $4::date
+             AND COALESCE(b.item_code, '') = COALESCE($5, '')
              AND NOT EXISTS (SELECT 1 FROM af_order_picks p WHERE p.box_id = b.box_id)
             ORDER BY b.box_id LIMIT 1`,
-      box.serial ? [req.tenantId, box.serial, box.gtin] : [req.tenantId, box.gtin, box.weight, box.packDate]);
+      box.serial ? [req.tenantId, box.serial, box.gtin]
+        : [req.tenantId, box.gtin, box.weight, box.packDate, box.itemCode || null]);
     if (!found.rows.length) {
       // Every identical label is already held, usually the same box scanned twice: say where it is.
       if (!box.serial) {
         const held = await client.query(
           `${BOX_SELECT} WHERE ${IN_STOCK} AND b.serial IS NULL AND COALESCE(b.gtin, '') = COALESCE($2, '')
              AND b.weight = $3::numeric AND b.pack_date IS NOT DISTINCT FROM $4::date
-            ORDER BY b.box_id LIMIT 1`, [req.tenantId, box.gtin, box.weight, box.packDate]);
+             AND COALESCE(b.item_code, '') = COALESCE($5, '')
+            ORDER BY b.box_id LIMIT 1`, [req.tenantId, box.gtin, box.weight, box.packDate, box.itemCode || null]);
         if (held.rows[0] && held.rows[0].held_on) throw fail(409, `That box is already on ${held.rows[0].held_on}.`, "HELD");
       }
       throw fail(404, "That box is not in stock on any lot. Was it received through Lot Registration?", "NOT_IN_STOCK");
