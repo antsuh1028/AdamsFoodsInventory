@@ -16,6 +16,8 @@ export const tagFromDetail = (detail, win = null) => printOutgoingTag({
   weighedBy: detail.vendor || "",
   memo: detail.remarks || "",
   furtherProcessing: Boolean(detail.further_processing),
+  // S + session number, so AdamsFoods can scan the pallet in against this session.
+  barcode: detail.batch_id ? `S${detail.batch_id}` : null,
   win,
 });
 
